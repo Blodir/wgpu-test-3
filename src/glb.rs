@@ -1,5 +1,6 @@
 use std::fs::File;
 use std::io::{self, Read, Seek};
+use bytemuck::{cast_slice, try_cast_slice};
 use serde_json::Result;
 
 use serde::{Deserialize, Serialize};
@@ -43,7 +44,7 @@ pub struct Accessor {
     #[serde(rename = "bufferView")]
     pub buffer_view: u8,
     #[serde(rename = "byteOffset")]
-    pub byte_offset: Option<u8>,
+    pub byte_offset: Option<u32>,
     #[serde(rename = "componentType")]
     pub component_type: ComponentType,
     pub count: u32,
@@ -59,7 +60,8 @@ pub struct Asset {
     pub version: String,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize_repr, Deserialize_repr, Debug)]
+#[repr(u16)]
 pub enum BufferViewTarget {
     ArrayBuffer = 34962,
     ElementArrayBuffer = 34963,
@@ -135,7 +137,13 @@ pub struct JSONChunk {
     pub raw_json: String,
 }
 
-pub struct BinaryChunk {
+pub enum DataBuffer {
+    I8(Vec<i8>),
+    U8(Vec<u8>),
+    I16(Vec<i16>),
+    U16(Vec<u16>),
+    U32(Vec<u32>),
+    F32(Vec<f32>),
 }
 
 pub struct GLBObject {
@@ -143,6 +151,41 @@ pub struct GLBObject {
     pub version: u32,
     pub length: u32, // entire file in bytes
     pub json_chunk: JSONChunk,
+    pub accessor_data_buffers: Vec<DataBuffer>,
+}
+
+fn get_accessor_component_count(accessor: &Accessor) -> u8 {
+    match accessor.accessor_type {
+        AccessorType::Scalar => 1,
+        AccessorType::Vec2 => 2,
+        AccessorType::Vec3 => 3,
+        AccessorType::Vec4 => 4,
+        AccessorType::Mat2 => 4,
+        AccessorType::Mat3 => 9,
+        AccessorType::Mat4 => 16,
+    }
+}
+
+fn get_accessor_component_size(accessor: &Accessor) -> u8 {
+    match accessor.component_type {
+        ComponentType::SignedByte => 8,
+        ComponentType::UnsignedByte => 8,
+        ComponentType::SignedShort => 16,
+        ComponentType::UnsignedShort => 16,
+        ComponentType::UnsignedInt => 32,
+        ComponentType::Float => 32,
+    }
+}
+
+fn convert_accessor_element_buffer(accessor: &Accessor, buffer: Vec<u8>) -> DataBuffer {
+    match accessor.component_type {
+        ComponentType::SignedByte => DataBuffer::I8(try_cast_slice(&buffer).unwrap_or_else(|e| panic!("Casting accessor data buffer to i8 failed: {}", e)).to_vec()),
+        ComponentType::UnsignedByte => DataBuffer::U8(try_cast_slice(&buffer).unwrap_or_else(|e| panic!("Casting accessor data buffer to i8 failed: {}", e)).to_vec()),
+        ComponentType::SignedShort => DataBuffer::I16(try_cast_slice(&buffer).unwrap_or_else(|e| panic!("Casting accessor data buffer to i16 failed: {}", e)).to_vec()),
+        ComponentType::UnsignedShort => DataBuffer::U16(try_cast_slice(&buffer).unwrap_or_else(|e| panic!("Casting accessor data buffer to u16 failed: {}", e)).to_vec()),
+        ComponentType::UnsignedInt => DataBuffer::U32(try_cast_slice(&buffer).unwrap_or_else(|e| panic!("Casting accessor data buffer to u32 failed: {}", e)).to_vec()),
+        ComponentType::Float => DataBuffer::F32(try_cast_slice(&buffer).unwrap_or_else(|e| panic!("Casting accessor data buffer to f32 failed: {}", e)).to_vec()),
+    }
 }
 
 impl GLBObject {
@@ -160,10 +203,11 @@ impl GLBObject {
         let length = u32::from_le_bytes(length_buffer);
 
         let json_chunk = GLBObject::parse_json_chunk(file)?;
+        let binary_chunk = GLBObject::parse_binary_chunk(file, &json_chunk.chunk_data)?;
 
         Ok(
             Self {
-                magic, version, length, json_chunk
+                magic, version, length, json_chunk, accessor_data_buffers: binary_chunk
             }
         )
     }
@@ -180,12 +224,13 @@ impl GLBObject {
         let mut data_buffer = vec![0u8; chunk_length.try_into().unwrap()];
         file.read_exact(&mut data_buffer)?;
         let chunk_data_string = buffer_to_ascii(&data_buffer);
+        println!("{}", chunk_data_string);
         let chunk_data = serde_json::from_str(&chunk_data_string)?;
 
         Ok(JSONChunk { chunk_length, chunk_type, raw_json: chunk_data_string, chunk_data })
     }
 
-    fn parse_binary_chunk(file: &mut File, json_data: &JSONData) -> io::Result<BinaryChunk> {
+    fn parse_binary_chunk(file: &mut File, json_data: &JSONData) -> io::Result<Vec<DataBuffer>> {
         let mut length_buffer = [0u8; 4];
         file.read_exact(&mut length_buffer)?;
         let chunk_length = u32::from_le_bytes(length_buffer);
@@ -194,42 +239,49 @@ impl GLBObject {
         file.read_exact(&mut type_buffer)?;
         let chunk_type = buffer_to_ascii(&type_buffer);
 
-        // start reading the buffer (there's only one in gltf for some reason!)
-
+        // start reading the buffer (there's only one in glb so we don't have to loop!)
+        let mut accessor_data_buffers: Vec<DataBuffer> = Vec::new();
         let start_of_buffer_offset = file.seek(io::SeekFrom::Current(0))?;
+
         let mut current_buffer_view = 0u8;
+        let mut current_buffer_view_offset = start_of_buffer_offset;
+
         for buffer_view in &json_data.buffer_views {
-            if buffer_view.byte_offset > 0 {
-                file.seek(io::SeekFrom::Start(start_of_buffer_offset + buffer_view.byte_offset as u64))?;
-            }
-            let start_of_buffer_view_offset = file.seek(io::SeekFrom::Current(0))?;
-            let accessor = json_data.accessors.iter().find(|x| x.buffer_view == current_buffer_view).unwrap_or_else(|| panic!("No accessor found for bufferview: {}", current_buffer_view));
-            if let Some(accessor_byte_offset) = accessor.byte_offset {
-                let current_offset = file.seek(io::SeekFrom::Current(0))?;
-                file.seek(io::SeekFrom::Start(current_offset + accessor_byte_offset as u64))?;
-            }
+            // go to the start of the buffer view
+            let mut current_offset = current_buffer_view_offset + buffer_view.byte_offset as u64;
+            file.seek(io::SeekFrom::Start(current_offset))?;
 
             let stride = buffer_view.byte_stride.unwrap_or(0u32);
+            let accessors = json_data.accessors.iter().filter(|x| x.buffer_view == current_buffer_view);
+            for accessor in accessors {
+                // go to the start of the accessor
+                let accessor_byte_offset = accessor.byte_offset.unwrap_or(0u32) as u64;
+                current_offset += accessor_byte_offset;
+                file.seek(io::SeekFrom::Start(current_offset))?;
+                 
+                let element_byte_length = get_accessor_component_count(accessor) * get_accessor_component_size(accessor);
+                let mut accessor_byte_buffer: Vec<u8> = Vec::with_capacity((accessor.count * element_byte_length as u32).try_into().unwrap());
+                for _i in 0..accessor.count {
+                    // read values to byte buffer
+                    let mut temp = vec![0u8, element_byte_length];
+                    file.read_exact(&mut temp)?;
+                    accessor_byte_buffer.extend(temp);
 
-            // read actual data elements
-            loop {
-                let mut current_offset = file.seek(io::SeekFrom::Current(0))?;
-                if current_offset > start_of_buffer_view_offset + buffer_view.byte_length as u64 {
-                    break;
+                    // stride forward
+                    current_offset += stride as u64;
+                    file.seek(io::SeekFrom::Start(current_offset))?;
                 }
-
-                // read differently depending on accessor_type and componentType ...
-                // TODO
-
-                if stride > 0 {
-                    current_offset = file.seek(io::SeekFrom::Current(0))?;
-                    file.seek(io::SeekFrom::Start(current_offset + stride as u64))?;
-                }
+                // write the data
+                let data_buffer = convert_accessor_element_buffer(accessor, accessor_byte_buffer);
+                accessor_data_buffers.push(data_buffer);
             }
-
+            // prep next buffer view
+            current_buffer_view_offset += (buffer_view.byte_offset + buffer_view.byte_length) as u64;
             current_buffer_view += 1;
         }
-        Ok(BinaryChunk {})
+        Ok(
+            accessor_data_buffers
+        )
     }
 }
 

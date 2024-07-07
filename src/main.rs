@@ -19,6 +19,7 @@ fn main() -> io::Result<()> {
             let pretty_json = serde_json::to_string_pretty(&json_value)?;
             println!("{}", pretty_json);
             println!("Parsed JSON: {:#?}", mesh.json_chunk.chunk_data);
+            println!("Binary data: {}", mesh.accessor_data_buffers.len());
         },
         Err(e) => {
             eprintln!("Failed to read file: {}", e);
