@@ -6,6 +6,9 @@ mod app;
 mod glb;
 
 fn main() -> io::Result<()> {
+    app::run();
+    return Ok(());
+
     let path = "KX.1325.glb";
     let mut file = File::open(path)?;
 

@@ -5,25 +5,20 @@ use std::io::{self, Read};
 use std::sync::Arc;
 use pollster::FutureExt as _;
 
-pub struct State {
-    surface: wgpu::Surface<'static>,
-    device: wgpu::Device,
-    queue: wgpu::Queue,
-    config: wgpu::SurfaceConfiguration,
-    pub size: winit::dpi::PhysicalSize<u32>,
-    window: Arc<Window>,
-    render_pipeline: wgpu::RenderPipeline,
-    index_buffer: wgpu::Buffer,
-    num_indices: u32
-}
-
 const INDICES: &[u16] = &[
     0, 2, 1,
     3, 2, 0,
 ];
 
-// https://sotrh.github.io/learn-wgpu/beginner/tutorial2-surface/#state-new
-impl State {
+struct WgpuContext<'surface_lifetime> {
+    window: Arc<Window>,
+    surface: wgpu::Surface<'surface_lifetime>,
+    surface_config: wgpu::SurfaceConfiguration,
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+}
+
+impl WgpuContext<'_> {
     pub async fn new(window: Arc<Window>) -> Self {
         let size = window.inner_size();
 
@@ -48,21 +43,18 @@ impl State {
                 required_features: wgpu::Features::empty(),
                 required_limits: wgpu::Limits::downlevel_defaults().using_resolution(adapter.limits())
             },
-            None, // Trace path
+            None,
         ).await.unwrap();
 
         // device.push_error_scope(wgpu::ErrorFilter::Validation);
 
         let surface_caps = surface.get_capabilities(&adapter);
-        // Shader code in this tutorial assumes an sRGB surface texture. Using a different
-        // one will result in all the colors coming out darker. If you want to support non
-        // sRGB surfaces, you'll need to account for that when drawing to the frame.
         let surface_format = surface_caps.formats.iter()
             .copied()
             .filter(|f| f.is_srgb())
             .next()
             .unwrap_or(surface_caps.formats[0]);
-        let config = wgpu::SurfaceConfiguration {
+        let surface_config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: surface_format,
             width: size.width,
@@ -72,16 +64,37 @@ impl State {
             view_formats: vec![],
             desired_maximum_frame_latency: 2
         };
-        surface.configure(&device, &config);
+        surface.configure(&device, &surface_config);
 
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Shader"),
-            source: wgpu::ShaderSource::Wgsl(Self::read_shaders().unwrap().into())
-        });
-        
-        let render_pipeline = State::create_render_pipeline(&device, shader, &config);
+        Self {
+            window,
+            surface,
+            device,
+            queue,
+            surface_config,
+        }
+    }
+}
 
-        let index_buffer = device.create_buffer_init(
+pub struct Renderer {
+    wgpu_context: WgpuContext<'static>,
+    render_pipeline: wgpu::RenderPipeline,
+}
+
+impl Renderer {
+    pub async fn new(window: Arc<Window>) -> Self {
+        let wgpu_context = WgpuContext::new(window).await;
+        let render_pipeline = Renderer::create_render_pipeline(&wgpu_context);
+
+        Self {
+            wgpu_context,
+            render_pipeline,
+        }
+    }
+
+    pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
+        // TODO re-use the same vertex, index buffers on multiple frames
+        let index_buffer = self.wgpu_context.device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
                 label: Some("Index Buffer"),
                 contents: bytemuck::cast_slice(INDICES),
@@ -91,44 +104,9 @@ impl State {
 
         let num_indices = INDICES.len() as u32;
 
-        Self {
-            window,
-            surface,
-            device,
-            queue,
-            config,
-            size,
-            render_pipeline,
-            index_buffer,
-            num_indices
-        }
-    }
-
-    pub fn window(&self) -> &Window {
-        &self.window
-    }
-
-    pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
-        if new_size.width > 0 && new_size.height > 0 {
-            self.size = new_size;
-            self.config.width = new_size.width;
-            self.config.height = new_size.height;
-            self.surface.configure(&self.device, &self.config);
-        }
-    }
-
-    pub fn input(&mut self, event: &winit::event::WindowEvent) -> bool {
-        false
-    }
-
-    pub fn update(&mut self) {
-
-    }
-
-    pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
-        let output = self.surface.get_current_texture()?;
+        let output = self.wgpu_context.surface.get_current_texture()?;
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        let mut encoder = self.wgpu_context.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Render Encoder"),
         });
 
@@ -154,30 +132,92 @@ impl State {
             });
 
             render_pass.set_pipeline(&self.render_pipeline);
-            render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-            render_pass.draw_indexed(0..self.num_indices, 0, 0..1);
+            render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+            render_pass.draw_indexed(0..num_indices, 0, 0..1);
         }
 
         // submit will accept anything that implements IntoIter
-        self.queue.submit(std::iter::once(encoder.finish()));
+        self.wgpu_context.queue.submit(std::iter::once(encoder.finish()));
         output.present();
 
         Ok(())
     }
 
-    fn create_render_pipeline(device: &wgpu::Device, shader: wgpu::ShaderModule, config: &wgpu::SurfaceConfiguration) -> wgpu::RenderPipeline {
+    pub fn reload_shaders(&mut self) {
+        self.render_pipeline = Renderer::create_render_pipeline(&self.wgpu_context);
+        self.render().unwrap();
+    }
+
+    pub fn resize(&mut self, new_size: Option<winit::dpi::PhysicalSize<u32>>) {
+        let new_size = new_size.unwrap_or(self.wgpu_context.window.inner_size());
+        if new_size.width > 0 && new_size.height > 0 {
+            self.wgpu_context.surface_config.width = new_size.width;
+            self.wgpu_context.surface_config.height = new_size.height;
+            self.wgpu_context.surface.configure(&self.wgpu_context.device, &self.wgpu_context.surface_config);
+        }
+    }
+
+    fn read_shaders() -> io::Result<String> {
+        let mut file = fs::File::open("src/shaders/shader.wgsl")?;
+        let mut contents = String::new();
+        file.read_to_string(&mut contents)?;
+        Ok(contents)
+    }
+
+    fn read_fallback_shaders() -> io::Result<String> {
+        let mut file = fs::File::open("src/shaders/fallback.wgsl")?;
+        let mut contents = String::new();
+        file.read_to_string(&mut contents)?;
+        Ok(contents)
+    }
+
+    fn create_shader_module(wgpu_context: &WgpuContext) -> wgpu::ShaderModule {
+        wgpu_context.device.push_error_scope(wgpu::ErrorFilter::Validation);
+
+        {
+            let source = wgpu::ShaderSource::Wgsl(Self::read_shaders().unwrap_or_else(|e| {
+                println!("Error reading shader: {}", e);
+                Self::read_fallback_shaders().unwrap()
+            }).into());
+            let shader = wgpu_context.device.create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("Shader"),
+                source
+            });
+
+            // Poll the device to process any pending errors
+            wgpu_context.device.poll(wgpu::Maintain::Wait);
+
+            // Check for errors
+            let error = wgpu_context.device.pop_error_scope().block_on();
+
+            match error {
+                Some(e) => Err(e),
+                None => Ok(shader),
+            }
+        }.unwrap_or_else(|e| {
+            println!("Shader compilation failed: {}", e);
+            let source = wgpu::ShaderSource::Wgsl(Self::read_fallback_shaders().unwrap().into());
+            wgpu_context.device.create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("Shader"),
+                source
+            })
+        })
+    }
+
+    fn create_render_pipeline(wgpu_context: &WgpuContext) -> wgpu::RenderPipeline {
+        let shader_module = Renderer::create_shader_module(wgpu_context);
         let render_pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            wgpu_context.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
                 bind_group_layouts: &[],
                 push_constant_ranges: &[],
             });
 
-        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        wgpu_context.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Render Pipeline"),
             layout: Some(&render_pipeline_layout),
             vertex: wgpu::VertexState {
-                module: &shader,
+                module: &shader_module,
                 entry_point: "vs_main",
                 buffers: &[
                     // Removed vertex positions entirely
@@ -185,10 +225,10 @@ impl State {
                 ],
             },
             fragment: Some(wgpu::FragmentState {
-                module: &shader,
+                module: &shader_module,
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: config.format,
+                    format: wgpu_context.surface_config.format,
                     blend: Some(wgpu::BlendState::REPLACE),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -212,59 +252,7 @@ impl State {
                 alpha_to_coverage_enabled: false,
             },
             multiview: None,
-        });
-
-        render_pipeline
-    }
-
-    pub fn reload_shaders(&mut self) {
-        self.device.push_error_scope(wgpu::ErrorFilter::Validation);
-
-        let shader = {
-            let source = wgpu::ShaderSource::Wgsl(Self::read_shaders().unwrap_or_else(|e| {
-                println!("Error reading shader: {}", e);
-                Self::read_fallback_shaders().unwrap()
-            }).into());
-            let shader = self.device.create_shader_module(wgpu::ShaderModuleDescriptor {
-                label: Some("Shader"),
-                source
-            });
-
-            // Poll the device to process any pending errors
-            self.device.poll(wgpu::Maintain::Wait);
-
-            // Check for errors
-            let error = self.device.pop_error_scope().block_on();
-
-            match error {
-                Some(e) => Err(e),
-                None => Ok(shader),
-            }
-        }.unwrap_or_else(|e| {
-            println!("Shader compilation failed: {}", e);
-            let source = wgpu::ShaderSource::Wgsl(Self::read_fallback_shaders().unwrap().into());
-            self.device.create_shader_module(wgpu::ShaderModuleDescriptor {
-                label: Some("Shader"),
-                source
-            })
-        });
-
-        self.render_pipeline = State::create_render_pipeline(&self.device, shader, &self.config);
-        self.render().unwrap();
-    }
-
-    fn read_shaders() -> io::Result<String> {
-        let mut file = fs::File::open("src/shaders/shader.wgsl")?;
-        let mut contents = String::new();
-        file.read_to_string(&mut contents)?;
-        Ok(contents)
-    }
-
-    fn read_fallback_shaders() -> io::Result<String> {
-        let mut file = fs::File::open("src/shaders/fallback.wgsl")?;
-        let mut contents = String::new();
-        file.read_to_string(&mut contents)?;
-        Ok(contents)
+        })
     }
 }
 

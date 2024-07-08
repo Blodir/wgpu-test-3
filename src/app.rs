@@ -6,7 +6,7 @@ use pollster::FutureExt as _;
 
 struct ShaderWatcher {
     watcher: RecommendedWatcher,
-    pub renderer_wrapper: Arc<Mutex<Option<Arc<Mutex<renderer::State>>>>>,
+    pub renderer_wrapper: Arc<Mutex<Option<Arc<Mutex<renderer::Renderer>>>>>,
 }
 impl ShaderWatcher {
     pub fn new() -> Self {
@@ -14,7 +14,7 @@ impl ShaderWatcher {
         let mut watcher = RecommendedWatcher::new(tx, Config::default()).unwrap();
         watcher.watch(Path::new("src/shaders/"), notify::RecursiveMode::Recursive).unwrap();
 
-        let renderer_wrapper_arc_mutex: Arc<Mutex<Option<Arc<Mutex<renderer::State>>>>> = Arc::new(Mutex::new(None));
+        let renderer_wrapper_arc_mutex: Arc<Mutex<Option<Arc<Mutex<renderer::Renderer>>>>> = Arc::new(Mutex::new(None));
         let renderer_wrapper_clone = renderer_wrapper_arc_mutex.clone();
         thread::spawn(move || {
             loop {
@@ -54,7 +54,7 @@ impl ShaderWatcher {
 }
 
 struct App {
-    renderer: Option<Arc<Mutex<renderer::State>>>,
+    renderer: Option<Arc<Mutex<renderer::Renderer>>>,
     window: Option<Arc<Window>>,
     shader_watcher: ShaderWatcher,
 }
@@ -69,7 +69,7 @@ impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         let window = Arc::new(event_loop.create_window(Window::default_attributes()).unwrap());
         self.window = Some(window.clone());
-        let temp_renderer = renderer::State::new(window.clone()).block_on();
+        let temp_renderer = renderer::Renderer::new(window.clone()).block_on();
         let renderer_arc_mutex = Arc::new(Mutex::new(temp_renderer));
         self.renderer = Some(renderer_arc_mutex.clone());
         let mut renderer_wrapper = self.shader_watcher.renderer_wrapper.lock().unwrap();
@@ -84,14 +84,9 @@ impl ApplicationHandler for App {
             WindowEvent::RedrawRequested => {
                 if let Some(ref mut renderer_arc_mutex) = self.renderer {
                     let mut renderer = renderer_arc_mutex.lock().unwrap();
-                    renderer.update();
+                    // renderer.update();
                     match renderer.render() {
-                        Ok(_) => {}
-                        Err(wgpu::SurfaceError::Lost) => {
-                            let size = renderer.size;
-                            renderer.resize(size);
-                        }
-                        //Err(wgpu::SurfaceError::OutOfMemory) => elwt.exit(),
+                        Ok(_) => {},
                         Err(e) => eprintln!("render error: {:?}", e),
                     }
                 }
@@ -110,14 +105,13 @@ impl ApplicationHandler for App {
             WindowEvent::Resized(physical_size) => {
                 if let Some(ref mut renderer_arc_mutex) = self.renderer {
                     let mut renderer = renderer_arc_mutex.lock().unwrap();
-                    renderer.resize(physical_size);
+                    renderer.resize(Some(physical_size));
                 }
             },
             WindowEvent::ScaleFactorChanged { scale_factor, inner_size_writer } => {
                 if let Some(ref mut renderer_arc_mutex) = self.renderer {
                     let mut renderer = renderer_arc_mutex.lock().unwrap();
-                    let window_inner_size = renderer.window().inner_size();
-                    renderer.resize(window_inner_size);
+                    renderer.resize(None);
                 }
             },
             _ => (),
