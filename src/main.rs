@@ -7,8 +7,8 @@ mod glb;
 
 fn main() -> io::Result<()> {
     //let path = "KX.1325.glb";
-    let path = "BoxInterleaved.glb";
-    //let path = "Avocado.glb";
+    //let path = "BoxInterleaved.glb";
+    let path = "Duck.glb";
     let mut file = File::open(path)?;
 
     let glb = glb::GLBObject::new(&mut file);

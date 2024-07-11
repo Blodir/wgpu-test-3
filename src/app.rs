@@ -101,7 +101,7 @@ impl ApplicationHandler for App {
                     let camera = renderer.get_camera_mut();
                     match delta {
                         MouseScrollDelta::LineDelta(x, y) => {
-                            camera.eye.z = (camera.eye.z + ((-y as f32) / 2f32)).max(0f32);
+                            camera.eye.z = (camera.eye.z + (-y as f32)).max(0f32);
                             renderer.update_camera_bindings();
                             self.window.as_mut().unwrap().request_redraw();
                         },

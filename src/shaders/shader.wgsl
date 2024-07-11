@@ -10,7 +10,8 @@ struct VertexInput {
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
-    @location(0) normal: vec3<f32>
+    @location(0) normal: vec3<f32>,
+    @location(1) position: vec3<f32>
 }
 
 @vertex
@@ -25,7 +26,9 @@ fn vs_main(
         view_invert_transpose[1].xyz,
         view_invert_transpose[2].xyz
     );
-    out.normal = normalize(view_invert_transpose_3x3 * model.normal);
+    //out.normal = normalize(view_invert_transpose_3x3 * model.normal);
+    out.normal = model.normal;
+    out.position = model.position;
     return out;
 }
 
@@ -33,10 +36,12 @@ fn vs_main(
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     var lightDir = normalize(vec3<f32>(-1., 1., 1.));
     //var lightPos = vec3<f32>(0., -5000., -5000.);
-    var color = dot(in.normal, lightDir);
+    var color = (dot(in.normal, lightDir) + 1.) / 2.;
     //var color = dot(in.normal, normalize(in.clip_position.xyz - lightPos));
-    return vec4<f32>((in.normal + 1.) / 2., 1.0);
+    //return vec4<f32>((in.normal + 1.) / 2., 1.0);
     //return vec4<f32>(color, color, color, 1.0);
     //return vec4<f32>(1., 0., 0., 1.);
+    return vec4<f32>(vec3(color), 1.);
+    //return vec4<f32>(in.position, 1.);
 }
 
