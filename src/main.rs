@@ -6,23 +6,24 @@ mod app;
 mod glb;
 
 fn main() -> io::Result<()> {
-    app::run();
-    return Ok(());
-
-    let path = "KX.1325.glb";
+    //let path = "KX.1325.glb";
+    let path = "BoxInterleaved.glb";
+    //let path = "Avocado.glb";
     let mut file = File::open(path)?;
 
     let glb = glb::GLBObject::new(&mut file);
 
     match glb {
-        Ok(mesh) => {
-            println!("magic: {}, version: {}, length: {}", mesh.magic, mesh.version, mesh.length);
-            println!("JSON CHUNK | length: {}, type: {}, data:", mesh.json_chunk.chunk_length, mesh.json_chunk.chunk_type);
-            let json_value: serde_json::Value = serde_json::from_str(&mesh.json_chunk.raw_json)?;
+        Ok(glb_data) => {
+            println!("magic: {}, version: {}, length: {}", glb_data.magic, glb_data.version, glb_data.length);
+            println!("JSON CHUNK | length: {}, type: {}, data:", glb_data.json_chunk.chunk_length, glb_data.json_chunk.chunk_type);
+            let json_value: serde_json::Value = serde_json::from_str(&glb_data.json_chunk.raw_json)?;
             let pretty_json = serde_json::to_string_pretty(&json_value)?;
             println!("{}", pretty_json);
-            println!("Parsed JSON: {:#?}", mesh.json_chunk.chunk_data);
-            println!("Binary data: {}", mesh.accessor_data_buffers.len());
+            println!("Parsed JSON: {:#?}", glb_data.json_chunk.chunk_data);
+            println!("binary buffer len: {}", glb_data.binary_buffer.len());
+            //println!("Binary data: {}", glb_data.accessor_data_buffers.len());
+            app::run(glb_data);
         },
         Err(e) => {
             eprintln!("Failed to read file: {}", e);

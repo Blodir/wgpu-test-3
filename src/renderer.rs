@@ -1,3 +1,5 @@
+use cgmath::SquareMatrix;
+use wgpu::{BindGroup, BindGroupLayout, VertexBufferLayout};
 use winit::window::Window;
 use wgpu::util::DeviceExt;
 use std::fs;
@@ -5,10 +7,15 @@ use std::io::{self, Read};
 use std::sync::Arc;
 use pollster::FutureExt as _;
 
-const INDICES: &[u16] = &[
-    0, 2, 1,
-    3, 2, 0,
-];
+use crate::glb::{get_accessor_component_count, get_accessor_component_size, DataBuffer, GLBObject};
+
+#[rustfmt::skip]
+pub const OPENGL_TO_WGPU_MATRIX: cgmath::Matrix4<f32> = cgmath::Matrix4::new(
+    1.0, 0.0, 0.0, 0.0,
+    0.0, 1.0, 0.0, 0.0,
+    0.0, 0.0, 0.5, 0.5,
+    0.0, 0.0, 0.0, 1.0,
+);
 
 struct WgpuContext<'surface_lifetime> {
     window: Arc<Window>,
@@ -79,31 +86,200 @@ impl WgpuContext<'_> {
 pub struct Renderer {
     wgpu_context: WgpuContext<'static>,
     render_pipeline: wgpu::RenderPipeline,
+    vertex_index_buffer: wgpu::Buffer,
+    vertex_index_count: u32,
+    vertex_position_buffer: wgpu::Buffer,
+    vertex_normal_buffer: wgpu::Buffer,
+    vertex_buffer_layouts: [VertexBufferLayout<'static>; 2],
+    camera_bind_group: BindGroup,
+    camera_bind_group_layout: BindGroupLayout,
+    view_invert_transpose_bind_group: BindGroup,
+    view_invert_transpose_bind_group_layout: BindGroupLayout,
 }
 
 impl Renderer {
-    pub async fn new(window: Arc<Window>) -> Self {
+    pub async fn new(window: Arc<Window>, glb_object: &GLBObject) -> Self {
         let wgpu_context = WgpuContext::new(window).await;
-        let render_pipeline = Renderer::create_render_pipeline(&wgpu_context);
+
+        let primitive = &glb_object.json_chunk.chunk_data.meshes.first().unwrap().primitives.first().unwrap();
+
+        let vertex_position_accessor_index = primitive.attributes.position as usize;
+        let vertex_normal_accessor_index = primitive.attributes.position as usize;
+        let vertex_index_accessor_index = primitive.indices as usize;
+
+        let vertex_position_accessor = &glb_object.json_chunk.chunk_data.accessors[vertex_position_accessor_index];
+        let vertex_normal_accessor = &glb_object.json_chunk.chunk_data.accessors[vertex_normal_accessor_index];
+        let vertex_index_accessor = &glb_object.json_chunk.chunk_data.accessors[vertex_index_accessor_index];
+
+        let vertex_position_accessor_buffer_view = &glb_object.json_chunk.chunk_data.buffer_views[vertex_position_accessor.buffer_view as usize];
+        let vertex_normal_accessor_buffer_view = &glb_object.json_chunk.chunk_data.buffer_views[vertex_normal_accessor.buffer_view as usize];
+        let vertex_index_accessor_buffer_view = &glb_object.json_chunk.chunk_data.buffer_views[vertex_index_accessor.buffer_view as usize];
+
+        let vertex_position_start_offset = (vertex_position_accessor_buffer_view.byte_offset.unwrap_or(0u32) + vertex_position_accessor.byte_offset.unwrap_or(0u32)) as usize;
+        let vertex_normal_start_offset = (vertex_normal_accessor_buffer_view.byte_offset.unwrap_or(0u32) + vertex_normal_accessor.byte_offset.unwrap_or(0u32)) as usize;
+        let vertex_index_start_offset = (vertex_index_accessor_buffer_view.byte_offset.unwrap_or(0u32) + vertex_index_accessor.byte_offset.unwrap_or(0u32)) as usize;
+        let vertex_position_end_offset = vertex_position_accessor_buffer_view.byte_offset.unwrap_or(0u32) as usize + vertex_position_accessor_buffer_view.byte_length as usize;
+        let vertex_normal_end_offset = vertex_normal_accessor_buffer_view.byte_offset.unwrap_or(0u32) as usize + vertex_normal_accessor_buffer_view.byte_length as usize;
+        let vertex_index_end_offset = vertex_index_accessor_buffer_view.byte_offset.unwrap_or(0u32) as usize + vertex_index_accessor_buffer_view.byte_length as usize;
+
+        let vertex_position_slice = &glb_object.binary_buffer[vertex_position_start_offset..vertex_position_end_offset];
+        let vertex_normal_slice = &glb_object.binary_buffer[vertex_normal_start_offset..vertex_normal_end_offset];
+        let vertex_index_slice = &glb_object.binary_buffer[vertex_index_start_offset..vertex_index_end_offset];
+
+        let vertex_position_buffer = wgpu_context.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Vertex Buffer"),
+            contents: vertex_position_slice,
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+        let vertex_normal_buffer = wgpu_context.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Vertex Buffer"),
+            contents: vertex_normal_slice,
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+        let vertex_index_buffer = wgpu_context.device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Index Buffer"),
+                contents: vertex_index_slice,
+                usage: wgpu::BufferUsages::INDEX,
+            }
+        );
+        let vertex_index_count = vertex_index_accessor.count;
+
+        let data_element_size = get_accessor_component_count(vertex_position_accessor) as u64 * get_accessor_component_size(vertex_position_accessor) as u64;
+
+        let vertex_buffer_stride = match vertex_position_accessor_buffer_view.byte_stride {
+            Some(stride) => if stride > 0 { stride as u64 } else { data_element_size },
+            None => data_element_size,
+        };
+
+        let vertex_buffer_layouts = [
+            VertexBufferLayout {
+                array_stride: vertex_buffer_stride,
+                step_mode: wgpu::VertexStepMode::Vertex,
+                attributes: &[
+                    wgpu::VertexAttribute {
+                        offset: 0,
+                        shader_location: 0,
+                        format: wgpu::VertexFormat::Float32x3,
+                    },
+                ]
+            },
+            VertexBufferLayout {
+                array_stride: vertex_buffer_stride,
+                step_mode: wgpu::VertexStepMode::Vertex,
+                attributes: &[
+                    wgpu::VertexAttribute {
+                        offset: 0,
+                        shader_location: 1,
+                        format: wgpu::VertexFormat::Float32x3,
+                    },
+                ]
+            },
+        ];
+
+        let eye: cgmath::Point3<f32> = (0.0, 1.0, 2.0).into();
+        let target: cgmath::Point3<f32> = (0.0, 0.0, 0.0).into();
+        let up: cgmath::Vector3<f32> = cgmath::Vector3::unit_y();
+        let aspect = wgpu_context.surface_config.width as f32 / wgpu_context.surface_config.height as f32;
+        let fovy = 45.0f32;
+        let znear = 0.1f32;
+        let zfar = 100.0f32;
+        let view = cgmath::Matrix4::look_at_rh(eye, target, up);
+        let proj = cgmath::perspective(cgmath::Deg(fovy), aspect, znear, zfar);
+        let view_proj = OPENGL_TO_WGPU_MATRIX * proj * view;
+        let view_proj_m: [[f32; 4]; 4] = view_proj.into();
+        let mut view_invert_transpose = view.invert().unwrap();
+        view_invert_transpose.transpose_self();
+        let view_invert_transpose_m: [[f32; 4]; 4] = view_invert_transpose.into();
+
+        let camera_buffer = wgpu_context.device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Camera Buffer"),
+                contents: bytemuck::cast_slice(&[view_proj_m]),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            }
+        );
+
+        let view_invert_transpose_buffer = wgpu_context.device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Camera Buffer"),
+                contents: bytemuck::cast_slice(&[view_invert_transpose_m]),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            }
+        );
+
+        let camera_bind_group_layout = wgpu_context.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }
+            ],
+            label: Some("camera_bind_group_layout"),
+        });
+
+        let view_invert_transpose_bind_group_layout = wgpu_context.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }
+            ],
+            label: Some("view_invert_transpose_bind_group_layout"),
+        });
+
+        let camera_bind_group = wgpu_context.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &camera_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: camera_buffer.as_entire_binding(),
+                }
+            ],
+            label: Some("camera_bind_group"),
+        });
+
+        let view_invert_transpose_bind_group = wgpu_context.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &view_invert_transpose_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: view_invert_transpose_buffer.as_entire_binding(),
+                }
+            ],
+            label: Some("view_invert_transpose_bind_group"),
+        });
+
+        let render_pipeline = Renderer::create_render_pipeline(&wgpu_context, &vertex_buffer_layouts, &camera_bind_group_layout, &view_invert_transpose_bind_group_layout);
 
         Self {
             wgpu_context,
             render_pipeline,
+            vertex_index_buffer,
+            vertex_position_buffer,
+            vertex_normal_buffer,
+            vertex_index_count,
+            vertex_buffer_layouts,
+            camera_bind_group,
+            camera_bind_group_layout,
+            view_invert_transpose_bind_group,
+            view_invert_transpose_bind_group_layout,
         }
     }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
-        // TODO re-use the same vertex, index buffers on multiple frames
-        let index_buffer = self.wgpu_context.device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("Index Buffer"),
-                contents: bytemuck::cast_slice(INDICES),
-                usage: wgpu::BufferUsages::INDEX,
-            }
-        );
-
-        let num_indices = INDICES.len() as u32;
-
         let output = self.wgpu_context.surface.get_current_texture()?;
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
         let mut encoder = self.wgpu_context.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -132,11 +308,14 @@ impl Renderer {
             });
 
             render_pass.set_pipeline(&self.render_pipeline);
-            render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-            render_pass.draw_indexed(0..num_indices, 0, 0..1);
+            render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
+            render_pass.set_bind_group(1, &self.view_invert_transpose_bind_group, &[]);
+            render_pass.set_vertex_buffer(0, self.vertex_position_buffer.slice(..));
+            render_pass.set_vertex_buffer(1, self.vertex_normal_buffer.slice(..));
+            render_pass.set_index_buffer(self.vertex_index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+            render_pass.draw_indexed(0..self.vertex_index_count, 0, 0..1);
         }
 
-        // submit will accept anything that implements IntoIter
         self.wgpu_context.queue.submit(std::iter::once(encoder.finish()));
         output.present();
 
@@ -144,7 +323,7 @@ impl Renderer {
     }
 
     pub fn reload_shaders(&mut self) {
-        self.render_pipeline = Renderer::create_render_pipeline(&self.wgpu_context);
+        self.render_pipeline = Renderer::create_render_pipeline(&self.wgpu_context, &self.vertex_buffer_layouts, &self.camera_bind_group_layout, &self.view_invert_transpose_bind_group_layout);
         self.render().unwrap();
     }
 
@@ -204,12 +383,12 @@ impl Renderer {
         })
     }
 
-    fn create_render_pipeline(wgpu_context: &WgpuContext) -> wgpu::RenderPipeline {
+    fn create_render_pipeline(wgpu_context: &WgpuContext, vertex_buffer_layouts: &[VertexBufferLayout], camera_bind_group_layout: &BindGroupLayout, view_invert_transpose_bind_group_layout: &BindGroupLayout) -> wgpu::RenderPipeline {
         let shader_module = Renderer::create_shader_module(wgpu_context);
         let render_pipeline_layout =
             wgpu_context.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[],
+                bind_group_layouts: &[camera_bind_group_layout, view_invert_transpose_bind_group_layout],
                 push_constant_ranges: &[],
             });
 
@@ -219,10 +398,7 @@ impl Renderer {
             vertex: wgpu::VertexState {
                 module: &shader_module,
                 entry_point: "vs_main",
-                buffers: &[
-                    // Removed vertex positions entirely
-                    // Vertex::desc()
-                ],
+                buffers: vertex_buffer_layouts.clone(),
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader_module,

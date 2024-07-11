@@ -73,10 +73,10 @@ pub struct BufferView {
     #[serde(rename = "byteLength")]
     pub byte_length : u32,
     #[serde(rename = "byteOffset")]
-    pub byte_offset : u32,
+    pub byte_offset : Option<u32>,
     #[serde(rename = "byteStride")]
     pub byte_stride : Option<u32>,
-    pub target: BufferViewTarget,
+    pub target: Option<BufferViewTarget>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -89,6 +89,8 @@ pub struct Buffer {
 pub struct PrimitiveAttributes {
     #[serde(rename = "POSITION")]
     pub position: u32,
+    #[serde(rename = "NORMAL")]
+    pub normal: u32,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -99,21 +101,21 @@ pub struct Primitive {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Mesh {
-    pub name: String,
+    pub name: Option<String>,
     pub primitives: Vec<Primitive>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Node {
-    pub name: String,
-    pub mesh: u8,
-    pub rotation: [f64; 4],
-    pub translation: [f64; 3],
+    pub name: Option<String>,
+    pub mesh: Option<u8>,
+    pub rotation: Option<[f64; 4]>,
+    pub translation: Option<[f64; 3]>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Scene {
-    pub name: String,
+    pub name: Option<String>,
     pub nodes: Vec<u8>,
 }
 
@@ -151,10 +153,11 @@ pub struct GLBObject {
     pub version: u32,
     pub length: u32, // entire file in bytes
     pub json_chunk: JSONChunk,
-    pub accessor_data_buffers: Vec<DataBuffer>,
+    pub binary_buffer: Vec<u8>,
+    //pub accessor_data_buffers: Vec<DataBuffer>,
 }
 
-fn get_accessor_component_count(accessor: &Accessor) -> u8 {
+pub fn get_accessor_component_count(accessor: &Accessor) -> u8 {
     match accessor.accessor_type {
         AccessorType::Scalar => 1,
         AccessorType::Vec2 => 2,
@@ -166,14 +169,15 @@ fn get_accessor_component_count(accessor: &Accessor) -> u8 {
     }
 }
 
-fn get_accessor_component_size(accessor: &Accessor) -> u8 {
+// size in bytes
+pub fn get_accessor_component_size(accessor: &Accessor) -> u8 {
     match accessor.component_type {
-        ComponentType::SignedByte => 8,
-        ComponentType::UnsignedByte => 8,
-        ComponentType::SignedShort => 16,
-        ComponentType::UnsignedShort => 16,
-        ComponentType::UnsignedInt => 32,
-        ComponentType::Float => 32,
+        ComponentType::SignedByte => 1,
+        ComponentType::UnsignedByte => 1,
+        ComponentType::SignedShort => 2,
+        ComponentType::UnsignedShort => 2,
+        ComponentType::UnsignedInt => 4,
+        ComponentType::Float => 4,
     }
 }
 
@@ -203,11 +207,11 @@ impl GLBObject {
         let length = u32::from_le_bytes(length_buffer);
 
         let json_chunk = GLBObject::parse_json_chunk(file)?;
-        let binary_chunk = GLBObject::parse_binary_chunk(file, &json_chunk.chunk_data)?;
+        let binary_buffer = GLBObject::parse_binary_buffer(file, &json_chunk.chunk_data)?;
 
         Ok(
             Self {
-                magic, version, length, json_chunk, accessor_data_buffers: binary_chunk
+                magic, version, length, json_chunk, binary_buffer //accessor_data_buffers: binary_chunk
             }
         )
     }
@@ -230,7 +234,7 @@ impl GLBObject {
         Ok(JSONChunk { chunk_length, chunk_type, raw_json: chunk_data_string, chunk_data })
     }
 
-    fn parse_binary_chunk(file: &mut File, json_data: &JSONData) -> io::Result<Vec<DataBuffer>> {
+    fn parse_binary_buffer(file: &mut File, json_data: &JSONData) -> io::Result<Vec<u8>> {
         let mut length_buffer = [0u8; 4];
         file.read_exact(&mut length_buffer)?;
         let chunk_length = u32::from_le_bytes(length_buffer);
@@ -239,49 +243,10 @@ impl GLBObject {
         file.read_exact(&mut type_buffer)?;
         let chunk_type = buffer_to_ascii(&type_buffer);
 
-        // start reading the buffer (there's only one in glb so we don't have to loop!)
-        let mut accessor_data_buffers: Vec<DataBuffer> = Vec::new();
-        let start_of_buffer_offset = file.seek(io::SeekFrom::Current(0))?;
+        let mut binary_buffer = vec![0u8; chunk_length as usize];
+        file.read_exact(&mut binary_buffer)?;
 
-        let mut current_buffer_view = 0u8;
-        let mut current_buffer_view_offset = start_of_buffer_offset;
-
-        for buffer_view in &json_data.buffer_views {
-            // go to the start of the buffer view
-            let mut current_offset = current_buffer_view_offset + buffer_view.byte_offset as u64;
-            file.seek(io::SeekFrom::Start(current_offset))?;
-
-            let stride = buffer_view.byte_stride.unwrap_or(0u32);
-            let accessors = json_data.accessors.iter().filter(|x| x.buffer_view == current_buffer_view);
-            for accessor in accessors {
-                // go to the start of the accessor
-                let accessor_byte_offset = accessor.byte_offset.unwrap_or(0u32) as u64;
-                current_offset += accessor_byte_offset;
-                file.seek(io::SeekFrom::Start(current_offset))?;
-                 
-                let element_byte_length = get_accessor_component_count(accessor) * get_accessor_component_size(accessor);
-                let mut accessor_byte_buffer: Vec<u8> = Vec::with_capacity((accessor.count * element_byte_length as u32).try_into().unwrap());
-                for _i in 0..accessor.count {
-                    // read values to byte buffer
-                    let mut temp = vec![0u8, element_byte_length];
-                    file.read_exact(&mut temp)?;
-                    accessor_byte_buffer.extend(temp);
-
-                    // stride forward
-                    current_offset += stride as u64;
-                    file.seek(io::SeekFrom::Start(current_offset))?;
-                }
-                // write the data
-                let data_buffer = convert_accessor_element_buffer(accessor, accessor_byte_buffer);
-                accessor_data_buffers.push(data_buffer);
-            }
-            // prep next buffer view
-            current_buffer_view_offset += (buffer_view.byte_offset + buffer_view.byte_length) as u64;
-            current_buffer_view += 1;
-        }
-        Ok(
-            accessor_data_buffers
-        )
+        Ok(binary_buffer)
     }
 }
 
