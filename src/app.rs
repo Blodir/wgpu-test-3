@@ -1,5 +1,6 @@
 use std::{sync::{Arc, Mutex, mpsc::channel}, path::Path, time::Duration, thread};
-use winit::{window::{Window, WindowId}, event_loop::{ActiveEventLoop, ControlFlow, EventLoop}, event::{WindowEvent, KeyEvent, ElementState}, application::ApplicationHandler, keyboard::{KeyCode, PhysicalKey}};
+use cgmath::Rotation3;
+use winit::{application::ApplicationHandler, dpi::PhysicalPosition, event::{DeviceEvent, ElementState, KeyEvent, MouseScrollDelta, WindowEvent}, event_loop::{ActiveEventLoop, ControlFlow, EventLoop}, keyboard::{KeyCode, PhysicalKey}, window::{Window, WindowId}};
 use notify::{Watcher, RecommendedWatcher, Config};
 use crate::{glb::GLBObject, renderer};
 use pollster::FutureExt as _;
@@ -58,11 +59,12 @@ struct App {
     window: Option<Arc<Window>>,
     shader_watcher: ShaderWatcher,
     glb_data: GLBObject,
+    mouse_btn_is_pressed: bool,
 }
 
 impl App {
     pub fn new(glb_data: GLBObject) -> Self {
-        Self { renderer: None, window: None, shader_watcher: ShaderWatcher::new(), glb_data }
+        Self { renderer: None, window: None, shader_watcher: ShaderWatcher::new(), glb_data, mouse_btn_is_pressed: false }
     }
 }
 
@@ -92,41 +94,71 @@ impl ApplicationHandler for App {
                     }
                 }
             },
-            WindowEvent::KeyboardInput { device_id, event: KeyEvent {
-                state: ElementState::Released,
-                physical_key: PhysicalKey::Code(KeyCode::Space),
-                ..
-            }, is_synthetic } => {
-                return;
-                if let Some(ref mut renderer_arc_mutex) = self.renderer {
-                    let mut renderer = renderer_arc_mutex.lock().unwrap();
-                    renderer.reload_shaders();
-                }
-            },
             WindowEvent::MouseWheel { device_id, delta, phase } => {
                 // move camera in/out
+                if let Some(ref mut renderer_arc_mutex) = self.renderer {
+                    let mut renderer = renderer_arc_mutex.lock().unwrap();
+                    let camera = renderer.get_camera_mut();
+                    match delta {
+                        MouseScrollDelta::LineDelta(x, y) => {
+                            camera.eye.z = (camera.eye.z + ((-y as f32) / 2f32)).max(0f32);
+                            renderer.update_camera_bindings();
+                            self.window.as_mut().unwrap().request_redraw();
+                        },
+                        MouseScrollDelta::PixelDelta(pos) => ()
+                    }
+                }
             },
             WindowEvent::MouseInput { device_id, state, button } => {
                 match button {
                     winit::event::MouseButton::Left => {
-                        // start drag
+                        match state {
+                            ElementState::Pressed => {
+                                self.mouse_btn_is_pressed = true;
+                            },
+                            ElementState::Released => {
+                                self.mouse_btn_is_pressed = false;
+                            },
+                        }
                     },
                     _ => ()
                 };
-            },
-            WindowEvent::AxisMotion { device_id, axis, value } => {
-                // rotate camera if dragging
             },
             WindowEvent::Resized(physical_size) => {
                 if let Some(ref mut renderer_arc_mutex) = self.renderer {
                     let mut renderer = renderer_arc_mutex.lock().unwrap();
                     renderer.resize(Some(physical_size));
+                    self.window.as_mut().unwrap().request_redraw();
                 }
             },
             WindowEvent::ScaleFactorChanged { scale_factor, inner_size_writer } => {
                 if let Some(ref mut renderer_arc_mutex) = self.renderer {
                     let mut renderer = renderer_arc_mutex.lock().unwrap();
                     renderer.resize(None);
+                    self.window.as_mut().unwrap().request_redraw();
+                }
+            },
+            _ => (),
+        }
+    }
+
+    fn device_event(
+            &mut self,
+            event_loop: &ActiveEventLoop,
+            device_id: winit::event::DeviceId,
+            event: DeviceEvent,
+        ) {
+        match event {
+            DeviceEvent::MouseMotion { delta: (x, y) } => {
+                if !self.mouse_btn_is_pressed { return (); }
+                if let Some(ref mut renderer_arc_mutex) = self.renderer {
+                    let mut renderer = renderer_arc_mutex.lock().unwrap();
+                    let camera = renderer.get_camera_mut();
+                    let rot_x = cgmath::Quaternion::from_angle_y(cgmath::Deg((-x as f32) / 5f32));
+                    let rot_y = cgmath::Quaternion::from_angle_x(cgmath::Deg((-y as f32) / 5f32));
+                    camera.rotation = camera.rotation * rot_x * rot_y;
+                    renderer.update_camera_bindings();
+                    self.window.as_mut().unwrap().request_redraw();
                 }
             },
             _ => (),

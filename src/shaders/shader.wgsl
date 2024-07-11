@@ -35,8 +35,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     //var lightPos = vec3<f32>(0., -5000., -5000.);
     var color = dot(in.normal, lightDir);
     //var color = dot(in.normal, normalize(in.clip_position.xyz - lightPos));
-    //return vec4<f32>((in.normal + 1.) / 2., 1.0);
-    return vec4<f32>(color, color, color, 1.0);
+    return vec4<f32>((in.normal + 1.) / 2., 1.0);
+    //return vec4<f32>(color, color, color, 1.0);
     //return vec4<f32>(1., 0., 0., 1.);
 }
 
