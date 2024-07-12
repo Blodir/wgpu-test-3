@@ -1,4 +1,4 @@
-use cgmath::{EuclideanSpace, Point3, Rotation, Rotation3, SquareMatrix, Vector4};
+use cgmath::{EuclideanSpace, Point3, Rotation3, SquareMatrix, Vector4};
 use wgpu::{BindGroup, BindGroupLayout, VertexBufferLayout};
 use winit::window::Window;
 use wgpu::util::DeviceExt;
@@ -6,202 +6,10 @@ use std::fs;
 use std::io::{self, Read};
 use std::sync::Arc;
 use pollster::FutureExt as _;
+use crate::camera::{Camera, CameraBindGroups};
+use crate::wgpu_context::{WgpuContext, OPENGL_TO_WGPU_MATRIX};
 
-use crate::glb::{get_accessor_component_count, get_accessor_component_size, DataBuffer, GLBObject};
-
-#[rustfmt::skip]
-pub const OPENGL_TO_WGPU_MATRIX: cgmath::Matrix4<f32> = cgmath::Matrix4::new(
-    1.0, 0.0, 0.0, 0.0,
-    0.0, 1.0, 0.0, 0.0,
-    0.0, 0.0, 0.5, 0.5,
-    0.0, 0.0, 0.0, 1.0,
-);
-
-pub struct WgpuContext<'surface_lifetime> {
-    window: Arc<Window>,
-    surface: wgpu::Surface<'surface_lifetime>,
-    surface_config: wgpu::SurfaceConfiguration,
-    device: wgpu::Device,
-    queue: wgpu::Queue,
-}
-
-impl WgpuContext<'_> {
-    pub async fn new(window: Arc<Window>) -> Self {
-        let size = window.inner_size();
-
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::all(),
-            ..Default::default()
-        });
-
-        let surface = instance.create_surface(window.clone()).unwrap();
-
-        let adapter = instance.request_adapter(
-            &wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::default(),
-                compatible_surface: Some(&surface),
-                force_fallback_adapter: false
-            }
-        ).await.unwrap();
-
-        let (device, queue) = adapter.request_device(
-            &wgpu::DeviceDescriptor {
-                label: None,
-                required_features: wgpu::Features::empty(),
-                required_limits: wgpu::Limits::downlevel_defaults().using_resolution(adapter.limits())
-            },
-            None,
-        ).await.unwrap();
-
-        // device.push_error_scope(wgpu::ErrorFilter::Validation);
-
-        let surface_caps = surface.get_capabilities(&adapter);
-        let surface_format = surface_caps.formats.iter()
-            .copied()
-            .filter(|f| f.is_srgb())
-            .next()
-            .unwrap_or(surface_caps.formats[0]);
-        let surface_config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format: surface_format,
-            width: size.width,
-            height: size.height,
-            present_mode: surface_caps.present_modes[0],
-            alpha_mode: surface_caps.alpha_modes[0],
-            view_formats: vec![],
-            desired_maximum_frame_latency: 2
-        };
-        surface.configure(&device, &surface_config);
-
-        Self {
-            window,
-            surface,
-            device,
-            queue,
-            surface_config,
-        }
-    }
-}
-
-pub struct Camera {
-    pub eye: cgmath::Point3<f32>,
-    pub target: cgmath::Point3<f32>,
-    pub up: cgmath::Vector3<f32>,
-    pub aspect: f32,
-    pub fovy: f32,
-    pub znear: f32,
-    pub zfar: f32,
-    pub rotation: cgmath::Quaternion<f32>,
-}
-
-impl Camera {
-    pub fn new(wgpu_context: &WgpuContext) -> Self {
-        let eye: cgmath::Point3<f32> = (0.0, 0.0, 2.0).into();
-        let target: cgmath::Point3<f32> = (0.0, 0.0, 0.0).into();
-        let up: cgmath::Vector3<f32> = cgmath::Vector3::unit_y();
-        let aspect = wgpu_context.surface_config.width as f32 / wgpu_context.surface_config.height as f32;
-        let fovy = 45.0f32;
-        let znear = 0.1f32;
-        let zfar = 100.0f32;
-        let rotation = cgmath::Quaternion::from_angle_y(cgmath::Deg(0f32));
-
-        Self {
-            eye, target, up, aspect, fovy, znear, zfar, rotation
-        }
-    }
-}
-
-struct CameraBindGroups {
-    pub camera_bind_group: BindGroup,
-    pub camera_bind_group_layout: BindGroupLayout,
-    pub view_invert_transpose_bind_group: BindGroup,
-    pub view_invert_transpose_bind_group_layout: BindGroupLayout,
-}
-
-impl CameraBindGroups {
-    pub fn new(camera: &Camera, wgpu_context: &WgpuContext) -> CameraBindGroups {
-        let eye_rotated = cgmath::Matrix4::from(camera.rotation) * Vector4::new(camera.eye.x, camera.eye.y, camera.eye.z, 1.0);
-        let view = cgmath::Matrix4::look_at_rh(Point3::from_vec(eye_rotated.truncate()), camera.target, camera.up);
-        let proj = cgmath::perspective(cgmath::Deg(camera.fovy), camera.aspect, camera.znear, camera.zfar);
-        let view_proj = OPENGL_TO_WGPU_MATRIX * proj * view;
-        let view_proj_m: [[f32; 4]; 4] = view_proj.into();
-        let mut view_invert_transpose = view.invert().unwrap();
-        view_invert_transpose.transpose_self();
-        let view_invert_transpose_m: [[f32; 4]; 4] = view_invert_transpose.into();
-
-        let camera_buffer = wgpu_context.device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("Camera Buffer"),
-                contents: bytemuck::cast_slice(&[view_proj_m]),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            }
-        );
-
-        let view_invert_transpose_buffer = wgpu_context.device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("Camera Buffer"),
-                contents: bytemuck::cast_slice(&[view_invert_transpose_m]),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            }
-        );
-
-        let camera_bind_group_layout = wgpu_context.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                }
-            ],
-            label: Some("camera_bind_group_layout"),
-        });
-
-        let view_invert_transpose_bind_group_layout = wgpu_context.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                }
-            ],
-            label: Some("view_invert_transpose_bind_group_layout"),
-        });
-
-        let camera_bind_group = wgpu_context.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &camera_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: camera_buffer.as_entire_binding(),
-                }
-            ],
-            label: Some("camera_bind_group"),
-        });
-
-        let view_invert_transpose_bind_group = wgpu_context.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &view_invert_transpose_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: view_invert_transpose_buffer.as_entire_binding(),
-                }
-            ],
-            label: Some("view_invert_transpose_bind_group"),
-        });
-
-        Self { camera_bind_group, camera_bind_group_layout, view_invert_transpose_bind_group, view_invert_transpose_bind_group_layout }
-    }
-}
+use crate::glb::{get_accessor_component_count, get_accessor_component_size, GLBObject};
 
 struct DepthTexture {
     texture: wgpu::Texture,
@@ -303,7 +111,7 @@ impl Renderer {
             usage: wgpu::BufferUsages::VERTEX,
         });
         let vertex_normal_buffer = wgpu_context.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Vertex Buffer"),
+            label: Some("Normal Buffer"),
             contents: vertex_normal_slice,
             usage: wgpu::BufferUsages::VERTEX,
         });

@@ -1,14 +1,19 @@
+use std::env;
 use std::fs::File;
 use std::io::{self, Read};
 
+mod wgpu_context;
+mod camera;
 mod renderer;
 mod app;
 mod glb;
 
 fn main() -> io::Result<()> {
+    let args: Vec<String> = env::args().collect();
     //let path = "KX.1325.glb";
     //let path = "BoxInterleaved.glb";
-    let path = "Duck.glb";
+    //let path = "Duck.glb";
+    let path = args.get(1).map(String::as_str).unwrap_or("BoxInterleaved.glb");
     let mut file = File::open(path)?;
 
     let glb = glb::GLBObject::new(&mut file);
