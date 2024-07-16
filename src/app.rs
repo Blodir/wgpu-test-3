@@ -2,7 +2,7 @@ use std::{sync::{Arc, Mutex, mpsc::channel}, path::Path, time::Duration, thread}
 use cgmath::Rotation3;
 use winit::{application::ApplicationHandler, dpi::PhysicalPosition, event::{DeviceEvent, ElementState, KeyEvent, MouseScrollDelta, WindowEvent}, event_loop::{ActiveEventLoop, ControlFlow, EventLoop}, keyboard::{KeyCode, PhysicalKey}, window::{Window, WindowId}};
 use notify::{Watcher, RecommendedWatcher, Config};
-use crate::{glb::GLBObject, renderer};
+use crate::{glb::{GLBObject, GLTFSceneRef}, renderer};
 use pollster::FutureExt as _;
 
 struct ShaderWatcher {
@@ -54,25 +54,25 @@ impl ShaderWatcher {
     }
 }
 
-struct App {
+struct App<'a> {
     renderer: Option<Arc<Mutex<renderer::Renderer>>>,
     window: Option<Arc<Window>>,
     shader_watcher: ShaderWatcher,
-    glb_data: GLBObject,
+    scene: GLTFSceneRef<'a>,
     mouse_btn_is_pressed: bool,
 }
 
-impl App {
-    pub fn new(glb_data: GLBObject) -> Self {
-        Self { renderer: None, window: None, shader_watcher: ShaderWatcher::new(), glb_data, mouse_btn_is_pressed: false }
+impl<'a> App<'a> {
+    pub fn new(scene: GLTFSceneRef<'a>) -> Self {
+        Self { renderer: None, window: None, shader_watcher: ShaderWatcher::new(), scene, mouse_btn_is_pressed: false }
     }
 }
 
-impl ApplicationHandler for App {
+impl ApplicationHandler for App<'_> {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         let window = Arc::new(event_loop.create_window(Window::default_attributes()).unwrap());
         self.window = Some(window.clone());
-        let temp_renderer = renderer::Renderer::new(window.clone(), &self.glb_data).block_on();
+        let temp_renderer = renderer::Renderer::new(window.clone(), &self.scene).block_on();
         let renderer_arc_mutex = Arc::new(Mutex::new(temp_renderer));
         self.renderer = Some(renderer_arc_mutex.clone());
         let mut renderer_wrapper = self.shader_watcher.renderer_wrapper.lock().unwrap();
@@ -166,8 +166,8 @@ impl ApplicationHandler for App {
     }
 }
 
-pub fn run(glb_data: GLBObject) {
-    let mut app = App::new(glb_data);
+pub fn run(scene: GLTFSceneRef) {
+    let mut app = App::new(scene);
     let event_loop = EventLoop::new().unwrap();
     event_loop.set_control_flow(ControlFlow::Wait);
     event_loop.run_app(&mut app).unwrap();

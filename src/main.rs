@@ -2,6 +2,8 @@ use std::env;
 use std::fs::File;
 use std::io::{self, Read};
 
+use glb::GLTFSceneRef;
+
 mod wgpu_context;
 mod camera;
 mod renderer;
@@ -28,7 +30,8 @@ fn main() -> io::Result<()> {
             println!("Parsed JSON: {:#?}", glb_data.json_chunk.chunk_data);
             println!("binary buffer len: {}", glb_data.binary_buffer.len());
             //println!("Binary data: {}", glb_data.accessor_data_buffers.len());
-            app::run(glb_data);
+            let scene_ref = GLTFSceneRef::new(&glb_data);
+            app::run(scene_ref);
         },
         Err(e) => {
             eprintln!("Failed to read file: {}", e);

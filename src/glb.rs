@@ -120,7 +120,7 @@ pub struct Scene {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct JSONData {
+pub struct SceneDescription {
     pub accessors: Vec<Accessor>,
     pub asset: Asset,
     #[serde(rename = "bufferViews")]
@@ -135,7 +135,7 @@ pub struct JSONData {
 pub struct JSONChunk {
     pub chunk_length: u32,
     pub chunk_type: String,
-    pub chunk_data: JSONData,
+    pub chunk_data: SceneDescription,
     pub raw_json: String,
 }
 
@@ -148,13 +148,17 @@ pub enum DataBuffer {
     F32(Vec<f32>),
 }
 
+pub struct AccessorDataElement<'a> {
+    pub buffer_slice: &'a [u8],
+    pub stride: u64,
+}
+
 pub struct GLBObject {
     pub magic: String,
     pub version: u32,
-    pub length: u32, // entire file in bytes
+    pub length: u32,
     pub json_chunk: JSONChunk,
     pub binary_buffer: Vec<u8>,
-    //pub accessor_data_buffers: Vec<DataBuffer>,
 }
 
 pub fn get_accessor_component_count(accessor: &Accessor) -> u8 {
@@ -181,17 +185,6 @@ pub fn get_accessor_component_size(accessor: &Accessor) -> u8 {
     }
 }
 
-fn convert_accessor_element_buffer(accessor: &Accessor, buffer: Vec<u8>) -> DataBuffer {
-    match accessor.component_type {
-        ComponentType::SignedByte => DataBuffer::I8(try_cast_slice(&buffer).unwrap_or_else(|e| panic!("Casting accessor data buffer to i8 failed: {}", e)).to_vec()),
-        ComponentType::UnsignedByte => DataBuffer::U8(try_cast_slice(&buffer).unwrap_or_else(|e| panic!("Casting accessor data buffer to i8 failed: {}", e)).to_vec()),
-        ComponentType::SignedShort => DataBuffer::I16(try_cast_slice(&buffer).unwrap_or_else(|e| panic!("Casting accessor data buffer to i16 failed: {}", e)).to_vec()),
-        ComponentType::UnsignedShort => DataBuffer::U16(try_cast_slice(&buffer).unwrap_or_else(|e| panic!("Casting accessor data buffer to u16 failed: {}", e)).to_vec()),
-        ComponentType::UnsignedInt => DataBuffer::U32(try_cast_slice(&buffer).unwrap_or_else(|e| panic!("Casting accessor data buffer to u32 failed: {}", e)).to_vec()),
-        ComponentType::Float => DataBuffer::F32(try_cast_slice(&buffer).unwrap_or_else(|e| panic!("Casting accessor data buffer to f32 failed: {}", e)).to_vec()),
-    }
-}
-
 impl GLBObject {
     pub fn new(file: &mut File) -> io::Result<GLBObject> {
         let mut magic_buffer = [0u8; 4];
@@ -207,7 +200,7 @@ impl GLBObject {
         let length = u32::from_le_bytes(length_buffer);
 
         let json_chunk = GLBObject::parse_json_chunk(file)?;
-        let binary_buffer = GLBObject::parse_binary_buffer(file, &json_chunk.chunk_data)?;
+        let binary_buffer = GLBObject::parse_binary_buffer(file)?;
 
         Ok(
             Self {
@@ -234,7 +227,7 @@ impl GLBObject {
         Ok(JSONChunk { chunk_length, chunk_type, raw_json: chunk_data_string, chunk_data })
     }
 
-    fn parse_binary_buffer(file: &mut File, json_data: &JSONData) -> io::Result<Vec<u8>> {
+    fn parse_binary_buffer(file: &mut File) -> io::Result<Vec<u8>> {
         let mut length_buffer = [0u8; 4];
         file.read_exact(&mut length_buffer)?;
         let chunk_length = u32::from_le_bytes(length_buffer);
@@ -247,6 +240,40 @@ impl GLBObject {
         file.read_exact(&mut binary_buffer)?;
 
         Ok(binary_buffer)
+    }
+}
+
+pub struct GLTFSceneRef<'a> {
+    pub desc: &'a SceneDescription,
+    pub accessor_data: Vec<AccessorDataElement<'a>>,
+}
+
+impl<'a> GLTFSceneRef<'a> {
+    pub fn new(glb_object: &'a GLBObject) -> Self {
+        let desc = &glb_object.json_chunk.chunk_data;
+        let accessor_data = GLTFSceneRef::get_accessor_data(&glb_object.binary_buffer, &desc);
+        Self { desc, accessor_data }
+    }
+
+    fn get_accessor_data(buffer: &'a Vec<u8>, desc: &SceneDescription) -> Vec<AccessorDataElement<'a>> {
+        let mut accessor_data: Vec<AccessorDataElement<'a>> = vec![];
+        for accessor in &desc.accessors {
+            let buffer_view = &desc.buffer_views[accessor.buffer_view as usize];
+            let start_offset = buffer_view.byte_offset.unwrap_or(0u32) as usize + accessor.byte_offset.unwrap_or(0u32) as usize;
+            let end_offset = buffer_view.byte_offset.unwrap_or(0u32) as usize + buffer_view.byte_length as usize;
+            let slice = &buffer[start_offset..end_offset];
+
+            let stride = {
+                let data_element_size =
+                    get_accessor_component_count(accessor) as u64
+                    * get_accessor_component_size(accessor) as u64;
+                let s = buffer_view.byte_stride.unwrap_or(0u32);
+                if s > 0 { s as u64 } else { data_element_size }
+            };
+
+            accessor_data.push(AccessorDataElement { buffer_slice: slice, stride });
+        }
+        accessor_data
     }
 }
 

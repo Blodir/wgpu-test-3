@@ -9,7 +9,7 @@ use pollster::FutureExt as _;
 use crate::camera::{Camera, CameraBindGroups};
 use crate::wgpu_context::{WgpuContext, OPENGL_TO_WGPU_MATRIX};
 
-use crate::glb::{get_accessor_component_count, get_accessor_component_size, GLBObject};
+use crate::glb::{get_accessor_component_count, get_accessor_component_size, GLBObject, GLTFSceneRef};
 
 struct DepthTexture {
     texture: wgpu::Texture,
@@ -75,61 +75,40 @@ pub struct Renderer {
 }
 
 impl Renderer {
-    pub async fn new(window: Arc<Window>, glb_object: &GLBObject) -> Self {
+    pub async fn new<'a>(window: Arc<Window>, scene: &GLTFSceneRef<'a>) -> Self {
         let wgpu_context = WgpuContext::new(window).await;
         let camera = Camera::new(&wgpu_context);
         let camera_bind_groups = CameraBindGroups::new(&camera, &wgpu_context);
 
-        let primitive = &glb_object.json_chunk.chunk_data.meshes.first().unwrap().primitives.first().unwrap();
+        let primitive = &scene.desc.meshes.first().unwrap().primitives.first().unwrap();
 
         let vertex_position_accessor_index = primitive.attributes.position as usize;
         let vertex_normal_accessor_index = primitive.attributes.normal as usize;
         let vertex_index_accessor_index = primitive.indices as usize;
 
-        let vertex_position_accessor = &glb_object.json_chunk.chunk_data.accessors[vertex_position_accessor_index];
-        let vertex_normal_accessor = &glb_object.json_chunk.chunk_data.accessors[vertex_normal_accessor_index];
-        let vertex_index_accessor = &glb_object.json_chunk.chunk_data.accessors[vertex_index_accessor_index];
-
-        let vertex_position_accessor_buffer_view = &glb_object.json_chunk.chunk_data.buffer_views[vertex_position_accessor.buffer_view as usize];
-        let vertex_normal_accessor_buffer_view = &glb_object.json_chunk.chunk_data.buffer_views[vertex_normal_accessor.buffer_view as usize];
-        let vertex_index_accessor_buffer_view = &glb_object.json_chunk.chunk_data.buffer_views[vertex_index_accessor.buffer_view as usize];
-
-        let vertex_position_start_offset = (vertex_position_accessor_buffer_view.byte_offset.unwrap_or(0u32) + vertex_position_accessor.byte_offset.unwrap_or(0u32)) as usize;
-        let vertex_normal_start_offset = (vertex_normal_accessor_buffer_view.byte_offset.unwrap_or(0u32) + vertex_normal_accessor.byte_offset.unwrap_or(0u32)) as usize;
-        let vertex_index_start_offset = (vertex_index_accessor_buffer_view.byte_offset.unwrap_or(0u32) + vertex_index_accessor.byte_offset.unwrap_or(0u32)) as usize;
-        let vertex_position_end_offset = vertex_position_accessor_buffer_view.byte_offset.unwrap_or(0u32) as usize + vertex_position_accessor_buffer_view.byte_length as usize;
-        let vertex_normal_end_offset = vertex_normal_accessor_buffer_view.byte_offset.unwrap_or(0u32) as usize + vertex_normal_accessor_buffer_view.byte_length as usize;
-        let vertex_index_end_offset = vertex_index_accessor_buffer_view.byte_offset.unwrap_or(0u32) as usize + vertex_index_accessor_buffer_view.byte_length as usize;
-
-        let vertex_position_slice = &glb_object.binary_buffer[vertex_position_start_offset..vertex_position_end_offset];
-        let vertex_normal_slice = &glb_object.binary_buffer[vertex_normal_start_offset..vertex_normal_end_offset];
-        let vertex_index_slice = &glb_object.binary_buffer[vertex_index_start_offset..vertex_index_end_offset];
-
-        let vertex_position_buffer = wgpu_context.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Vertex Buffer"),
-            contents: vertex_position_slice,
-            usage: wgpu::BufferUsages::VERTEX,
-        });
-        let vertex_normal_buffer = wgpu_context.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Normal Buffer"),
-            contents: vertex_normal_slice,
-            usage: wgpu::BufferUsages::VERTEX,
-        });
+        let vertex_position_buffer = wgpu_context.device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Vertex Buffer"),
+                contents: scene.accessor_data[vertex_position_accessor_index].buffer_slice,
+                usage: wgpu::BufferUsages::VERTEX,
+            }
+        );
+        let vertex_normal_buffer = wgpu_context.device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Normal Buffer"),
+                contents: scene.accessor_data[vertex_normal_accessor_index].buffer_slice,
+                usage: wgpu::BufferUsages::VERTEX,
+            }
+        );
         let vertex_index_buffer = wgpu_context.device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
                 label: Some("Index Buffer"),
-                contents: vertex_index_slice,
+                contents: scene.accessor_data[vertex_index_accessor_index].buffer_slice,
                 usage: wgpu::BufferUsages::INDEX,
             }
         );
-        let vertex_index_count = vertex_index_accessor.count;
-
-        let data_element_size = get_accessor_component_count(vertex_position_accessor) as u64 * get_accessor_component_size(vertex_position_accessor) as u64;
-
-        let vertex_buffer_stride = match vertex_position_accessor_buffer_view.byte_stride {
-            Some(stride) => if stride > 0 { stride as u64 } else { data_element_size },
-            None => data_element_size,
-        };
+        let vertex_index_count = scene.desc.accessors[vertex_index_accessor_index].count;
+        let vertex_buffer_stride = scene.accessor_data[vertex_position_accessor_index].stride;
 
         let vertex_buffer_layouts = [
             VertexBufferLayout {
