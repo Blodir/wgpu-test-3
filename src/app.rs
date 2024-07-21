@@ -2,20 +2,22 @@ use std::{sync::{Arc, Mutex, mpsc::channel}, path::Path, time::Duration, thread}
 use cgmath::Rotation3;
 use winit::{application::ApplicationHandler, dpi::PhysicalPosition, event::{DeviceEvent, ElementState, KeyEvent, MouseScrollDelta, WindowEvent}, event_loop::{ActiveEventLoop, ControlFlow, EventLoop}, keyboard::{KeyCode, PhysicalKey}, window::{Window, WindowId}};
 use notify::{Watcher, RecommendedWatcher, Config};
-use crate::{glb::{GLBObject, GLTFSceneRef}, renderer};
 use pollster::FutureExt as _;
 
-struct ShaderWatcher {
+use crate::renderer::{glb::{GLBObject, GLTFSceneRef}, renderer::Renderer, PipelineCache, ShaderCache};
+
+/*
+struct ShaderWatcher<'cache> {
     watcher: RecommendedWatcher,
-    pub renderer_wrapper: Arc<Mutex<Option<Arc<Mutex<renderer::Renderer>>>>>,
+    pub renderer_wrapper: Arc<Mutex<Option<Arc<Mutex<Renderer<'cache>>>>>>,
 }
-impl ShaderWatcher {
+impl<'cache> ShaderWatcher<'cache> {
     pub fn new() -> Self {
         let (tx, rx) = channel();
         let mut watcher = RecommendedWatcher::new(tx, Config::default()).unwrap();
         watcher.watch(Path::new("src/shaders/"), notify::RecursiveMode::Recursive).unwrap();
 
-        let renderer_wrapper_arc_mutex: Arc<Mutex<Option<Arc<Mutex<renderer::Renderer>>>>> = Arc::new(Mutex::new(None));
+        let renderer_wrapper_arc_mutex: Arc<Mutex<Option<Arc<Mutex<Renderer<'cache>>>>>> = Arc::new(Mutex::new(None));
         let renderer_wrapper_clone = renderer_wrapper_arc_mutex.clone();
         thread::spawn(move || {
             loop {
@@ -53,30 +55,41 @@ impl ShaderWatcher {
         ShaderWatcher { watcher, renderer_wrapper: renderer_wrapper_arc_mutex }
     }
 }
+*/
 
-struct App<'a> {
-    renderer: Option<Arc<Mutex<renderer::Renderer>>>,
+struct App<'scene, 'surface> {
+    renderer: Option<Arc<Mutex<Renderer<'surface>>>>,
     window: Option<Arc<Window>>,
-    shader_watcher: ShaderWatcher,
-    scene: GLTFSceneRef<'a>,
+    //shader_watcher: ShaderWatcher<'cache>,
+    scene: &'scene GLTFSceneRef<'scene>,
     mouse_btn_is_pressed: bool,
+    pipeline_cache: PipelineCache,
+    shader_cache: ShaderCache,
 }
 
-impl<'a> App<'a> {
-    pub fn new(scene: GLTFSceneRef<'a>) -> Self {
-        Self { renderer: None, window: None, shader_watcher: ShaderWatcher::new(), scene, mouse_btn_is_pressed: false }
+impl<'scene> App<'scene, '_> {
+    pub fn new(
+        scene: &'scene GLTFSceneRef<'scene>,
+    ) -> Self {
+        Self {
+            renderer: None, window: None, //shader_watcher: ShaderWatcher::new(),
+            scene, mouse_btn_is_pressed: false, pipeline_cache: PipelineCache::default(), shader_cache: ShaderCache::default()
+        }
     }
 }
 
-impl ApplicationHandler for App<'_> {
+impl<'scene, 'surface> ApplicationHandler for App<'scene, 'surface> {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         let window = Arc::new(event_loop.create_window(Window::default_attributes()).unwrap());
         self.window = Some(window.clone());
-        let temp_renderer = renderer::Renderer::new(window.clone(), &self.scene).block_on();
+
+        let temp_renderer = Renderer::new(window.clone(), self.scene).block_on();
         let renderer_arc_mutex = Arc::new(Mutex::new(temp_renderer));
         self.renderer = Some(renderer_arc_mutex.clone());
+        /*
         let mut renderer_wrapper = self.shader_watcher.renderer_wrapper.lock().unwrap();
         *renderer_wrapper = Some(renderer_arc_mutex.clone());
+        */
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
@@ -88,7 +101,7 @@ impl ApplicationHandler for App<'_> {
                 if let Some(ref mut renderer_arc_mutex) = self.renderer {
                     let mut renderer = renderer_arc_mutex.lock().unwrap();
                     // renderer.update();
-                    match renderer.render() {
+                    match renderer.render(&mut self.pipeline_cache, &mut self.shader_cache) {
                         Ok(_) => {},
                         Err(e) => eprintln!("render error: {:?}", e),
                     }
@@ -166,8 +179,11 @@ impl ApplicationHandler for App<'_> {
     }
 }
 
-pub fn run(scene: GLTFSceneRef) {
-    let mut app = App::new(scene);
+pub fn run(glb_data: &GLBObject) {
+    let scene_ref = GLTFSceneRef::new(&glb_data);
+    let mut pipeline_cache = PipelineCache::default();
+    let mut shader_cache = ShaderCache::default();
+    let mut app = App::new(&scene_ref);
     let event_loop = EventLoop::new().unwrap();
     event_loop.set_control_flow(ControlFlow::Wait);
     event_loop.run_app(&mut app).unwrap();

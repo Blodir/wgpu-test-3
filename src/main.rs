@@ -2,13 +2,11 @@ use std::env;
 use std::fs::File;
 use std::io::{self, Read};
 
-use glb::GLTFSceneRef;
+use renderer::glb::GLTFSceneRef;
+use renderer::{PipelineCache, ShaderCache};
 
-mod wgpu_context;
-mod camera;
 mod renderer;
 mod app;
-mod glb;
 
 fn main() -> io::Result<()> {
     let args: Vec<String> = env::args().collect();
@@ -18,7 +16,7 @@ fn main() -> io::Result<()> {
     let path = args.get(1).map(String::as_str).unwrap_or("BoxInterleaved.glb");
     let mut file = File::open(path)?;
 
-    let glb = glb::GLBObject::new(&mut file);
+    let glb = renderer::glb::GLBObject::new(&mut file);
 
     match glb {
         Ok(glb_data) => {
@@ -30,8 +28,7 @@ fn main() -> io::Result<()> {
             println!("Parsed JSON: {:#?}", glb_data.json_chunk.chunk_data);
             println!("binary buffer len: {}", glb_data.binary_buffer.len());
             //println!("Binary data: {}", glb_data.accessor_data_buffers.len());
-            let scene_ref = GLTFSceneRef::new(&glb_data);
-            app::run(scene_ref);
+            app::run(&glb_data);
         },
         Err(e) => {
             eprintln!("Failed to read file: {}", e);
