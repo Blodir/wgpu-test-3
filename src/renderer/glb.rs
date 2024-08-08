@@ -108,15 +108,18 @@ pub struct Mesh {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Node {
     pub name: Option<String>,
-    pub mesh: Option<u8>,
-    pub rotation: Option<[f64; 4]>,
+    pub mesh: Option<usize>,
     pub translation: Option<[f64; 3]>,
+    pub rotation: Option<[f64; 4]>,
+    pub scale: Option<[f64; 3]>,
+    pub matrix: Option<[f64; 16]>,
+    pub children: Option<Vec<usize>>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Scene {
     pub name: Option<String>,
-    pub nodes: Vec<u8>,
+    pub nodes: Vec<usize>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -128,7 +131,7 @@ pub struct SceneDescription {
     pub buffers: Vec<Buffer>,
     pub meshes: Vec<Mesh>,
     pub nodes: Vec<Node>,
-    pub scene: u8,
+    pub scene: usize,
     pub scenes: Vec<Scene>,
 }
 

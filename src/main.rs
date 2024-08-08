@@ -8,6 +8,14 @@ use renderer::{PipelineCache, ShaderCache};
 mod renderer;
 mod app;
 
+/*
+    mesh instancing
+    node transforms
+    shader reloading
+    move camera bind group layout
+    refactoring ??
+*/
+
 fn main() -> io::Result<()> {
     let args: Vec<String> = env::args().collect();
     //let path = "KX.1325.glb";

@@ -3,7 +3,6 @@ use wgpu::{util::DeviceExt, BindGroup, BindGroupLayout};
 
 use crate::renderer::wgpu_context::{WgpuContext, OPENGL_TO_WGPU_MATRIX};
 
-
 pub struct Camera {
     pub eye: cgmath::Point3<f32>,
     pub target: cgmath::Point3<f32>,

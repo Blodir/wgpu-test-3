@@ -1,5 +1,5 @@
 use std::{sync::{Arc, Mutex, mpsc::channel}, path::Path, time::Duration, thread};
-use cgmath::Rotation3;
+use cgmath::{InnerSpace, Rotation3};
 use winit::{application::ApplicationHandler, dpi::PhysicalPosition, event::{DeviceEvent, ElementState, KeyEvent, MouseScrollDelta, WindowEvent}, event_loop::{ActiveEventLoop, ControlFlow, EventLoop}, keyboard::{KeyCode, PhysicalKey}, window::{Window, WindowId}};
 use notify::{Watcher, RecommendedWatcher, Config};
 use pollster::FutureExt as _;
@@ -63,6 +63,7 @@ struct App<'scene, 'surface> {
     //shader_watcher: ShaderWatcher<'cache>,
     scene: &'scene GLTFSceneRef<'scene>,
     mouse_btn_is_pressed: bool,
+    shift_is_pressed: bool,
     pipeline_cache: PipelineCache,
     shader_cache: ShaderCache,
 }
@@ -73,7 +74,8 @@ impl<'scene> App<'scene, '_> {
     ) -> Self {
         Self {
             renderer: None, window: None, //shader_watcher: ShaderWatcher::new(),
-            scene, mouse_btn_is_pressed: false, pipeline_cache: PipelineCache::default(), shader_cache: ShaderCache::default()
+            scene, mouse_btn_is_pressed: false, shift_is_pressed: false,
+            pipeline_cache: PipelineCache::default(), shader_cache: ShaderCache::default()
         }
     }
 }
@@ -83,7 +85,7 @@ impl<'scene, 'surface> ApplicationHandler for App<'scene, 'surface> {
         let window = Arc::new(event_loop.create_window(Window::default_attributes()).unwrap());
         self.window = Some(window.clone());
 
-        let temp_renderer = Renderer::new(window.clone(), self.scene).block_on();
+        let temp_renderer = Renderer::new(window.clone(), self.scene, &mut self.pipeline_cache, &mut self.shader_cache).block_on();
         let renderer_arc_mutex = Arc::new(Mutex::new(temp_renderer));
         self.renderer = Some(renderer_arc_mutex.clone());
         /*
@@ -101,7 +103,7 @@ impl<'scene, 'surface> ApplicationHandler for App<'scene, 'surface> {
                 if let Some(ref mut renderer_arc_mutex) = self.renderer {
                     let mut renderer = renderer_arc_mutex.lock().unwrap();
                     // renderer.update();
-                    match renderer.render(&mut self.pipeline_cache, &mut self.shader_cache) {
+                    match renderer.render() {
                         Ok(_) => {},
                         Err(e) => eprintln!("render error: {:?}", e),
                     }
@@ -114,7 +116,7 @@ impl<'scene, 'surface> ApplicationHandler for App<'scene, 'surface> {
                     let camera = renderer.get_camera_mut();
                     match delta {
                         MouseScrollDelta::LineDelta(x, y) => {
-                            camera.eye.z = (camera.eye.z + (-y as f32)).max(0f32);
+                            camera.eye.z = (camera.eye.z + ((if self.shift_is_pressed { 10f32 } else { 1f32 }) * -y as f32)).max(0f32);
                             renderer.update_camera_bindings();
                             self.window.as_mut().unwrap().request_redraw();
                         },
@@ -137,6 +139,17 @@ impl<'scene, 'surface> ApplicationHandler for App<'scene, 'surface> {
                     _ => ()
                 };
             },
+            WindowEvent::KeyboardInput { device_id, event, is_synthetic } => {
+                match event {
+                    KeyEvent { physical_key: PhysicalKey::Code(KeyCode::ShiftLeft), state: ElementState::Pressed, .. } => {
+                        self.shift_is_pressed = true;
+                    },
+                    KeyEvent { physical_key: PhysicalKey::Code(KeyCode::ShiftLeft), state: ElementState::Released, .. } => {
+                        self.shift_is_pressed = false;
+                    },
+                    _ => ()
+                }
+            }
             WindowEvent::Resized(physical_size) => {
                 if let Some(ref mut renderer_arc_mutex) = self.renderer {
                     let mut renderer = renderer_arc_mutex.lock().unwrap();
@@ -156,20 +169,22 @@ impl<'scene, 'surface> ApplicationHandler for App<'scene, 'surface> {
     }
 
     fn device_event(
-            &mut self,
-            event_loop: &ActiveEventLoop,
-            device_id: winit::event::DeviceId,
-            event: DeviceEvent,
-        ) {
+        &mut self,
+        event_loop: &ActiveEventLoop,
+        device_id: winit::event::DeviceId,
+        event: DeviceEvent,
+    ) {
         match event {
             DeviceEvent::MouseMotion { delta: (x, y) } => {
                 if !self.mouse_btn_is_pressed { return (); }
                 if let Some(ref mut renderer_arc_mutex) = self.renderer {
                     let mut renderer = renderer_arc_mutex.lock().unwrap();
                     let camera = renderer.get_camera_mut();
-                    let rot_x = cgmath::Quaternion::from_angle_y(cgmath::Deg((-x as f32) / 5f32));
-                    let rot_y = cgmath::Quaternion::from_angle_x(cgmath::Deg((-y as f32) / 5f32));
-                    camera.rotation = camera.rotation * rot_x * rot_y;
+                    let sensitivity = 5f32;
+                    let rot_x = cgmath::Quaternion::from_angle_y(cgmath::Deg((-x as f32) / sensitivity));
+                    let rot_y = cgmath::Quaternion::from_angle_x(cgmath::Deg((-y as f32) / sensitivity));
+                    camera.rotation = (rot_y * camera.rotation) * rot_x;
+                    camera.rotation.normalize();
                     renderer.update_camera_bindings();
                     self.window.as_mut().unwrap().request_redraw();
                 }
@@ -181,8 +196,6 @@ impl<'scene, 'surface> ApplicationHandler for App<'scene, 'surface> {
 
 pub fn run(glb_data: &GLBObject) {
     let scene_ref = GLTFSceneRef::new(&glb_data);
-    let mut pipeline_cache = PipelineCache::default();
-    let mut shader_cache = ShaderCache::default();
     let mut app = App::new(&scene_ref);
     let event_loop = EventLoop::new().unwrap();
     event_loop.set_control_flow(ControlFlow::Wait);
