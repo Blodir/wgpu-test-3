@@ -30,23 +30,27 @@ impl From<Matrix4<f32>> for Matrix4f32 {
     }
 }
 
-struct PrimitiveRenderContext2 {
+struct PrimitiveRenderContext {
+    mesh_idx: usize,
+    primitive_idx: usize,
     vertex_buffers: Vec<wgpu::Buffer>,
     vertex_index_buffer: wgpu::Buffer,
     vertex_index_count: u32,
+    bind_groups: Vec<wgpu::BindGroup>,
 }
 
 /*
 * Contains the subset of the primitives of a mesh that use the same pipeline
 */
 struct MeshRenderContext {
-    primitives: Vec<PrimitiveRenderContext2>,
+    primitives: Vec<PrimitiveRenderContext>,
     instance_buffer: wgpu::Buffer,
     instance_count: u32,
 }
 
 struct PipelineRenderContext {
     pipeline: Rc<wgpu::RenderPipeline>,
+    bind_group_layouts: Rc<Vec<wgpu::BindGroupLayout>>,
     meshes: Vec<MeshRenderContext>,
 }
 
@@ -126,10 +130,13 @@ fn scene_to_pipeline_render_context_map<'scene>(
 
     for mesh_idx in 0..scene.desc.meshes.len() {
         let mesh = &scene.desc.meshes[mesh_idx];
-        let mut mesh_context_map: HashMap<PipelineConfig, Vec<PrimitiveRenderContext2>> = HashMap::new();
-        for primitive in &mesh.primitives {
+        let mut mesh_context_map: HashMap<PipelineConfig, Vec<PrimitiveRenderContext>> = HashMap::new();
+        for primitive_idx in 0..mesh.primitives.len() {
+            let primitive = &mesh.primitives[primitive_idx];
+            // Build pipeline config
             let pipeline_config = get_primitive_pipeline_config(scene, primitive);
 
+            let bind_groups: Vec<wgpu::BindGroup> = vec![];
             let mut vertex_buffers = vec![
                 wgpu_context.device.create_buffer_init(
                     &wgpu::util::BufferInitDescriptor {
@@ -161,10 +168,13 @@ fn scene_to_pipeline_render_context_map<'scene>(
             );
             let vertex_index_count = scene.desc.accessors[primitive.indices as usize].count;
 
-            let primitive_render_context = PrimitiveRenderContext2 {
+            let primitive_render_context = PrimitiveRenderContext {
+                mesh_idx,
+                primitive_idx,
                 vertex_buffers,
                 vertex_index_count,
                 vertex_index_buffer,
+                bind_groups,
             };
 
             mesh_context_map.entry(
@@ -176,21 +186,54 @@ fn scene_to_pipeline_render_context_map<'scene>(
 
         let instance_data: &Vec<Matrix4f32> = mesh_instances_map.get(&mesh_idx).unwrap();
 
-        for (pipeline_config, primitive_render_contexts) in mesh_context_map.into_iter() {
+        // Use pipeline config to get pipeline and bind group layouts
+        for (pipeline_config, mut primitive_render_contexts) in mesh_context_map.into_iter() {
             let render_context = pipeline_render_context_map.entry(
                 pipeline_config.clone()
-            ).or_insert(
-                PipelineRenderContext {
-                    pipeline: pipeline_cache.get_pipeline(
+            ).or_insert_with(
+                || {
+                    let (pipeline, bind_group_layouts) = pipeline_cache.get_pipeline(
                         &pipeline_config,
                         &global_bind_group_layouts,
                         &wgpu_context.device,
                         &wgpu_context.surface_config,
                         shader_cache
-                    ),
-                    meshes: vec![]
+                    );
+                    PipelineRenderContext {
+                        pipeline,
+                        bind_group_layouts,
+                        meshes: vec![]
+                    }
                 }
             );
+
+            // set up bind groups for each primitive
+            for p in &mut primitive_render_contexts {
+                let primitive = &scene.desc.meshes[p.mesh_idx].primitives[p.primitive_idx];
+                if let Some(n) = primitive.material {
+                    let base_color_factor = scene.desc.materials[n].pbr_metallic_roughness.base_color_factor.unwrap_or([1f64, 1f64, 1f64, 1f64]).map(|x| x as f32);
+                    let buffer = wgpu_context.device.create_buffer_init(
+                        &wgpu::util::BufferInitDescriptor {
+                            label: Some("Material Buffer"),
+                            contents: bytemuck::cast_slice(&base_color_factor),
+                            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                        }
+                    );
+                    p.bind_groups.push(
+                        wgpu_context.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                            layout: &render_context.bind_group_layouts[1],
+                            entries: &[
+                                wgpu::BindGroupEntry {
+                                    binding: 0,
+                                    resource: buffer.as_entire_binding(),
+                                }
+                            ],
+                            label: Some("Material Bind Group"),
+                        })
+                    );
+                }
+
+            }
 
             let instance_buffer = wgpu_context.device.create_buffer_init(
                 &wgpu::util::BufferInitDescriptor {
@@ -262,6 +305,9 @@ fn render(
             render_pass.set_pipeline(&ctx.pipeline);
             for mesh_render_context in &ctx.meshes {
                 for primitive_render_context in &mesh_render_context.primitives {
+                    for i in 0..primitive_render_context.bind_groups.len() {
+                        render_pass.set_bind_group(1u32 + i as u32, &primitive_render_context.bind_groups[i], &[]);
+                    }
                     render_pass.set_vertex_buffer(0, mesh_render_context.instance_buffer.slice(..));
                     for i in 0..primitive_render_context.vertex_buffers.len() {
                         render_pass.set_vertex_buffer(i as u32 + 1, primitive_render_context.vertex_buffers[i].slice(..));

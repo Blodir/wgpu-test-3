@@ -181,10 +181,8 @@ impl<'scene, 'surface> ApplicationHandler for App<'scene, 'surface> {
                     let mut renderer = renderer_arc_mutex.lock().unwrap();
                     let camera = renderer.get_camera_mut();
                     let sensitivity = 5f32;
-                    let rot_x = cgmath::Quaternion::from_angle_y(cgmath::Deg((-x as f32) / sensitivity));
-                    let rot_y = cgmath::Quaternion::from_angle_x(cgmath::Deg((-y as f32) / sensitivity));
-                    camera.rotation = (rot_y * camera.rotation) * rot_x;
-                    camera.rotation.normalize();
+                    camera.rot_x = camera.rot_x - cgmath::Deg(x as f32 / sensitivity);
+                    camera.rot_y = camera.rot_y - cgmath::Deg(y as f32 / sensitivity);
                     renderer.update_camera_bindings();
                     self.window.as_mut().unwrap().request_redraw();
                 }

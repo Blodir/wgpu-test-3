@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{self, Read, Seek};
 use bytemuck::{cast_slice, try_cast_slice};
@@ -37,6 +38,12 @@ pub enum AccessorType {
     Mat3,
     #[serde(rename = "MAT4")]
     Mat4,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub enum MimeType {
+    #[serde(rename = "image/png")]
+    PNG,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -91,18 +98,72 @@ pub struct PrimitiveAttributes {
     pub position: u32,
     #[serde(rename = "NORMAL")]
     pub normal: Option<u32>,
+    #[serde(rename = "TANGENT")]
+    pub tangent: Option<u32>,
+
+    /* The rest of the fields can't be mapped so they're collected in a hashmap:
+    * TEXCOORD_n
+    * COLOR_n
+    * JOINTS_n
+    * WEIGHTS_n
+    */
+    #[serde(flatten)]
+    pub additional_fields: HashMap<String, u32>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Primitive {
     pub indices: u32,
     pub attributes: PrimitiveAttributes,
+    pub material: Option<usize>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Mesh {
     pub name: Option<String>,
     pub primitives: Vec<Primitive>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct BaseColorTexture {
+    pub index: usize,
+    #[serde(rename = "texCoord")]
+    pub tex_coord: Option<usize>,
+}
+
+/*
+* Green channel = roughness
+* Blue channel = metalness
+*/
+#[derive(Serialize, Deserialize, Debug)]
+pub struct MetallicRoughnessTexture {
+    pub index: usize,
+    #[serde(rename = "texCoord")]
+    pub tex_coord: usize,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct PbrMetallicRoughness {
+    #[serde(rename = "baseColorFactor")]
+    pub base_color_factor: Option<[f64; 4]>,
+    #[serde(rename = "metallicFactor")]
+    pub metallic_factor: Option<f64>,
+    #[serde(rename = "roughnessFactor")]
+    pub roughness_factor: Option<f64>,
+
+    #[serde(rename = "baseColorTexture")]
+    pub base_color_texture: Option<BaseColorTexture>,
+    #[serde(rename = "metallicRoughnessTexture")]
+    pub metallic_roughness_texture: Option<MetallicRoughnessTexture>,
+    // ..
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Material {
+    pub name: Option<String>,
+    #[serde(rename = "pbrMetallicRoughness")]
+    pub pbr_metallic_roughness: PbrMetallicRoughness,
+    // ..
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -122,6 +183,34 @@ pub struct Scene {
     pub nodes: Vec<usize>,
 }
 
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Texture {
+    pub source: usize,
+    pub sampler: Option<usize>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Sampler {
+    #[serde(rename = "magFilter")]
+    pub mag_filter: u32,
+    #[serde(rename = "minFilter")]
+    pub min_filter: u32,
+    #[serde(rename = "wrapS")]
+    pub wrap_s: u32,
+    #[serde(rename = "wrapT")]
+    pub wrap_t: u32,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Image {
+    pub uri: Option<String>,
+    #[serde(rename = "bufferView")]
+    pub buffer_view: Option<usize>,
+    #[serde(rename = "mimeType")]
+    pub mime_type: Option<MimeType>,
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct SceneDescription {
     pub accessors: Vec<Accessor>,
@@ -133,6 +222,10 @@ pub struct SceneDescription {
     pub nodes: Vec<Node>,
     pub scene: usize,
     pub scenes: Vec<Scene>,
+    pub materials: Vec<Material>,
+    pub textures: Vec<Texture>,
+    pub images: Vec<Image>,
+    pub samplers: Vec<Sampler>,
 }
 
 pub struct JSONChunk {
@@ -140,15 +233,6 @@ pub struct JSONChunk {
     pub chunk_type: String,
     pub chunk_data: SceneDescription,
     pub raw_json: String,
-}
-
-pub enum DataBuffer {
-    I8(Vec<i8>),
-    U8(Vec<u8>),
-    I16(Vec<i16>),
-    U16(Vec<u16>),
-    U32(Vec<u32>),
-    F32(Vec<f32>),
 }
 
 pub struct AccessorDataElement<'a> {

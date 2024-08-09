@@ -6,7 +6,8 @@ use pollster::FutureExt as _;
 
 #[derive(Hash, Eq, PartialEq, Debug, Clone, Ord, PartialOrd)]
 pub enum ShaderCapability {
-    Normals
+    VertexNormals,
+    Material,
 }
 
 #[derive(Default)]
@@ -84,7 +85,7 @@ impl Shader {
     }
 
     fn choose_shader(caps: &BTreeSet<ShaderCapability>) -> String {
-        if caps.contains(&ShaderCapability::Normals) {
+        if caps.contains(&ShaderCapability::VertexNormals) && caps.contains(&ShaderCapability::Material) {
             String::from("src/renderer/shaders/shader.wgsl")
         } else {
             String::from("src/renderer/shaders/without_normals.wgsl")

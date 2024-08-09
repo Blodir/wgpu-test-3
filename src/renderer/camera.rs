@@ -1,4 +1,4 @@
-use cgmath::{EuclideanSpace, Point3, Rotation3, SquareMatrix, Vector4};
+use cgmath::{EuclideanSpace, Point3, Rotation3, SquareMatrix, Transform, Vector4};
 use wgpu::{util::DeviceExt, BindGroup, BindGroupLayout};
 
 use crate::renderer::wgpu_context::{WgpuContext, OPENGL_TO_WGPU_MATRIX};
@@ -11,7 +11,8 @@ pub struct Camera {
     pub fovy: f32,
     pub znear: f32,
     pub zfar: f32,
-    pub rotation: cgmath::Quaternion<f32>,
+    pub rot_x: cgmath::Deg<f32>,
+    pub rot_y: cgmath::Deg<f32>,
 }
 
 impl Camera {
@@ -23,10 +24,11 @@ impl Camera {
         let fovy = 45.0f32;
         let znear = 0.1f32;
         let zfar = 100.0f32;
-        let rotation = cgmath::Quaternion::from_angle_y(cgmath::Deg(0f32));
+        let rot_x = cgmath::Deg(0f32);
+        let rot_y = cgmath::Deg(0f32);
 
         Self {
-            eye, target, up, aspect, fovy, znear, zfar, rotation
+            eye, target, up, aspect, fovy, znear, zfar, rot_x, rot_y
         }
     }
 }
@@ -38,8 +40,9 @@ pub struct CameraBindGroups {
 
 impl CameraBindGroups {
     pub fn new(camera: &Camera, wgpu_context: &WgpuContext) -> CameraBindGroups {
-        let eye_rotated = cgmath::Matrix4::from(camera.rotation) * Vector4::new(camera.eye.x, camera.eye.y, camera.eye.z, 1.0);
-        let view = cgmath::Matrix4::look_at_rh(Point3::from_vec(eye_rotated.truncate()), camera.target, camera.up);
+        let rot = cgmath::Quaternion::from_angle_y(camera.rot_x) * cgmath::Quaternion::from_angle_x(camera.rot_y);
+        let eye_rotated = cgmath::Matrix4::from(rot).transform_point(camera.eye);
+        let view = cgmath::Matrix4::look_at_rh(eye_rotated, camera.target, camera.up);
         let proj = cgmath::perspective(cgmath::Deg(camera.fovy), camera.aspect, camera.znear, camera.zfar);
         let view_proj = OPENGL_TO_WGPU_MATRIX * proj * view;
         let view_proj_m: [[f32; 4]; 4] = view_proj.into();

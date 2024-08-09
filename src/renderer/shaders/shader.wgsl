@@ -1,6 +1,9 @@
 @group(0) @binding(0)
 var<uniform> view_proj: mat4x4<f32>;
 
+@group(1) @binding(0)
+var<uniform> material: vec4<f32>;
+
 struct InstanceInput {
     @location(0) m_1: vec4<f32>,
     @location(1) m_2: vec4<f32>,
@@ -41,6 +44,6 @@ fn vs_main(
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     var lightDir = normalize(vec3<f32>(-1., 1., 1.));
     var color = (dot(in.normal, lightDir) + 1.) / 2.;
-    return vec4<f32>(vec3(color), 1.);
+    return vec4<f32>(vec3(color), 1.) * material;
 }
 
