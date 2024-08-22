@@ -1,97 +1,49 @@
 use std::{sync::{Arc, Mutex, mpsc::channel}, path::Path, time::Duration, thread};
 use cgmath::{InnerSpace, Rotation3};
-use winit::{application::ApplicationHandler, dpi::PhysicalPosition, event::{DeviceEvent, ElementState, KeyEvent, MouseScrollDelta, WindowEvent}, event_loop::{ActiveEventLoop, ControlFlow, EventLoop}, keyboard::{KeyCode, PhysicalKey}, window::{Window, WindowId}};
+use winit::{application::ApplicationHandler, dpi::PhysicalPosition, event::{DeviceEvent, ElementState, Event, KeyEvent, MouseScrollDelta, WindowEvent}, event_loop::{ActiveEventLoop, ControlFlow, EventLoop}, keyboard::{KeyCode, PhysicalKey}, window::{Window, WindowId}};
 use notify::{Watcher, RecommendedWatcher, Config};
 use pollster::FutureExt as _;
 
-use crate::renderer::{glb::{GLBObject, GLTFSceneRef}, renderer::Renderer, PipelineCache, ShaderCache};
+use crate::renderer::{gltf::GLTF, renderer::Renderer};
 
-/*
-struct ShaderWatcher<'cache> {
-    watcher: RecommendedWatcher,
-    pub renderer_wrapper: Arc<Mutex<Option<Arc<Mutex<Renderer<'cache>>>>>>,
-}
-impl<'cache> ShaderWatcher<'cache> {
-    pub fn new() -> Self {
-        let (tx, rx) = channel();
-        let mut watcher = RecommendedWatcher::new(tx, Config::default()).unwrap();
-        watcher.watch(Path::new("src/shaders/"), notify::RecursiveMode::Recursive).unwrap();
-
-        let renderer_wrapper_arc_mutex: Arc<Mutex<Option<Arc<Mutex<Renderer<'cache>>>>>> = Arc::new(Mutex::new(None));
-        let renderer_wrapper_clone = renderer_wrapper_arc_mutex.clone();
-        thread::spawn(move || {
-            loop {
-                match rx.recv_timeout(Duration::from_secs(1)) {
-                    Ok(event) => {
-                        match event {
-                            Ok(e) => {
-                                match e.kind {
-                                    notify::EventKind::Modify(notify::event::ModifyKind::Any) => {
-                                        let mut should_reload = true;
-                                        for path in &e.paths {
-                                            if path.to_string_lossy().ends_with('~') {
-                                                should_reload = false;
-                                                break;
-                                            }
-                                        }
-                                        if should_reload {
-                                            let mut renderer_wrapper = renderer_wrapper_clone.lock().unwrap();
-                                            if let Some(ref mut renderer_arc_mutex) = *renderer_wrapper {
-                                                let mut renderer = renderer_arc_mutex.lock().unwrap();
-                                                renderer.reload_shaders();
-                                            }
-                                        }
-                                    },
-                                    _ => {}
-                                }
-                            },
-                            Err(e) => println!("watch error: {:?}", e),
-                        }
-                    }
-                    Err(e) => {},
-                }
-            }
-        });
-        ShaderWatcher { watcher, renderer_wrapper: renderer_wrapper_arc_mutex }
-    }
-}
-*/
-
-struct App<'scene, 'surface> {
+struct App<'surface> {
     renderer: Option<Arc<Mutex<Renderer<'surface>>>>,
     window: Option<Arc<Window>>,
-    //shader_watcher: ShaderWatcher<'cache>,
-    scene: &'scene GLTFSceneRef<'scene>,
+    scene: Arc<GLTF>,
     mouse_btn_is_pressed: bool,
     shift_is_pressed: bool,
-    pipeline_cache: PipelineCache,
-    shader_cache: ShaderCache,
 }
 
-impl<'scene> App<'scene, '_> {
+impl App<'_> {
     pub fn new(
-        scene: &'scene GLTFSceneRef<'scene>,
+        gltf: GLTF,
     ) -> Self {
         Self {
-            renderer: None, window: None, //shader_watcher: ShaderWatcher::new(),
-            scene, mouse_btn_is_pressed: false, shift_is_pressed: false,
-            pipeline_cache: PipelineCache::default(), shader_cache: ShaderCache::default()
+            renderer: None, window: None,
+            scene: Arc::new(gltf), mouse_btn_is_pressed: false, shift_is_pressed: false,
+        }
+    }
+
+    pub fn reload_shaders(&mut self) {
+        if let Some(ref mut renderer_arc_mutex) = self.renderer {
+            let mut renderer = renderer_arc_mutex.lock().unwrap();
+            match renderer.reload_pbr_pipeline() {
+                Ok(_) => {},
+                Err(e) => eprintln!("render error: {:?}", e),
+            }
         }
     }
 }
 
-impl<'scene, 'surface> ApplicationHandler for App<'scene, 'surface> {
+impl<'surface> ApplicationHandler for App<'surface> {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         let window = Arc::new(event_loop.create_window(Window::default_attributes()).unwrap());
         self.window = Some(window.clone());
 
-        let temp_renderer = Renderer::new(window.clone(), self.scene, &mut self.pipeline_cache, &mut self.shader_cache).block_on();
+        let meshes = self.scene.to_pbr_meshes();
+        let temp_renderer = Renderer::new(window.clone(), meshes).block_on();
         let renderer_arc_mutex = Arc::new(Mutex::new(temp_renderer));
         self.renderer = Some(renderer_arc_mutex.clone());
-        /*
-        let mut renderer_wrapper = self.shader_watcher.renderer_wrapper.lock().unwrap();
-        *renderer_wrapper = Some(renderer_arc_mutex.clone());
-        */
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
@@ -102,7 +54,6 @@ impl<'scene, 'surface> ApplicationHandler for App<'scene, 'surface> {
             WindowEvent::RedrawRequested => {
                 if let Some(ref mut renderer_arc_mutex) = self.renderer {
                     let mut renderer = renderer_arc_mutex.lock().unwrap();
-                    // renderer.update();
                     match renderer.render() {
                         Ok(_) => {},
                         Err(e) => eprintln!("render error: {:?}", e),
@@ -110,14 +61,13 @@ impl<'scene, 'surface> ApplicationHandler for App<'scene, 'surface> {
                 }
             },
             WindowEvent::MouseWheel { device_id, delta, phase } => {
-                // move camera in/out
                 if let Some(ref mut renderer_arc_mutex) = self.renderer {
                     let mut renderer = renderer_arc_mutex.lock().unwrap();
                     let camera = renderer.get_camera_mut();
                     match delta {
                         MouseScrollDelta::LineDelta(x, y) => {
                             camera.eye.z = (camera.eye.z + ((if self.shift_is_pressed { 10f32 } else { 1f32 }) * -y as f32)).max(0f32);
-                            renderer.update_camera_bindings();
+                            renderer.update_camera();
                             self.window.as_mut().unwrap().request_redraw();
                         },
                         MouseScrollDelta::PixelDelta(pos) => ()
@@ -183,7 +133,7 @@ impl<'scene, 'surface> ApplicationHandler for App<'scene, 'surface> {
                     let sensitivity = 5f32;
                     camera.rot_x = camera.rot_x - cgmath::Deg(x as f32 / sensitivity);
                     camera.rot_y = camera.rot_y - cgmath::Deg(y as f32 / sensitivity);
-                    renderer.update_camera_bindings();
+                    renderer.update_camera();
                     self.window.as_mut().unwrap().request_redraw();
                 }
             },
@@ -192,11 +142,61 @@ impl<'scene, 'surface> ApplicationHandler for App<'scene, 'surface> {
     }
 }
 
-pub fn run(glb_data: &GLBObject) {
-    let scene_ref = GLTFSceneRef::new(&glb_data);
-    let mut app = App::new(&scene_ref);
+pub fn run(gltf: GLTF) {
+    let app = Arc::new(Mutex::new(App::new(gltf)));
     let event_loop = EventLoop::new().unwrap();
     event_loop.set_control_flow(ControlFlow::Wait);
-    event_loop.run_app(&mut app).unwrap();
+
+    let (tx, rx) = channel();
+    let mut watcher = RecommendedWatcher::new(tx, Config::default()).unwrap();
+    watcher.watch(Path::new("src/renderer/shaders/"), notify::RecursiveMode::Recursive).unwrap();
+
+    let app_clone1 = app.clone();
+    thread::spawn(move || {
+        loop {
+            match rx.recv_timeout(Duration::from_secs(1)) {
+                Ok(event) => {
+                    match event {
+                        Ok(e) => {
+                            match e.kind {
+                                notify::EventKind::Modify(notify::event::ModifyKind::Any) => {
+                                    let mut should_reload = true;
+                                    for path in &e.paths {
+                                        if path.to_string_lossy().ends_with('~') {
+                                            should_reload = false;
+                                            break;
+                                        }
+                                    }
+                                    if should_reload {
+                                        let mut app = app_clone1.lock().unwrap();
+                                        app.reload_shaders();
+                                    }
+                                },
+                                _ => {}
+                            }
+                        },
+                        Err(e) => println!("watch error: {:?}", e),
+                    }
+                }
+                Err(e) => {},
+            }
+        }
+    });
+
+    let app_clone2 = Arc::clone(&app);
+    event_loop.run(move |event, event_loop| {
+        let mut app = app_clone2.lock().unwrap();
+        match event {
+            Event::NewEvents(cause) => app.new_events(event_loop, cause),
+            Event::WindowEvent { window_id, event } => app.window_event(event_loop, window_id, event),
+            Event::DeviceEvent { device_id, event } => app.device_event(event_loop, device_id, event),
+            Event::UserEvent(event) => app.user_event(event_loop, event),
+            Event::Suspended => app.suspended(event_loop),
+            Event::Resumed => app.resumed(event_loop),
+            Event::AboutToWait => app.about_to_wait(event_loop),
+            Event::LoopExiting => app.exiting(event_loop),
+            Event::MemoryWarning => app.memory_warning(event_loop),
+        }
+    }).unwrap();
 }
 

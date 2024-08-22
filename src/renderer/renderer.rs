@@ -1,375 +1,187 @@
-use bytemuck::{Pod, Zeroable};
-use cgmath::{Matrix4, Quaternion, SquareMatrix};
-use wgpu::{BindGroupLayout, VertexBufferLayout};
-use winit::window::Window;
-use wgpu::util::DeviceExt;
-use std::collections::HashMap;
-use std::fs;
-use std::io::{self, Read};
-use std::rc::Rc;
 use std::sync::Arc;
-use pollster::FutureExt as _;
-use crate::renderer::camera::{Camera, CameraBindGroups};
-use crate::renderer::wgpu_context::WgpuContext;
-use crate::renderer::depth_texture::DepthTexture;
-use crate::renderer::glb::GLTFSceneRef;
 
-use super::pipeline::{get_primitive_pipeline_config, PipelineCache, PipelineConfig, ShaderCache};
+use winit::window::Window;
 
-#[repr(C)]
-#[derive(Copy, Clone, Pod, Zeroable)]
-struct Matrix4f32 {
-    data: [[f32; 4]; 4],
+use super::{camera::{Camera, CameraBinding, CameraUniform}, lights::{Lights, LightsBinding}, wgpu_context::WgpuContext};
+
+pub struct DepthTexture {
+    texture: wgpu::Texture,
+    pub view: wgpu::TextureView,
+    sampler: wgpu::Sampler,
 }
 
-impl From<Matrix4<f32>> for Matrix4f32 {
-    fn from(m4: Matrix4<f32>) -> Self {
-        Matrix4f32 {
-            data: m4.into()
-        }
-    }
-}
+impl DepthTexture {
+    pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
+    
+    pub fn new(device: &wgpu::Device, surface_config: &wgpu::SurfaceConfiguration) -> Self {
+        let size = wgpu::Extent3d {
+            width: surface_config.width,
+            height: surface_config.height,
+            depth_or_array_layers: 1,
+        };
+        let desc = wgpu::TextureDescriptor {
+            label: Some("depth_texture"),
+            size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: Self::DEPTH_FORMAT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        };
+        let texture = device.create_texture(&desc);
 
-struct PrimitiveRenderContext {
-    mesh_idx: usize,
-    primitive_idx: usize,
-    vertex_buffers: Vec<wgpu::Buffer>,
-    vertex_index_buffer: wgpu::Buffer,
-    vertex_index_count: u32,
-    bind_groups: Vec<wgpu::BindGroup>,
-}
-
-/*
-* Contains the subset of the primitives of a mesh that use the same pipeline
-*/
-struct MeshRenderContext {
-    primitives: Vec<PrimitiveRenderContext>,
-    instance_buffer: wgpu::Buffer,
-    instance_count: u32,
-}
-
-struct PipelineRenderContext {
-    pipeline: Rc<wgpu::RenderPipeline>,
-    bind_group_layouts: Rc<Vec<wgpu::BindGroupLayout>>,
-    meshes: Vec<MeshRenderContext>,
-}
-
-type PipelineRenderContextMap = HashMap<PipelineConfig, PipelineRenderContext>;
-type MeshInstancesMap = HashMap<usize, Vec<Matrix4f32>>;
-
-fn construct_mesh_instances_map(scene: &GLTFSceneRef, node_idx: usize, mut transform: Matrix4<f32>, acc: &mut HashMap<usize, Vec<Matrix4f32>>) {
-    let node = &scene.desc.nodes[node_idx];
-
-    if let Some(v) = node.scale {
-        transform = transform * Matrix4::from_nonuniform_scale(v[0] as f32, v[1] as f32, v[2] as f32);
-    }
-    if let Some(v) = node.rotation {
-        transform = transform * Matrix4::from(Quaternion::new(v[3] as f32, v[0] as f32, v[1] as f32, v[2] as f32));
-    }
-    if let Some(v) = node.translation {
-        transform = transform * Matrix4::from_translation(cgmath::Vector3::from(v.map(|x| x as f32)));
-    }
-    if let Some(m) = node.matrix {
-        let m: [f32; 16] = m.map(|x| x as f32);
-        let m: Matrix4<f32> = Matrix4::new(
-            m[0],  m[1],  m[2],  m[3],
-            m[4],  m[5],  m[6],  m[7],
-            m[8],  m[9],  m[10], m[11],
-            m[12], m[13], m[14], m[15]
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let sampler = device.create_sampler(
+            &wgpu::SamplerDescriptor {
+                address_mode_u: wgpu::AddressMode::ClampToEdge,
+                address_mode_v: wgpu::AddressMode::ClampToEdge,
+                address_mode_w: wgpu::AddressMode::ClampToEdge,
+                mag_filter: wgpu::FilterMode::Linear,
+                min_filter: wgpu::FilterMode::Linear,
+                mipmap_filter: wgpu::FilterMode::Nearest,
+                compare: Some(wgpu::CompareFunction::LessEqual),
+                lod_min_clamp: 0.0,
+                lod_max_clamp: 100.0,
+                ..Default::default()
+            }
         );
-        transform = transform * m;
-    }
-    if let Some(mesh) = node.mesh {
-        acc.entry(mesh as usize).or_insert(Vec::new()).push(Matrix4f32::from(transform.clone()));
-    }
-    if let Some(children) = &node.children {
-        for child_idx in children {
-            construct_mesh_instances_map(scene, *child_idx, transform.clone(), acc);
+
+        Self { 
+            texture, view, sampler
         }
     }
 }
 
-fn scene_to_mesh_instances(scene: &GLTFSceneRef) -> MeshInstancesMap {
-    let mut map: HashMap<usize, Vec<Matrix4f32>> = HashMap::new();
-    let transform = Matrix4::identity();
-
-    // Only rendering the main scene for now
-    let scene_nodes = &scene.desc.scenes[scene.desc.scene].nodes;
-    for node_idx in scene_nodes {
-        construct_mesh_instances_map(scene, *node_idx, transform, &mut map);
-    }
-
-    map
+pub struct World {
+    pub camera: Camera,
+    pub lights: Lights,
+    pub pbr_meshes: Vec<super::pbr::Mesh>,
 }
-
-fn scene_to_pipeline_render_context_map<'scene>(
-    scene: &'scene GLTFSceneRef,
-    wgpu_context: &WgpuContext,
-    pipeline_cache: &mut PipelineCache,
-    shader_cache: &mut ShaderCache,
-) -> PipelineRenderContextMap {
-    let mut pipeline_render_context_map: PipelineRenderContextMap = HashMap::new();
-
-    let global_bind_group_layouts: Vec<Vec<wgpu::BindGroupLayoutEntry>> = vec![
-        // TODO get this from camera, this is just temp for testing
-        vec![
-            wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }
-        ],
-    ];
-
-    let mesh_instances_map = scene_to_mesh_instances(scene);
-
-    for mesh_idx in 0..scene.desc.meshes.len() {
-        let mesh = &scene.desc.meshes[mesh_idx];
-        let mut mesh_context_map: HashMap<PipelineConfig, Vec<PrimitiveRenderContext>> = HashMap::new();
-        for primitive_idx in 0..mesh.primitives.len() {
-            let primitive = &mesh.primitives[primitive_idx];
-            // Build pipeline config
-            let pipeline_config = get_primitive_pipeline_config(scene, primitive);
-
-            let bind_groups: Vec<wgpu::BindGroup> = vec![];
-            let mut vertex_buffers = vec![
-                wgpu_context.device.create_buffer_init(
-                    &wgpu::util::BufferInitDescriptor {
-                        label: Some("Vertex Buffer"),
-                        contents: scene.accessor_data[primitive.attributes.position as usize].buffer_slice,
-                        usage: wgpu::BufferUsages::VERTEX,
-                    }
-                )
-            ];
-            
-            if let Some(n) = primitive.attributes.normal {
-                vertex_buffers.push(
-                    wgpu_context.device.create_buffer_init(
-                        &wgpu::util::BufferInitDescriptor {
-                            label: Some("Normal Buffer"),
-                            contents: scene.accessor_data[n as usize].buffer_slice,
-                            usage: wgpu::BufferUsages::VERTEX,
-                        }
-                    )
-                );
-            }
-
-            let vertex_index_buffer = wgpu_context.device.create_buffer_init(
-                &wgpu::util::BufferInitDescriptor {
-                    label: Some("Index Buffer"),
-                    contents: scene.accessor_data[primitive.indices as usize].buffer_slice,
-                    usage: wgpu::BufferUsages::INDEX,
-                }
-            );
-            let vertex_index_count = scene.desc.accessors[primitive.indices as usize].count;
-
-            let primitive_render_context = PrimitiveRenderContext {
-                mesh_idx,
-                primitive_idx,
-                vertex_buffers,
-                vertex_index_count,
-                vertex_index_buffer,
-                bind_groups,
-            };
-
-            mesh_context_map.entry(
-                pipeline_config.clone()
-            ).or_insert(
-                vec![]
-            ).push(primitive_render_context);
-        }
-
-        let instance_data: &Vec<Matrix4f32> = mesh_instances_map.get(&mesh_idx).unwrap();
-
-        // Use pipeline config to get pipeline and bind group layouts
-        for (pipeline_config, mut primitive_render_contexts) in mesh_context_map.into_iter() {
-            let render_context = pipeline_render_context_map.entry(
-                pipeline_config.clone()
-            ).or_insert_with(
-                || {
-                    let (pipeline, bind_group_layouts) = pipeline_cache.get_pipeline(
-                        &pipeline_config,
-                        &global_bind_group_layouts,
-                        &wgpu_context.device,
-                        &wgpu_context.surface_config,
-                        shader_cache
-                    );
-                    PipelineRenderContext {
-                        pipeline,
-                        bind_group_layouts,
-                        meshes: vec![]
-                    }
-                }
-            );
-
-            // set up bind groups for each primitive
-            for p in &mut primitive_render_contexts {
-                let primitive = &scene.desc.meshes[p.mesh_idx].primitives[p.primitive_idx];
-                if let Some(n) = primitive.material {
-                    let base_color_factor = scene.desc.materials[n].pbr_metallic_roughness.base_color_factor.unwrap_or([1f64, 1f64, 1f64, 1f64]).map(|x| x as f32);
-                    let buffer = wgpu_context.device.create_buffer_init(
-                        &wgpu::util::BufferInitDescriptor {
-                            label: Some("Material Buffer"),
-                            contents: bytemuck::cast_slice(&base_color_factor),
-                            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-                        }
-                    );
-                    p.bind_groups.push(
-                        wgpu_context.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                            layout: &render_context.bind_group_layouts[1],
-                            entries: &[
-                                wgpu::BindGroupEntry {
-                                    binding: 0,
-                                    resource: buffer.as_entire_binding(),
-                                }
-                            ],
-                            label: Some("Material Bind Group"),
-                        })
-                    );
-                }
-
-            }
-
-            let instance_buffer = wgpu_context.device.create_buffer_init(
-                &wgpu::util::BufferInitDescriptor {
-                    label: Some("Instance Buffer"),
-                    contents: bytemuck::cast_slice(&instance_data),
-                    usage: wgpu::BufferUsages::VERTEX,
-                }
-            );
-            let instance_count = instance_data.len();
-
-            render_context.meshes.push(
-                MeshRenderContext {
-                    primitives: primitive_render_contexts,
-                    instance_buffer,
-                    instance_count: instance_count as u32,
-                }
-            );
-        }
-    }
-
-    pipeline_render_context_map
+pub struct WorldBinding {
+    camera_binding: CameraBinding,
+    lights_binding: LightsBinding,
+    pbr_mesh_bindings: Vec<super::pbr::MeshBinding>,
 }
+impl World {
+    pub fn upload(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        pbr_material_bind_group_layout: &wgpu::BindGroupLayout,
+        camera_bind_group_layout: &wgpu::BindGroupLayout,
+        lights_bind_group_layout: &wgpu::BindGroupLayout,
+    ) -> WorldBinding {
+        let camera_binding = self.camera.to_camera_uniform().upload(device, camera_bind_group_layout);
+        let lights_binding = self.lights.upload(device, lights_bind_group_layout);
+        let pbr_mesh_bindings = self.pbr_meshes.iter().map(|mesh| {
+            mesh.upload(device, queue, pbr_material_bind_group_layout)
+        }).collect();
 
-fn render(
-    pipeline_render_context_map: &PipelineRenderContextMap,
-    global_bind_groups: Vec<&wgpu::BindGroup>,
-    depth_texture: &DepthTexture,
-    wgpu_context: &WgpuContext,
-) -> Result<(), wgpu::SurfaceError> {
-    let output = wgpu_context.surface.get_current_texture()?;
-    let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
-    let mut encoder = wgpu_context.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-        label: Some("Render Encoder"),
-    });
-
-    {
-        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("Render Pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &view,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color {
-                        r: 0.1,
-                        g: 0.2,
-                        b: 0.3,
-                        a: 1.0,
-                    }),
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
-            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                view: &depth_texture.view,
-                depth_ops: Some(wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(1.0),
-                    store: wgpu::StoreOp::Store,
-                }),
-                stencil_ops: None,
-            }),
-            occlusion_query_set: None,
-            timestamp_writes: None,
-        });
-
-        for i in 0..global_bind_groups.len() {
-            render_pass.set_bind_group(i as u32, global_bind_groups[i], &[]);
-        }
-
-        for ctx in pipeline_render_context_map.values() {
-            render_pass.set_pipeline(&ctx.pipeline);
-            for mesh_render_context in &ctx.meshes {
-                for primitive_render_context in &mesh_render_context.primitives {
-                    for i in 0..primitive_render_context.bind_groups.len() {
-                        render_pass.set_bind_group(1u32 + i as u32, &primitive_render_context.bind_groups[i], &[]);
-                    }
-                    render_pass.set_vertex_buffer(0, mesh_render_context.instance_buffer.slice(..));
-                    for i in 0..primitive_render_context.vertex_buffers.len() {
-                        render_pass.set_vertex_buffer(i as u32 + 1, primitive_render_context.vertex_buffers[i].slice(..));
-                    }
-                    // TODO get index accessor component type
-                    render_pass.set_index_buffer(primitive_render_context.vertex_index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-                    render_pass.draw_indexed(0..primitive_render_context.vertex_index_count, 0, 0..mesh_render_context.instance_count);
-                }
-            }
-        }
+        WorldBinding { camera_binding, lights_binding, pbr_mesh_bindings }
     }
-
-    wgpu_context.queue.submit(std::iter::once(encoder.finish()));
-    output.present();
-
-    Ok(())
 }
 
 pub struct Renderer<'surface> {
     wgpu_context: WgpuContext<'surface>,
-    camera: Camera,
-    camera_bind_groups: CameraBindGroups,
     depth_texture: DepthTexture,
-    prcm: PipelineRenderContextMap,
+    pbr_material_pipeline: super::pbr::MaterialPipeline,
+    world_binding: WorldBinding,
+    world: World,
+    camera_bind_group_layout: wgpu::BindGroupLayout,
+    lights_bind_group_layout: wgpu::BindGroupLayout,
 }
-
 impl<'surface> Renderer<'surface> {
-    pub async fn new<'scene>(
-        window: Arc<Window>, scene: &GLTFSceneRef<'scene>,
-        pipeline_cache: &mut PipelineCache,
-        shader_cache: &mut ShaderCache,
+    pub async fn new(
+        window: Arc<Window>,
+        pbr_meshes: Vec<super::pbr::Mesh>,
     ) -> Self {
         let wgpu_context = WgpuContext::new(window).await;
-        let camera = Camera::new(&wgpu_context);
-        let camera_bind_groups = CameraBindGroups::new(&camera, &wgpu_context);
-        let depth_texture = DepthTexture::create_depth_texture(&wgpu_context);
-        let prcm = scene_to_pipeline_render_context_map(scene, &wgpu_context, pipeline_cache, shader_cache);
-
-        Self {
-            wgpu_context,
-            camera,
-            camera_bind_groups,
-            depth_texture,
-            prcm,
-        }
-    }
-
-    pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
-        let global_bind_groups = vec![&self.camera_bind_groups.camera_bind_group];
-        render(&self.prcm, global_bind_groups, &self.depth_texture, &self.wgpu_context)
-    }
-
-    pub fn reload_shaders(&mut self) {
-        // TODO
-        /*
-        self.render_pipeline = Renderer::create_render_pipeline(
-            &self.wgpu_context, &self.vertex_buffer_layouts,
-            &self.camera_bind_groups.camera_bind_group_layout,
-            &self.camera_bind_groups.view_invert_transpose_bind_group_layout
+        let depth_texture = DepthTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
+        let camera_bind_group_layout = wgpu_context.device.create_bind_group_layout(&CameraUniform::desc());
+        let lights_bind_group_layout = wgpu_context.device.create_bind_group_layout(&Lights::desc());
+        let pbr_material_pipeline = super::pbr::MaterialPipeline::new(
+            &wgpu_context.device, &wgpu_context.surface_config,
+            &camera_bind_group_layout, &lights_bind_group_layout
         );
-        */
-        //self.render().unwrap();
+
+        let camera = Camera::new(&wgpu_context.surface_config);
+        let lights = Lights::default();
+        let world = World { camera, lights, pbr_meshes };
+        let world_binding = world.upload(
+            &wgpu_context.device, &wgpu_context.queue,
+            &pbr_material_pipeline.material_bind_group_layout,
+            &camera_bind_group_layout, &lights_bind_group_layout
+        );
+        
+        Self { wgpu_context, depth_texture, pbr_material_pipeline, world_binding, world, camera_bind_group_layout, lights_bind_group_layout }
+    }
+
+    pub fn reload_pbr_pipeline(&mut self) -> Result<(), wgpu::SurfaceError> {
+        self.pbr_material_pipeline.rebuild_pipeline(
+            &self.wgpu_context.device, &self.wgpu_context.surface_config,
+            &self.camera_bind_group_layout, &self.lights_bind_group_layout,
+        );
+        self.render()
+    }
+
+    pub fn render(
+        &self,
+    ) -> Result<(), wgpu::SurfaceError> {
+        let output = self.wgpu_context.surface.get_current_texture()?;
+        let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let mut encoder = self.wgpu_context.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Render Encoder"),
+        });
+
+        {
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Render Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color {
+                            r: 0.1,
+                            g: 0.2,
+                            b: 0.3,
+                            a: 1.0,
+                        }),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.depth_texture.view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                occlusion_query_set: None,
+                timestamp_writes: None,
+            });
+
+            render_pass.set_pipeline(&self.pbr_material_pipeline.render_pipeline);
+            render_pass.set_bind_group(0u32, &self.world_binding.camera_binding.bind_group, &[]);
+            render_pass.set_bind_group(1u32, &self.world_binding.lights_binding.bind_group, &[]);
+
+            for mesh in &self.world_binding.pbr_mesh_bindings {
+                render_pass.set_vertex_buffer(0, mesh.instance_buffer.slice(..));
+                for primitive in &mesh.primitives {
+                    render_pass.set_bind_group(2u32, &primitive.material_binding.bind_group, &[]);
+                    render_pass.set_vertex_buffer(1u32, primitive.vertex_buffer.slice(..));
+                    render_pass.set_index_buffer(primitive.index_buffer.slice(..), primitive.index_format);
+                    render_pass.draw_indexed(0..primitive.index_count, 0, 0..mesh.instance_count);
+                }
+            }
+        }
+
+        self.wgpu_context.queue.submit(std::iter::once(encoder.finish()));
+        output.present();
+
+        Ok(())
     }
 
     pub fn resize(&mut self, new_size: Option<winit::dpi::PhysicalSize<u32>>) {
@@ -378,18 +190,18 @@ impl<'surface> Renderer<'surface> {
             self.wgpu_context.surface_config.width = new_size.width;
             self.wgpu_context.surface_config.height = new_size.height;
             self.wgpu_context.surface.configure(&self.wgpu_context.device, &self.wgpu_context.surface_config);
-            self.depth_texture = DepthTexture::create_depth_texture(&self.wgpu_context);
-            self.camera.aspect = self.wgpu_context.surface_config.width as f32 / self.wgpu_context.surface_config.height as f32;
+            self.depth_texture = DepthTexture::new(&self.wgpu_context.device, &self.wgpu_context.surface_config);
+            self.world.camera.aspect = self.wgpu_context.surface_config.width as f32 / self.wgpu_context.surface_config.height as f32;
+            self.update_camera();
         }
     }
 
-    // update_camera_bindings should be called after mutating the camera
     pub fn get_camera_mut(&mut self) -> &mut Camera {
-        &mut self.camera
+        &mut self.world.camera
     }
 
-    pub fn update_camera_bindings(&mut self) {
-        self.camera_bind_groups = CameraBindGroups::new(&self.camera, &self.wgpu_context)
+    pub fn update_camera(&self) {
+        self.world_binding.camera_binding.update(&self.world.camera.to_camera_uniform(), &self.wgpu_context.queue);
     }
 }
 

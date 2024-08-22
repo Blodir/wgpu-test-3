@@ -1,10 +1,9 @@
-mod pipeline;
+mod utils;
+mod texture;
 mod camera;
+mod lights;
+pub mod pbr;
 mod wgpu_context;
-mod depth_texture;
-pub mod glb;
+pub mod gltf;
 pub mod renderer;
-
-pub use pipeline::PipelineCache;
-pub use pipeline::ShaderCache;
 
