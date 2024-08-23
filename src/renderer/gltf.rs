@@ -8,6 +8,8 @@ use serde_json::Result;
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 
+use super::pbr::SamplerOptions;
+
 fn buffer_to_ascii(buffer: &[u8]) -> String {
     buffer.iter().map(|&x| x as char).collect()
 }
@@ -49,6 +51,67 @@ pub enum AccessorType {
 pub enum MimeType {
     #[serde(rename = "image/png")]
     PNG,
+    #[serde(rename = "image/jpeg")]
+    JPEG,
+}
+
+#[derive(Serialize_repr, Deserialize_repr, Debug)]
+#[repr(u16)]
+pub enum SamplerMagFilterType {
+    Nearest = 9728,
+    Linear = 9729,
+}
+
+impl SamplerMagFilterType {
+    fn to_wgpu_filter_mode(&self) -> wgpu::FilterMode {
+        match *self {
+            SamplerMagFilterType::Linear => wgpu::FilterMode::Linear,
+            SamplerMagFilterType::Nearest => wgpu::FilterMode::Nearest,
+        }
+    }
+}
+
+#[derive(Serialize_repr, Deserialize_repr, Debug)]
+#[repr(u16)]
+pub enum SamplerMinFilterType {
+    Nearest = 9728,
+    Linear = 9729,
+    NearestMipmapNearest = 9984,
+    LinearMipmapNearest = 9985,
+    NearestMipmapLinear = 9986,
+    LinearMipmapLinear = 9987,
+}
+
+impl SamplerMinFilterType {
+    fn to_wgpu_filter_mode(&self) -> wgpu::FilterMode {
+        match *self {
+            // several sampler filter types unsupported by wgpu? :/
+            SamplerMinFilterType::Linear => wgpu::FilterMode::Linear,
+            SamplerMinFilterType::Nearest => wgpu::FilterMode::Nearest,
+            SamplerMinFilterType::LinearMipmapLinear => wgpu::FilterMode::Linear,
+            SamplerMinFilterType::LinearMipmapNearest => wgpu::FilterMode::Linear,
+            SamplerMinFilterType::NearestMipmapLinear => wgpu::FilterMode::Nearest,
+            SamplerMinFilterType::NearestMipmapNearest => wgpu::FilterMode::Nearest,
+        }
+    }
+}
+
+#[derive(Serialize_repr, Deserialize_repr, Debug)]
+#[repr(u16)]
+pub enum SamplerWrapMode {
+    ClampToEdge = 33071,
+    MirroredRepeat = 33648,
+    Repeat = 10497,
+}
+
+impl SamplerWrapMode {
+    fn to_wgpu_address_mode(&self) -> wgpu::AddressMode {
+        match *self {
+            SamplerWrapMode::Repeat => wgpu::AddressMode::Repeat,
+            SamplerWrapMode::MirroredRepeat => wgpu::AddressMode::MirrorRepeat,
+            SamplerWrapMode::ClampToEdge => wgpu::AddressMode::ClampToEdge,
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -224,7 +287,6 @@ pub struct Scene {
     pub nodes: Vec<usize>,
 }
 
-
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Texture {
     pub source: usize,
@@ -234,13 +296,13 @@ pub struct Texture {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Sampler {
     #[serde(rename = "magFilter")]
-    pub mag_filter: u32,
+    pub mag_filter: Option<SamplerMagFilterType>,
     #[serde(rename = "minFilter")]
-    pub min_filter: u32,
+    pub min_filter: Option<SamplerMinFilterType>,
     #[serde(rename = "wrapS")]
-    pub wrap_s: u32,
+    pub wrap_s: Option<SamplerWrapMode>,
     #[serde(rename = "wrapT")]
-    pub wrap_t: u32,
+    pub wrap_t: Option<SamplerWrapMode>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -358,6 +420,16 @@ fn scene_to_mesh_instances(scene: &SceneDescription) -> HashMap<usize, Vec<super
     map
 }
 
+fn set_alpha_channel(image: &mut image::DynamicImage, alpha: u8) {
+    let mut rgba_image = image.to_rgba8();
+    
+    for pixel in rgba_image.pixels_mut() {
+        pixel[3] = alpha; // Set the alpha channel
+    }
+
+    *image = image::DynamicImage::ImageRgba8(rgba_image); // Convert back to DynamicImage if needed
+}
+
 impl GLTF {
     pub fn new(file: &mut File) -> io::Result<Self> {
         let mut magic_buffer = [0u8; 4];
@@ -376,6 +448,7 @@ impl GLTF {
         let binary_buffer = GLTF::parse_binary_buffer(file)?;
         let scene = serde_json::from_str(&json_chunk.chunk_data)?;
         println!("{:#?}", scene);
+        println!("{}", json_chunk.chunk_data);
 
         Ok(
             Self {
@@ -600,18 +673,35 @@ impl GLTF {
         vertices
     }
 
-    fn texture_to_dynamic_image(&self, texture_idx: usize) -> image::DynamicImage {
-        let image_idx = self.scene.textures.as_ref().unwrap()[texture_idx].source;
+    fn load_texture(&self, texture_idx: usize) -> (image::DynamicImage, Option<SamplerOptions>) {
+        let texture = &self.scene.textures.as_ref().unwrap()[texture_idx];
+
+        let sampler = texture.sampler.map(|sampler_idx| self.sampler_to_sampler_options(sampler_idx));
+
+        let image_idx = texture.source;
         let image = &self.scene.images.as_ref().unwrap()[image_idx];
         let image_format = match image.mime_type {
             Some(MimeType::PNG) => { image::ImageFormat::Png },
-            _ => panic!("Expecting PNG")
+            Some(MimeType::JPEG) => { image::ImageFormat::Jpeg },
+            _ => panic!("Unknown image format")
         };
         let bv = &self.scene.buffer_views[image.buffer_view.unwrap()];
         let start_offset = bv.byte_offset.unwrap_or(0u32) as usize;
         let end_offset = bv.byte_offset.unwrap_or(0u32) as usize + bv.byte_length as usize;
         let slice = &&self.binary_buffer[start_offset..end_offset];
-        image::load_from_memory_with_format(slice, image_format).unwrap()
+
+        (image::load_from_memory_with_format(slice, image_format).unwrap(), sampler)
+    }
+
+    fn sampler_to_sampler_options(&self, sampler_idx: usize) -> SamplerOptions {
+        let sampler = &self.scene.samplers.as_ref().unwrap()[sampler_idx];
+
+        SamplerOptions {
+            address_mode_u: sampler.wrap_s.as_ref().unwrap_or(&SamplerWrapMode::Repeat).to_wgpu_address_mode(),
+            address_mode_v: sampler.wrap_t.as_ref().unwrap_or(&SamplerWrapMode::Repeat).to_wgpu_address_mode(),
+            mag_filter: sampler.mag_filter.as_ref().unwrap_or(&SamplerMagFilterType::Nearest).to_wgpu_filter_mode(),
+            min_filter: sampler.min_filter.as_ref().unwrap_or(&SamplerMinFilterType::Nearest).to_wgpu_filter_mode(),
+        }
     }
 
     fn material_to_pbr(&self, maybe_material_idx: Option<usize>) -> super::pbr::Material {
@@ -643,39 +733,43 @@ impl GLTF {
                 pbr_material.emissive_factor = factor.map(|f| f as f32);
             }
 
-            // TODO figure out samplers ..
             // TODO figure out normal texture scale property
 
-            if let Some(texture) = material.pbr_metallic_roughness.as_ref()
+            if let Some(texture_and_sampler) = material.pbr_metallic_roughness.as_ref()
                 .and_then(|pmr| pmr.base_color_texture.as_ref())
-                .map(|t| self.texture_to_dynamic_image(t.index))
+                .map(|t| self.load_texture(t.index))
             {
-                pbr_material.base_color_texture = texture;
+                pbr_material.base_color_texture = texture_and_sampler;
             }
 
-            if let Some(texture) = material.pbr_metallic_roughness.as_ref()
+            if let Some(texture_and_sampler) = material.pbr_metallic_roughness.as_ref()
                 .and_then(|pmr| pmr.metallic_roughness_texture.as_ref())
-                .map(|t| self.texture_to_dynamic_image(t.index))
+                .map(|t| self.load_texture(t.index))
             {
-                pbr_material.metallic_roughness_texture = texture;
+                pbr_material.metallic_roughness_texture = texture_and_sampler;
             }
             
-            if let Some(texture) = material.normal_texture.as_ref()
-                .map(|t| self.texture_to_dynamic_image(t.index))
+            if let Some(mut texture_and_sampler) = material.normal_texture.as_ref()
+                .map(|t| self.load_texture(t.index))
             {
-                pbr_material.normal_texture = texture;
+                // alpha = 1 is interpreted as "should use normal map"
+                // TODO this should be done at a later stage instead of at gltf import
+                // TODO actually we should just generate tangents and use (0, 0, 1) as default normal map
+                set_alpha_channel(&mut texture_and_sampler.0, u8::MAX);
+                texture_and_sampler.0.save("debug_img.png").unwrap();
+                pbr_material.normal_texture = texture_and_sampler;
             }
 
-            if let Some(texture) = material.occlusion_texture.as_ref()
-                .map(|t| self.texture_to_dynamic_image(t.index))
+            if let Some(texture_and_sampler) = material.occlusion_texture.as_ref()
+                .map(|t| self.load_texture(t.index))
             {
-                pbr_material.occlusion_texture = texture;
+                pbr_material.occlusion_texture = texture_and_sampler;
             }
 
-            if let Some(texture) = material.emissive_texture.as_ref()
-                .map(|t| self.texture_to_dynamic_image(t.index))
+            if let Some(texture_and_sampler) = material.emissive_texture.as_ref()
+                .map(|t| self.load_texture(t.index))
             {
-                pbr_material.emissive_texture = texture;
+                pbr_material.emissive_texture = texture_and_sampler;
             }
         }
 
@@ -690,6 +784,20 @@ impl GLTF {
             let mut pbr_primitives = vec![];
             for primitive_idx in 0..mesh.primitives.len() {
                 let primitive = &mesh.primitives[primitive_idx];
+                
+                let has_vertex_normals = primitive.attributes.normal.is_some();
+                let has_normal_map = primitive.material.as_ref()
+                    .and_then(|mat_idx| self.scene.materials.as_ref().map(|mats| &mats[*mat_idx]))
+                    .and_then(|mat| mat.normal_texture.as_ref())
+                    .is_some();
+                let has_tangents = primitive.attributes.tangent.is_some();
+                if !has_vertex_normals {
+                    panic!("No vertex normals! Have to implement generation.");
+                }
+                if has_normal_map && !has_tangents {
+                    panic!("Primitive has a normal map, but no tangents. Tangent generation needs to be implemented.");
+                }
+
                 let vertices = self.primitive_to_pbr_vertices(primitive);
                 let indices = self.accessor_to_pbr_indices(primitive.indices);
                 let material = self.material_to_pbr(primitive.material);

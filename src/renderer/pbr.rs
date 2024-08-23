@@ -1,6 +1,6 @@
 use std::mem::size_of;
 
-use cgmath::{Matrix4, SquareMatrix};
+use cgmath::{Matrix, Matrix3, Matrix4, SquareMatrix, Transform};
 use wgpu::util::DeviceExt;
 
 use super::texture::Texture;
@@ -52,9 +52,9 @@ impl Instance {
         }
     }
 
-    pub fn from(m4: Matrix4<f32>) -> Self {
+    pub fn from(mat4: Matrix4<f32>) -> Self {
         Self {
-            m4: m4.into()
+            m4: mat4.into(),
         }
     }
 }
@@ -99,12 +99,14 @@ impl Vertex {
     const OFFSET_POS: wgpu::BufferAddress = Self::OFFSET_WEI + size_of::<[f32; 4]>() as wgpu::BufferAddress;
     const OFFSET_NOR: wgpu::BufferAddress = Self::OFFSET_POS + size_of::<[f32; 3]>() as wgpu::BufferAddress;
     const OFFSET_NTC: wgpu::BufferAddress = Self::OFFSET_NOR + size_of::<[f32; 3]>() as wgpu::BufferAddress;
-    const OFFSET_OCC: wgpu::BufferAddress = Self::OFFSET_NTC + size_of::<[f32; 2]>() as wgpu::BufferAddress;
-    const OFFSET_EMI: wgpu::BufferAddress = Self::OFFSET_OCC + size_of::<[f32; 2]>() as wgpu::BufferAddress;
-    const OFFSET_BAS: wgpu::BufferAddress = Self::OFFSET_EMI + size_of::<[f32; 2]>() as wgpu::BufferAddress;
-    const OFFSET_MET: wgpu::BufferAddress = Self::OFFSET_BAS + size_of::<[f32; 2]>() as wgpu::BufferAddress;
+    //const OFFSET_OCC: wgpu::BufferAddress = Self::OFFSET_NTC + size_of::<[f32; 2]>() as wgpu::BufferAddress;
+    // optimization: combining normal tex coords and occlusion tex coords
+    const OFFSET_EMI: wgpu::BufferAddress = Self::OFFSET_NTC + size_of::<[f32; 4]>() as wgpu::BufferAddress;
+    //const OFFSET_BAS: wgpu::BufferAddress = Self::OFFSET_EMI + size_of::<[f32; 2]>() as wgpu::BufferAddress;
+    // optimization: combining emissive and base color tex coords
+    const OFFSET_MET: wgpu::BufferAddress = Self::OFFSET_EMI + size_of::<[f32; 4]>() as wgpu::BufferAddress;
     const OFFSET_JOI: wgpu::BufferAddress = Self::OFFSET_MET + size_of::<[f32; 2]>() as wgpu::BufferAddress;
-    const ATTRIBUTES: [wgpu::VertexAttribute; 10] = [
+    const ATTRIBUTES: [wgpu::VertexAttribute; 8] = [
         // 16 byte fields are first for better data alignment
         // I have not tested if this actually matters
         // at least need to add padding first for data alignment to matter
@@ -131,31 +133,37 @@ impl Vertex {
         wgpu::VertexAttribute {
             offset: Self::OFFSET_NTC,
             shader_location: Self::BASE_SHADER_LOCATION + 4,
-            format: wgpu::VertexFormat::Float32x2,
+            // optimization: combining normal tex coords and occlusion tex coords
+            format: wgpu::VertexFormat::Float32x4,
         },
+        /*
         wgpu::VertexAttribute {
             offset: Self::OFFSET_OCC,
             shader_location: Self::BASE_SHADER_LOCATION + 5,
             format: wgpu::VertexFormat::Float32x2,
         },
+        */
         wgpu::VertexAttribute {
             offset: Self::OFFSET_EMI,
+            shader_location: Self::BASE_SHADER_LOCATION + 5,
+            // optimization: combining emissive base color tex coords
+            format: wgpu::VertexFormat::Float32x4,
+        },
+        /*
+        wgpu::VertexAttribute {
+            offset: Self::OFFSET_BAS,
+            shader_location: Self::BASE_SHADER_LOCATION + 6,
+            format: wgpu::VertexFormat::Float32x2,
+        },
+        */
+        wgpu::VertexAttribute {
+            offset: Self::OFFSET_MET,
             shader_location: Self::BASE_SHADER_LOCATION + 6,
             format: wgpu::VertexFormat::Float32x2,
         },
         wgpu::VertexAttribute {
-            offset: Self::OFFSET_BAS,
-            shader_location: Self::BASE_SHADER_LOCATION + 7,
-            format: wgpu::VertexFormat::Float32x2,
-        },
-        wgpu::VertexAttribute {
-            offset: Self::OFFSET_MET,
-            shader_location: Self::BASE_SHADER_LOCATION + 8,
-            format: wgpu::VertexFormat::Float32x2,
-        },
-        wgpu::VertexAttribute {
             offset: Self::OFFSET_JOI,
-            shader_location: Self::BASE_SHADER_LOCATION + 9,
+            shader_location: Self::BASE_SHADER_LOCATION + 7,
             format: wgpu::VertexFormat::Uint8x4,
         },
     ];
@@ -174,11 +182,30 @@ pub struct Material {
     pub metallic_factor: f32,
     pub roughness_factor: f32,
     pub emissive_factor: [f32; 3],
-    pub normal_texture: image::DynamicImage,
-    pub occlusion_texture: image::DynamicImage,
-    pub emissive_texture: image::DynamicImage,
-    pub base_color_texture: image::DynamicImage,
-    pub metallic_roughness_texture: image::DynamicImage,
+    pub normal_texture: (image::DynamicImage, Option<SamplerOptions>),
+    pub occlusion_texture: (image::DynamicImage, Option<SamplerOptions>),
+    pub emissive_texture: (image::DynamicImage, Option<SamplerOptions>),
+    pub base_color_texture: (image::DynamicImage, Option<SamplerOptions>),
+    pub metallic_roughness_texture: (image::DynamicImage, Option<SamplerOptions>),
+}
+
+pub struct SamplerOptions {
+    pub address_mode_u: wgpu::AddressMode,
+    pub address_mode_v: wgpu::AddressMode,
+    pub mag_filter: wgpu::FilterMode,
+    pub min_filter: wgpu::FilterMode,
+}
+
+impl SamplerOptions {
+    pub fn to_sampler_descriptor(&self) -> wgpu::SamplerDescriptor {
+        wgpu::SamplerDescriptor {
+            address_mode_u: self.address_mode_u,
+            address_mode_v: self.address_mode_v,
+            mag_filter: self.mag_filter,
+            min_filter: self.min_filter,
+            ..wgpu::SamplerDescriptor::default()
+        }
+    }
 }
 
 impl Default for Material {
@@ -188,16 +215,23 @@ impl Default for Material {
             *px = image::Rgba([255, 255, 255, 255]);
         }
         let default_texture = image::DynamicImage::from(img);
+
+        let mut img2 = image::RgbaImage::new(1, 1);
+        for px in img2.pixels_mut() {
+            *px = image::Rgba([255, 255, 255, 0]);
+        }
+        let default_normals = image::DynamicImage::from(img2);
+
         Material {
             base_color_factor: [1.0, 1.0, 1.0, 1.0],
             metallic_factor: 1.0,
             roughness_factor: 1.0,
             emissive_factor: [0.0, 0.0, 0.0],
-            normal_texture: default_texture.clone(),
-            occlusion_texture: default_texture.clone(),
-            emissive_texture: default_texture.clone(),
-            base_color_texture: default_texture.clone(),
-            metallic_roughness_texture: default_texture,
+            normal_texture: (default_normals, None),
+            occlusion_texture: (default_texture.clone(), None),
+            emissive_texture: (default_texture.clone(), None),
+            base_color_texture: (default_texture.clone(), None),
+            metallic_roughness_texture: (default_texture, None),
         }
     }
 }

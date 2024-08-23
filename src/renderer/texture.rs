@@ -1,3 +1,5 @@
+use super::pbr::SamplerOptions;
+
 pub struct Texture {
     pub texture: wgpu::Texture,
     pub view: wgpu::TextureView,
@@ -8,8 +10,10 @@ impl Texture {
     pub fn from_image(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        img: &image::DynamicImage,
+        img_and_sampler: &(image::DynamicImage, Option<SamplerOptions>),
     ) -> Self {
+        let img = &img_and_sampler.0;
+        let sampler_options = &img_and_sampler.1;
         let rgba = img.to_rgba8();
         let dimensions = image::GenericImageView::dimensions(img);
 
@@ -47,15 +51,17 @@ impl Texture {
         );
 
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Nearest,
-            mipmap_filter: wgpu::FilterMode::Nearest,
-            ..Default::default()
-        });
+        let sampler = device.create_sampler(
+            &sampler_options.as_ref().map(
+                |s| wgpu::SamplerDescriptor {
+                    address_mode_u: s.address_mode_u,
+                    address_mode_v: s.address_mode_v,
+                    mag_filter: s.mag_filter,
+                    min_filter: s.min_filter,
+                    ..wgpu::SamplerDescriptor::default()
+                }
+            ).unwrap_or(wgpu::SamplerDescriptor::default())
+        );
 
         Self { view, sampler, texture }
     }
