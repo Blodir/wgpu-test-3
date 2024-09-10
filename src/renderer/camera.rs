@@ -1,4 +1,4 @@
-use cgmath::{Quaternion, Rotation3};
+use cgmath::{Matrix3, Matrix4, Quaternion, Rotation3, SquareMatrix};
 use wgpu::util::DeviceExt;
 
 pub struct Camera {
@@ -16,12 +16,14 @@ pub struct Camera {
 pub struct CameraUniform {
     pub view_proj: [[f32; 4]; 4],
     position: [f32; 3],
+    inverse_view_proj_rot: [[f32; 4]; 4],
 }
 
 pub struct CameraBinding {
     pub bind_group: wgpu::BindGroup,
     view_proj_buffer: wgpu::Buffer,
     position_buffer: wgpu::Buffer,
+    inverse_view_proj_rot_buffer: wgpu::Buffer,
 }
 
 impl Camera {
@@ -49,8 +51,21 @@ impl Camera {
         let view = cgmath::Matrix4::look_at_rh(eye_rotated, self.target, self.up);
         let proj = cgmath::perspective(cgmath::Deg(self.fovy), self.aspect, self.znear, self.zfar);
         let view_proj = super::wgpu_context::OPENGL_TO_WGPU_MATRIX * proj * view;
+        let m = view_proj;
+        let m3 = Matrix3::new(
+            m.x.x, m.x.y, m.x.z,
+            m.y.x, m.y.y, m.y.z,
+            m.z.x, m.z.y, m.z.z,
+        ).invert().unwrap();
+        let inverse_view_proj_rot = Matrix4::new(
+            m3.x.x, m3.x.y, m3.x.z, 0.0,
+            m3.y.x, m3.y.y, m3.y.z, 0.0,
+            m3.z.x, m3.z.y, m3.z.z, 0.0,
+            0.0, 0.0, 0.0, 0.0
+        );
+        //let inverse_view_proj_rot = view_proj.invert().unwrap();
         CameraUniform {
-            view_proj: view_proj.into(), position: eye_rotated.into()
+            view_proj: view_proj.into(), position: eye_rotated.into(), inverse_view_proj_rot: inverse_view_proj_rot.into()
         }
     }
 }
@@ -73,8 +88,21 @@ impl CameraUniform {
         let view = cgmath::Matrix4::look_at_rh(eye_rotated, target, up);
         let proj = cgmath::perspective(cgmath::Deg(fovy), aspect, znear, zfar);
         let view_proj = super::wgpu_context::OPENGL_TO_WGPU_MATRIX * proj * view;
+        let m = view_proj;
+        let m3 = Matrix3::new(
+            m.x.x, m.x.y, m.x.z,
+            m.y.x, m.y.y, m.y.z,
+            m.z.x, m.z.y, m.z.z,
+        ).invert().unwrap();
+        let inverse_view_proj_rot = Matrix4::new(
+            m3.x.x, m3.x.y, m3.x.z, 0.0,
+            m3.y.x, m3.y.y, m3.y.z, 0.0,
+            m3.z.x, m3.z.y, m3.z.z, 0.0,
+            0.0, 0.0, 0.0, 0.0
+        );
+        //let inverse_view_proj_rot = view_proj.invert().unwrap();
         Self {
-            view_proj: view_proj.into(), position: eye_rotated.into()
+            view_proj: view_proj.into(), position: eye_rotated.into(), inverse_view_proj_rot: inverse_view_proj_rot.into()
         }
     }
 
@@ -93,6 +121,13 @@ impl CameraUniform {
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             }
         );
+        let inverse_view_proj_rot_buffer = device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Inverse View Projection Buffer"),
+                contents: bytemuck::cast_slice(&self.inverse_view_proj_rot),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            }
+        );
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: bind_group_layout,
             entries: &[
@@ -104,11 +139,15 @@ impl CameraUniform {
                     binding: 1,
                     resource: position_buffer.as_entire_binding(),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: inverse_view_proj_rot_buffer.as_entire_binding(),
+                },
             ],
             label: Some("Camera Bind Group"),
         });
 
-        CameraBinding { bind_group, view_proj_buffer, position_buffer }
+        CameraBinding { bind_group, view_proj_buffer, position_buffer, inverse_view_proj_rot_buffer }
     }
 
     pub fn desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
@@ -134,6 +173,16 @@ impl CameraUniform {
                     },
                     count: None,
                 },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
             ],
             label: Some("Camera Bind Group Layout")
         }
@@ -144,6 +193,7 @@ impl CameraBinding {
     pub fn update(&self, camera: &CameraUniform, queue: &wgpu::Queue) {
         queue.write_buffer(&self.view_proj_buffer, 0, bytemuck::cast_slice(&camera.view_proj));
         queue.write_buffer(&self.position_buffer, 0, bytemuck::cast_slice(&camera.position));
+        queue.write_buffer(&self.inverse_view_proj_rot_buffer, 0, bytemuck::cast_slice(&camera.inverse_view_proj_rot));
     }
 }
 

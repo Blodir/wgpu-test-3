@@ -19,6 +19,9 @@
 @group(2) @binding(12) var metallic_roughness_texture: texture_2d<f32>;
 @group(2) @binding(13) var metallic_roughness_texture_sampler: sampler;
 
+@group(3) @binding(0) var diffuse_irradiance_texture: texture_cube<f32>;
+@group(3) @binding(1) var diffuse_irradiance_texture_sampler: sampler;
+
 struct InstanceInput {
     @location(0) m_1: vec4<f32>,
     @location(1) m_2: vec4<f32>,
@@ -166,6 +169,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     let F0 = mix(vec3f(0.04), surface_color.xyz, surface_metallic);
 
+    // ---------------- //
+    // For each light
+    // ---------------- //
     let L = normalize(-light_dir); // reverse light direction (pointing from surface toward light source)
     let H = normalize(V + L);
     let radiance = light_col; // * attenuation (but we assume no attenuation for sunlight)
@@ -184,8 +190,20 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     let NdotL = max(dot(N, L), 0.0);
     let Lo = (k_d * surface_color.xyz / PI + specular) * radiance * NdotL;
+    // ---------------- //
 
-    let ambient = 0.001 * surface_color.xyz * ao.r;
+    let k_s2 = fresnel_schlick(max(dot(N, V), 0.0), F0);
+    var k_d2 = 1.0 - k_s2;
+    k_d2 *= 1.0 - surface_metallic;
+
+    let irradiance = 
+        textureSample(
+            diffuse_irradiance_texture,
+            diffuse_irradiance_texture_sampler,
+            N
+        ).rgb;
+    let diffuse = irradiance * surface_color.rgb;
+    let ambient = (k_d2 * diffuse) * ao.r;
     var col = ambient + Lo + (surface_emissive * surface_emissive_sample.a);
 
     col = col / (col + vec3f(1.0));

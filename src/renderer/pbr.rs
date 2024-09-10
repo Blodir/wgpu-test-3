@@ -621,9 +621,10 @@ impl MaterialPipeline {
         surface_config: &wgpu::SurfaceConfiguration,
         camera_bind_group_layout: &wgpu::BindGroupLayout,
         lights_bind_group_layout: &wgpu::BindGroupLayout,
+        diffuse_irradiance_bind_group_layout: &wgpu::BindGroupLayout,
     ) -> Self {
         let material_bind_group_layout = device.create_bind_group_layout(&Material::desc());
-        let render_pipeline = Self::build_pipeline(device, surface_config, camera_bind_group_layout, lights_bind_group_layout, &material_bind_group_layout);
+        let render_pipeline = Self::build_pipeline(device, surface_config, camera_bind_group_layout, lights_bind_group_layout, &material_bind_group_layout, diffuse_irradiance_bind_group_layout);
 
         Self { render_pipeline, material_bind_group_layout }
     }
@@ -634,8 +635,9 @@ impl MaterialPipeline {
         surface_config: &wgpu::SurfaceConfiguration,
         camera_bind_group_layout: &wgpu::BindGroupLayout,
         lights_bind_group_layout: &wgpu::BindGroupLayout,
+        diffuse_irradiance_bind_group_layout: &wgpu::BindGroupLayout,
     ) {
-        self.render_pipeline = Self::build_pipeline(device, surface_config, camera_bind_group_layout, lights_bind_group_layout, &self.material_bind_group_layout);
+        self.render_pipeline = Self::build_pipeline(device, surface_config, camera_bind_group_layout, lights_bind_group_layout, &self.material_bind_group_layout, diffuse_irradiance_bind_group_layout);
     }
     
     pub fn build_pipeline(
@@ -644,15 +646,16 @@ impl MaterialPipeline {
         camera_bind_group_layout: &wgpu::BindGroupLayout,
         lights_bind_group_layout: &wgpu::BindGroupLayout,
         material_bind_group_layout: &wgpu::BindGroupLayout,
+        diffuse_irradiance_bind_group_layout: &wgpu::BindGroupLayout,
     ) -> wgpu::RenderPipeline {
         let vertex_buffer_layouts = &[Instance::desc(), Vertex::desc()];
-        let bind_group_layouts = &[camera_bind_group_layout, lights_bind_group_layout, &material_bind_group_layout];
+        let bind_group_layouts = &[camera_bind_group_layout, lights_bind_group_layout, material_bind_group_layout, diffuse_irradiance_bind_group_layout];
         let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Render Pipeline Layout"),
             bind_group_layouts,
             push_constant_ranges: &[],
         });
-        let shader_module = super::utils::create_shader_module(device);
+        let shader_module = super::utils::create_shader_module(device, "src/renderer/shaders/pbr.wgsl");
         device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Render Pipeline"),
             layout: Some(&render_pipeline_layout),
