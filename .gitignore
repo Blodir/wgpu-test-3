@@ -1,5 +1,5 @@
 /target
-.glb
-.png
-.hdr
+*.glb
+*.png
+*.hdr
 
