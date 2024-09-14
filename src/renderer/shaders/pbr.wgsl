@@ -19,8 +19,12 @@
 @group(2) @binding(12) var metallic_roughness_texture: texture_2d<f32>;
 @group(2) @binding(13) var metallic_roughness_texture_sampler: sampler;
 
-@group(3) @binding(0) var diffuse_irradiance_texture: texture_cube<f32>;
-@group(3) @binding(1) var diffuse_irradiance_texture_sampler: sampler;
+@group(3) @binding(0) var environment_texture: texture_cube<f32>;
+@group(3) @binding(1) var environment_texture_sampler: sampler;
+@group(3) @binding(2) var diffuse_irradiance_texture: texture_cube<f32>;
+@group(3) @binding(3) var diffuse_irradiance_texture_sampler: sampler;
+@group(3) @binding(4) var brdf_lut: texture_2d<f32>;
+@group(3) @binding(5) var brdf_lut_sampler: sampler;
 
 struct InstanceInput {
     @location(0) m_1: vec4<f32>,
@@ -58,6 +62,7 @@ struct VertexOutput {
 }
 
 const PI: f32 = 3.1415927;
+const MAX_REFLECTION_LOD: f32 = 4.0;
 
 @vertex
 fn vs_main(
@@ -124,6 +129,10 @@ fn fresnel_schlick(cos_theta: f32, F0: vec3f) -> vec3f {
     return F0 + (1.0 - F0) * pow(1.0 - cos_theta, 5.0);
 }
 
+fn fresnel_schlick_roughness(cos_theta: f32, F0: vec3f, roughness: f32) -> vec3f {
+    return F0 + (max(vec3f(1.0 - roughness), F0) - F0) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
+}
+
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let normal_sample = 
@@ -140,6 +149,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     }
 
     let V = normalize(camera_position - in.world_position.xyz);
+    let R = reflect(-V, N);
 
     let surface_color =
         pow(
@@ -166,6 +176,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         );
     let surface_emissive = surface_emissive_sample.rgb * emissive_factor;
     let ao = textureSample(occlusion_texture, occlusion_texture_sampler, in.occlusion_tex_coords);
+    let prefiltered_color = textureSampleLevel(environment_texture, environment_texture_sampler, R, surface_roughness * MAX_REFLECTION_LOD).rgb;
 
     let F0 = mix(vec3f(0.04), surface_color.xyz, surface_metallic);
 
@@ -190,9 +201,14 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     let NdotL = max(dot(N, L), 0.0);
     let Lo = (k_d * surface_color.xyz / PI + specular) * radiance * NdotL;
+
+    // ---------------- //
+    // IBL
     // ---------------- //
 
-    let k_s2 = fresnel_schlick(max(dot(N, V), 0.0), F0);
+    let F_env = fresnel_schlick_roughness(max(dot(N, V), 0.0), F0, surface_roughness);
+
+    let k_s2 = F_env;
     var k_d2 = 1.0 - k_s2;
     k_d2 *= 1.0 - surface_metallic;
 
@@ -203,7 +219,13 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
             N
         ).rgb;
     let diffuse = irradiance * surface_color.rgb;
-    let ambient = (k_d2 * diffuse) * ao.r;
+
+    let brdf = textureSample(brdf_lut, brdf_lut_sampler, vec2(max(dot(N, V), 0.0), surface_roughness)).rg;
+    let specular_env = prefiltered_color * (F * brdf.x + brdf.y);
+    let ambient = (k_d2 * diffuse + specular_env) * ao.r;
+
+    // ---------------- //
+
     var col = ambient + Lo + (surface_emissive * surface_emissive_sample.a);
 
     col = col / (col + vec3f(1.0));

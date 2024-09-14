@@ -5,6 +5,8 @@ use wgpu::util::DeviceExt as _;
 
 use crate::renderer::{pbr::SamplerOptions, texture::Texture};
 
+use super::mipmap::MipmapPipeline;
+
 struct EquirectangularHdrEnvironmentMap {
     map: (image::DynamicImage, Option<SamplerOptions>),
 }
@@ -175,6 +177,9 @@ pub fn render_cubemap(
 ) -> io::Result<wgpu::Texture> {
     let cubemap_face_resolution = image.height() / 2;
 
+    let mipmap_pipeline = MipmapPipeline::new(device);
+    let mip_level_count = 5;
+
     let eem_bind_group_layout = device.create_bind_group_layout(&EquirectangularHdrEnvironmentMap::desc());
     let equirectangular_environment_map = EquirectangularHdrEnvironmentMap { map: (image, Some(SamplerOptions {
         mag_filter: wgpu::FilterMode::Linear,
@@ -207,7 +212,7 @@ pub fn render_cubemap(
             height: cubemap_face_resolution,
             depth_or_array_layers: 6,
         },
-        mip_level_count: 1,
+        mip_level_count,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
         format: wgpu::TextureFormat::Rgba8Unorm,
@@ -220,6 +225,8 @@ pub fn render_cubemap(
                 dimension: Some(wgpu::TextureViewDimension::D2),
                 base_array_layer: face_index,
                 array_layer_count: Some(1),
+                base_mip_level: 0,
+                mip_level_count: Some(1),
                 ..Default::default()
             })
         })
@@ -268,6 +275,8 @@ pub fn render_cubemap(
         }
 
         queue.submit(Some(encoder.finish()));
+
+        mipmap_pipeline.generate_mipmaps(device, queue, &cubemap_texture, mip_level_count, face_index as u32);
     }
 
     /*
@@ -278,15 +287,17 @@ pub fn render_cubemap(
     write_texture_to_file(device, queue, &cubemap_texture, 4);
     write_texture_to_file(device, queue, &cubemap_texture, 5);
     */
+    //write_texture_to_file(device, queue, &cubemap_texture, 0, 0);
 
     Ok(cubemap_texture)
 }
 
 // for testing:
-pub fn write_texture_to_file(device: &wgpu::Device, queue: &wgpu::Queue, texture: &wgpu::Texture, face_index: u32) {
+pub fn write_texture_to_file(device: &wgpu::Device, queue: &wgpu::Queue, texture: &wgpu::Texture, face_index: u32, mip_level: u32) {
     let cubemap_face_resolution = texture.width();
+    let mip_resolution = (cubemap_face_resolution >> mip_level).max(1);
     // Get the texture from the GPU and write it to a file
-    let buffer_size = (cubemap_face_resolution * cubemap_face_resolution * 4) as wgpu::BufferAddress;
+    let buffer_size = (mip_resolution * mip_resolution * 4) as wgpu::BufferAddress;
     let staging_buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("Staging Buffer"),
         size: buffer_size,
@@ -303,7 +314,7 @@ pub fn write_texture_to_file(device: &wgpu::Device, queue: &wgpu::Queue, texture
     encoder.copy_texture_to_buffer(
         wgpu::ImageCopyTexture {
             texture,
-            mip_level: 0,
+            mip_level,
             origin: wgpu::Origin3d {
                 x: 0,
                 y: 0,
@@ -315,13 +326,13 @@ pub fn write_texture_to_file(device: &wgpu::Device, queue: &wgpu::Queue, texture
             buffer: &staging_buffer,
             layout: wgpu::ImageDataLayout {
                 offset: 0,
-                bytes_per_row: Some(cubemap_face_resolution * 4),
-                rows_per_image: Some(cubemap_face_resolution),
+                bytes_per_row: Some(mip_resolution * 4),
+                rows_per_image: Some(mip_resolution),
             },
         },
         wgpu::Extent3d {
-            width: cubemap_face_resolution,
-            height: cubemap_face_resolution,
+            width: mip_resolution,
+            height: mip_resolution,
             depth_or_array_layers: 1,
         },
     );
@@ -343,9 +354,9 @@ pub fn write_texture_to_file(device: &wgpu::Device, queue: &wgpu::Queue, texture
     drop(data); // Unmap the buffer
 
     let img_buffer: image::ImageBuffer<image::Rgba<u8>, Vec<u8>> =
-        image::ImageBuffer::from_raw(cubemap_face_resolution, cubemap_face_resolution, image_data).expect("Failed to create ImageBuffer");
+        image::ImageBuffer::from_raw(mip_resolution, mip_resolution, image_data).expect("Failed to create ImageBuffer");
 
-    // Save the image as PNG
+    // Save the image
     convert_rgba8_to_rgb32f(img_buffer).save(format!("cubemap_face_{face_index}.hdr")).expect("Failed to save image");
 }
 

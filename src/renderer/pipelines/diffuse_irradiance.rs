@@ -63,7 +63,7 @@ impl DiffuseIrradiancePipeline {
         &self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        environment_map_binding: &EnvironmentMapBinding,
+        environment_map_bind_group: &wgpu::BindGroup,
         face_rot_bind_group_layout: &wgpu::BindGroupLayout,
     ) -> Result<wgpu::Texture, wgpu::SurfaceError> {
         let cubemap_face_resolution = 32;
@@ -140,7 +140,7 @@ impl DiffuseIrradiancePipeline {
             {
                 let mut render_pass = encoder.begin_render_pass(&render_pass_descriptor);
                 render_pass.set_pipeline(&self.render_pipeline);
-                render_pass.set_bind_group(0, &environment_map_binding.bind_group, &[]);
+                render_pass.set_bind_group(0, &environment_map_bind_group, &[]);
                 render_pass.set_bind_group(1, &face_rotation_binding.bind_group, &[]);
                 render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint16);
                 render_pass.draw_indexed(0..num_indices, 0, 0..1);

@@ -2,7 +2,7 @@ use std::{fs::File, io::Read, sync::Arc};
 
 use winit::window::Window;
 
-use super::{camera::{Camera, CameraBinding, CameraUniform}, lights::{Lights, LightsBinding}, pipelines::{diffuse_irradiance::DiffuseIrradiancePipeline, equirectangular::{render_cubemap, FaceRotation}, skybox::create_test_cubemap_texture}, wgpu_context::WgpuContext};
+use super::{camera::{Camera, CameraBinding, CameraUniform}, lights::{Lights, LightsBinding}, pipelines::{diffuse_irradiance::DiffuseIrradiancePipeline, env_prefilter::EnvPrefilterPipeline, equirectangular::{render_cubemap, write_texture_to_file, FaceRotation}, skybox::create_test_cubemap_texture}, wgpu_context::WgpuContext};
 
 pub struct DepthTexture {
     texture: wgpu::Texture,
@@ -56,6 +56,7 @@ impl DepthTexture {
 
 pub struct EnvironmentMapBinding {
     pub bind_group: wgpu::BindGroup,
+    pub texture: wgpu::Texture,
 }
 impl EnvironmentMapBinding {
     pub fn desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
@@ -77,6 +78,40 @@ impl EnvironmentMapBinding {
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
+                // Diffuse irradiance
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::Cube,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+                // BRDF LUT
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 5,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
             ],
             label: Some("Environment Map Bind Group Layout"),
         }
@@ -89,12 +124,12 @@ impl EnvironmentMapBinding {
         bind_group_layout: &wgpu::BindGroupLayout,
     ) -> Self {
         let texture = render_cubemap(device, queue, image).unwrap();
-        //let texture = create_test_cubemap_texture(device, queue, 512, wgpu::TextureFormat::Rgba8Unorm);
+
         let cubemap_view = texture.create_view(&wgpu::TextureViewDescriptor {
             dimension: Some(wgpu::TextureViewDimension::Cube),
             ..Default::default()
         });
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+        let env_map_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("Cubemap Sampler"),
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
@@ -108,95 +143,125 @@ impl EnvironmentMapBinding {
             anisotropy_clamp: 1, // Optionally enable anisotropic filtering (e.g., Some(16))
             border_color: None, // Only relevant if using ClampToBorder
         });
+        let temp_bind_group_layout = device.create_bind_group_layout(
+            &wgpu::BindGroupLayoutDescriptor {
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            view_dimension: wgpu::TextureViewDimension::Cube,
+                            multisampled: false,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+                label: Some("Environment Map Bind Group Layout"),
+            }
+        );
+
+        let temp_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Environment Cubemap Bind Group"),
+            layout: &temp_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&cubemap_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&env_map_sampler),
+                },
+            ],
+        });
+
+        // --------------------- //
+        // MIPMAPS
+        // -------------------- //
+
+        let face_rot_bind_group_layout = device.create_bind_group_layout(&FaceRotation::desc());
+        let pipeline = EnvPrefilterPipeline::new(device, &face_rot_bind_group_layout, &temp_bind_group_layout);
+        let resolution = texture.width();
+        let texture = pipeline.render(device, queue, &texture, &temp_bind_group, &face_rot_bind_group_layout, resolution).unwrap();
+        let env_map_view = texture.create_view(&wgpu::TextureViewDescriptor {
+            dimension: Some(wgpu::TextureViewDimension::Cube),
+            ..Default::default()
+        });
+
+        let (di_view, di_sampler) = {
+            let face_rot_bind_group_layout = device.create_bind_group_layout(&FaceRotation::desc());
+            let pipeline = DiffuseIrradiancePipeline::new(device, &face_rot_bind_group_layout, &temp_bind_group_layout);
+            let cubemap = pipeline.render(device, queue, &temp_bind_group, &face_rot_bind_group_layout).unwrap();
+            let view = cubemap.create_view(&wgpu::TextureViewDescriptor {
+                dimension: Some(wgpu::TextureViewDimension::Cube),
+                ..Default::default()
+            });
+            let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+                label: Some("Cubemap Sampler"),
+                address_mode_u: wgpu::AddressMode::ClampToEdge,
+                address_mode_v: wgpu::AddressMode::ClampToEdge,
+                address_mode_w: wgpu::AddressMode::ClampToEdge, // Ensure texture coordinates are clamped across all cubemap faces
+                mag_filter: wgpu::FilterMode::Linear, // Smooth magnification
+                min_filter: wgpu::FilterMode::Linear, // Smooth minification
+                mipmap_filter: wgpu::FilterMode::Linear, // Smooth mipmap transition if mipmaps are used
+                lod_min_clamp: 0.0,
+                lod_max_clamp: 100.0, // High value to cover any mipmap range
+                compare: None, // Not typically used for cubemaps unless needed for specific effects
+                anisotropy_clamp: 1, // Optionally enable anisotropic filtering (e.g., Some(16))
+                border_color: None, // Only relevant if using ClampToBorder
+            });
+            (view, sampler)
+        };
+
+        let (brdf_view, brdf_sampler) = {
+            let brdf_lut = {
+                let mut file = File::open("assets/brdf_lut.png").unwrap();
+                let mut buf: Vec<u8> = vec![];
+                file.read_to_end(&mut buf).unwrap();
+                image::load_from_memory(&buf).unwrap()
+            };
+            let t = super::texture::Texture::from_image(device, queue, &(brdf_lut, None));
+            (t.view, t.sampler)
+        };
+
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Environment Cubemap Bind Group"),
             layout: bind_group_layout,
             entries: &[
-                    wgpu::BindGroupEntry {
+                wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&cubemap_view),
+                    resource: wgpu::BindingResource::TextureView(&env_map_view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&sampler),
-                },
-            ],
-        });
-        Self { bind_group }
-    }
-}
-
-pub struct DiffuseIrradianceBinding {
-    pub bind_group: wgpu::BindGroup,
-}
-impl DiffuseIrradianceBinding {
-    pub fn desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
-        wgpu::BindGroupLayoutDescriptor {
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::Cube,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-            ],
-            label: Some("Diffuse Irradiance Bind Group Layout"),
-        }
-    }
-
-    pub fn from_environment_map(
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        environment_map_binding: &EnvironmentMapBinding,
-        environment_map_bind_group_layout: &wgpu::BindGroupLayout,
-        bind_group_layout: &wgpu::BindGroupLayout,
-    ) -> Self {
-        let face_rot_bind_group_layout = device.create_bind_group_layout(&FaceRotation::desc());
-        let pipeline = DiffuseIrradiancePipeline::new(device, &face_rot_bind_group_layout, environment_map_bind_group_layout);
-        let cubemap = pipeline.render(device, queue, environment_map_binding, &face_rot_bind_group_layout).unwrap();
-        let cubemap_view = cubemap.create_view(&wgpu::TextureViewDescriptor {
-            dimension: Some(wgpu::TextureViewDimension::Cube),
-            ..Default::default()
-        });
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("Cubemap Sampler"),
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge, // Ensure texture coordinates are clamped across all cubemap faces
-            mag_filter: wgpu::FilterMode::Linear, // Smooth magnification
-            min_filter: wgpu::FilterMode::Linear, // Smooth minification
-            mipmap_filter: wgpu::FilterMode::Linear, // Smooth mipmap transition if mipmaps are used
-            lod_min_clamp: 0.0,
-            lod_max_clamp: 100.0, // High value to cover any mipmap range
-            compare: None, // Not typically used for cubemaps unless needed for specific effects
-            anisotropy_clamp: 1, // Optionally enable anisotropic filtering (e.g., Some(16))
-            border_color: None, // Only relevant if using ClampToBorder
-        });
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Diffuse Irradiance Cubemap Bind Group"),
-            layout: bind_group_layout,
-            entries: &[
-                    wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&cubemap_view),
+                    resource: wgpu::BindingResource::Sampler(&env_map_sampler),
                 },
                 wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&sampler),
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(&di_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::Sampler(&di_sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: wgpu::BindingResource::TextureView(&brdf_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: wgpu::BindingResource::Sampler(&brdf_sampler),
                 },
             ],
         });
-        Self { bind_group }
+        Self { bind_group, texture }
     }
 }
 
@@ -211,7 +276,6 @@ pub struct WorldBinding {
     pub lights_binding: LightsBinding,
     pub pbr_mesh_bindings: Vec<super::pbr::MeshBinding>,
     pub environment_map_binding: EnvironmentMapBinding,
-    pub diffuse_irradiance_binding: DiffuseIrradianceBinding,
 }
 impl World {
     pub fn upload(
@@ -222,7 +286,6 @@ impl World {
         camera_bind_group_layout: &wgpu::BindGroupLayout,
         lights_bind_group_layout: &wgpu::BindGroupLayout,
         environment_map_bind_group_layout: &wgpu::BindGroupLayout,
-        diffuse_irradiance_bind_group_layout: &wgpu::BindGroupLayout,
     ) -> WorldBinding {
         let camera_binding = self.camera.to_camera_uniform().upload(device, camera_bind_group_layout);
         let lights_binding = self.lights.upload(device, lights_bind_group_layout);
@@ -230,9 +293,8 @@ impl World {
             mesh.upload(device, queue, pbr_material_bind_group_layout)
         }).collect();
         let environment_map_binding = EnvironmentMapBinding::from_image(device, queue, self.environment_map.clone(), environment_map_bind_group_layout);
-        let diffuse_irradiance_binding = DiffuseIrradianceBinding::from_environment_map(device, queue, &environment_map_binding, environment_map_bind_group_layout, &diffuse_irradiance_bind_group_layout);
 
-        WorldBinding { camera_binding, lights_binding, pbr_mesh_bindings, environment_map_binding, diffuse_irradiance_binding }
+        WorldBinding { camera_binding, lights_binding, pbr_mesh_bindings, environment_map_binding }
     }
 }
 
@@ -245,7 +307,7 @@ pub struct Renderer<'surface> {
     world: World,
     camera_bind_group_layout: wgpu::BindGroupLayout,
     lights_bind_group_layout: wgpu::BindGroupLayout,
-    diffuse_irradiance_bind_group_layout: wgpu::BindGroupLayout,
+    environment_map_bind_group_layout: wgpu::BindGroupLayout,
 }
 impl<'surface> Renderer<'surface> {
     pub async fn new(
@@ -257,7 +319,6 @@ impl<'surface> Renderer<'surface> {
         let camera_bind_group_layout = wgpu_context.device.create_bind_group_layout(&CameraUniform::desc());
         let lights_bind_group_layout = wgpu_context.device.create_bind_group_layout(&Lights::desc());
         let environment_map_bind_group_layout = wgpu_context.device.create_bind_group_layout(&EnvironmentMapBinding::desc());
-        let diffuse_irradiance_bind_group_layout = wgpu_context.device.create_bind_group_layout(&DiffuseIrradianceBinding::desc());
 
         let skybox_pipeline = super::pipelines::skybox::SkyboxPipeline::new(
             &wgpu_context.device, &wgpu_context.surface_config,
@@ -266,7 +327,7 @@ impl<'surface> Renderer<'surface> {
         let pbr_material_pipeline = super::pbr::MaterialPipeline::new(
             &wgpu_context.device, &wgpu_context.surface_config,
             &camera_bind_group_layout, &lights_bind_group_layout,
-            &diffuse_irradiance_bind_group_layout
+            &environment_map_bind_group_layout
         );
 
         let camera = Camera::new(&wgpu_context.surface_config);
@@ -284,17 +345,17 @@ impl<'surface> Renderer<'surface> {
             &wgpu_context.device, &wgpu_context.queue,
             &pbr_material_pipeline.material_bind_group_layout,
             &camera_bind_group_layout, &lights_bind_group_layout,
-            &environment_map_bind_group_layout, &diffuse_irradiance_bind_group_layout,
+            &environment_map_bind_group_layout
         );
         
-        Self { wgpu_context, depth_texture, skybox_pipeline, pbr_material_pipeline, world_binding, world, camera_bind_group_layout, lights_bind_group_layout, diffuse_irradiance_bind_group_layout }
+        Self { wgpu_context, depth_texture, skybox_pipeline, pbr_material_pipeline, world_binding, world, camera_bind_group_layout, lights_bind_group_layout, environment_map_bind_group_layout }
     }
 
     pub fn reload_pbr_pipeline(&mut self) -> Result<(), wgpu::SurfaceError> {
         self.pbr_material_pipeline.rebuild_pipeline(
             &self.wgpu_context.device, &self.wgpu_context.surface_config,
             &self.camera_bind_group_layout, &self.lights_bind_group_layout,
-            &self.diffuse_irradiance_bind_group_layout
+            &self.environment_map_bind_group_layout
         );
         self.render()
     }
@@ -338,7 +399,7 @@ impl<'surface> Renderer<'surface> {
             render_pass.set_pipeline(&self.pbr_material_pipeline.render_pipeline);
             render_pass.set_bind_group(0u32, &self.world_binding.camera_binding.bind_group, &[]);
             render_pass.set_bind_group(1u32, &self.world_binding.lights_binding.bind_group, &[]);
-            render_pass.set_bind_group(3u32, &self.world_binding.diffuse_irradiance_binding.bind_group, &[]);
+            render_pass.set_bind_group(3u32, &self.world_binding.environment_map_binding.bind_group, &[]);
 
             for mesh in &self.world_binding.pbr_mesh_bindings {
                 render_pass.set_vertex_buffer(0, mesh.instance_buffer.slice(..));
