@@ -11,6 +11,7 @@ impl Texture {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         img_and_sampler: &(image::DynamicImage, Option<SamplerOptions>),
+        srgb: bool,
     ) -> Self {
         let img = &img_and_sampler.0;
         let sampler_options = &img_and_sampler.1;
@@ -22,7 +23,7 @@ impl Texture {
             height: dimensions.1,
             depth_or_array_layers: 1,
         };
-        let format = wgpu::TextureFormat::Rgba8UnormSrgb;
+        let format = if srgb { wgpu::TextureFormat::Rgba8UnormSrgb } else { wgpu::TextureFormat::Rgba8Unorm };
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: None,
             size,

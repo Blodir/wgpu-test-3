@@ -9,19 +9,21 @@ use super::texture::Texture;
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Instance {
     m4: [[f32; 4]; 4],
+    itr: [[f32; 3]; 3],
 }
 
 impl Default for Instance {
     fn default() -> Self {
         Self {
             m4: Matrix4::identity().into(),
+            itr: Matrix3::identity().into(),
         }
     }
 }
 
 impl Instance {
     const BASE_SHADER_LOCATION: u32 = 0;
-    const ATTRIBUTES: [wgpu::VertexAttribute; 4] = [
+    const ATTRIBUTES: [wgpu::VertexAttribute; 7] = [
         wgpu::VertexAttribute {
             offset: 0,
             shader_location: Self::BASE_SHADER_LOCATION + 0,
@@ -42,6 +44,21 @@ impl Instance {
             shader_location: Self::BASE_SHADER_LOCATION + 3,
             format: wgpu::VertexFormat::Float32x4,
         },
+        wgpu::VertexAttribute {
+            offset: size_of::<[f32; 16]>() as wgpu::BufferAddress,
+            shader_location: Self::BASE_SHADER_LOCATION + 4,
+            format: wgpu::VertexFormat::Float32x3,
+        },
+        wgpu::VertexAttribute {
+            offset: size_of::<[f32; 19]>() as wgpu::BufferAddress,
+            shader_location: Self::BASE_SHADER_LOCATION + 5,
+            format: wgpu::VertexFormat::Float32x3,
+        },
+        wgpu::VertexAttribute {
+            offset: size_of::<[f32; 22]>() as wgpu::BufferAddress,
+            shader_location: Self::BASE_SHADER_LOCATION + 6,
+            format: wgpu::VertexFormat::Float32x3,
+        },
     ];
 
     pub fn desc() -> wgpu::VertexBufferLayout<'static> {
@@ -52,9 +69,10 @@ impl Instance {
         }
     }
 
-    pub fn from(mat4: Matrix4<f32>) -> Self {
+    pub fn from(mat4: Matrix4<f32>, itr: Matrix3<f32>) -> Self {
         Self {
             m4: mat4.into(),
+            itr: itr.into(),
         }
     }
 }
@@ -93,7 +111,7 @@ impl Default for Vertex {
 }
 
 impl Vertex {
-    const BASE_SHADER_LOCATION: u32 = 4;
+    const BASE_SHADER_LOCATION: u32 = 7;
     const OFFSET_TAN: wgpu::BufferAddress = 0;
     const OFFSET_WEI: wgpu::BufferAddress = Self::OFFSET_TAN + size_of::<[f32; 4]>() as wgpu::BufferAddress;
     const OFFSET_POS: wgpu::BufferAddress = Self::OFFSET_WEI + size_of::<[f32; 4]>() as wgpu::BufferAddress;
@@ -187,6 +205,7 @@ pub struct Material {
     pub emissive_texture: (image::DynamicImage, Option<SamplerOptions>),
     pub base_color_texture: (image::DynamicImage, Option<SamplerOptions>),
     pub metallic_roughness_texture: (image::DynamicImage, Option<SamplerOptions>),
+    pub normal_texture_scale: f32,
 }
 
 pub struct SamplerOptions {
@@ -232,6 +251,7 @@ impl Default for Material {
             emissive_texture: (default_texture.clone(), None),
             base_color_texture: (default_texture.clone(), None),
             metallic_roughness_texture: (default_texture, None),
+            normal_texture_scale: 1.0,
         }
     }
 }
@@ -247,6 +267,7 @@ pub struct MaterialBinding {
     emissive_texture: Texture,
     base_color_texture: Texture,
     metallic_roughness_texture: Texture,
+    normal_texture_scale: wgpu::Buffer,
 }
 impl Material {
     fn desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
@@ -386,6 +407,17 @@ impl Material {
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
+                // normal texture scale
+                wgpu::BindGroupLayoutEntry {
+                    binding: 14,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
             ],
             label: Some("Material Bind Group Layout"),
         }
@@ -423,11 +455,18 @@ impl Material {
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             }
         );
-        let normal_texture = Texture::from_image(device, queue, &self.normal_texture);
-        let occlusion_texture = Texture::from_image(device, queue, &self.occlusion_texture);
-        let emissive_texture = Texture::from_image(device, queue, &self.emissive_texture);
-        let base_color_texture = Texture::from_image(device, queue, &self.base_color_texture);
-        let metallic_roughness_texture = Texture::from_image(device, queue, &self.metallic_roughness_texture);
+        let normal_texture_scale = device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Normal Texture Scale Buffer"),
+                contents: bytemuck::cast_slice(&[self.normal_texture_scale]),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            }
+        );
+        let normal_texture = Texture::from_image(device, queue, &self.normal_texture, false);
+        let occlusion_texture = Texture::from_image(device, queue, &self.occlusion_texture, false);
+        let emissive_texture = Texture::from_image(device, queue, &self.emissive_texture, true);
+        let base_color_texture = Texture::from_image(device, queue, &self.base_color_texture, true);
+        let metallic_roughness_texture = Texture::from_image(device, queue, &self.metallic_roughness_texture, false);
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: material_bind_group_layout,
             entries: &[
@@ -487,6 +526,10 @@ impl Material {
                     binding: 13,
                     resource: wgpu::BindingResource::Sampler(&metallic_roughness_texture.sampler),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 14,
+                    resource: normal_texture_scale.as_entire_binding(),
+                },
             ],
             label: Some("Material Bind Group"),
         });
@@ -501,6 +544,7 @@ impl Material {
             emissive_texture,
             base_color_texture,
             metallic_roughness_texture,
+            normal_texture_scale
         }
     }
 }

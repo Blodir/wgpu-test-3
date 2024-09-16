@@ -41,7 +41,7 @@ impl EquirectangularHdrEnvironmentMap {
     }
 
     fn upload(&self, device: &wgpu::Device, queue: &wgpu::Queue, bind_group_layout: &wgpu::BindGroupLayout) -> EquirectangularHdrEnvironmentMapBinding {
-        let texture = Texture::from_image(device, queue, &self.map);
+        let texture = Texture::from_image(device, queue, &self.map, true);
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: bind_group_layout,
             entries: &[

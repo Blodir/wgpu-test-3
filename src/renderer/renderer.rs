@@ -227,7 +227,7 @@ impl EnvironmentMapBinding {
                 file.read_to_end(&mut buf).unwrap();
                 image::load_from_memory(&buf).unwrap()
             };
-            let t = super::texture::Texture::from_image(device, queue, &(brdf_lut, None));
+            let t = super::texture::Texture::from_image(device, queue, &(brdf_lut, None), false);
             (t.view, t.sampler)
         };
 
@@ -334,7 +334,7 @@ impl<'surface> Renderer<'surface> {
         let lights = Lights::default();
         
         let environment_map = {
-            let mut file = File::open("illovo_beach_balcony_4k.hdr").unwrap();
+            let mut file = File::open("hochsal_field_8k.hdr").unwrap();
             let mut buf: Vec<u8> = vec![];
             file.read_to_end(&mut buf).unwrap();
             image::load_from_memory(&buf).unwrap()

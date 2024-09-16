@@ -36,6 +36,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
             environment_texture_sampler,
             rd
         );
-    return sample;
+    var col = sample.rgb;
+    col = col / (col + vec3f(1.0));
+    col = pow(col, vec3(1.0 / 2.2));
+    return vec4f(col, sample.a);
 }
 

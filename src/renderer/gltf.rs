@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::{self, Read, Seek};
 use bytemuck::{cast_slice, try_cast_slice, Pod, Zeroable};
-use cgmath::{Matrix4, Quaternion, SquareMatrix};
+use cgmath::{Matrix, Matrix3, Matrix4, Quaternion, SquareMatrix};
 use serde_json::Result;
 
 use serde::{Deserialize, Serialize};
@@ -15,7 +15,7 @@ fn buffer_to_ascii(buffer: &[u8]) -> String {
 }
 
 fn default_tex_coord() -> usize { 0 }
-fn default_scale() -> u64 { 1 }
+fn default_scale() -> f32 { 1.0 }
 fn default_strength() -> u64 { 1 }
 
 #[derive(Serialize_repr, Deserialize_repr, Debug)]
@@ -232,7 +232,7 @@ pub struct NormalTextureInfo {
     #[serde(rename = "texCoord", default = "default_tex_coord")]
     pub tex_coord: usize,
     #[serde(default = "default_scale")]
-    pub scale: u64,
+    pub scale: f32,
     //extensions, extras ..
 }
 
@@ -398,7 +398,16 @@ fn construct_mesh_instances_map(scene: &SceneDescription, node_idx: usize, mut t
         transform = transform * m;
     }
     if let Some(mesh) = node.mesh {
-        acc.entry(mesh as usize).or_insert(Vec::new()).push(super::pbr::Instance::from(transform.clone()));
+        acc.entry(mesh as usize).or_insert(Vec::new()).push(
+            super::pbr::Instance::from(
+                transform.clone(),
+                Matrix3::new(
+                    transform.x.x, transform.x.y, transform.x.z,
+                    transform.y.x, transform.y.y, transform.y.z,
+                    transform.z.x, transform.z.y, transform.z.z,
+                ).invert().unwrap().transpose(),
+            )
+        );
     }
     if let Some(children) = &node.children {
         for child_idx in children {
@@ -733,8 +742,6 @@ impl GLTF {
                 pbr_material.emissive_factor = factor.map(|f| f as f32);
             }
 
-            // TODO figure out normal texture scale property
-
             if let Some(texture_and_sampler) = material.pbr_metallic_roughness.as_ref()
                 .and_then(|pmr| pmr.base_color_texture.as_ref())
                 .map(|t| self.load_texture(t.index))
@@ -749,15 +756,16 @@ impl GLTF {
                 pbr_material.metallic_roughness_texture = texture_and_sampler;
             }
             
-            if let Some(mut texture_and_sampler) = material.normal_texture.as_ref()
-                .map(|t| self.load_texture(t.index))
+            if let Some(nt) = material.normal_texture.as_ref()
             {
                 // alpha = 1 is interpreted as "should use normal map"
                 // TODO this should be done at a later stage instead of at gltf import
                 // TODO actually we should just generate tangents and use (0, 0, 1) as default normal map
+                let mut texture_and_sampler = self.load_texture(nt.index);
                 set_alpha_channel(&mut texture_and_sampler.0, u8::MAX);
                 texture_and_sampler.0.save("debug_img.png").unwrap();
                 pbr_material.normal_texture = texture_and_sampler;
+                pbr_material.normal_texture_scale = nt.scale;
             }
 
             if let Some(texture_and_sampler) = material.occlusion_texture.as_ref()

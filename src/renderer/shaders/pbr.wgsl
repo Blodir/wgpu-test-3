@@ -18,6 +18,7 @@
 @group(2) @binding(11) var base_color_texture_sampler: sampler;
 @group(2) @binding(12) var metallic_roughness_texture: texture_2d<f32>;
 @group(2) @binding(13) var metallic_roughness_texture_sampler: sampler;
+@group(2) @binding(14) var<uniform> normal_texture_scale: f32;
 
 @group(3) @binding(0) var environment_texture: texture_cube<f32>;
 @group(3) @binding(1) var environment_texture_sampler: sampler;
@@ -31,20 +32,23 @@ struct InstanceInput {
     @location(1) m_2: vec4<f32>,
     @location(2) m_3: vec4<f32>,
     @location(3) m_4: vec4<f32>,
+    @location(4) itr_1: vec3<f32>,
+    @location(5) itr_2: vec3<f32>,
+    @location(6) itr_3: vec3<f32>,
 }
 
 struct VertexInput {
-    @location(4) tangent: vec4<f32>,
-    @location(5) weights: vec4<f32>,
-    @location(6) position: vec3<f32>,
-    @location(7) normal: vec3<f32>,
+    @location(7) tangent: vec4<f32>,
+    @location(8) weights: vec4<f32>,
+    @location(9) position: vec3<f32>,
+    @location(10) normal: vec3<f32>,
     // optimization: combining normal and occlusion tex coords
-    @location(8) normal_tex_coords: vec4<f32>,
+    @location(11) normal_tex_coords: vec4<f32>,
     //@location(12) occlusion_tex_coords: vec2<f32>,
     // optimization: combining emissive base color tex coords
-    @location(9) emissive_base_color_tex_coords: vec4<f32>,
-    @location(10) metallic_roughness_tex_coords: vec2<f32>,
-    @location(11) joints: vec4<u32>, // reinterpreting u8 as u32, since u8 is not supported by wgsl
+    @location(12) emissive_base_color_tex_coords: vec4<f32>,
+    @location(13) metallic_roughness_tex_coords: vec2<f32>,
+    @location(14) joints: vec4<u32>, // reinterpreting u8 as u32, since u8 is not supported by wgsl
 }
 
 struct VertexOutput {
@@ -76,15 +80,25 @@ fn vs_main(
         instance.m_4,
     );
 
+    let inverse_transpose_rot = mat3x3<f32>(
+        instance.itr_1,
+        instance.itr_2,
+        instance.itr_3,
+    );
+
     var out: VertexOutput;
     out.clip_position = view_proj * transform * vec4<f32>(model.position, 1.0);
 
-    out.normal = normalize((transform * vec4f(model.normal, 1.)).xyz);
-    //out.normal = model.normal;
-    out.tangent = normalize((transform * vec4f(model.tangent.xyz, 1.)).xyz);
-    //out.tangent = model.tangent.xyz;
+    //let N = normalize((transform * vec4f(model.normal, 0.0)).xyz);
+    let N = normalize(inverse_transpose_rot * model.normal);
+    //let T = normalize((transform * vec4f(model.tangent.xyz, 0.0)).xyz);
+    let T = normalize(inverse_transpose_rot * model.tangent.xyz);
+    //let B = normalize((transform * vec4f(model.tangent.w * cross(model.normal, model.tangent.xyz), 0.0)).xyz);
+    let B = normalize(model.tangent.w * cross(N, T));
+    out.normal = N;
+    out.tangent = T;
     // http://www.mikktspace.com/
-    out.bitangent = normalize(model.tangent.w * cross(out.normal, out.tangent));
+    out.bitangent = B;
 
     out.world_position = transform * vec4f(model.position, 1.0);
 
@@ -143,7 +157,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         );
     var N = in.normal;
     if (normal_sample.w > 0.5) { // w encodes whether normal mapping should be used
-        let n = normal_sample.xyz * 2.0 - 1.0;
+        let n: vec3f = normalize(normal_sample.rgb * 2.0 - 1.0) * vec3f(normal_texture_scale, normal_texture_scale, 1.0);
         let TBN = mat3x3(in.tangent, in.bitangent, in.normal);
         N = normalize(TBN * n);
     }
