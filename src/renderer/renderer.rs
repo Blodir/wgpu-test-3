@@ -1,8 +1,9 @@
-use std::{fs::File, io::Read, sync::Arc};
+use std::{fmt::Debug, fs::File, io::Read, sync::Arc};
 
+use image::ImageReader;
 use winit::window::Window;
 
-use super::{camera::{Camera, CameraBinding, CameraUniform}, lights::{Lights, LightsBinding}, pipelines::{diffuse_irradiance::DiffuseIrradiancePipeline, env_prefilter::EnvPrefilterPipeline, equirectangular::{render_cubemap, write_texture_to_file, FaceRotation}, skybox::create_test_cubemap_texture}, wgpu_context::WgpuContext};
+use super::{camera::{Camera, CameraBinding, CameraUniform}, lights::{Lights, LightsBinding}, pbr::SamplerOptions, pipelines::{diffuse_irradiance::DiffuseIrradiancePipeline, env_prefilter::EnvPrefilterPipeline, equirectangular::{render_cubemap, write_texture_to_file, FaceRotation}, skybox::create_test_cubemap_texture}, wgpu_context::WgpuContext};
 
 pub struct DepthTexture {
     texture: wgpu::Texture,
@@ -192,6 +193,7 @@ impl EnvironmentMapBinding {
         let texture = pipeline.render(device, queue, &texture, &temp_bind_group, &face_rot_bind_group_layout, resolution).unwrap();
         let env_map_view = texture.create_view(&wgpu::TextureViewDescriptor {
             dimension: Some(wgpu::TextureViewDimension::Cube),
+            format: Some(wgpu::TextureFormat::Rgba16Float),
             ..Default::default()
         });
 
@@ -227,7 +229,21 @@ impl EnvironmentMapBinding {
                 file.read_to_end(&mut buf).unwrap();
                 image::load_from_memory(&buf).unwrap()
             };
-            let t = super::texture::Texture::from_image(device, queue, &(brdf_lut, None), false);
+            let t = super::texture::Texture::from_image(
+                device, queue,
+                &(
+                    brdf_lut,
+                    Some(
+                        SamplerOptions {
+                            mag_filter: wgpu::FilterMode::Linear,
+                            min_filter: wgpu::FilterMode::Linear,
+                            address_mode_u: wgpu::AddressMode::ClampToEdge,
+                            address_mode_v: wgpu::AddressMode::ClampToEdge
+                        }
+                    )
+                ),
+                true
+            );
             (t.view, t.sampler)
         };
 
@@ -334,10 +350,11 @@ impl<'surface> Renderer<'surface> {
         let lights = Lights::default();
         
         let environment_map = {
-            let mut file = File::open("hochsal_field_8k.hdr").unwrap();
-            let mut buf: Vec<u8> = vec![];
-            file.read_to_end(&mut buf).unwrap();
-            image::load_from_memory(&buf).unwrap()
+            let img = ImageReader::open("hayloft_8k.hdr")
+                .expect("Failed to open environment map")
+                .decode()
+                .expect("Failed to decode environment map");
+            img
         };
 
         let world = World { camera, lights, pbr_meshes, environment_map };

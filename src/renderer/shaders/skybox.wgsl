@@ -31,14 +31,22 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let rd = normalize(in.world_position.xyz);
 
     let sample =
-        textureSample(
+        textureSampleLevel(
             environment_texture,
             environment_texture_sampler,
-            rd
+            rd,
+            0.0
         );
     var col = sample.rgb;
+
+    // exposure
+    let exposure = 0.0;
+    let exposure_factor = pow(2.0, exposure);
+    col = col * exposure_factor;
+
+    // reinhard tone mapping
     col = col / (col + vec3f(1.0));
-    col = pow(col, vec3(1.0 / 2.2));
+
     return vec4f(col, sample.a);
 }
 

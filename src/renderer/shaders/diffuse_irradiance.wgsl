@@ -9,6 +9,7 @@ struct VertexOutput {
 }
 
 const PI: f32 = 3.1415927;
+const MAX_TOTAL_RADIANCE: f32 = 50.0;
 
 @vertex
 fn vs_main(
@@ -42,11 +43,14 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         for (var theta = 0.0; theta < 0.5 * PI; theta += sample_delta) {
             let tangent_sample = vec3f(sin(theta) * cos(phi), sin(theta) * sin(phi), cos(theta));
             let sample_vec = tangent_sample.x * right + tangent_sample.y * up + tangent_sample.z * N;
-            irradiance += textureSample(
+            let sample_radiance = textureSample(
                 environment_texture,
                 environment_texture_sampler,
                 sample_vec
-            ).rgb * cos(theta) * sin(theta);
+            ).rgb;
+            let total_sample_radiance = sample_radiance.r + sample_radiance.g + sample_radiance.b;
+            let clamped_radiance = sample_radiance * (MAX_TOTAL_RADIANCE / max(total_sample_radiance, MAX_TOTAL_RADIANCE));
+            irradiance += clamped_radiance * cos(theta) * sin(theta);
             n_samples++;
         }
     }

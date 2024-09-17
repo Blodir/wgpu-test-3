@@ -23,7 +23,7 @@ impl EquirectangularHdrEnvironmentMap {
                     binding: 0,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false},
                         view_dimension: wgpu::TextureViewDimension::D2,
                         multisampled: false
                     },
@@ -32,7 +32,7 @@ impl EquirectangularHdrEnvironmentMap {
                 wgpu::BindGroupLayoutEntry {
                     binding: 1,
                     visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering),
                     count: None,
                 },
             ],
@@ -41,7 +41,13 @@ impl EquirectangularHdrEnvironmentMap {
     }
 
     fn upload(&self, device: &wgpu::Device, queue: &wgpu::Queue, bind_group_layout: &wgpu::BindGroupLayout) -> EquirectangularHdrEnvironmentMapBinding {
-        let texture = Texture::from_image(device, queue, &self.map, true);
+        let texture = Texture::from_image(device, queue, &self.map, false);
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            min_filter: wgpu::FilterMode::Nearest,
+            mag_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: bind_group_layout,
             entries: &[
@@ -51,7 +57,7 @@ impl EquirectangularHdrEnvironmentMap {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&texture.sampler),
+                    resource: wgpu::BindingResource::Sampler(&sampler),
                 },
             ],
             label: Some("EquirectangularHdrEnvironmentMap Bind Group"),
@@ -134,7 +140,7 @@ impl EquirectangularReaderPipeline {
         });
         let shader_module = crate::renderer::utils::create_shader_module(device, "src/renderer/shaders/equirectangular.wgsl");
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Render Pipeline"),
+            label: Some("Equirectangular Map Render Pipeline"),
             layout: Some(&render_pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader_module,
@@ -145,7 +151,7 @@ impl EquirectangularReaderPipeline {
                 module: &shader_module,
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: wgpu::TextureFormat::Rgba8Unorm, // is this the correct format?
+                    format: wgpu::TextureFormat::Rgba16Float,
                     blend: None,
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -182,8 +188,8 @@ pub fn render_cubemap(
 
     let eem_bind_group_layout = device.create_bind_group_layout(&EquirectangularHdrEnvironmentMap::desc());
     let equirectangular_environment_map = EquirectangularHdrEnvironmentMap { map: (image, Some(SamplerOptions {
-        mag_filter: wgpu::FilterMode::Linear,
-        min_filter: wgpu::FilterMode::Linear,
+        mag_filter: wgpu::FilterMode::Nearest,
+        min_filter: wgpu::FilterMode::Nearest,
         address_mode_u: wgpu::AddressMode::ClampToEdge,
         address_mode_v: wgpu::AddressMode::ClampToEdge,
     })) };
@@ -215,7 +221,7 @@ pub fn render_cubemap(
         mip_level_count,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
-        format: wgpu::TextureFormat::Rgba8Unorm,
+        format: wgpu::TextureFormat::Rgba16Float,
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_SRC,
         view_formats: &[],
     });

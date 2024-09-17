@@ -1,3 +1,5 @@
+use wgpu::FilterMode;
+
 use super::pbr::SamplerOptions;
 
 pub struct Texture {
@@ -15,7 +17,6 @@ impl Texture {
     ) -> Self {
         let img = &img_and_sampler.0;
         let sampler_options = &img_and_sampler.1;
-        let rgba = img.to_rgba8();
         let dimensions = image::GenericImageView::dimensions(img);
 
         let size = wgpu::Extent3d {
@@ -23,7 +24,28 @@ impl Texture {
             height: dimensions.1,
             depth_or_array_layers: 1,
         };
-        let format = if srgb { wgpu::TextureFormat::Rgba8UnormSrgb } else { wgpu::TextureFormat::Rgba8Unorm };
+        let (remapped, format): (Vec<u8>, wgpu::TextureFormat) = match (img, srgb) {
+            (image::DynamicImage::ImageRgb32F(_), false) => (
+                bytemuck::cast_slice(&img.to_rgba32f().into_raw()).to_vec(),
+                wgpu::TextureFormat::Rgba32Float,
+            ),
+            (image::DynamicImage::ImageRgba32F(_), false) => (
+                bytemuck::cast_slice(&img.to_rgba32f().into_raw()).to_vec(),
+                wgpu::TextureFormat::Rgba32Float,
+            ),
+            (_, true) => (
+                bytemuck::cast_slice(&img.to_rgba8().into_raw()).to_vec(),
+                wgpu::TextureFormat::Rgba8UnormSrgb,
+            ),
+            (_, false) => (
+                bytemuck::cast_slice(&img.to_rgba8().into_raw()).to_vec(),
+                wgpu::TextureFormat::Rgba8Unorm,
+            ),
+        };
+        let bytes_per_row = match format {
+            wgpu::TextureFormat::Rgba32Float => 4 * 4 * dimensions.0,
+            _ => 4 * dimensions.0
+        };
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: None,
             size,
@@ -42,16 +64,19 @@ impl Texture {
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
             },
-            &rgba,
+            &remapped,
             wgpu::ImageDataLayout {
                 offset: 0,
-                bytes_per_row: Some(4 * dimensions.0),
+                bytes_per_row: Some(bytes_per_row),
                 rows_per_image: Some(dimensions.1),
             },
             size
         );
 
-        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let view = texture.create_view(&wgpu::TextureViewDescriptor {
+            format: Some(format),
+            ..Default::default()
+        });
         let sampler = device.create_sampler(
             &sampler_options.as_ref().map(
                 |s| wgpu::SamplerDescriptor {
@@ -59,6 +84,7 @@ impl Texture {
                     address_mode_v: s.address_mode_v,
                     mag_filter: s.mag_filter,
                     min_filter: s.min_filter,
+                    mipmap_filter: if format == wgpu::TextureFormat::Rgba32Float { FilterMode::Nearest } else { FilterMode::Linear },
                     ..wgpu::SamplerDescriptor::default()
                 }
             ).unwrap_or(wgpu::SamplerDescriptor::default())

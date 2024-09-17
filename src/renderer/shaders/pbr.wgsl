@@ -234,16 +234,22 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         ).rgb;
     let diffuse = irradiance * surface_color.rgb;
 
-    let brdf = textureSample(brdf_lut, brdf_lut_sampler, vec2(max(dot(N, V), 0.0), surface_roughness)).rg;
-    let specular_env = prefiltered_color * (F * brdf.x + brdf.y);
+    // in opengl texture origin is at bottom-left so the y coordinate has to be flipped here (as opposed to learnopengl tutorial)
+    let brdf = textureSample(brdf_lut, brdf_lut_sampler, vec2(max(dot(N, V), 0.0), 1 - surface_roughness)).rg;
+    let specular_env = prefiltered_color * (F_env * brdf.x + brdf.y);
     let ambient = (k_d2 * diffuse + specular_env) * ao.r;
 
     // ---------------- //
 
     var col = ambient + Lo + (surface_emissive * surface_emissive_sample.a);
 
+    // exposure
+    let exposure = 1.0;
+    let exposure_factor = pow(2.0, exposure);
+    col = col * exposure_factor;
+
+    // reinhard tone mapping
     col = col / (col + vec3f(1.0));
-    col = pow(col, vec3(1.0 / 2.2));
 
     return vec4f(col, 1.0);
 }

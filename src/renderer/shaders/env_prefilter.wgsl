@@ -11,6 +11,7 @@ struct VertexOutput {
 }
 
 const PI: f32 = 3.1415927;
+const MAX_TOTAL_RADIANCE: f32 = 50.0;
 
 @vertex
 fn vs_main(
@@ -74,12 +75,13 @@ fn importance_sample_ggx(x_i: vec2f, N: vec3f, r: f32) -> vec3f {
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let N = normalize(in.position);
+    //return textureSampleLevel(environment_texture, environment_texture_sampler, N, 0.0);
     let R = N;
     let V = R;
 
-    let sample_count = 1024u;
+    let sample_count = 2048u;
 
-    var color = vec3f(0);
+    var total_radiance = vec3f(0);
     var total_weight = 0.0;
 
     for(var i = 0u; i < sample_count; i = i + 1u) {
@@ -104,13 +106,18 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
             let mip_level = select(0.5 * log2(sa_sample / sa_texel), 0.0, roughness == 0.0);
 
-            color += textureSampleLevel(environment_texture, environment_texture_sampler, L, mip_level).rgb * NdotL;
+            var sample_radiance = textureSampleLevel(environment_texture, environment_texture_sampler, L, mip_level).rgb;
+            // clamp total radiance to prevent bright spots in the prefilter map (though some energy is lost!)
+            let total_sample_radiance = sample_radiance.r + sample_radiance.g + sample_radiance.b;
+            let clamped_radiance = sample_radiance * (MAX_TOTAL_RADIANCE / max(total_sample_radiance, MAX_TOTAL_RADIANCE));
+
+            total_radiance += clamped_radiance * NdotL;
             total_weight += NdotL;
         }
     }
 
-    color = color / total_weight;
+    total_radiance = total_radiance / total_weight;
 
-    return vec4f(color, 1.0);
+    return vec4f(total_radiance, 1.0);
 }
 

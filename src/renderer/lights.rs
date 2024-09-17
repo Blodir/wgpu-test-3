@@ -15,8 +15,8 @@ pub struct LightsBinding {
 impl Default for Lights {
     fn default() -> Self {
         Lights {
-            direction: Vector3::new(1.0, -1.0, -1.0).normalize().into(),
-            color: [1.0, 1.0, 1.0],
+            direction: Vector3::new(1.0, -1.0, 1.0).normalize().into(),
+            color: [10.0, 10.0, 10.0],
         }
     }
 }

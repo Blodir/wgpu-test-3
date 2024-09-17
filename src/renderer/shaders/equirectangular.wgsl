@@ -41,10 +41,11 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let x = t / (2 * PI);
 
     let col =
-        textureSample(
+        textureSampleLevel(
             equirectangular_texture,
             equirectangular_texture_sampler,
-            vec2f(x, y)
+            vec2f(x, y),
+            0.0
         );
 
     return col;
