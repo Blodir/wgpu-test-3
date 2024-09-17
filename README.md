@@ -1,5 +1,7 @@
 3D renderer with Rust and wgpu.
 
+![image](https://github.com/user-attachments/assets/3214c60c-b76f-4427-a3d7-553a96656ee0)
+
 Features
 - partial GLTF support
     - .gltf not yet supported (.glb is supported)
