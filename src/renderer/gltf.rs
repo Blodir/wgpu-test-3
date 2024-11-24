@@ -1,14 +1,12 @@
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{self, Read, Seek};
-use bytemuck::{cast_slice, try_cast_slice, Pod, Zeroable};
+use std::io::{self, Read};
 use cgmath::{Matrix, Matrix3, Matrix4, Quaternion, SquareMatrix};
-use serde_json::Result;
 
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 
-use super::pbr::SamplerOptions;
+use super::pipelines::pbr;
 
 fn buffer_to_ascii(buffer: &[u8]) -> String {
     buffer.iter().map(|&x| x as char).collect()
@@ -375,7 +373,7 @@ pub fn get_accessor_component_size(accessor: &Accessor) -> u8 {
     }
 }
 
-fn construct_mesh_instances_map(scene: &SceneDescription, node_idx: usize, mut transform: Matrix4<f32>, acc: &mut HashMap<usize, Vec<super::pbr::Instance>>) {
+fn construct_mesh_instances_map(scene: &SceneDescription, node_idx: usize, mut transform: Matrix4<f32>, acc: &mut HashMap<usize, Vec<pbr::Instance>>) {
     let node = &scene.nodes[node_idx];
 
     if let Some(v) = node.scale {
@@ -399,7 +397,7 @@ fn construct_mesh_instances_map(scene: &SceneDescription, node_idx: usize, mut t
     }
     if let Some(mesh) = node.mesh {
         acc.entry(mesh as usize).or_insert(Vec::new()).push(
-            super::pbr::Instance::from(
+            pbr::Instance::from(
                 transform.clone(),
                 Matrix3::new(
                     transform.x.x, transform.x.y, transform.x.z,
@@ -416,8 +414,8 @@ fn construct_mesh_instances_map(scene: &SceneDescription, node_idx: usize, mut t
     }
 }
 
-fn scene_to_mesh_instances(scene: &SceneDescription) -> HashMap<usize, Vec<super::pbr::Instance>> {
-    let mut map: HashMap<usize, Vec<super::pbr::Instance>> = HashMap::new();
+fn scene_to_mesh_instances(scene: &SceneDescription) -> HashMap<usize, Vec<pbr::Instance>> {
+    let mut map: HashMap<usize, Vec<pbr::Instance>> = HashMap::new();
     let transform = Matrix4::identity();
 
     // Only rendering the main scene for now
@@ -533,25 +531,25 @@ impl GLTF {
         data
     }
 
-    fn accessor_to_pbr_indices(&self, accessor_idx: usize) -> super::pbr::VertexIndices {
+    fn accessor_to_pbr_indices(&self, accessor_idx: usize) -> pbr::VertexIndices {
         let accessor = &self.scene.accessors[accessor_idx];
         match accessor.component_type {
             ComponentType::UnsignedByte => {
-                super::pbr::VertexIndices::U16(
+                pbr::VertexIndices::U16(
                     self.accessor_to_contiguous_array(accessor_idx, |buf| {
                         buf[0] as u16
                     })
                 )
             },
             ComponentType::UnsignedShort => {
-                super::pbr::VertexIndices::U16(
+                pbr::VertexIndices::U16(
                     self.accessor_to_contiguous_array(accessor_idx, |buf| {
                         bytemuck::cast::<[u8; 2], u16>(buf[0..2].try_into().unwrap())
                     })
                 )
             },
             ComponentType::UnsignedInt => {
-                super::pbr::VertexIndices::U32(
+                pbr::VertexIndices::U32(
                     self.accessor_to_contiguous_array(accessor_idx, |buf| {
                         bytemuck::cast::<[u8; 4], u32>(buf[0..4].try_into().unwrap())
                     })
@@ -561,7 +559,7 @@ impl GLTF {
         }
     }
 
-    fn primitive_to_pbr_vertices(&self, primitive: &Primitive) -> Vec<super::pbr::Vertex> {
+    fn primitive_to_pbr_vertices(&self, primitive: &Primitive) -> Vec<pbr::Vertex> {
         let positions =
             self.accessor_to_contiguous_array(primitive.attributes.position, |buf| {
                 let s: &[u8; 12] = buf[0..12].try_into().unwrap();
@@ -666,7 +664,7 @@ impl GLTF {
 
         let mut vertices = vec![];
         for i in 0..positions.len() {
-            let mut vert = super::pbr::Vertex::default();
+            let mut vert = pbr::Vertex::default();
             vert.position = positions[i];
             if let Some(ref n) = normals { vert.normal = n[i]; }
             if let Some(ref n) = tangents { vert.tangent = n[i]; }
@@ -682,7 +680,7 @@ impl GLTF {
         vertices
     }
 
-    fn load_texture(&self, texture_idx: usize) -> (image::DynamicImage, Option<SamplerOptions>) {
+    fn load_texture(&self, texture_idx: usize) -> (image::DynamicImage, Option<pbr::SamplerOptions>) {
         let texture = &self.scene.textures.as_ref().unwrap()[texture_idx];
 
         let sampler = texture.sampler.map(|sampler_idx| self.sampler_to_sampler_options(sampler_idx));
@@ -702,10 +700,10 @@ impl GLTF {
         (image::load_from_memory_with_format(slice, image_format).unwrap(), sampler)
     }
 
-    fn sampler_to_sampler_options(&self, sampler_idx: usize) -> SamplerOptions {
+    fn sampler_to_sampler_options(&self, sampler_idx: usize) -> pbr::SamplerOptions {
         let sampler = &self.scene.samplers.as_ref().unwrap()[sampler_idx];
 
-        SamplerOptions {
+        pbr::SamplerOptions {
             address_mode_u: sampler.wrap_s.as_ref().unwrap_or(&SamplerWrapMode::Repeat).to_wgpu_address_mode(),
             address_mode_v: sampler.wrap_t.as_ref().unwrap_or(&SamplerWrapMode::Repeat).to_wgpu_address_mode(),
             mag_filter: sampler.mag_filter.as_ref().unwrap_or(&SamplerMagFilterType::Nearest).to_wgpu_filter_mode(),
@@ -713,8 +711,8 @@ impl GLTF {
         }
     }
 
-    fn material_to_pbr(&self, maybe_material_idx: Option<usize>) -> super::pbr::Material {
-        let mut pbr_material = super::pbr::Material::default();
+    fn material_to_pbr(&self, maybe_material_idx: Option<usize>) -> pbr::Material {
+        let mut pbr_material = pbr::Material::default();
         let maybe_material: Option<&Material> = match (maybe_material_idx, &self.scene.materials) {
             (Some(i), Some(mats)) => Some(&mats[i]),
             _ => None
@@ -784,7 +782,7 @@ impl GLTF {
         pbr_material
     }
 
-    pub fn to_pbr_meshes(&self) -> Vec<super::pbr::Mesh> {
+    pub fn to_pbr_meshes(&self) -> Vec<pbr::Mesh> {
         let mut mesh_instances = scene_to_mesh_instances(&self.scene);
         let mut pbr_meshes = vec![];
         for mesh_idx in 0..self.scene.meshes.len() {
@@ -809,13 +807,13 @@ impl GLTF {
                 let vertices = self.primitive_to_pbr_vertices(primitive);
                 let indices = self.accessor_to_pbr_indices(primitive.indices);
                 let material = self.material_to_pbr(primitive.material);
-                pbr_primitives.push(super::pbr::Primitive {
+                pbr_primitives.push(pbr::Primitive {
                     vertices,
                     indices,
                     material,
                 });
             }
-            pbr_meshes.push(super::pbr::Mesh {
+            pbr_meshes.push(pbr::Mesh {
                 primitives: pbr_primitives,
                 instances: mesh_instances.remove(&mesh_idx).unwrap(),
             });

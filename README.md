@@ -43,9 +43,13 @@ Features
 - some basic camera movements for looking around with lmb drag and scroll
 
 Roadmap
+- MSAA
+- fix energy loss with hdr map clamping
 - normal generation
 - tangent generation (mikktspace?)
 - missing gltf properties
 - .gltf file support
 - ui
+- KHR_materials_ior
+- CSM cascaded shadow maps
 

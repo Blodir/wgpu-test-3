@@ -3,7 +3,18 @@ use std::{fmt::Debug, fs::File, io::Read, sync::Arc};
 use image::ImageReader;
 use winit::window::Window;
 
-use super::{camera::{Camera, CameraBinding, CameraUniform}, lights::{Lights, LightsBinding}, pbr::SamplerOptions, pipelines::{diffuse_irradiance::DiffuseIrradiancePipeline, env_prefilter::EnvPrefilterPipeline, equirectangular::{render_cubemap, write_texture_to_file, FaceRotation}, skybox::create_test_cubemap_texture}, wgpu_context::WgpuContext};
+use super::{
+    camera::{Camera, CameraBinding, CameraUniform},
+    lights::{Lights, LightsBinding},
+    pipelines::{
+        diffuse_irradiance::DiffuseIrradiancePipeline, env_prefilter::EnvPrefilterPipeline, equirectangular::{
+            render_cubemap, write_texture_to_file, FaceRotation,
+        }, pbr::{
+            MaterialPipeline, Mesh, MeshBinding, SamplerOptions
+        }, skybox::create_test_cubemap_texture
+    },
+    wgpu_context::WgpuContext
+};
 
 pub struct DepthTexture {
     texture: wgpu::Texture,
@@ -284,13 +295,13 @@ impl EnvironmentMapBinding {
 pub struct World {
     pub camera: Camera,
     pub lights: Lights,
-    pub pbr_meshes: Vec<super::pbr::Mesh>,
+    pub pbr_meshes: Vec<Mesh>,
     pub environment_map: image::DynamicImage,
 }
 pub struct WorldBinding {
     pub camera_binding: CameraBinding,
     pub lights_binding: LightsBinding,
-    pub pbr_mesh_bindings: Vec<super::pbr::MeshBinding>,
+    pub pbr_mesh_bindings: Vec<MeshBinding>,
     pub environment_map_binding: EnvironmentMapBinding,
 }
 impl World {
@@ -318,7 +329,7 @@ pub struct Renderer<'surface> {
     wgpu_context: WgpuContext<'surface>,
     depth_texture: DepthTexture,
     skybox_pipeline: super::pipelines::skybox::SkyboxPipeline,
-    pbr_material_pipeline: super::pbr::MaterialPipeline,
+    pbr_material_pipeline: MaterialPipeline,
     world_binding: WorldBinding,
     world: World,
     camera_bind_group_layout: wgpu::BindGroupLayout,
@@ -328,7 +339,7 @@ pub struct Renderer<'surface> {
 impl<'surface> Renderer<'surface> {
     pub async fn new(
         window: Arc<Window>,
-        pbr_meshes: Vec<super::pbr::Mesh>,
+        pbr_meshes: Vec<Mesh>,
     ) -> Self {
         let wgpu_context = WgpuContext::new(window).await;
         let depth_texture = DepthTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
@@ -340,7 +351,7 @@ impl<'surface> Renderer<'surface> {
             &wgpu_context.device, &wgpu_context.surface_config,
             &camera_bind_group_layout, &environment_map_bind_group_layout
         );
-        let pbr_material_pipeline = super::pbr::MaterialPipeline::new(
+        let pbr_material_pipeline = MaterialPipeline::new(
             &wgpu_context.device, &wgpu_context.surface_config,
             &camera_bind_group_layout, &lights_bind_group_layout,
             &environment_map_bind_group_layout
@@ -384,52 +395,8 @@ impl<'surface> Renderer<'surface> {
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
 
         self.skybox_pipeline.render(&self.wgpu_context.device, &self.wgpu_context.queue, &view, &self.depth_texture.view, &self.world_binding)?;
+        self.pbr_material_pipeline.render(&self.wgpu_context.device, &self.wgpu_context.queue, &view, &self.depth_texture.view, &self.world_binding);
 
-        // TODO move the render pass to pbr pipeline:
-        let mut encoder = self.wgpu_context.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("Render Encoder"),
-        });
-
-        {
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Render Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.depth_texture.view,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    }),
-                    stencil_ops: None,
-                }),
-                occlusion_query_set: None,
-                timestamp_writes: None,
-            });
-
-            render_pass.set_pipeline(&self.pbr_material_pipeline.render_pipeline);
-            render_pass.set_bind_group(0u32, &self.world_binding.camera_binding.bind_group, &[]);
-            render_pass.set_bind_group(1u32, &self.world_binding.lights_binding.bind_group, &[]);
-            render_pass.set_bind_group(3u32, &self.world_binding.environment_map_binding.bind_group, &[]);
-
-            for mesh in &self.world_binding.pbr_mesh_bindings {
-                render_pass.set_vertex_buffer(0, mesh.instance_buffer.slice(..));
-                for primitive in &mesh.primitives {
-                    render_pass.set_bind_group(2u32, &primitive.material_binding.bind_group, &[]);
-                    render_pass.set_vertex_buffer(1u32, primitive.vertex_buffer.slice(..));
-                    render_pass.set_index_buffer(primitive.index_buffer.slice(..), primitive.index_format);
-                    render_pass.draw_indexed(0..primitive.index_count, 0, 0..mesh.instance_count);
-                }
-            }
-        }
-
-        self.wgpu_context.queue.submit(std::iter::once(encoder.finish()));
         output.present();
 
         Ok(())

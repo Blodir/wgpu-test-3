@@ -3,7 +3,7 @@ use std::{fs::File, io::Read, mem::size_of};
 use cgmath::{Matrix, Matrix3, Matrix4, SquareMatrix, Transform};
 use wgpu::util::DeviceExt;
 
-use super::texture::Texture;
+use crate::renderer::{renderer::WorldBinding, texture::Texture};
 
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
@@ -699,7 +699,7 @@ impl MaterialPipeline {
             bind_group_layouts,
             push_constant_ranges: &[],
         });
-        let shader_module = super::utils::create_shader_module(device, "src/renderer/shaders/pbr.wgsl");
+        let shader_module = crate::renderer::utils::create_shader_module(device, "src/renderer/shaders/pbr.wgsl");
         device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Render Pipeline"),
             layout: Some(&render_pipeline_layout),
@@ -742,6 +742,60 @@ impl MaterialPipeline {
             },
             multiview: None,
         })
+    }
+
+    pub fn render(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        target_view: &wgpu::TextureView,
+        depth_view: &wgpu::TextureView,
+        world_binding: &WorldBinding
+    ) {
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("PBR Render Encoder"),
+        });
+
+        {
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Render Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &target_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: depth_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                occlusion_query_set: None,
+                timestamp_writes: None,
+            });
+
+            render_pass.set_pipeline(&self.render_pipeline);
+            render_pass.set_bind_group(0u32, &world_binding.camera_binding.bind_group, &[]);
+            render_pass.set_bind_group(1u32, &world_binding.lights_binding.bind_group, &[]);
+            render_pass.set_bind_group(3u32, &world_binding.environment_map_binding.bind_group, &[]);
+
+            for mesh in &world_binding.pbr_mesh_bindings {
+                render_pass.set_vertex_buffer(0, mesh.instance_buffer.slice(..));
+                for primitive in &mesh.primitives {
+                    render_pass.set_bind_group(2u32, &primitive.material_binding.bind_group, &[]);
+                    render_pass.set_vertex_buffer(1u32, primitive.vertex_buffer.slice(..));
+                    render_pass.set_index_buffer(primitive.index_buffer.slice(..), primitive.index_format);
+                    render_pass.draw_indexed(0..primitive.index_count, 0, 0..mesh.instance_count);
+                }
+            }
+        }
+
+        queue.submit(std::iter::once(encoder.finish()));
     }
 }
 

@@ -3,12 +3,13 @@ use std::{fs::File, io::{self, Read}};
 use cgmath::{Deg, Matrix4, SquareMatrix};
 use wgpu::util::DeviceExt as _;
 
-use crate::renderer::{pbr::SamplerOptions, texture::Texture};
+use crate::renderer::texture::Texture;
+use crate::renderer::pipelines::pbr;
 
 use super::mipmap::MipmapPipeline;
 
 struct EquirectangularHdrEnvironmentMap {
-    map: (image::DynamicImage, Option<SamplerOptions>),
+    map: (image::DynamicImage, Option<pbr::SamplerOptions>),
 }
 
 struct EquirectangularHdrEnvironmentMapBinding {
@@ -187,7 +188,7 @@ pub fn render_cubemap(
     let mip_level_count = 5;
 
     let eem_bind_group_layout = device.create_bind_group_layout(&EquirectangularHdrEnvironmentMap::desc());
-    let equirectangular_environment_map = EquirectangularHdrEnvironmentMap { map: (image, Some(SamplerOptions {
+    let equirectangular_environment_map = EquirectangularHdrEnvironmentMap { map: (image, Some(pbr::SamplerOptions {
         mag_filter: wgpu::FilterMode::Nearest,
         min_filter: wgpu::FilterMode::Nearest,
         address_mode_u: wgpu::AddressMode::ClampToEdge,

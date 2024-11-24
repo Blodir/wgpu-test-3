@@ -1,6 +1,6 @@
 use wgpu::FilterMode;
 
-use super::pbr::SamplerOptions;
+use super::pipelines::pbr;
 
 pub struct Texture {
     pub texture: wgpu::Texture,
@@ -12,7 +12,7 @@ impl Texture {
     pub fn from_image(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        img_and_sampler: &(image::DynamicImage, Option<SamplerOptions>),
+        img_and_sampler: &(image::DynamicImage, Option<pbr::SamplerOptions>),
         srgb: bool,
     ) -> Self {
         let img = &img_and_sampler.0;
