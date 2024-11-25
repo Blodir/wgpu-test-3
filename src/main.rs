@@ -2,10 +2,8 @@ use std::env;
 use std::fs::File;
 use std::io;
 
-use renderer::gltf::GLTF;
-
-mod renderer;
-mod app;
+use wgpu_test_3::renderer::gltf::GLTF;
+use wgpu_test_3::run;
 
 fn main() -> io::Result<()> {
     let args: Vec<String> = env::args().collect();
@@ -13,7 +11,7 @@ fn main() -> io::Result<()> {
     let mut file = File::open(path)?;
 
     let gltf = GLTF::new(&mut file).unwrap();
-    app::run(gltf);
+    run(gltf);
     
     Ok(())
 }

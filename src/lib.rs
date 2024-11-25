@@ -4,7 +4,9 @@ use winit::{application::ApplicationHandler, dpi::PhysicalPosition, event::{Devi
 use notify::{Watcher, RecommendedWatcher, Config};
 use pollster::FutureExt as _;
 
-use crate::renderer::{gltf::GLTF, renderer::Renderer};
+pub mod renderer;
+
+use renderer::{gltf::GLTF, renderer::Renderer};
 
 struct App<'surface> {
     renderer: Option<Arc<Mutex<Renderer<'surface>>>>,
