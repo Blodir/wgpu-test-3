@@ -7,6 +7,39 @@ const INDICES: &[u16] = &[
     3, 2, 0,
 ];
 
+pub struct SkyboxOutputTexture {
+    texture: wgpu::Texture,
+    pub view: wgpu::TextureView,
+    pub sampler: wgpu::Sampler,
+}
+
+impl SkyboxOutputTexture {
+    pub fn new(device: &wgpu::Device, surface_config: &wgpu::SurfaceConfiguration) -> Self {
+        let size = wgpu::Extent3d {
+            width: surface_config.width,
+            height: surface_config.height,
+            depth_or_array_layers: 1,
+        };
+        let desc = wgpu::TextureDescriptor {
+            label: Some("Skybox Texture"),
+            size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: surface_config.format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        };
+        let texture = device.create_texture(&desc);
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor::default());
+
+        Self { 
+            texture, view, sampler
+        }
+    }
+}
+
 pub struct SkyboxPipeline {
     render_pipeline: wgpu::RenderPipeline,
     index_buffer: wgpu::Buffer,
@@ -49,14 +82,7 @@ impl SkyboxPipeline {
                 cull_mode: Some(wgpu::Face::Back),
                 ..Default::default()
             },
-            depth_stencil: Some(wgpu::DepthStencilState {
-                // TODO should get from depth texture
-                format: wgpu::TextureFormat::Depth32Float,
-                depth_write_enabled: false,
-                depth_compare: wgpu::CompareFunction::LessEqual,
-                stencil: wgpu::StencilState::default(),
-                bias: wgpu::DepthBiasState::default(),
-            }),
+            depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
         });
@@ -76,8 +102,7 @@ impl SkyboxPipeline {
         &self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        output_texture_view: &wgpu::TextureView,
-        depth_texture_view: &wgpu::TextureView,
+        skybox_texture_view: &wgpu::TextureView,
         world_binding: &WorldBinding,
     ) -> Result<(), wgpu::SurfaceError> {
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -88,7 +113,7 @@ impl SkyboxPipeline {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Skybox Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: output_texture_view,
+                    view: skybox_texture_view,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color {
@@ -100,14 +125,7 @@ impl SkyboxPipeline {
                         store: wgpu::StoreOp::Store,
                     },
                 })],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: depth_texture_view,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(1.0), // Clear depth buffer (far plane for skybox)
-                        store: wgpu::StoreOp::Store,
-                    }),
-                    stencil_ops: None,
-                }),
+                depth_stencil_attachment: None,
                 occlusion_query_set: None,
                 timestamp_writes: None,
             });

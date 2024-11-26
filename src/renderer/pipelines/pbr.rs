@@ -3,7 +3,7 @@ use std::{fs::File, io::Read, mem::size_of};
 use cgmath::{Matrix, Matrix3, Matrix4, SquareMatrix, Transform};
 use wgpu::util::DeviceExt;
 
-use crate::renderer::{renderer::WorldBinding, texture::Texture};
+use crate::renderer::{msaa_textures::MSAATextures, renderer::WorldBinding, texture::Texture};
 
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
@@ -695,13 +695,13 @@ impl MaterialPipeline {
         let vertex_buffer_layouts = &[Instance::desc(), Vertex::desc()];
         let bind_group_layouts = &[camera_bind_group_layout, lights_bind_group_layout, material_bind_group_layout, diffuse_irradiance_bind_group_layout];
         let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Render Pipeline Layout"),
+            label: Some("PBR Material Render Pipeline Layout"),
             bind_group_layouts,
             push_constant_ranges: &[],
         });
         let shader_module = crate::renderer::utils::create_shader_module(device, "src/renderer/shaders/pbr.wgsl");
         device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Render Pipeline"),
+            label: Some("PBR Material Render Pipeline"),
             layout: Some(&render_pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader_module,
@@ -736,7 +736,7 @@ impl MaterialPipeline {
                 bias: wgpu::DepthBiasState::default(),
             }),
             multisample: wgpu::MultisampleState {
-                count: 1,
+                count: 4,
                 mask: !0,
                 alpha_to_coverage_enabled: false,
             },
@@ -748,29 +748,29 @@ impl MaterialPipeline {
         &self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        target_view: &wgpu::TextureView,
+        msaa_textures: &MSAATextures,
         depth_view: &wgpu::TextureView,
         world_binding: &WorldBinding
     ) {
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("PBR Render Encoder"),
+            label: Some("PBR Material Render Encoder"),
         });
 
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Render Pass"),
+                label: Some("PBR Material Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &target_view,
-                    resolve_target: None,
+                    view: &msaa_textures.msaa_texture_view,
+                    resolve_target: Some(&msaa_textures.resolve_texture_view),
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
+                        load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                        store: wgpu::StoreOp::Discard,
                     },
                 })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                     view: depth_view,
                     depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
+                        load: wgpu::LoadOp::Clear(1.0),
                         store: wgpu::StoreOp::Store,
                     }),
                     stencil_ops: None,

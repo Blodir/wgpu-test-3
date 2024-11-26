@@ -4,12 +4,12 @@ use image::ImageReader;
 use winit::window::Window;
 
 use super::{
-    camera::{Camera, CameraBinding, CameraUniform}, depth_texture::DepthTexture, lights::{Lights, LightsBinding}, pipelines::{
+    camera::{Camera, CameraBinding, CameraUniform}, depth_texture::DepthTexture, lights::{Lights, LightsBinding}, msaa_textures::MSAATextures, pipelines::{
         diffuse_irradiance::DiffuseIrradiancePipeline, env_prefilter::EnvPrefilterPipeline, equirectangular::{
             render_cubemap, write_texture_to_file, FaceRotation,
         }, pbr::{
             MaterialPipeline, Mesh, MeshBinding, SamplerOptions
-        }, skybox::create_test_cubemap_texture
+        }, post_processing::PostProcessingPipeline, skybox::{create_test_cubemap_texture, SkyboxPipeline, SkyboxOutputTexture}
     }, wgpu_context::WgpuContext
 };
 
@@ -275,13 +275,16 @@ impl World {
 pub struct Renderer<'surface> {
     wgpu_context: WgpuContext<'surface>,
     depth_texture: DepthTexture,
-    skybox_pipeline: super::pipelines::skybox::SkyboxPipeline,
+    skybox_pipeline: SkyboxPipeline,
     pbr_material_pipeline: MaterialPipeline,
+    post_processing_pipeline: PostProcessingPipeline,
     world_binding: WorldBinding,
     world: World,
     camera_bind_group_layout: wgpu::BindGroupLayout,
     lights_bind_group_layout: wgpu::BindGroupLayout,
     environment_map_bind_group_layout: wgpu::BindGroupLayout,
+    msaa_textures: MSAATextures,
+    skybox_texture: SkyboxOutputTexture,
 }
 impl<'surface> Renderer<'surface> {
     pub async fn new(
@@ -290,11 +293,13 @@ impl<'surface> Renderer<'surface> {
     ) -> Self {
         let wgpu_context = WgpuContext::new(window).await;
         let depth_texture = DepthTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
+        let msaa_textures = MSAATextures::new(&wgpu_context.device, &wgpu_context.surface_config);
+        let skybox_texture = SkyboxOutputTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
         let camera_bind_group_layout = wgpu_context.device.create_bind_group_layout(&CameraUniform::desc());
         let lights_bind_group_layout = wgpu_context.device.create_bind_group_layout(&Lights::desc());
         let environment_map_bind_group_layout = wgpu_context.device.create_bind_group_layout(&EnvironmentMapBinding::desc());
 
-        let skybox_pipeline = super::pipelines::skybox::SkyboxPipeline::new(
+        let skybox_pipeline = SkyboxPipeline::new(
             &wgpu_context.device, &wgpu_context.surface_config,
             &camera_bind_group_layout, &environment_map_bind_group_layout
         );
@@ -302,6 +307,10 @@ impl<'surface> Renderer<'surface> {
             &wgpu_context.device, &wgpu_context.surface_config,
             &camera_bind_group_layout, &lights_bind_group_layout,
             &environment_map_bind_group_layout
+        );
+        let post_processing_pipeline = PostProcessingPipeline::new(
+            &wgpu_context.device, &wgpu_context.surface_config,
+            &skybox_texture, &msaa_textures
         );
 
         let camera = Camera::new(&wgpu_context.surface_config);
@@ -323,7 +332,13 @@ impl<'surface> Renderer<'surface> {
             &environment_map_bind_group_layout
         );
         
-        Self { wgpu_context, depth_texture, skybox_pipeline, pbr_material_pipeline, world_binding, world, camera_bind_group_layout, lights_bind_group_layout, environment_map_bind_group_layout }
+        Self {
+            wgpu_context, depth_texture, skybox_pipeline,
+            pbr_material_pipeline, world_binding, world,
+            camera_bind_group_layout, lights_bind_group_layout,
+            environment_map_bind_group_layout, msaa_textures, skybox_texture,
+            post_processing_pipeline
+        }
     }
 
     pub fn reload_pbr_pipeline(&mut self) -> Result<(), wgpu::SurfaceError> {
@@ -339,10 +354,21 @@ impl<'surface> Renderer<'surface> {
         &self,
     ) -> Result<(), wgpu::SurfaceError> {
         let output = self.wgpu_context.surface.get_current_texture()?;
-        let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let output_view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-        self.skybox_pipeline.render(&self.wgpu_context.device, &self.wgpu_context.queue, &view, &self.depth_texture.view, &self.world_binding)?;
-        self.pbr_material_pipeline.render(&self.wgpu_context.device, &self.wgpu_context.queue, &view, &self.depth_texture.view, &self.world_binding);
+        self.skybox_pipeline.render(
+            &self.wgpu_context.device, &self.wgpu_context.queue,
+            &self.skybox_texture.view, &self.world_binding,
+        )?;
+
+        self.pbr_material_pipeline.render(
+            &self.wgpu_context.device, &self.wgpu_context.queue, &self.msaa_textures,
+            &self.depth_texture.view, &self.world_binding
+        );
+
+        self.post_processing_pipeline.render(
+            &self.wgpu_context.device, &self.wgpu_context.queue, &output_view
+        )?;
 
         output.present();
 
@@ -356,6 +382,9 @@ impl<'surface> Renderer<'surface> {
             self.wgpu_context.surface_config.height = new_size.height;
             self.wgpu_context.surface.configure(&self.wgpu_context.device, &self.wgpu_context.surface_config);
             self.depth_texture = DepthTexture::new(&self.wgpu_context.device, &self.wgpu_context.surface_config);
+            // TODO resize (have to update skybox, pbr and post processing bind groups?)
+            //self.skybox_texture = SkyboxOutputTexture::new(&self.wgpu_context.device, &self.wgpu_context.surface_config);
+            //self.msaa_textures = MSAATextures::new(&self.wgpu_context.device, &self.wgpu_context.surface_config);
             self.world.camera.aspect = self.wgpu_context.surface_config.width as f32 / self.wgpu_context.surface_config.height as f32;
             self.update_camera();
         }
