@@ -48,6 +48,16 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
             uv
         );
 
-    return vec4f(mix(skybox_sample.xyz, resolve_sample.xyz, resolve_sample.w), 1.0);
+    var col = mix(skybox_sample.xyz, resolve_sample.xyz, resolve_sample.w);
+
+    // exposure
+    let exposure = 1.0;
+    let exposure_factor = pow(2.0, exposure);
+    col = col * exposure_factor;
+
+    // reinhard tone mapping
+    col = col / (col + vec3f(1.0));
+
+    return vec4f(col, 1.0);
 }
 

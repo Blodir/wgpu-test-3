@@ -243,14 +243,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     var col = ambient + Lo + (surface_emissive * surface_emissive_sample.a);
 
-    // exposure
-    let exposure = 1.0;
-    let exposure_factor = pow(2.0, exposure);
-    col = col * exposure_factor;
-
-    // reinhard tone mapping
-    col = col / (col + vec3f(1.0));
-
     return vec4f(col, 1.0);
 }
 
