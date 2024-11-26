@@ -40,7 +40,8 @@ Features
     - image based diffuse irradiance
     - split sum specular approximation (prefiltered env map calculated on the fly, BRDF LUT read from a texture)
 - normal mapping (with world-space lighting)
-- HDR (needs some improvement with a separate tone mapping pass, physical units, and so on)
+- HDR (needs some improvement with physical units)
+- 4x MSAA
 - partial shader hot-reload (just of pbr.wgsl atm...)
 - some basic camera movements for looking around with lmb drag and scroll
 
