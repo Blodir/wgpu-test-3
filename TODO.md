@@ -9,7 +9,6 @@ Loose ends:
 - compensate for lost energy in prefiltered env map and diffuse irradiance clamping
 
 misc:
-- MSAA https://webgpufundamentals.org/webgpu/lessons/webgpu-multisampling.html
 - the sun should be treated as a disc light, copy the sun section here page 36: https://seblagarde.wordpress.com/wp-content/uploads/2015/07/course_notes_moving_frostbite_to_pbr_v32.pdf
 - centralize depth stencil state
 

@@ -382,9 +382,12 @@ impl<'surface> Renderer<'surface> {
             self.wgpu_context.surface_config.height = new_size.height;
             self.wgpu_context.surface.configure(&self.wgpu_context.device, &self.wgpu_context.surface_config);
             self.depth_texture = DepthTexture::new(&self.wgpu_context.device, &self.wgpu_context.surface_config);
-            // TODO resize (have to update skybox, pbr and post processing bind groups?)
-            //self.skybox_texture = SkyboxOutputTexture::new(&self.wgpu_context.device, &self.wgpu_context.surface_config);
-            //self.msaa_textures = MSAATextures::new(&self.wgpu_context.device, &self.wgpu_context.surface_config);
+            self.skybox_texture = SkyboxOutputTexture::new(&self.wgpu_context.device, &self.wgpu_context.surface_config);
+            self.msaa_textures = MSAATextures::new(&self.wgpu_context.device, &self.wgpu_context.surface_config);
+            self.post_processing_pipeline = PostProcessingPipeline::new(
+                &self.wgpu_context.device, &self.wgpu_context.surface_config,
+                &self.skybox_texture, &self.msaa_textures
+            );
             self.world.camera.aspect = self.wgpu_context.surface_config.width as f32 / self.wgpu_context.surface_config.height as f32;
             self.update_camera();
         }

@@ -45,7 +45,6 @@ Features
 - some basic camera movements for looking around with lmb drag and scroll
 
 Roadmap
-- MSAA
 - fix energy loss with hdr map clamping
 - normal generation
 - tangent generation (mikktspace?)
