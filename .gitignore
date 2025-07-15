@@ -1,5 +1,6 @@
 /target
-*.glb
 *.png
+*.glb
+!assets/**/*.glb
 *.hdr
-
+!assets/**/*.hdr

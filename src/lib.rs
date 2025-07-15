@@ -5,6 +5,7 @@ use notify::{Watcher, RecommendedWatcher, Config};
 use pollster::FutureExt as _;
 
 pub mod renderer;
+pub mod scene_graph;
 
 use renderer::{gltf::GLTF, renderer::Renderer};
 

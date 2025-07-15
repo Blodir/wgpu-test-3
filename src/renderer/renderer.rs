@@ -317,7 +317,7 @@ impl<'surface> Renderer<'surface> {
         let lights = Lights::default();
         
         let environment_map = {
-            let img = ImageReader::open("hayloft_8k.hdr")
+            let img = ImageReader::open("assets/kloofendal_overcast_puresky_8k.hdr")
                 .expect("Failed to open environment map")
                 .decode()
                 .expect("Failed to decode environment map");
