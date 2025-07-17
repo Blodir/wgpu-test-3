@@ -6,3 +6,5 @@
 *.hdr
 !assets/**/*.hdr
 *.dds
+*.cap
+
