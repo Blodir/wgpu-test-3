@@ -12,7 +12,7 @@ impl InputTexture {
                     ty: wgpu::BindingType::Texture {
                         sample_type: wgpu::TextureSampleType::Float { filterable: true },
                         view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false
+                        multisampled: false,
                     },
                     count: None,
                 },
@@ -26,7 +26,6 @@ impl InputTexture {
             label: Some("Mipmap Input Texture Bind Group Layout"),
         }
     }
-
 }
 
 impl InputTextureBinding {
@@ -63,12 +62,16 @@ impl MipmapPipeline {
     pub fn new(device: &wgpu::Device) -> Self {
         let texture_bind_group_layout = device.create_bind_group_layout(&InputTexture::desc());
         let bind_group_layouts = &[&texture_bind_group_layout];
-        let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Mipmap Pipeline Layout"),
-            bind_group_layouts,
-            push_constant_ranges: &[],
-        });
-        let shader_module = crate::renderer::utils::create_shader_module(device, "src/renderer/shaders/mipmap.wgsl");
+        let render_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Mipmap Pipeline Layout"),
+                bind_group_layouts,
+                push_constant_ranges: &[],
+            });
+        let shader_module = wgpu_test_3::renderer::utils::create_shader_module(
+            device,
+            "src/bin/bake_env_map/mipmap.wgsl",
+        );
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Mipmap Render Pipeline"),
             layout: Some(&render_pipeline_layout),
@@ -98,7 +101,10 @@ impl MipmapPipeline {
             multiview: None,
         });
 
-        Self { render_pipeline, texture_bind_group_layout }
+        Self {
+            render_pipeline,
+            texture_bind_group_layout,
+        }
     }
 
     pub fn generate_mipmaps(
@@ -109,7 +115,9 @@ impl MipmapPipeline {
         mip_level_count: u32,
         face_index: u32,
     ) {
-        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("Mipmap Command Encoder") });
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Mipmap Command Encoder"),
+        });
 
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             ..Default::default()
@@ -134,7 +142,12 @@ impl MipmapPipeline {
                 ..Default::default()
             });
 
-            let source_texture_binding = InputTextureBinding::new(device, &self.texture_bind_group_layout, &source_view, &sampler);
+            let source_texture_binding = InputTextureBinding::new(
+                device,
+                &self.texture_bind_group_layout,
+                &source_view,
+                &sampler,
+            );
 
             let render_pass_descriptor = wgpu::RenderPassDescriptor {
                 label: Some("Mipmap Render Pass"),
@@ -161,4 +174,3 @@ impl MipmapPipeline {
         queue.submit(Some(encoder.finish()));
     }
 }
-

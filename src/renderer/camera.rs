@@ -28,7 +28,7 @@ pub struct CameraBinding {
 
 impl Camera {
     pub fn new(surface_config: &wgpu::SurfaceConfiguration) -> Self {
-        let eye: cgmath::Point3<f32> = (0.0, 0.0, 2.0).into();
+        let eye: cgmath::Point3<f32> = (0.0, 0.0, 100.0).into();
         let target: cgmath::Point3<f32> = (0.0, 0.0, 0.0).into();
         let up: cgmath::Vector3<f32> = cgmath::Vector3::unit_y();
         let aspect = surface_config.width as f32 / surface_config.height as f32;
@@ -39,40 +39,46 @@ impl Camera {
         let rot_y = cgmath::Deg(0f32);
 
         Self {
-            eye, target, up, aspect, fovy, znear, zfar, rot_x, rot_y
+            eye,
+            target,
+            up,
+            aspect,
+            fovy,
+            znear,
+            zfar,
+            rot_x,
+            rot_y,
         }
     }
 
     pub fn to_camera_uniform(&self) -> CameraUniform {
-        let rot =
-              Quaternion::from_angle_y(self.rot_x)
-            * Quaternion::from_angle_x(self.rot_y);
+        let rot = Quaternion::from_angle_y(self.rot_x) * Quaternion::from_angle_x(self.rot_y);
         let eye_rotated = cgmath::Transform::transform_point(&cgmath::Matrix4::from(rot), self.eye);
         let view = cgmath::Matrix4::look_at_rh(eye_rotated, self.target, self.up);
         let proj = cgmath::perspective(cgmath::Deg(self.fovy), self.aspect, self.znear, self.zfar);
         let view_proj = super::wgpu_context::OPENGL_TO_WGPU_MATRIX * proj * view;
         let m = view_proj;
         let m3 = Matrix3::new(
-            m.x.x, m.x.y, m.x.z,
-            m.y.x, m.y.y, m.y.z,
-            m.z.x, m.z.y, m.z.z,
-        ).invert().unwrap();
+            m.x.x, m.x.y, m.x.z, m.y.x, m.y.y, m.y.z, m.z.x, m.z.y, m.z.z,
+        )
+        .invert()
+        .unwrap();
         let inverse_view_proj_rot = Matrix4::new(
-            m3.x.x, m3.x.y, m3.x.z, 0.0,
-            m3.y.x, m3.y.y, m3.y.z, 0.0,
-            m3.z.x, m3.z.y, m3.z.z, 0.0,
-            0.0, 0.0, 0.0, 0.0
+            m3.x.x, m3.x.y, m3.x.z, 0.0, m3.y.x, m3.y.y, m3.y.z, 0.0, m3.z.x, m3.z.y, m3.z.z, 0.0,
+            0.0, 0.0, 0.0, 0.0,
         );
         //let inverse_view_proj_rot = view_proj.invert().unwrap();
         CameraUniform {
-            view_proj: view_proj.into(), position: eye_rotated.into(), inverse_view_proj_rot: inverse_view_proj_rot.into()
+            view_proj: view_proj.into(),
+            position: eye_rotated.into(),
+            inverse_view_proj_rot: inverse_view_proj_rot.into(),
         }
     }
 }
 
 impl CameraUniform {
     pub fn default(surface_config: &wgpu::SurfaceConfiguration) -> Self {
-        let eye: cgmath::Point3<f32> = (0.0, 0.0, 2.0).into();
+        let eye: cgmath::Point3<f32> = (0.0, 0.0, 100.0).into();
         let target: cgmath::Point3<f32> = (0.0, 0.0, 0.0).into();
         let up: cgmath::Vector3<f32> = cgmath::Vector3::unit_y();
         let aspect = surface_config.width as f32 / surface_config.height as f32;
@@ -81,53 +87,50 @@ impl CameraUniform {
         let zfar = 100.0f32;
         let rot_x = cgmath::Deg(0f32);
         let rot_y = cgmath::Deg(0f32);
-        let rot =
-              Quaternion::from_angle_y(rot_x)
-            * Quaternion::from_angle_x(rot_y);
+        let rot = Quaternion::from_angle_y(rot_x) * Quaternion::from_angle_x(rot_y);
         let eye_rotated = cgmath::Transform::transform_point(&cgmath::Matrix4::from(rot), eye);
         let view = cgmath::Matrix4::look_at_rh(eye_rotated, target, up);
         let proj = cgmath::perspective(cgmath::Deg(fovy), aspect, znear, zfar);
         let view_proj = super::wgpu_context::OPENGL_TO_WGPU_MATRIX * proj * view;
         let m = view_proj;
         let m3 = Matrix3::new(
-            m.x.x, m.x.y, m.x.z,
-            m.y.x, m.y.y, m.y.z,
-            m.z.x, m.z.y, m.z.z,
-        ).invert().unwrap();
+            m.x.x, m.x.y, m.x.z, m.y.x, m.y.y, m.y.z, m.z.x, m.z.y, m.z.z,
+        )
+        .invert()
+        .unwrap();
         let inverse_view_proj_rot = Matrix4::new(
-            m3.x.x, m3.x.y, m3.x.z, 0.0,
-            m3.y.x, m3.y.y, m3.y.z, 0.0,
-            m3.z.x, m3.z.y, m3.z.z, 0.0,
-            0.0, 0.0, 0.0, 0.0
+            m3.x.x, m3.x.y, m3.x.z, 0.0, m3.y.x, m3.y.y, m3.y.z, 0.0, m3.z.x, m3.z.y, m3.z.z, 0.0,
+            0.0, 0.0, 0.0, 0.0,
         );
         //let inverse_view_proj_rot = view_proj.invert().unwrap();
         Self {
-            view_proj: view_proj.into(), position: eye_rotated.into(), inverse_view_proj_rot: inverse_view_proj_rot.into()
+            view_proj: view_proj.into(),
+            position: eye_rotated.into(),
+            inverse_view_proj_rot: inverse_view_proj_rot.into(),
         }
     }
 
-    pub fn upload(&self, device: &wgpu::Device, bind_group_layout: &wgpu::BindGroupLayout) -> CameraBinding {
-        let view_proj_buffer = device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("View Projection Buffer"),
-                contents: bytemuck::cast_slice(&self.view_proj),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            }
-        );
-        let position_buffer = device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("Camera Position Buffer"),
-                contents: bytemuck::cast_slice(&self.position),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            }
-        );
-        let inverse_view_proj_rot_buffer = device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
+    pub fn upload(
+        &self,
+        device: &wgpu::Device,
+        bind_group_layout: &wgpu::BindGroupLayout,
+    ) -> CameraBinding {
+        let view_proj_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("View Projection Buffer"),
+            contents: bytemuck::cast_slice(&self.view_proj),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+        let position_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Camera Position Buffer"),
+            contents: bytemuck::cast_slice(&self.position),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+        let inverse_view_proj_rot_buffer =
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("Inverse View Projection Buffer"),
                 contents: bytemuck::cast_slice(&self.inverse_view_proj_rot),
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            }
-        );
+            });
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: bind_group_layout,
             entries: &[
@@ -147,7 +150,12 @@ impl CameraUniform {
             label: Some("Camera Bind Group"),
         });
 
-        CameraBinding { bind_group, view_proj_buffer, position_buffer, inverse_view_proj_rot_buffer }
+        CameraBinding {
+            bind_group,
+            view_proj_buffer,
+            position_buffer,
+            inverse_view_proj_rot_buffer,
+        }
     }
 
     pub fn desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
@@ -184,16 +192,27 @@ impl CameraUniform {
                     count: None,
                 },
             ],
-            label: Some("Camera Bind Group Layout")
+            label: Some("Camera Bind Group Layout"),
         }
     }
 }
 
 impl CameraBinding {
     pub fn update(&self, camera: &CameraUniform, queue: &wgpu::Queue) {
-        queue.write_buffer(&self.view_proj_buffer, 0, bytemuck::cast_slice(&camera.view_proj));
-        queue.write_buffer(&self.position_buffer, 0, bytemuck::cast_slice(&camera.position));
-        queue.write_buffer(&self.inverse_view_proj_rot_buffer, 0, bytemuck::cast_slice(&camera.inverse_view_proj_rot));
+        queue.write_buffer(
+            &self.view_proj_buffer,
+            0,
+            bytemuck::cast_slice(&camera.view_proj),
+        );
+        queue.write_buffer(
+            &self.position_buffer,
+            0,
+            bytemuck::cast_slice(&camera.position),
+        );
+        queue.write_buffer(
+            &self.inverse_view_proj_rot_buffer,
+            0,
+            bytemuck::cast_slice(&camera.inverse_view_proj_rot),
+        );
     }
 }
-

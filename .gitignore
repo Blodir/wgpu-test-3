@@ -5,3 +5,4 @@
 !assets/**/*.glb
 *.hdr
 !assets/**/*.hdr
+*.dds

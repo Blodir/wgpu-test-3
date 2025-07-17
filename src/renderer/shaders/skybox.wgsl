@@ -37,8 +37,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
             rd,
             0.0
         );
-    var col = sample.rgb;
 
-    return vec4f(col, sample.a);
+    return sample.rgba;
 }
-

@@ -4,10 +4,7 @@ use crate::renderer::msaa_textures::MSAATextures;
 
 use super::skybox::SkyboxOutputTexture;
 
-const INDICES: &[u16] = &[
-    0, 2, 1,
-    3, 2, 0,
-];
+const INDICES: &[u16] = &[0, 2, 1, 3, 2, 0];
 
 struct PostProcessingInputs {}
 struct PostProcessingInputsBinding {
@@ -23,7 +20,7 @@ impl PostProcessingInputs {
                     ty: wgpu::BindingType::Texture {
                         sample_type: wgpu::TextureSampleType::Float { filterable: true },
                         view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false
+                        multisampled: false,
                     },
                     count: None,
                 },
@@ -39,7 +36,7 @@ impl PostProcessingInputs {
                     ty: wgpu::BindingType::Texture {
                         sample_type: wgpu::TextureSampleType::Float { filterable: true },
                         view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false
+                        multisampled: false,
                     },
                     count: None,
                 },
@@ -73,7 +70,9 @@ impl PostProcessingInputs {
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: wgpu::BindingResource::TextureView(&msaa_textures.resolve_texture_view),
+                    resource: wgpu::BindingResource::TextureView(
+                        &msaa_textures.resolve_texture_view,
+                    ),
                 },
                 wgpu::BindGroupEntry {
                     binding: 3,
@@ -100,14 +99,19 @@ impl PostProcessingPipeline {
         skybox_texture: &SkyboxOutputTexture,
         msaa_textures: &MSAATextures,
     ) -> Self {
-        let inputs_bind_group_layout = device.create_bind_group_layout(&PostProcessingInputs::desc());
+        let inputs_bind_group_layout =
+            device.create_bind_group_layout(&PostProcessingInputs::desc());
         let bind_group_layouts = &[&inputs_bind_group_layout];
-        let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Post Processing Pipeline Layout"),
-            bind_group_layouts,
-            push_constant_ranges: &[],
-        });
-        let shader_module = crate::renderer::utils::create_shader_module(device, "src/renderer/shaders/post_processing.wgsl");
+        let render_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Post Processing Pipeline Layout"),
+                bind_group_layouts,
+                push_constant_ranges: &[],
+            });
+        let shader_module = crate::renderer::utils::create_shader_module(
+            device,
+            "src/renderer/shaders/post_processing.wgsl",
+        );
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Post Processing Render Pipeline"),
             layout: Some(&render_pipeline_layout),
@@ -137,17 +141,25 @@ impl PostProcessingPipeline {
             multiview: None,
         });
 
-        let index_buffer = device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("Index Buffer"),
-                contents: bytemuck::cast_slice(INDICES),
-                usage: wgpu::BufferUsages::INDEX,
-            }
+        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Index Buffer"),
+            contents: bytemuck::cast_slice(INDICES),
+            usage: wgpu::BufferUsages::INDEX,
+        });
+
+        let inputs_binding = PostProcessingInputs::upload(
+            device,
+            &inputs_bind_group_layout,
+            skybox_texture,
+            msaa_textures,
         );
 
-        let inputs_binding = PostProcessingInputs::upload(device, &inputs_bind_group_layout, skybox_texture, msaa_textures);
-
-        Self { render_pipeline, index_buffer, inputs_binding, inputs_bind_group_layout }
+        Self {
+            render_pipeline,
+            index_buffer,
+            inputs_binding,
+            inputs_bind_group_layout,
+        }
     }
 
     pub fn render(
@@ -187,4 +199,3 @@ impl PostProcessingPipeline {
         Ok(())
     }
 }
-

@@ -1,14 +1,9 @@
 use cgmath::{Deg, Matrix4, SquareMatrix};
 use wgpu::util::DeviceExt;
 
-use crate::renderer::renderer::EnvironmentMapBinding;
-
 use super::equirectangular::FaceRotation;
 
-const INDICES: &[u16] = &[
-    0, 2, 1,
-    3, 2, 0,
-];
+const INDICES: &[u16] = &[0, 2, 1, 3, 2, 0];
 
 pub struct DiffuseIrradiancePipeline {
     render_pipeline: wgpu::RenderPipeline,
@@ -20,13 +15,20 @@ impl DiffuseIrradiancePipeline {
         face_rot_bind_group_layout: &wgpu::BindGroupLayout,
         environment_map_bind_group_layout: &wgpu::BindGroupLayout,
     ) -> Self {
-        let bind_group_layouts = &[environment_map_bind_group_layout, face_rot_bind_group_layout];
-        let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Diffuse Irradiance Pipeline Layout"),
-            bind_group_layouts,
-            push_constant_ranges: &[],
-        });
-        let shader_module = crate::renderer::utils::create_shader_module(device, "src/renderer/shaders/diffuse_irradiance.wgsl");
+        let bind_group_layouts = &[
+            environment_map_bind_group_layout,
+            face_rot_bind_group_layout,
+        ];
+        let render_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Diffuse Irradiance Pipeline Layout"),
+                bind_group_layouts,
+                push_constant_ranges: &[],
+            });
+        let shader_module = wgpu_test_3::renderer::utils::create_shader_module(
+            device,
+            "src/bin/bake_env_map/diffuse_irradiance.wgsl",
+        );
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Diffuse Irradiance Render Pipeline"),
             layout: Some(&render_pipeline_layout),
@@ -68,13 +70,11 @@ impl DiffuseIrradiancePipeline {
     ) -> Result<wgpu::Texture, wgpu::SurfaceError> {
         let cubemap_face_resolution = 32;
 
-        let index_buffer = device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("Index Buffer"),
-                contents: bytemuck::cast_slice(INDICES),
-                usage: wgpu::BufferUsages::INDEX,
-            }
-        );
+        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Index Buffer"),
+            contents: bytemuck::cast_slice(INDICES),
+            usage: wgpu::BufferUsages::INDEX,
+        });
 
         let num_indices = INDICES.len() as u32;
 
@@ -89,7 +89,9 @@ impl DiffuseIrradiancePipeline {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Rgba16Float,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_SRC,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::TEXTURE_BINDING
+                | wgpu::TextureUsages::COPY_SRC,
             view_formats: &[],
         });
 
@@ -106,17 +108,18 @@ impl DiffuseIrradiancePipeline {
 
         let face_rotations: &[Matrix4<f32>] = &[
             Matrix4::from_angle_y(Deg(-90f32)), // right
-            Matrix4::from_angle_y(Deg(90f32)), // left
-            Matrix4::from_angle_x(Deg(90f32)), // top
+            Matrix4::from_angle_y(Deg(90f32)),  // left
+            Matrix4::from_angle_x(Deg(90f32)),  // top
             Matrix4::from_angle_x(Deg(-90f32)), // bottom
-            Matrix4::identity(), // front
+            Matrix4::identity(),                // front
             Matrix4::from_angle_y(Deg(180f32)), // back
         ];
 
         for face_index in 0..6 {
             let fr: Matrix4<f32> = face_rotations[face_index];
             let face_rotation = FaceRotation::from(fr);
-            let face_rotation_binding = face_rotation.upload(device, queue, &face_rot_bind_group_layout);
+            let face_rotation_binding =
+                face_rotation.upload(device, queue, &face_rot_bind_group_layout);
 
             let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("Diffuse Irradiance Render Encoder"),
@@ -152,4 +155,3 @@ impl DiffuseIrradiancePipeline {
         Ok(cubemap_texture)
     }
 }
-

@@ -1,7 +1,7 @@
+use cgmath::{Matrix, Matrix3, Matrix4, Quaternion, SquareMatrix};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{self, Read};
-use cgmath::{Matrix, Matrix3, Matrix4, Quaternion, SquareMatrix};
 
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
@@ -12,9 +12,15 @@ fn buffer_to_ascii(buffer: &[u8]) -> String {
     buffer.iter().map(|&x| x as char).collect()
 }
 
-fn default_tex_coord() -> usize { 0 }
-fn default_scale() -> f32 { 1.0 }
-fn default_strength() -> u64 { 1 }
+fn default_tex_coord() -> usize {
+    0
+}
+fn default_scale() -> f32 {
+    1.0
+}
+fn default_strength() -> u64 {
+    1
+}
 
 #[derive(Serialize_repr, Deserialize_repr, Debug)]
 #[repr(u16)]
@@ -124,7 +130,7 @@ pub struct Accessor {
     // pub max: Option<[f64; 3]>,
     // pub min: Option<[f64; 3]>,
     #[serde(rename = "type")]
-    pub accessor_type: AccessorType
+    pub accessor_type: AccessorType,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -144,18 +150,18 @@ pub enum BufferViewTarget {
 pub struct BufferView {
     pub buffer: u8,
     #[serde(rename = "byteLength")]
-    pub byte_length : u32,
+    pub byte_length: u32,
     #[serde(rename = "byteOffset")]
-    pub byte_offset : Option<u32>,
+    pub byte_offset: Option<u32>,
     #[serde(rename = "byteStride")]
-    pub byte_stride : Option<u32>,
+    pub byte_stride: Option<u32>,
     pub target: Option<BufferViewTarget>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Buffer {
     #[serde(rename = "byteLength")]
-    pub byte_length : u32,
+    pub byte_length: u32,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -168,11 +174,11 @@ pub struct PrimitiveAttributes {
     pub tangent: Option<usize>,
 
     /* The rest of the fields can't be mapped so they're collected in a hashmap:
-    * TEXCOORD_n
-    * COLOR_n
-    * JOINTS_n
-    * WEIGHTS_n
-    */
+     * TEXCOORD_n
+     * COLOR_n
+     * JOINTS_n
+     * WEIGHTS_n
+     */
     #[serde(flatten)]
     pub additional_fields: HashMap<String, usize>,
 }
@@ -373,39 +379,59 @@ pub fn get_accessor_component_size(accessor: &Accessor) -> u8 {
     }
 }
 
-fn construct_mesh_instances_map(scene: &SceneDescription, node_idx: usize, mut transform: Matrix4<f32>, acc: &mut HashMap<usize, Vec<pbr::Instance>>) {
+fn construct_mesh_instances_map(
+    scene: &SceneDescription,
+    node_idx: usize,
+    mut transform: Matrix4<f32>,
+    acc: &mut HashMap<usize, Vec<pbr::Instance>>,
+) {
     let node = &scene.nodes[node_idx];
 
     if let Some(v) = node.scale {
-        transform = transform * Matrix4::from_nonuniform_scale(v[0] as f32, v[1] as f32, v[2] as f32);
+        transform =
+            transform * Matrix4::from_nonuniform_scale(v[0] as f32, v[1] as f32, v[2] as f32);
     }
     if let Some(v) = node.rotation {
-        transform = transform * Matrix4::from(Quaternion::new(v[3] as f32, v[0] as f32, v[1] as f32, v[2] as f32));
+        transform = transform
+            * Matrix4::from(Quaternion::new(
+                v[3] as f32,
+                v[0] as f32,
+                v[1] as f32,
+                v[2] as f32,
+            ));
     }
     if let Some(v) = node.translation {
-        transform = transform * Matrix4::from_translation(cgmath::Vector3::from(v.map(|x| x as f32)));
+        transform =
+            transform * Matrix4::from_translation(cgmath::Vector3::from(v.map(|x| x as f32)));
     }
     if let Some(m) = node.matrix {
         let m: [f32; 16] = m.map(|x| x as f32);
         let m: Matrix4<f32> = Matrix4::new(
-            m[0],  m[1],  m[2],  m[3],
-            m[4],  m[5],  m[6],  m[7],
-            m[8],  m[9],  m[10], m[11],
-            m[12], m[13], m[14], m[15]
+            m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8], m[9], m[10], m[11], m[12], m[13],
+            m[14], m[15],
         );
         transform = transform * m;
     }
     if let Some(mesh) = node.mesh {
-        acc.entry(mesh as usize).or_insert(Vec::new()).push(
-            pbr::Instance::from(
+        acc.entry(mesh as usize)
+            .or_insert(Vec::new())
+            .push(pbr::Instance::from(
                 transform.clone(),
                 Matrix3::new(
-                    transform.x.x, transform.x.y, transform.x.z,
-                    transform.y.x, transform.y.y, transform.y.z,
-                    transform.z.x, transform.z.y, transform.z.z,
-                ).invert().unwrap().transpose(),
-            )
-        );
+                    transform.x.x,
+                    transform.x.y,
+                    transform.x.z,
+                    transform.y.x,
+                    transform.y.y,
+                    transform.y.z,
+                    transform.z.x,
+                    transform.z.y,
+                    transform.z.z,
+                )
+                .invert()
+                .unwrap()
+                .transpose(),
+            ));
     }
     if let Some(children) = &node.children {
         for child_idx in children {
@@ -429,7 +455,7 @@ fn scene_to_mesh_instances(scene: &SceneDescription) -> HashMap<usize, Vec<pbr::
 
 fn set_alpha_channel(image: &mut image::DynamicImage, alpha: u8) {
     let mut rgba_image = image.to_rgba8();
-    
+
     for pixel in rgba_image.pixels_mut() {
         pixel[3] = alpha; // Set the alpha channel
     }
@@ -457,11 +483,14 @@ impl GLTF {
         println!("{:#?}", scene);
         println!("{}", json_chunk.chunk_data);
 
-        Ok(
-            Self {
-                magic, version, length, json_chunk, binary_buffer, scene
-            }
-        )
+        Ok(Self {
+            magic,
+            version,
+            length,
+            json_chunk,
+            binary_buffer,
+            scene,
+        })
     }
 
     fn parse_json_chunk(file: &mut File) -> io::Result<JSONChunk> {
@@ -477,7 +506,11 @@ impl GLTF {
         file.read_exact(&mut data_buffer)?;
         let chunk_data = buffer_to_ascii(&data_buffer);
 
-        Ok(JSONChunk { chunk_length, chunk_type, chunk_data })
+        Ok(JSONChunk {
+            chunk_length,
+            chunk_type,
+            chunk_data,
+        })
     }
 
     fn parse_binary_buffer(file: &mut File) -> io::Result<Vec<u8>> {
@@ -501,21 +534,18 @@ impl GLTF {
     {
         let accessor = &self.scene.accessors[accessor_idx];
         let buffer_view = &self.scene.buffer_views[accessor.buffer_view as usize];
-        let start_offset =
-            buffer_view.byte_offset.unwrap_or(0u32) as usize
+        let start_offset = buffer_view.byte_offset.unwrap_or(0u32) as usize
             + accessor.byte_offset.unwrap_or(0u32) as usize;
         let end_offset =
-            buffer_view.byte_offset.unwrap_or(0u32) as usize
-            + buffer_view.byte_length as usize;
+            buffer_view.byte_offset.unwrap_or(0u32) as usize + buffer_view.byte_length as usize;
         let slice = &self.binary_buffer[start_offset..end_offset];
 
-        let data_element_size =
-            get_accessor_component_count(accessor) as usize
+        let data_element_size = get_accessor_component_count(accessor) as usize
             * get_accessor_component_size(accessor) as usize;
         let stride = {
             match buffer_view.byte_stride {
                 Some(s) => s as usize,
-                None => data_element_size
+                None => data_element_size,
             }
         };
 
@@ -523,7 +553,7 @@ impl GLTF {
         let mut current_index = 0usize;
         let mut i = 0u32;
         while i < accessor.count {
-            let a = f(&slice[current_index..current_index+data_element_size]);
+            let a = f(&slice[current_index..current_index + data_element_size]);
             data.push(a);
             current_index += stride;
             i += 1;
@@ -534,38 +564,31 @@ impl GLTF {
     fn accessor_to_pbr_indices(&self, accessor_idx: usize) -> pbr::VertexIndices {
         let accessor = &self.scene.accessors[accessor_idx];
         match accessor.component_type {
-            ComponentType::UnsignedByte => {
-                pbr::VertexIndices::U16(
-                    self.accessor_to_contiguous_array(accessor_idx, |buf| {
-                        buf[0] as u16
-                    })
-                )
-            },
+            ComponentType::UnsignedByte => pbr::VertexIndices::U16(
+                self.accessor_to_contiguous_array(accessor_idx, |buf| buf[0] as u16),
+            ),
             ComponentType::UnsignedShort => {
-                pbr::VertexIndices::U16(
-                    self.accessor_to_contiguous_array(accessor_idx, |buf| {
-                        bytemuck::cast::<[u8; 2], u16>(buf[0..2].try_into().unwrap())
-                    })
-                )
-            },
+                pbr::VertexIndices::U16(self.accessor_to_contiguous_array(accessor_idx, |buf| {
+                    bytemuck::cast::<[u8; 2], u16>(buf[0..2].try_into().unwrap())
+                }))
+            }
             ComponentType::UnsignedInt => {
-                pbr::VertexIndices::U32(
-                    self.accessor_to_contiguous_array(accessor_idx, |buf| {
-                        bytemuck::cast::<[u8; 4], u32>(buf[0..4].try_into().unwrap())
-                    })
-                )
-            },
-            _ => { panic!("GLTF: Illegal vertex index component type.") },
+                pbr::VertexIndices::U32(self.accessor_to_contiguous_array(accessor_idx, |buf| {
+                    bytemuck::cast::<[u8; 4], u32>(buf[0..4].try_into().unwrap())
+                }))
+            }
+            _ => {
+                panic!("GLTF: Illegal vertex index component type.")
+            }
         }
     }
 
     fn primitive_to_pbr_vertices(&self, primitive: &Primitive) -> Vec<pbr::Vertex> {
-        let positions =
-            self.accessor_to_contiguous_array(primitive.attributes.position, |buf| {
-                let s: &[u8; 12] = buf[0..12].try_into().unwrap();
-                let res: [f32; 3] = bytemuck::cast(*s);
-                res
-            });
+        let positions = self.accessor_to_contiguous_array(primitive.attributes.position, |buf| {
+            let s: &[u8; 12] = buf[0..12].try_into().unwrap();
+            let res: [f32; 3] = bytemuck::cast(*s);
+            res
+        });
 
         let normals = primitive.attributes.normal.map(|n| {
             self.accessor_to_contiguous_array(n, |buf| {
@@ -584,30 +607,43 @@ impl GLTF {
             })
         });
 
-        let weights = primitive.attributes.additional_fields.get("WEIGHTS_0").map(|n| {
-            self.accessor_to_contiguous_array(*n, |buf| {
-                let s: &[u8; 16] = buf[0..16].try_into().unwrap();
-                let res: [f32; 4] = bytemuck::cast(*s);
-                res
-            })
-        });
+        let weights = primitive
+            .attributes
+            .additional_fields
+            .get("WEIGHTS_0")
+            .map(|n| {
+                self.accessor_to_contiguous_array(*n, |buf| {
+                    let s: &[u8; 16] = buf[0..16].try_into().unwrap();
+                    let res: [f32; 4] = bytemuck::cast(*s);
+                    res
+                })
+            });
 
-        let joints = primitive.attributes.additional_fields.get("JOINTS_0").map(|n| {
-            self.accessor_to_contiguous_array(*n, |buf| {
-                let s: &[u8; 4] = buf[0..4].try_into().unwrap();
-                let res: [u8; 4] = bytemuck::cast(*s);
-                res
-            })
-        });
+        let joints = primitive
+            .attributes
+            .additional_fields
+            .get("JOINTS_0")
+            .map(|n| {
+                self.accessor_to_contiguous_array(*n, |buf| {
+                    let s: &[u8; 4] = buf[0..4].try_into().unwrap();
+                    let res: [u8; 4] = bytemuck::cast(*s);
+                    res
+                })
+            });
 
         let maybe_material: Option<&Material> = match (primitive.material, &self.scene.materials) {
             (Some(i), Some(mats)) => Some(&mats[i]),
-            _ => None
+            _ => None,
         };
 
         let normal_tex_coords = maybe_material
             .and_then(|mat| mat.normal_texture.as_ref())
-            .and_then(|nt| primitive.attributes.additional_fields.get(&format!("TEXCOORD_{}", nt.tex_coord)))
+            .and_then(|nt| {
+                primitive
+                    .attributes
+                    .additional_fields
+                    .get(&format!("TEXCOORD_{}", nt.tex_coord))
+            })
             .map(|n| {
                 self.accessor_to_contiguous_array(*n, |buf| {
                     let s: &[u8; 8] = buf[0..8].try_into().unwrap();
@@ -618,7 +654,12 @@ impl GLTF {
 
         let occlusion_tex_coords = maybe_material
             .and_then(|mat| mat.occlusion_texture.as_ref())
-            .and_then(|ot| primitive.attributes.additional_fields.get(&format!("TEXCOORD_{}", ot.tex_coord)))
+            .and_then(|ot| {
+                primitive
+                    .attributes
+                    .additional_fields
+                    .get(&format!("TEXCOORD_{}", ot.tex_coord))
+            })
             .map(|n| {
                 self.accessor_to_contiguous_array(*n, |buf| {
                     let s: &[u8; 8] = buf[0..8].try_into().unwrap();
@@ -629,7 +670,12 @@ impl GLTF {
 
         let emissive_tex_coords = maybe_material
             .and_then(|mat| mat.emissive_texture.as_ref())
-            .and_then(|et| primitive.attributes.additional_fields.get(&format!("TEXCOORD_{}", et.tex_coord)))
+            .and_then(|et| {
+                primitive
+                    .attributes
+                    .additional_fields
+                    .get(&format!("TEXCOORD_{}", et.tex_coord))
+            })
             .map(|n| {
                 self.accessor_to_contiguous_array(*n, |buf| {
                     let s: &[u8; 8] = buf[0..8].try_into().unwrap();
@@ -641,7 +687,12 @@ impl GLTF {
         let base_color_tex_coords = maybe_material
             .and_then(|mat| mat.pbr_metallic_roughness.as_ref())
             .and_then(|pmr| pmr.base_color_texture.as_ref())
-            .and_then(|bct| primitive.attributes.additional_fields.get(&format!("TEXCOORD_{}", bct.tex_coord)))
+            .and_then(|bct| {
+                primitive
+                    .attributes
+                    .additional_fields
+                    .get(&format!("TEXCOORD_{}", bct.tex_coord))
+            })
             .map(|n| {
                 self.accessor_to_contiguous_array(*n, |buf| {
                     let s: &[u8; 8] = buf[0..8].try_into().unwrap();
@@ -653,7 +704,12 @@ impl GLTF {
         let metallic_roughness_tex_coords = maybe_material
             .and_then(|mat| mat.pbr_metallic_roughness.as_ref())
             .and_then(|pmr| pmr.metallic_roughness_texture.as_ref())
-            .and_then(|mrt| primitive.attributes.additional_fields.get(&format!("TEXCOORD_{}", mrt.tex_coord)))
+            .and_then(|mrt| {
+                primitive
+                    .attributes
+                    .additional_fields
+                    .get(&format!("TEXCOORD_{}", mrt.tex_coord))
+            })
             .map(|n| {
                 self.accessor_to_contiguous_array(*n, |buf| {
                     let s: &[u8; 8] = buf[0..8].try_into().unwrap();
@@ -666,48 +722,90 @@ impl GLTF {
         for i in 0..positions.len() {
             let mut vert = pbr::Vertex::default();
             vert.position = positions[i];
-            if let Some(ref n) = normals { vert.normal = n[i]; }
-            if let Some(ref n) = tangents { vert.tangent = n[i]; }
-            if let Some(ref n) = weights { vert.weights = n[i]; }
-            if let Some(ref n) = joints { vert.joints = n[i]; }
-            if let Some(ref n) = normal_tex_coords { vert.normal_tex_coords = n[i]; }
-            if let Some(ref n) = occlusion_tex_coords { vert.occlusion_tex_coords = n[i]; }
-            if let Some(ref n) = emissive_tex_coords { vert.emissive_tex_coords = n[i]; }
-            if let Some(ref n) = base_color_tex_coords { vert.base_color_tex_coords = n[i]; }
-            if let Some(ref n) = metallic_roughness_tex_coords { vert.metallic_roughness_tex_coords = n[i]; }
+            if let Some(ref n) = normals {
+                vert.normal = n[i];
+            }
+            if let Some(ref n) = tangents {
+                vert.tangent = n[i];
+            }
+            if let Some(ref n) = weights {
+                vert.weights = n[i];
+            }
+            if let Some(ref n) = joints {
+                vert.joints = n[i];
+            }
+            if let Some(ref n) = normal_tex_coords {
+                vert.normal_tex_coords = n[i];
+            }
+            if let Some(ref n) = occlusion_tex_coords {
+                vert.occlusion_tex_coords = n[i];
+            }
+            if let Some(ref n) = emissive_tex_coords {
+                vert.emissive_tex_coords = n[i];
+            }
+            if let Some(ref n) = base_color_tex_coords {
+                vert.base_color_tex_coords = n[i];
+            }
+            if let Some(ref n) = metallic_roughness_tex_coords {
+                vert.metallic_roughness_tex_coords = n[i];
+            }
             vertices.push(vert);
         }
         vertices
     }
 
-    fn load_texture(&self, texture_idx: usize) -> (image::DynamicImage, Option<pbr::SamplerOptions>) {
+    fn load_texture(
+        &self,
+        texture_idx: usize,
+    ) -> (image::DynamicImage, Option<pbr::SamplerOptions>) {
         let texture = &self.scene.textures.as_ref().unwrap()[texture_idx];
 
-        let sampler = texture.sampler.map(|sampler_idx| self.sampler_to_sampler_options(sampler_idx));
+        let sampler = texture
+            .sampler
+            .map(|sampler_idx| self.sampler_to_sampler_options(sampler_idx));
 
         let image_idx = texture.source;
         let image = &self.scene.images.as_ref().unwrap()[image_idx];
         let image_format = match image.mime_type {
-            Some(MimeType::PNG) => { image::ImageFormat::Png },
-            Some(MimeType::JPEG) => { image::ImageFormat::Jpeg },
-            _ => panic!("Unknown image format")
+            Some(MimeType::PNG) => image::ImageFormat::Png,
+            Some(MimeType::JPEG) => image::ImageFormat::Jpeg,
+            _ => panic!("Unknown image format"),
         };
         let bv = &self.scene.buffer_views[image.buffer_view.unwrap()];
         let start_offset = bv.byte_offset.unwrap_or(0u32) as usize;
         let end_offset = bv.byte_offset.unwrap_or(0u32) as usize + bv.byte_length as usize;
         let slice = &&self.binary_buffer[start_offset..end_offset];
 
-        (image::load_from_memory_with_format(slice, image_format).unwrap(), sampler)
+        (
+            image::load_from_memory_with_format(slice, image_format).unwrap(),
+            sampler,
+        )
     }
 
     fn sampler_to_sampler_options(&self, sampler_idx: usize) -> pbr::SamplerOptions {
         let sampler = &self.scene.samplers.as_ref().unwrap()[sampler_idx];
 
         pbr::SamplerOptions {
-            address_mode_u: sampler.wrap_s.as_ref().unwrap_or(&SamplerWrapMode::Repeat).to_wgpu_address_mode(),
-            address_mode_v: sampler.wrap_t.as_ref().unwrap_or(&SamplerWrapMode::Repeat).to_wgpu_address_mode(),
-            mag_filter: sampler.mag_filter.as_ref().unwrap_or(&SamplerMagFilterType::Nearest).to_wgpu_filter_mode(),
-            min_filter: sampler.min_filter.as_ref().unwrap_or(&SamplerMinFilterType::Nearest).to_wgpu_filter_mode(),
+            address_mode_u: sampler
+                .wrap_s
+                .as_ref()
+                .unwrap_or(&SamplerWrapMode::Repeat)
+                .to_wgpu_address_mode(),
+            address_mode_v: sampler
+                .wrap_t
+                .as_ref()
+                .unwrap_or(&SamplerWrapMode::Repeat)
+                .to_wgpu_address_mode(),
+            mag_filter: sampler
+                .mag_filter
+                .as_ref()
+                .unwrap_or(&SamplerMagFilterType::Nearest)
+                .to_wgpu_filter_mode(),
+            min_filter: sampler
+                .min_filter
+                .as_ref()
+                .unwrap_or(&SamplerMinFilterType::Nearest)
+                .to_wgpu_filter_mode(),
         }
     }
 
@@ -715,22 +813,28 @@ impl GLTF {
         let mut pbr_material = pbr::Material::default();
         let maybe_material: Option<&Material> = match (maybe_material_idx, &self.scene.materials) {
             (Some(i), Some(mats)) => Some(&mats[i]),
-            _ => None
+            _ => None,
         };
         if let Some(material) = maybe_material {
-            if let Some(factor) = material.pbr_metallic_roughness.as_ref()
+            if let Some(factor) = material
+                .pbr_metallic_roughness
+                .as_ref()
                 .and_then(|pmr| pmr.base_color_factor)
             {
                 pbr_material.base_color_factor = factor.map(|f| f as f32);
             }
 
-            if let Some(factor) = material.pbr_metallic_roughness.as_ref()
+            if let Some(factor) = material
+                .pbr_metallic_roughness
+                .as_ref()
                 .and_then(|pmr| pmr.metallic_factor)
             {
                 pbr_material.metallic_factor = factor as f32;
             }
 
-            if let Some(factor) = material.pbr_metallic_roughness.as_ref()
+            if let Some(factor) = material
+                .pbr_metallic_roughness
+                .as_ref()
                 .and_then(|pmr| pmr.roughness_factor)
             {
                 pbr_material.roughness_factor = factor as f32;
@@ -740,39 +844,46 @@ impl GLTF {
                 pbr_material.emissive_factor = factor.map(|f| f as f32);
             }
 
-            if let Some(texture_and_sampler) = material.pbr_metallic_roughness.as_ref()
+            if let Some(texture_and_sampler) = material
+                .pbr_metallic_roughness
+                .as_ref()
                 .and_then(|pmr| pmr.base_color_texture.as_ref())
                 .map(|t| self.load_texture(t.index))
             {
                 pbr_material.base_color_texture = texture_and_sampler;
             }
 
-            if let Some(texture_and_sampler) = material.pbr_metallic_roughness.as_ref()
+            if let Some(texture_and_sampler) = material
+                .pbr_metallic_roughness
+                .as_ref()
                 .and_then(|pmr| pmr.metallic_roughness_texture.as_ref())
                 .map(|t| self.load_texture(t.index))
             {
                 pbr_material.metallic_roughness_texture = texture_and_sampler;
             }
-            
-            if let Some(nt) = material.normal_texture.as_ref()
-            {
+
+            if let Some(nt) = material.normal_texture.as_ref() {
                 // alpha = 1 is interpreted as "should use normal map"
                 // TODO this should be done at a later stage instead of at gltf import
                 // TODO actually we should just generate tangents and use (0, 0, 1) as default normal map
                 let mut texture_and_sampler = self.load_texture(nt.index);
                 set_alpha_channel(&mut texture_and_sampler.0, u8::MAX);
-                texture_and_sampler.0.save("debug_img.png").unwrap();
+                // texture_and_sampler.0.save("debug_img.png").unwrap();
                 pbr_material.normal_texture = texture_and_sampler;
                 pbr_material.normal_texture_scale = nt.scale;
             }
 
-            if let Some(texture_and_sampler) = material.occlusion_texture.as_ref()
+            if let Some(texture_and_sampler) = material
+                .occlusion_texture
+                .as_ref()
                 .map(|t| self.load_texture(t.index))
             {
                 pbr_material.occlusion_texture = texture_and_sampler;
             }
 
-            if let Some(texture_and_sampler) = material.emissive_texture.as_ref()
+            if let Some(texture_and_sampler) = material
+                .emissive_texture
+                .as_ref()
                 .map(|t| self.load_texture(t.index))
             {
                 pbr_material.emissive_texture = texture_and_sampler;
@@ -790,9 +901,11 @@ impl GLTF {
             let mut pbr_primitives = vec![];
             for primitive_idx in 0..mesh.primitives.len() {
                 let primitive = &mesh.primitives[primitive_idx];
-                
+
                 let has_vertex_normals = primitive.attributes.normal.is_some();
-                let has_normal_map = primitive.material.as_ref()
+                let has_normal_map = primitive
+                    .material
+                    .as_ref()
                     .and_then(|mat_idx| self.scene.materials.as_ref().map(|mats| &mats[*mat_idx]))
                     .and_then(|mat| mat.normal_texture.as_ref())
                     .is_some();
@@ -822,4 +935,3 @@ impl GLTF {
         pbr_meshes
     }
 }
-

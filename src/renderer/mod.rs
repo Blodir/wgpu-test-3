@@ -1,11 +1,10 @@
-mod utils;
-mod texture;
 mod camera;
-mod lights;
-mod wgpu_context;
-pub mod gltf;
-mod pipelines;
 mod depth_texture;
+pub mod gltf;
+mod lights;
 mod msaa_textures;
+pub mod pipelines;
 pub mod renderer;
-
+pub mod texture;
+pub mod utils;
+mod wgpu_context;

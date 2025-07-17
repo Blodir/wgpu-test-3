@@ -2,10 +2,7 @@ use wgpu::util::DeviceExt;
 
 use crate::renderer::renderer::WorldBinding;
 
-const INDICES: &[u16] = &[
-    0, 2, 1,
-    3, 2, 0,
-];
+const INDICES: &[u16] = &[0, 2, 1, 3, 2, 0];
 
 pub struct SkyboxOutputTexture {
     texture: wgpu::Texture,
@@ -26,16 +23,21 @@ impl SkyboxOutputTexture {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: surface_config.format,
+            format: wgpu::TextureFormat::Rgba16Float,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         };
         let texture = device.create_texture(&desc);
-        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let view = texture.create_view(&wgpu::TextureViewDescriptor {
+            format: Some(wgpu::TextureFormat::Rgba16Float),
+            ..wgpu::TextureViewDescriptor::default()
+        });
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor::default());
 
-        Self { 
-            texture, view, sampler
+        Self {
+            texture,
+            view,
+            sampler,
         }
     }
 }
@@ -52,12 +54,16 @@ impl SkyboxPipeline {
         environment_map_bind_group_layout: &wgpu::BindGroupLayout,
     ) -> Self {
         let bind_group_layouts = &[camera_bind_group_layout, environment_map_bind_group_layout];
-        let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Skybox Pipeline Layout"),
-            bind_group_layouts,
-            push_constant_ranges: &[],
-        });
-        let shader_module = crate::renderer::utils::create_shader_module(device, "src/renderer/shaders/skybox.wgsl");
+        let render_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Skybox Pipeline Layout"),
+                bind_group_layouts,
+                push_constant_ranges: &[],
+            });
+        let shader_module = crate::renderer::utils::create_shader_module(
+            device,
+            "src/renderer/shaders/skybox.wgsl",
+        );
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Skybox Render Pipeline"),
             layout: Some(&render_pipeline_layout),
@@ -70,7 +76,7 @@ impl SkyboxPipeline {
                 module: &shader_module,
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: surface_config.format,
+                    format: wgpu::TextureFormat::Rgba16Float,
                     blend: None,
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -87,15 +93,16 @@ impl SkyboxPipeline {
             multiview: None,
         });
 
-        let index_buffer = device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("Index Buffer"),
-                contents: bytemuck::cast_slice(INDICES),
-                usage: wgpu::BufferUsages::INDEX,
-            }
-        );
+        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Index Buffer"),
+            contents: bytemuck::cast_slice(INDICES),
+            usage: wgpu::BufferUsages::INDEX,
+        });
 
-        Self { render_pipeline, index_buffer }
+        Self {
+            render_pipeline,
+            index_buffer,
+        }
     }
 
     pub fn render(
@@ -132,7 +139,11 @@ impl SkyboxPipeline {
 
             render_pass.set_pipeline(&self.render_pipeline);
             render_pass.set_bind_group(0u32, &world_binding.camera_binding.bind_group, &[]);
-            render_pass.set_bind_group(1u32, &world_binding.environment_map_binding.bind_group, &[]);
+            render_pass.set_bind_group(
+                1u32,
+                &world_binding.environment_map_binding.bind_group,
+                &[],
+            );
             render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
             render_pass.draw_indexed(0..INDICES.len() as u32, 0, 0..1);
         }
@@ -217,4 +228,3 @@ pub fn create_test_cubemap_texture(
 
     cubemap_texture
 }
-

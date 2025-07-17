@@ -1,10 +1,13 @@
-use std::{fs::File, io::{self, Read}};
+use std::{
+    fs::File,
+    io::{self, Read},
+};
 
 use cgmath::{Deg, Matrix4, SquareMatrix};
 use wgpu::util::DeviceExt as _;
 
-use crate::renderer::texture::Texture;
-use crate::renderer::pipelines::pbr;
+use wgpu_test_3::renderer::pipelines::pbr;
+use wgpu_test_3::renderer::texture::Texture;
 
 use super::mipmap::MipmapPipeline;
 
@@ -24,9 +27,9 @@ impl EquirectangularHdrEnvironmentMap {
                     binding: 0,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: false},
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
                         view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false
+                        multisampled: false,
                     },
                     count: None,
                 },
@@ -41,7 +44,12 @@ impl EquirectangularHdrEnvironmentMap {
         }
     }
 
-    fn upload(&self, device: &wgpu::Device, queue: &wgpu::Queue, bind_group_layout: &wgpu::BindGroupLayout) -> EquirectangularHdrEnvironmentMapBinding {
+    fn upload(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        bind_group_layout: &wgpu::BindGroupLayout,
+    ) -> EquirectangularHdrEnvironmentMapBinding {
         let texture = Texture::from_image(device, queue, &self.map, false);
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             min_filter: wgpu::FilterMode::Nearest,
@@ -79,44 +87,41 @@ pub struct FaceRotationBinding {
 impl FaceRotation {
     pub fn desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
         wgpu::BindGroupLayoutDescriptor {
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
                 },
-            ],
+                count: None,
+            }],
             label: Some("FaceRotation Bind Group Layout"),
         }
     }
 
     pub fn from(mat4: Matrix4<f32>) -> Self {
-        Self {
-            m4: mat4.into(),
-        }
+        Self { m4: mat4.into() }
     }
 
-    pub fn upload(&self, device: &wgpu::Device, queue: &wgpu::Queue, bind_group_layout: &wgpu::BindGroupLayout) -> FaceRotationBinding {
-        let buffer = device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("FaceRotation Buffer"),
-                contents: bytemuck::cast_slice(&self.m4),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            }
-        );
+    pub fn upload(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        bind_group_layout: &wgpu::BindGroupLayout,
+    ) -> FaceRotationBinding {
+        let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("FaceRotation Buffer"),
+            contents: bytemuck::cast_slice(&self.m4),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: buffer.as_entire_binding(),
-                },
-            ],
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: buffer.as_entire_binding(),
+            }],
             label: Some("FaceRotation Bind Group"),
         });
 
@@ -125,7 +130,7 @@ impl FaceRotation {
 }
 
 struct EquirectangularReaderPipeline {
-    render_pipeline: wgpu::RenderPipeline
+    render_pipeline: wgpu::RenderPipeline,
 }
 impl EquirectangularReaderPipeline {
     fn new(
@@ -133,13 +138,20 @@ impl EquirectangularReaderPipeline {
         equirectangular_bind_group_layout: &wgpu::BindGroupLayout,
         face_rotation_bind_group_layout: &wgpu::BindGroupLayout,
     ) -> EquirectangularReaderPipeline {
-        let bind_group_layouts = &[equirectangular_bind_group_layout, face_rotation_bind_group_layout];
-        let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("IrradiancePreprocessing Pipeline Layout"),
-            bind_group_layouts,
-            push_constant_ranges: &[],
-        });
-        let shader_module = crate::renderer::utils::create_shader_module(device, "src/renderer/shaders/equirectangular.wgsl");
+        let bind_group_layouts = &[
+            equirectangular_bind_group_layout,
+            face_rotation_bind_group_layout,
+        ];
+        let render_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("IrradiancePreprocessing Pipeline Layout"),
+                bind_group_layouts,
+                push_constant_ranges: &[],
+            });
+        let shader_module = wgpu_test_3::renderer::utils::create_shader_module(
+            device,
+            "src/bin/bake_env_map/equirectangular.wgsl",
+        );
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Equirectangular Map Render Pipeline"),
             layout: Some(&render_pipeline_layout),
@@ -172,10 +184,7 @@ impl EquirectangularReaderPipeline {
     }
 }
 
-const INDICES: &[u16] = &[
-    0, 2, 1,
-    3, 2, 0,
-];
+const INDICES: &[u16] = &[0, 2, 1, 3, 2, 0];
 
 pub fn render_cubemap(
     device: &wgpu::Device,
@@ -187,28 +196,32 @@ pub fn render_cubemap(
     let mipmap_pipeline = MipmapPipeline::new(device);
     let mip_level_count = 5;
 
-    let eem_bind_group_layout = device.create_bind_group_layout(&EquirectangularHdrEnvironmentMap::desc());
-    let equirectangular_environment_map = EquirectangularHdrEnvironmentMap { map: (image, Some(pbr::SamplerOptions {
-        mag_filter: wgpu::FilterMode::Nearest,
-        min_filter: wgpu::FilterMode::Nearest,
-        address_mode_u: wgpu::AddressMode::ClampToEdge,
-        address_mode_v: wgpu::AddressMode::ClampToEdge,
-    })) };
-    let equirectangular_environment_map_binding = equirectangular_environment_map.upload(
-        device, queue, &eem_bind_group_layout
-    );
+    let eem_bind_group_layout =
+        device.create_bind_group_layout(&EquirectangularHdrEnvironmentMap::desc());
+    let equirectangular_environment_map = EquirectangularHdrEnvironmentMap {
+        map: (
+            image,
+            Some(pbr::SamplerOptions {
+                mag_filter: wgpu::FilterMode::Nearest,
+                min_filter: wgpu::FilterMode::Nearest,
+                address_mode_u: wgpu::AddressMode::ClampToEdge,
+                address_mode_v: wgpu::AddressMode::ClampToEdge,
+            }),
+        ),
+    };
+    let equirectangular_environment_map_binding =
+        equirectangular_environment_map.upload(device, queue, &eem_bind_group_layout);
 
     let fr_bind_group_layout = device.create_bind_group_layout(&FaceRotation::desc());
-    
-    let pipeline = EquirectangularReaderPipeline::new(device, &eem_bind_group_layout, &fr_bind_group_layout);
 
-    let index_buffer = device.create_buffer_init(
-        &wgpu::util::BufferInitDescriptor {
-            label: Some("Index Buffer"),
-            contents: bytemuck::cast_slice(INDICES),
-            usage: wgpu::BufferUsages::INDEX,
-        }
-    );
+    let pipeline =
+        EquirectangularReaderPipeline::new(device, &eem_bind_group_layout, &fr_bind_group_layout);
+
+    let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("Index Buffer"),
+        contents: bytemuck::cast_slice(INDICES),
+        usage: wgpu::BufferUsages::INDEX,
+    });
 
     let num_indices = INDICES.len() as u32;
 
@@ -223,7 +236,9 @@ pub fn render_cubemap(
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
         format: wgpu::TextureFormat::Rgba16Float,
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_SRC,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+            | wgpu::TextureUsages::TEXTURE_BINDING
+            | wgpu::TextureUsages::COPY_SRC,
         view_formats: &[],
     });
     let face_views: Vec<wgpu::TextureView> = (0..6)
@@ -241,10 +256,10 @@ pub fn render_cubemap(
 
     let face_rotations: &[Matrix4<f32>] = &[
         Matrix4::from_angle_y(Deg(-90f32)), // right
-        Matrix4::from_angle_y(Deg(90f32)), // left
-        Matrix4::from_angle_x(Deg(90f32)), // top
+        Matrix4::from_angle_y(Deg(90f32)),  // left
+        Matrix4::from_angle_x(Deg(90f32)),  // top
         Matrix4::from_angle_x(Deg(-90f32)), // bottom
-        Matrix4::identity(), // front
+        Matrix4::identity(),                // front
         Matrix4::from_angle_y(Deg(180f32)), // back
     ];
 
@@ -283,7 +298,13 @@ pub fn render_cubemap(
 
         queue.submit(Some(encoder.finish()));
 
-        mipmap_pipeline.generate_mipmaps(device, queue, &cubemap_texture, mip_level_count, face_index as u32);
+        mipmap_pipeline.generate_mipmaps(
+            device,
+            queue,
+            &cubemap_texture,
+            mip_level_count,
+            face_index as u32,
+        );
     }
 
     /*
@@ -300,7 +321,13 @@ pub fn render_cubemap(
 }
 
 // for testing:
-pub fn write_texture_to_file(device: &wgpu::Device, queue: &wgpu::Queue, texture: &wgpu::Texture, face_index: u32, mip_level: u32) {
+pub fn write_texture_to_file(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    texture: &wgpu::Texture,
+    face_index: u32,
+    mip_level: u32,
+) {
     let cubemap_face_resolution = texture.width();
     let mip_resolution = (cubemap_face_resolution >> mip_level).max(1);
     // Get the texture from the GPU and write it to a file
@@ -361,14 +388,17 @@ pub fn write_texture_to_file(device: &wgpu::Device, queue: &wgpu::Queue, texture
     drop(data); // Unmap the buffer
 
     let img_buffer: image::ImageBuffer<image::Rgba<u8>, Vec<u8>> =
-        image::ImageBuffer::from_raw(mip_resolution, mip_resolution, image_data).expect("Failed to create ImageBuffer");
+        image::ImageBuffer::from_raw(mip_resolution, mip_resolution, image_data)
+            .expect("Failed to create ImageBuffer");
 
     // Save the image
-    convert_rgba8_to_rgb32f(img_buffer).save(format!("cubemap_face_{face_index}.hdr")).expect("Failed to save image");
+    convert_rgba8_to_rgb32f(img_buffer)
+        .save(format!("cubemap_face_{face_index}.hdr"))
+        .expect("Failed to save image");
 }
 
 fn convert_rgba8_to_rgb32f(
-    img: image::ImageBuffer<image::Rgba<u8>, Vec<u8>>
+    img: image::ImageBuffer<image::Rgba<u8>, Vec<u8>>,
 ) -> image::ImageBuffer<image::Rgb<f32>, Vec<f32>> {
     let (width, height) = img.dimensions();
 
@@ -387,6 +417,6 @@ fn convert_rgba8_to_rgb32f(
     }
 
     // Return a new ImageBuffer with the RGB<f32> color type
-    image::ImageBuffer::from_raw(width, height, rgb32f_data).expect("Failed to create RGB32F ImageBuffer")
+    image::ImageBuffer::from_raw(width, height, rgb32f_data)
+        .expect("Failed to create RGB32F ImageBuffer")
 }
-
