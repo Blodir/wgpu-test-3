@@ -15,4 +15,5 @@ serde_repr = "0.1.19"
 cgmath = "0.18.0"
 image = "0.25.2"
 ddsfile = "0.5.2"
+gltf = "1.4.1"
 
