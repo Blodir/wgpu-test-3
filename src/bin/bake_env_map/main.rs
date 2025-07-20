@@ -111,17 +111,6 @@ fn write_texture_to_file(
     dds.write(&mut file).unwrap();
 }
 
-fn strip_extension(path: &str) -> String {
-    let path = Path::new(path);
-    let stem = path.file_stem().and_then(|s| s.to_str());
-
-    match (path.parent(), stem) {
-        (Some(parent), Some(stem)) => parent.join(stem).to_string_lossy().into_owned(),
-        (None, Some(stem)) => stem.to_string(),
-        _ => path.to_string_lossy().into_owned(),
-    }
-}
-
 async fn run() {
     let args: Vec<String> = env::args().collect();
     let path = args
@@ -244,7 +233,7 @@ async fn run() {
             .unwrap()
     };
 
-    let output_path = strip_extension(path);
+    let output_path = wgpu_test_3::strip_extension(path);
 
     // write prefiltered_env_map
     write_texture_to_file(
