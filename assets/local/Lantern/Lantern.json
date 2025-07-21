@@ -1,0 +1,350 @@
+{
+  "primitives": [
+    {
+      "instances": [
+        [
+          [
+            -1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            -1.0,
+            0.0
+          ],
+          [
+            3.8231542,
+            13.01603,
+            0.0,
+            1.0
+          ]
+        ],
+        [
+          [
+            -1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            -1.0,
+            0.0
+          ],
+          [
+            9.582001,
+            21.037872,
+            0.0,
+            1.0
+          ]
+        ],
+        [
+          [
+            -1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            -1.0,
+            0.0
+          ],
+          [
+            9.582007,
+            18.009151,
+            0.0,
+            1.0
+          ]
+        ]
+      ],
+      "index_byte_offset": 0,
+      "index_byte_length": 10464,
+      "material": 0
+    },
+    {
+      "instances": [
+        [
+          [
+            -1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            -1.0,
+            0.0
+          ],
+          [
+            3.8231542,
+            13.01603,
+            0.0,
+            1.0
+          ]
+        ],
+        [
+          [
+            -1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            -1.0,
+            0.0
+          ],
+          [
+            9.582001,
+            21.037872,
+            0.0,
+            1.0
+          ]
+        ],
+        [
+          [
+            -1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            -1.0,
+            0.0
+          ],
+          [
+            9.582007,
+            18.009151,
+            0.0,
+            1.0
+          ]
+        ]
+      ],
+      "index_byte_offset": 10464,
+      "index_byte_length": 14976,
+      "material": 0
+    },
+    {
+      "instances": [
+        [
+          [
+            -1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            -1.0,
+            0.0
+          ],
+          [
+            3.8231542,
+            13.01603,
+            0.0,
+            1.0
+          ]
+        ],
+        [
+          [
+            -1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            -1.0,
+            0.0
+          ],
+          [
+            9.582001,
+            21.037872,
+            0.0,
+            1.0
+          ]
+        ],
+        [
+          [
+            -1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            -1.0,
+            0.0
+          ],
+          [
+            9.582007,
+            18.009151,
+            0.0,
+            1.0
+          ]
+        ]
+      ],
+      "index_byte_offset": 25440,
+      "index_byte_length": 39288,
+      "material": 0
+    }
+  ],
+  "materials": [
+    {
+      "base_color_factor": [
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "metallic_factor": 1.0,
+      "roughness_factor": 1.0,
+      "emissive_factor": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "normal_texture_scale": 1.0,
+      "occlusion_strength": 1.0,
+      "alpha_mode": "Opaque",
+      "alpha_cutoff": 0.5,
+      "double_sided": false,
+      "normal_texture": {
+        "source": "assets/local/Lantern/normals.dds",
+        "sampler": {
+          "mag_filter": "Linear",
+          "min_filter": "Linear",
+          "mipmap_filter": "None",
+          "wrap_u": "Repeat",
+          "wrap_v": "Repeat",
+          "wrap_w": "Repeat"
+        }
+      },
+      "occlusion_texture": {
+        "source": "assets/shared/occlusion.placeholder.dds",
+        "sampler": {
+          "mag_filter": "Linear",
+          "min_filter": "Linear",
+          "mipmap_filter": "Linear",
+          "wrap_u": "Repeat",
+          "wrap_v": "Repeat",
+          "wrap_w": "Repeat"
+        }
+      },
+      "emissive_texture": {
+        "source": "assets/local/Lantern/emissive.dds",
+        "sampler": {
+          "mag_filter": "Linear",
+          "min_filter": "Linear",
+          "mipmap_filter": "None",
+          "wrap_u": "Repeat",
+          "wrap_v": "Repeat",
+          "wrap_w": "Repeat"
+        }
+      },
+      "base_color_texture": {
+        "source": "assets/local/Lantern/base_color.dds",
+        "sampler": {
+          "mag_filter": "Linear",
+          "min_filter": "Linear",
+          "mipmap_filter": "None",
+          "wrap_u": "Repeat",
+          "wrap_v": "Repeat",
+          "wrap_w": "Repeat"
+        }
+      },
+      "metallic_roughness_texture": {
+        "source": "assets/local/Lantern/metallic_roughness.dds",
+        "sampler": {
+          "mag_filter": "Linear",
+          "min_filter": "Linear",
+          "mipmap_filter": "None",
+          "wrap_u": "Repeat",
+          "wrap_v": "Repeat",
+          "wrap_w": "Repeat"
+        }
+      }
+    }
+  ],
+  "buffer_path": "assets/local/Lantern/Lantern.bin",
+  "vertex_buffer_start_offset": 64728,
+  "aabb": {
+    "min": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "max": [
+      0.0,
+      0.0,
+      0.0
+    ]
+  }
+}
