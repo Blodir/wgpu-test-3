@@ -16,10 +16,15 @@ use winit::{
     window::{Window, WindowId},
 };
 
+pub mod dds;
 pub mod renderer;
 pub mod scene_graph;
 
 use renderer::{gltf::GLTF, renderer::Renderer};
+
+pub fn align_to_256(n: usize) -> usize {
+    (n + 255) & !255
+}
 
 pub fn strip_extension(path: &str) -> String {
     let path = Path::new(path);

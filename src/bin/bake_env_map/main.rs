@@ -1,3 +1,4 @@
+use block_compression::BC6HSettings;
 use ddsfile::{Caps2, Dds, DxgiFormat, NewDxgiParams};
 use image::ImageReader;
 use pollster::FutureExt as _;
@@ -91,22 +92,19 @@ fn write_texture_to_file(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
 ) {
-    let data = copy_texture_to_buffer(&texture, device, queue);
-    let mut dds = Dds::new_dxgi(NewDxgiParams {
-        height: texture.height(),
-        width: texture.width(),
-        depth: None,
-        format: DxgiFormat::R16G16B16A16_Float,
-        mipmap_levels: Some(texture.mip_level_count()),
-        array_layers: Some(6),
-        caps2: Some(Caps2::CUBEMAP | Caps2::CUBEMAP_ALLFACES),
-        is_cubemap: true,
-        resource_dimension: ddsfile::D3D10ResourceDimension::Texture2D,
-        alpha_mode: ddsfile::AlphaMode::Straight,
-    })
-    .unwrap();
+    let buffer = copy_texture_to_buffer(&texture, device, queue);
 
-    dds.data = data.into_iter().flatten().collect();
+    let dds = wgpu_test_3::dds::create_dds(
+        buffer,
+        &DxgiFormat::BC6H_UF16,
+        texture.width(),
+        texture.height(),
+        texture.depth_or_array_layers(),
+        texture.mip_level_count(),
+        true,
+        ddsfile::AlphaMode::Straight,
+    );
+
     let mut file = File::create(output_path).unwrap();
     dds.write(&mut file).unwrap();
 }

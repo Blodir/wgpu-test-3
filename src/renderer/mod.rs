@@ -6,5 +6,6 @@ mod msaa_textures;
 pub mod pipelines;
 pub mod renderer;
 pub mod texture;
+mod texture2;
 pub mod utils;
 mod wgpu_context;

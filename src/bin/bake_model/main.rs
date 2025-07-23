@@ -3,6 +3,7 @@ use cgmath::{One, Quaternion, Rotation3, Vector3};
 use gltf::{Document, Gltf, Primitive};
 use std::path::Path;
 use std::{collections::HashMap, env, fs::File, io::Write};
+use wgpu_test_3::dds::{create_dds, gltf_img_to_dxgi_format};
 use wgpu_test_3::renderer::pipelines::pbr::Vertex;
 mod json;
 
@@ -473,8 +474,8 @@ fn export_image_as_dds(
     srgb: bool,
     alpha_mode: gltf::material::AlphaMode,
 ) -> std::io::Result<()> {
+    // create_dds expects RGBA
     let converted = match image.format {
-        // dds doesn't support rgb8
         gltf::image::Format::R8G8B8 => gltf::image::Data {
             pixels: convert_rgb8_to_rgba8(image),
             format: gltf::image::Format::R8G8B8A8,
@@ -483,39 +484,21 @@ fn export_image_as_dds(
         },
         _ => image.clone(),
     };
-    let params = ddsfile::NewDxgiParams {
-        height: converted.height,
-        width: converted.width,
-        depth: None,
-        format: match (converted.format, srgb) {
-            (gltf::image::Format::R8, _) => ddsfile::DxgiFormat::R8_UNorm,
-            (gltf::image::Format::R8G8, _) => ddsfile::DxgiFormat::R8G8_UNorm,
-            (gltf::image::Format::R8G8B8, true) => ddsfile::DxgiFormat::Unknown, // no R8G8B8_UNorm_sRGB in DXGI
-            (gltf::image::Format::R8G8B8, false) => ddsfile::DxgiFormat::Unknown, // fallback or convert to RGBA8
-            (gltf::image::Format::R8G8B8A8, true) => ddsfile::DxgiFormat::R8G8B8A8_UNorm_sRGB,
-            (gltf::image::Format::R8G8B8A8, false) => ddsfile::DxgiFormat::R8G8B8A8_UNorm,
-            (gltf::image::Format::R16, _) => ddsfile::DxgiFormat::R16_UNorm,
-            (gltf::image::Format::R16G16, _) => ddsfile::DxgiFormat::R16G16_UNorm,
-            (gltf::image::Format::R16G16B16, _) => ddsfile::DxgiFormat::Unknown, // not directly supported
-            (gltf::image::Format::R16G16B16A16, _) => ddsfile::DxgiFormat::R16G16B16A16_Float, // usually stored as float
-            (gltf::image::Format::R32G32B32FLOAT, _) => ddsfile::DxgiFormat::R32G32B32_Float,
-            (gltf::image::Format::R32G32B32A32FLOAT, _) => ddsfile::DxgiFormat::R32G32B32A32_Float,
-        },
-        mipmap_levels: None,
-        array_layers: None,
-        is_cubemap: false,
-        caps2: None,
-        resource_dimension: ddsfile::D3D10ResourceDimension::Texture2D,
-        alpha_mode: match alpha_mode {
+    let format = gltf_img_to_dxgi_format(&converted, srgb);
+    let dds = create_dds(
+        vec![converted.pixels.clone()],
+        &format,
+        converted.width,
+        converted.height,
+        1,
+        1,
+        false,
+        match alpha_mode {
             gltf::material::AlphaMode::Opaque => ddsfile::AlphaMode::Opaque,
             gltf::material::AlphaMode::Mask => ddsfile::AlphaMode::Straight,
             gltf::material::AlphaMode::Blend => ddsfile::AlphaMode::Straight,
         },
-    };
-
-    let mut dds = ddsfile::Dds::new_dxgi(params).expect("Failed to create DDS");
-    dds.data = converted.pixels;
-
+    );
     ensure_parent_dir_exists(path)?;
     let mut file = File::create(path)?;
     dds.write(&mut file).expect("Failed to write DDS");

@@ -292,7 +292,7 @@
         "sampler": {
           "mag_filter": "Linear",
           "min_filter": "Linear",
-          "mipmap_filter": "Linear",
+          "mipmap_filter": "None",
           "wrap_u": "Repeat",
           "wrap_v": "Repeat",
           "wrap_w": "Repeat"
