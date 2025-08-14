@@ -759,6 +759,7 @@ fn bake(
     let mut output_index_buffers = vec![];
     let mut current_vertex_offset = 0usize;
     let mut current_index_byte_offset = 0usize;
+    let mut base_vertex = 0u32;
 
     for (mesh_idx, primitive) in primitives {
         let index_bytes = read_index_buffer(&primitive, buffers);
@@ -775,7 +776,7 @@ fn bake(
         let metallic_roughness_texcoord_buffer =
             read_metallic_roughness_texcoord_buffer(&primitive, buffers);
         let occlusion_texcoord_buffer = read_occlusion_texcoord_buffer(&primitive, buffers);
-        let emissive_texcoord_buffer = read_occlusion_texcoord_buffer(&primitive, buffers);
+        let emissive_texcoord_buffer = read_emissive_texcoord_buffer(&primitive, buffers);
         for i in 0..pos_buffer.len() {
             let vert = Vertex {
                 position: pos_buffer[i],
@@ -791,6 +792,7 @@ fn bake(
             };
             verts.push(vert);
         }
+        let vertex_count = verts.len();
         let vertex_bytes: Vec<u8> = bytemuck::cast_slice(&verts).to_vec();
         let vertex_bytes_count = vertex_bytes.len();
 
@@ -809,10 +811,12 @@ fn bake(
             index_byte_offset: current_index_byte_offset as u32,
             vertex_byte_length: vertex_bytes_count as u32,
             vertex_byte_offset: current_vertex_offset as u32,
+            base_vertex,
         });
 
         current_vertex_offset += vertex_bytes_count;
         current_index_byte_offset += index_bytes_count;
+        base_vertex += vertex_count as u32;
     }
 
     let mut materials: Vec<modelfile::Material> = vec![];

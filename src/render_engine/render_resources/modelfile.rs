@@ -9,6 +9,7 @@ pub struct Primitive {
     pub index_byte_length: u32,
     pub vertex_byte_offset: u32,
     pub vertex_byte_length: u32,
+    pub base_vertex: u32,
     pub material: u32,
 }
 

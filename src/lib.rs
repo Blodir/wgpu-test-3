@@ -104,17 +104,9 @@ impl<'surface> ApplicationHandler for App<'surface> {
         self.window = Some(window.clone());
         let wgpu_context = WgpuContext::new(window).block_on();
         let mut render_resources = RenderResources::new(&wgpu_context);
-        // TODO load all resources from scene
-        // temp hardcoded load
-        if let RenderDataType::Model(handle) = &self.scene.root.render_data {
-            render_resources
-                .load_model(handle.clone(), &wgpu_context)
-                .unwrap();
-        }
-        render_resources.load_environment_map(
-            EnvironmentMapHandle("assets/kloofendal_overcast_puresky_8k".to_string()),
-            &wgpu_context,
-        );
+        render_resources
+            .load_scene(&self.scene, &wgpu_context)
+            .unwrap();
         let temp_render_engine = RenderEngine::new(&wgpu_context, &render_resources);
         let render_engine_arc_mutex = Arc::new(Mutex::new(temp_render_engine));
         self.renderer = Some(render_engine_arc_mutex);
@@ -132,7 +124,7 @@ impl<'surface> ApplicationHandler for App<'surface> {
                     let renderer = renderer_arc_mutex.lock().unwrap();
                     match renderer.render(
                         &self.scene,
-                        self.render_resources.as_ref().unwrap(),
+                        self.render_resources.as_mut().unwrap(),
                         self.wgpu_context.as_ref().unwrap(),
                     ) {
                         Ok(_) => {}
@@ -205,6 +197,11 @@ impl<'surface> ApplicationHandler for App<'surface> {
                     let wgpu_context = self.wgpu_context.as_mut().unwrap();
                     let mut renderer = renderer_arc_mutex.lock().unwrap();
                     resize(physical_size, wgpu_context, &mut renderer);
+                    self.render_resources.as_mut().unwrap().camera.update(
+                        &self.scene.camera,
+                        &wgpu_context.queue,
+                        &wgpu_context.surface_config,
+                    );
                     self.window.as_mut().unwrap().request_redraw();
                 }
             }
@@ -217,6 +214,11 @@ impl<'surface> ApplicationHandler for App<'surface> {
                     let mut renderer = renderer_arc_mutex.lock().unwrap();
                     let new_size = wgpu_context.window.inner_size();
                     resize(new_size, wgpu_context, &mut renderer);
+                    self.render_resources.as_mut().unwrap().camera.update(
+                        &self.scene.camera,
+                        &wgpu_context.queue,
+                        &wgpu_context.surface_config,
+                    );
                     self.window.as_mut().unwrap().request_redraw();
                 }
             }

@@ -7,7 +7,9 @@ use crate::{
             model::{instance::Instance, material::MaterialBinding, vertex::Vertex},
             resources::depth_texture::DepthTexture,
         },
-        render_resources::{modelfile, RenderResources, TextureHandle},
+        render_resources::{
+            modelfile, EnvironmentMapHandle, ModelHandle, RenderResources, TextureHandle,
+        },
         utils,
     },
     scene_tree::{RenderDataType, Scene},
@@ -110,13 +112,13 @@ impl ModelPipeline {
 
     pub fn render(
         &self,
-        queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
         msaa_texture_view: &wgpu::TextureView,
         msaa_resolve_texture_view: &wgpu::TextureView,
         depth_texture_view: &wgpu::TextureView,
         render_resources: &RenderResources,
-        scene: &Scene,
+        model_handles: impl Iterator<Item = ModelHandle>,
+        environment_handle: &EnvironmentMapHandle,
     ) {
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Model Render Pass"),
@@ -145,54 +147,52 @@ impl ModelPipeline {
         render_pass.set_bind_group(1u32, &render_resources.sun.bind_group, &[]);
         render_pass.set_bind_group(
             3u32,
-            &render_resources.environment_maps[&scene.environment].bind_group,
+            &render_resources.environment_maps[environment_handle].bind_group,
             &[],
         );
 
-        // TEMPORARILY RENDER ONLY ROOT NODE
-        let node = &scene.root;
-        let model_handle = match &node.render_data {
-            RenderDataType::Model(model) => model,
-        };
-        let model = render_resources.models.get(&model_handle).unwrap();
-        let prims = &model.json.primitives;
-        model.update_instance_buffer(queue, &node.transform);
+        for model_handle in model_handles {
+            let model = render_resources.models.get(&model_handle).unwrap();
+            let prims = &model.json.primitives;
 
-        render_pass.set_vertex_buffer(0, model.instance_buffer.slice(..));
-        render_pass.set_index_buffer(
-            model
-                .index_vertex_buffer
-                .slice(0..model.json.vertex_buffer_start_offset as u64),
-            // we are currently forcing u32 in modelfile... maybe in the future should allow u16
-            wgpu::IndexFormat::Uint32,
-        );
-        render_pass.set_vertex_buffer(
-            1u32,
-            model
-                .index_vertex_buffer
-                .slice(model.json.vertex_buffer_start_offset as u64..),
-        );
+            render_pass.set_vertex_buffer(0, model.instance_buffer.slice(..));
+            render_pass.set_index_buffer(
+                model
+                    .index_vertex_buffer
+                    .slice(0..model.json.vertex_buffer_start_offset as u64),
+                // we are currently forcing u32 in modelfile... maybe in the future should allow u16
+                wgpu::IndexFormat::Uint32,
+            );
+            render_pass.set_vertex_buffer(
+                1u32,
+                model
+                    .index_vertex_buffer
+                    .slice(model.json.vertex_buffer_start_offset as u64..),
+            );
 
-        let mut instance_offset = 0u32;
-        for prim in prims {
-            let mat_handle = &model.materials[prim.material as usize];
-            render_pass.set_bind_group(
-                2u32,
-                &render_resources
-                    .materials
-                    .get(&mat_handle)
-                    .unwrap()
-                    .bind_group,
-                &[],
-            );
-            let index_start = prim.index_byte_offset / 4;
-            let index_count = prim.index_byte_length / 4;
-            render_pass.draw_indexed(
-                index_start..index_start + index_count,
-                0,
-                instance_offset..instance_offset + prim.instances.len() as u32,
-            );
-            instance_offset += prim.instances.len() as u32;
+            let mut instance_offset = 0u32;
+            let mut prim_idx = 0;
+            for prim in prims {
+                let mat_handle = &model.materials[prim.material as usize];
+                render_pass.set_bind_group(
+                    2u32,
+                    &render_resources
+                        .materials
+                        .get(&mat_handle)
+                        .unwrap()
+                        .bind_group,
+                    &[],
+                );
+                let index_start = prim.index_byte_offset / 4;
+                let index_count = prim.index_byte_length / 4;
+                render_pass.draw_indexed(
+                    index_start..index_start + index_count,
+                    prim.base_vertex as i32,
+                    instance_offset..instance_offset + model.primitive_instance_counts[prim_idx],
+                );
+                instance_offset += model.primitive_instance_counts[prim_idx];
+                prim_idx += 1;
+            }
         }
     }
 }

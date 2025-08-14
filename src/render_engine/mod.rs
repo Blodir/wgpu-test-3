@@ -1,5 +1,9 @@
+use std::collections::HashMap;
+
+use cgmath::{Matrix4, SquareMatrix as _};
+use render_resources::ModelHandle;
+
 use crate::{
-    render_engine::wgpu_context::WgpuContext,
     render_engine::{
         pipelines::{
             model::pipeline::ModelPipeline,
@@ -11,8 +15,9 @@ use crate::{
             skybox::SkyboxPipeline,
         },
         render_resources::RenderResources,
+        wgpu_context::WgpuContext,
     },
-    scene_tree::Scene,
+    scene_tree::{NodeHandle, RenderDataType, Scene},
 };
 
 pub mod pipelines;
@@ -66,7 +71,7 @@ impl RenderEngine {
     pub fn render(
         &self,
         scene: &Scene,
-        render_resources: &RenderResources,
+        render_resources: &mut RenderResources,
         wgpu_context: &WgpuContext,
     ) -> Result<(), wgpu::SurfaceError> {
         let mut encoder =
@@ -87,14 +92,21 @@ impl RenderEngine {
                 .bind_group,
         );
 
-        self.model_pipeline.render(
+        let models = prepare_models(
+            scene,
+            render_resources,
+            &wgpu_context.device,
             &wgpu_context.queue,
+        );
+
+        self.model_pipeline.render(
             &mut encoder,
             &self.msaa_textures.msaa_texture_view,
             &self.msaa_textures.resolve_texture_view,
             &self.depth_texture.view,
             render_resources,
-            scene,
+            models,
+            &scene.environment,
         );
 
         let output_surface_texture = wgpu_context.surface.get_current_texture()?;
@@ -102,8 +114,7 @@ impl RenderEngine {
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
-        self.post_pipeline
-            .render(&wgpu_context.device, &wgpu_context.queue, &output_view)?;
+        self.post_pipeline.render(&mut encoder, &output_view)?;
 
         wgpu_context.queue.submit(Some(encoder.finish()));
         output_surface_texture.present();
@@ -122,4 +133,40 @@ impl RenderEngine {
             &self.msaa_textures,
         );
     }
+}
+
+fn accumulate_model_transforms(
+    scene: &Scene,
+    models: &mut HashMap<ModelHandle, Vec<Matrix4<f32>>>,
+    base_transform: &Matrix4<f32>,
+    node_handle: &NodeHandle,
+) {
+    let node = scene.nodes.get(node_handle).unwrap();
+    let RenderDataType::Model(model_handle) = &node.render_data;
+    let v = models.entry(model_handle.clone()).or_insert_with(Vec::new);
+    let transform = node.transform * base_transform;
+    v.push(transform);
+    for child in &node.children {
+        accumulate_model_transforms(scene, models, &transform, &child);
+    }
+}
+
+pub fn prepare_models(
+    scene: &Scene,
+    render_resources: &mut crate::render_engine::render_resources::RenderResources,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+) -> impl Iterator<Item = ModelHandle> {
+    let mut models = HashMap::<ModelHandle, Vec<Matrix4<f32>>>::new();
+    accumulate_model_transforms(scene, &mut models, &Matrix4::identity(), &scene.root);
+
+    for (handle, transforms) in &models {
+        render_resources
+            .models
+            .get_mut(&handle)
+            .unwrap()
+            .update_instance_buffer(device, queue, &transforms);
+    }
+
+    models.into_iter().map(|(handle, _)| handle.clone())
 }

@@ -33,6 +33,7 @@
       "index_byte_length": 10464,
       "vertex_byte_offset": 0,
       "vertex_byte_length": 92600,
+      "base_vertex": 0,
       "material": 0
     },
     {
@@ -68,6 +69,7 @@
       "index_byte_length": 14976,
       "vertex_byte_offset": 92600,
       "vertex_byte_length": 75600,
+      "base_vertex": 926,
       "material": 0
     },
     {
@@ -103,6 +105,7 @@
       "index_byte_length": 39288,
       "vertex_byte_offset": 168200,
       "vertex_byte_length": 246300,
+      "base_vertex": 1682,
       "material": 0
     }
   ],

@@ -1,8 +1,10 @@
+use std::collections::HashMap;
+
 use cgmath::{InnerSpace as _, Matrix4, SquareMatrix, Vector3};
-use wgpu::SurfaceConfiguration;
 
 use crate::render_engine::render_resources::{EnvironmentMapHandle, ModelHandle};
 
+#[derive(Eq, Hash, PartialEq, Clone, Debug)]
 pub struct NodeHandle(u32);
 
 pub struct Sun {
@@ -64,25 +66,48 @@ pub struct Node {
 }
 
 pub struct Scene {
-    pub root: Node,
+    pub root: NodeHandle,
+    pub nodes: HashMap<NodeHandle, Node>,
+    current_node_idx: u32,
     pub sun: Sun,
     pub camera: Camera,
     pub environment: EnvironmentMapHandle,
 }
 impl Default for Scene {
     fn default() -> Self {
+        let mut nodes = HashMap::new();
+        let root_handle = NodeHandle(0);
+        let child_handle = NodeHandle(1);
+
+        let lantern_handle = ModelHandle("assets/local/Lantern/Lantern.json".to_string());
+        let child_node = Node {
+            parent: Some(root_handle.clone()),
+            children: vec![],
+            transform: Matrix4::from_translation(Vector3::new(8.0, 0.0, 8.0)),
+            render_data: RenderDataType::Model(lantern_handle.clone()),
+        };
+        let root_node = Node {
+            parent: None,
+            children: vec![child_handle.clone()],
+            transform: Matrix4::identity(),
+            render_data: RenderDataType::Model(lantern_handle),
+        };
+        nodes.insert(root_handle.clone(), root_node);
+        nodes.insert(child_handle.clone(), child_node);
         Self {
-            root: Node {
-                parent: None,
-                children: vec![],
-                transform: Matrix4::identity(),
-                render_data: RenderDataType::Model(ModelHandle(
-                    "assets/local/Lantern/Lantern.json".to_string(),
-                )),
-            },
+            root: root_handle,
+            nodes,
+            current_node_idx: 2,
             sun: Sun::default(),
             camera: Camera::default(),
             environment: EnvironmentMapHandle("assets/kloofendal_overcast_puresky_8k".to_string()),
         }
+    }
+}
+
+impl Scene {
+    pub fn next_node_handle(&mut self) -> NodeHandle {
+        self.current_node_idx += 1;
+        NodeHandle(self.current_node_idx - 1)
     }
 }

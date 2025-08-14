@@ -179,14 +179,9 @@ impl PostProcessingPipeline {
 
     pub fn render(
         &self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
         output_texture_view: &wgpu::TextureView,
     ) -> Result<(), wgpu::SurfaceError> {
-        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("Post Processing Render Encoder"),
-        });
-
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Post Processing Render Pass"),
@@ -208,8 +203,6 @@ impl PostProcessingPipeline {
             render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
             render_pass.draw_indexed(0..INDICES.len() as u32, 0, 0..1);
         }
-
-        queue.submit(Some(encoder.finish()));
 
         Ok(())
     }
