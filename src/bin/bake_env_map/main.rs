@@ -14,6 +14,7 @@ mod diffuse_irradiance;
 mod env_prefilter;
 mod equirectangular;
 mod mipmap;
+mod texture;
 
 fn copy_texture_to_buffer(
     texture: &wgpu::Texture,
@@ -94,7 +95,7 @@ fn write_texture_to_file(
 ) {
     let buffer = copy_texture_to_buffer(&texture, device, queue);
 
-    let dds = wgpu_test_3::dds::create_dds(
+    let dds = wgpu_test_3::render_engine::render_resources::dds::create_dds(
         buffer,
         &DxgiFormat::BC6H_UF16,
         texture.width(),

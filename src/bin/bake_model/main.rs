@@ -3,9 +3,9 @@ use cgmath::{One, Quaternion, Rotation3, Vector3};
 use gltf::{Document, Gltf, Primitive};
 use std::path::Path;
 use std::{collections::HashMap, env, fs::File, io::Write};
-use wgpu_test_3::dds::{create_dds, gltf_img_to_dxgi_format};
-use wgpu_test_3::renderer::pipelines::pbr::Vertex;
-mod json;
+use wgpu_test_3::render_engine::pipelines::model::vertex::Vertex;
+use wgpu_test_3::render_engine::render_resources::dds::{create_dds, gltf_img_to_dxgi_format};
+use wgpu_test_3::render_engine::render_resources::modelfile;
 
 fn transform_to_matrix4(transform: gltf::scene::Transform) -> Matrix4<f32> {
     match transform {
@@ -34,13 +34,14 @@ fn transform_to_matrix4(transform: gltf::scene::Transform) -> Matrix4<f32> {
 fn accumulate_primitive_instances(
     node: &gltf::Node,
     transform: &Matrix4<f32>,
-    primitive_instances: &mut HashMap<usize, Vec<Matrix4<f32>>>,
+    primitive_instances: &mut HashMap<(usize, usize), Vec<Matrix4<f32>>>,
 ) {
     let t = transform * transform_to_matrix4(node.transform());
     if let Some(mesh) = &node.mesh() {
         for primitive in mesh.primitives() {
-            let idx = primitive.index();
-            let arr = primitive_instances.entry(idx).or_insert_with(Vec::new);
+            let arr = primitive_instances
+                .entry((mesh.index(), primitive.index()))
+                .or_insert_with(Vec::new);
             arr.push(t);
         }
     }
@@ -509,7 +510,7 @@ fn bake_placeholder_texture(
     data: gltf::image::Data,
     srgb: bool,
     tex_name: &str,
-) -> json::model::Texture {
+) -> modelfile::SampledTexture {
     let tex_output_path = format!("assets/shared/{}.placeholder.dds", tex_name);
 
     export_image_as_dds(
@@ -520,16 +521,16 @@ fn bake_placeholder_texture(
     )
     .expect(&format!("Failed to write texture {}", tex_output_path));
 
-    let sampler = json::model::Sampler {
-        mag_filter: json::model::FilterMode::Linear,
-        min_filter: json::model::FilterMode::Linear,
-        mipmap_filter: json::model::MipmapFilterMode::None,
-        wrap_u: json::model::WrapMode::Repeat,
-        wrap_v: json::model::WrapMode::Repeat,
-        wrap_w: json::model::WrapMode::Repeat,
+    let sampler = modelfile::Sampler {
+        mag_filter: modelfile::FilterMode::Linear,
+        min_filter: modelfile::FilterMode::Linear,
+        mipmap_filter: modelfile::MipmapFilterMode::None,
+        wrap_u: modelfile::WrapMode::Repeat,
+        wrap_v: modelfile::WrapMode::Repeat,
+        wrap_w: modelfile::WrapMode::Repeat,
     };
 
-    json::model::Texture {
+    modelfile::SampledTexture {
         source: tex_output_path,
         sampler,
     }
@@ -542,7 +543,7 @@ fn bake_texture(
     alpha_mode: gltf::material::AlphaMode,
     model_name: &str,
     tex_name: &str,
-) -> json::model::Texture {
+) -> modelfile::SampledTexture {
     let data = &images[texture.source().index()];
     let tex_output_path = match texture.source().source() {
         gltf::image::Source::View { view, mime_type } => {
@@ -562,8 +563,8 @@ fn bake_texture(
         .mag_filter()
         .unwrap_or(gltf::texture::MagFilter::Linear)
     {
-        gltf::texture::MagFilter::Linear => json::model::FilterMode::Linear,
-        gltf::texture::MagFilter::Nearest => json::model::FilterMode::Nearest,
+        gltf::texture::MagFilter::Linear => modelfile::FilterMode::Linear,
+        gltf::texture::MagFilter::Nearest => modelfile::FilterMode::Nearest,
     };
 
     let min_filter = match gltf_sampler
@@ -572,45 +573,45 @@ fn bake_texture(
     {
         gltf::texture::MinFilter::Nearest
         | gltf::texture::MinFilter::NearestMipmapNearest
-        | gltf::texture::MinFilter::NearestMipmapLinear => json::model::FilterMode::Nearest,
+        | gltf::texture::MinFilter::NearestMipmapLinear => modelfile::FilterMode::Nearest,
 
         gltf::texture::MinFilter::Linear
         | gltf::texture::MinFilter::LinearMipmapNearest
-        | gltf::texture::MinFilter::LinearMipmapLinear => json::model::FilterMode::Linear,
+        | gltf::texture::MinFilter::LinearMipmapLinear => modelfile::FilterMode::Linear,
     };
 
     let mipmap_filter = match gltf_sampler.min_filter() {
         Some(
             gltf::texture::MinFilter::NearestMipmapNearest
             | gltf::texture::MinFilter::LinearMipmapNearest,
-        ) => json::model::MipmapFilterMode::Nearest,
+        ) => modelfile::MipmapFilterMode::Nearest,
         Some(
             gltf::texture::MinFilter::NearestMipmapLinear
             | gltf::texture::MinFilter::LinearMipmapLinear,
-        ) => json::model::MipmapFilterMode::Linear,
+        ) => modelfile::MipmapFilterMode::Linear,
         Some(gltf::texture::MinFilter::Nearest | gltf::texture::MinFilter::Linear) | None => {
-            json::model::MipmapFilterMode::None
+            modelfile::MipmapFilterMode::None
         }
     };
 
     let wrap_u = match gltf_sampler.wrap_s() {
-        gltf::texture::WrappingMode::Repeat => json::model::WrapMode::Repeat,
-        gltf::texture::WrappingMode::ClampToEdge => json::model::WrapMode::ClampToEdge,
-        gltf::texture::WrappingMode::MirroredRepeat => json::model::WrapMode::MirroredRepeat,
+        gltf::texture::WrappingMode::Repeat => modelfile::WrapMode::Repeat,
+        gltf::texture::WrappingMode::ClampToEdge => modelfile::WrapMode::ClampToEdge,
+        gltf::texture::WrappingMode::MirroredRepeat => modelfile::WrapMode::MirroredRepeat,
     };
 
     let wrap_v = match gltf_sampler.wrap_t() {
-        gltf::texture::WrappingMode::Repeat => json::model::WrapMode::Repeat,
-        gltf::texture::WrappingMode::ClampToEdge => json::model::WrapMode::ClampToEdge,
-        gltf::texture::WrappingMode::MirroredRepeat => json::model::WrapMode::MirroredRepeat,
+        gltf::texture::WrappingMode::Repeat => modelfile::WrapMode::Repeat,
+        gltf::texture::WrappingMode::ClampToEdge => modelfile::WrapMode::ClampToEdge,
+        gltf::texture::WrappingMode::MirroredRepeat => modelfile::WrapMode::MirroredRepeat,
     };
 
     // gltf has no wrap_w
-    let wrap_w = json::model::WrapMode::Repeat;
+    let wrap_w = modelfile::WrapMode::Repeat;
 
-    json::model::Texture {
+    modelfile::SampledTexture {
         source: tex_output_path,
-        sampler: json::model::Sampler {
+        sampler: modelfile::Sampler {
             mag_filter,
             min_filter,
             mipmap_filter,
@@ -625,7 +626,7 @@ fn bake_base_color_tex(
     material: &gltf::Material,
     images: &Vec<gltf::image::Data>,
     model_name: &str,
-) -> json::model::Texture {
+) -> modelfile::SampledTexture {
     let tex_info = material
         .pbr_metallic_roughness()
         .base_color_texture()
@@ -644,7 +645,7 @@ fn bake_metallic_roughness_tex(
     material: &gltf::Material,
     images: &Vec<gltf::image::Data>,
     model_name: &str,
-) -> json::model::Texture {
+) -> modelfile::SampledTexture {
     let tex_info = material
         .pbr_metallic_roughness()
         .metallic_roughness_texture()
@@ -663,7 +664,7 @@ fn bake_normals_tex(
     material: &gltf::Material,
     images: &Vec<gltf::image::Data>,
     model_name: &str,
-) -> json::model::Texture {
+) -> modelfile::SampledTexture {
     let tex_info = material
         .normal_texture()
         .expect("A primitive is missing the normals texture");
@@ -681,7 +682,7 @@ fn bake_occlusion_tex(
     material: &gltf::Material,
     images: &Vec<gltf::image::Data>,
     model_name: &str,
-) -> json::model::Texture {
+) -> modelfile::SampledTexture {
     if let Some(tex_info) = material.occlusion_texture() {
         bake_texture(
             &tex_info.texture(),
@@ -707,7 +708,7 @@ fn bake_emissive_tex(
     material: &gltf::Material,
     images: &Vec<gltf::image::Data>,
     model_name: &str,
-) -> json::model::Texture {
+) -> modelfile::SampledTexture {
     let tex_info = material
         .emissive_texture()
         .expect("A primitive is missing the emissive texture");
@@ -735,20 +736,21 @@ fn bake(
     let binary_path = format!("assets/local/{}/{}.bin", model_name, model_name);
     let json_path = format!("assets/local/{}/{}.json", model_name, model_name);
 
+    /// list of pairs (mesh index, primitive)
     let mut primitives = vec![];
     for mesh in gltf.meshes() {
-        primitives.extend(mesh.primitives());
+        primitives.extend(mesh.primitives().map(|p| (mesh.index(), p)));
     }
-    primitives.sort_by(|a, b| {
+    primitives.sort_by(|(_, a), (_, b)| {
         a.material()
             .index()
             .unwrap_or(0)
             .cmp(&b.material().index().unwrap_or(0))
     });
 
-    let mut primitive_instances_map = HashMap::<usize, Vec<Matrix4<f32>>>::new();
+    let mut primitive_instances_map = HashMap::<(usize, usize), Vec<Matrix4<f32>>>::new();
     // TODO multi scene support
-    for node in gltf.scenes().find(|a| true).unwrap().nodes() {
+    for node in gltf.scenes().next().unwrap().nodes() {
         accumulate_primitive_instances(&node, &Matrix4::identity(), &mut primitive_instances_map);
     }
 
@@ -758,7 +760,7 @@ fn bake(
     let mut current_vertex_offset = 0usize;
     let mut current_index_byte_offset = 0usize;
 
-    for primitive in primitives {
+    for (mesh_idx, primitive) in primitives {
         let index_bytes = read_index_buffer(&primitive, buffers);
         let index_bytes_count = index_bytes.len();
 
@@ -794,9 +796,9 @@ fn bake(
 
         output_index_buffers.push(index_bytes);
         output_vertex_buffers.push(vertex_bytes);
-        output_primitives.push(json::model::Primitive {
+        output_primitives.push(modelfile::Primitive {
             instances: primitive_instances_map
-                .get(&primitive.index())
+                .get(&(mesh_idx, primitive.index()))
                 .unwrap()
                 .iter()
                 .map(|m| (*m).into())
@@ -805,20 +807,22 @@ fn bake(
             material: primitive.material().index().unwrap() as u32,
             index_byte_length: index_bytes_count as u32,
             index_byte_offset: current_index_byte_offset as u32,
+            vertex_byte_length: vertex_bytes_count as u32,
+            vertex_byte_offset: current_vertex_offset as u32,
         });
 
         current_vertex_offset += vertex_bytes_count;
         current_index_byte_offset += index_bytes_count;
     }
 
-    let mut materials: Vec<json::model::Material> = vec![];
+    let mut materials: Vec<modelfile::Material> = vec![];
     for material in gltf.materials() {
         let base_color_texture = bake_base_color_tex(&material, images, model_name);
         let normal_texture = bake_normals_tex(&material, images, model_name);
         let metallic_roughness_texture = bake_metallic_roughness_tex(&material, images, model_name);
         let occlusion_texture = bake_occlusion_tex(&material, images, model_name);
         let emissive_texture = bake_emissive_tex(&material, images, model_name);
-        materials.push(json::model::Material {
+        materials.push(modelfile::Material {
             base_color_factor: material.pbr_metallic_roughness().base_color_factor(),
             metallic_factor: material.pbr_metallic_roughness().metallic_factor(),
             roughness_factor: material.pbr_metallic_roughness().roughness_factor(),
@@ -830,9 +834,9 @@ fn bake(
                 .map(|o| o.strength())
                 .unwrap_or(1f32),
             alpha_mode: match material.alpha_mode() {
-                gltf::material::AlphaMode::Blend => json::model::AlphaMode::Blend,
-                gltf::material::AlphaMode::Mask => json::model::AlphaMode::Mask,
-                gltf::material::AlphaMode::Opaque => json::model::AlphaMode::Opaque,
+                gltf::material::AlphaMode::Blend => modelfile::AlphaMode::Blend,
+                gltf::material::AlphaMode::Mask => modelfile::AlphaMode::Mask,
+                gltf::material::AlphaMode::Opaque => modelfile::AlphaMode::Opaque,
             },
             alpha_cutoff: material.alpha_cutoff().unwrap_or(0.5f32),
             double_sided: material.double_sided(),
@@ -844,14 +848,16 @@ fn bake(
         });
     }
 
-    let model = json::model::Model {
+    let model = modelfile::Model {
         buffer_path: binary_path.to_string(),
         // vertex buffer starts immediately after indices
+
+        // note: vertex buffer requires alignment to 4 bytes, but since indices are u32, it's already aligned!
         vertex_buffer_start_offset: current_index_byte_offset as u32,
         primitives: output_primitives,
         materials,
         // TODO bounding box
-        aabb: json::model::Aabb {
+        aabb: modelfile::Aabb {
             min: [0f32, 0f32, 0f32],
             max: [0f32, 0f32, 0f32],
         },

@@ -6,13 +6,12 @@ use std::{
 use cgmath::{Deg, Matrix4, SquareMatrix};
 use wgpu::util::DeviceExt as _;
 
-use wgpu_test_3::renderer::pipelines::pbr;
-use wgpu_test_3::renderer::texture::Texture;
+use crate::texture::Texture;
 
 use super::mipmap::MipmapPipeline;
 
 struct EquirectangularHdrEnvironmentMap {
-    map: (image::DynamicImage, Option<pbr::SamplerOptions>),
+    map: image::DynamicImage,
 }
 
 struct EquirectangularHdrEnvironmentMapBinding {
@@ -148,7 +147,7 @@ impl EquirectangularReaderPipeline {
                 bind_group_layouts,
                 push_constant_ranges: &[],
             });
-        let shader_module = wgpu_test_3::renderer::utils::create_shader_module(
+        let shader_module = wgpu_test_3::render_engine::utils::create_shader_module(
             device,
             "src/bin/bake_env_map/equirectangular.wgsl",
         );
@@ -198,17 +197,7 @@ pub fn render_cubemap(
 
     let eem_bind_group_layout =
         device.create_bind_group_layout(&EquirectangularHdrEnvironmentMap::desc());
-    let equirectangular_environment_map = EquirectangularHdrEnvironmentMap {
-        map: (
-            image,
-            Some(pbr::SamplerOptions {
-                mag_filter: wgpu::FilterMode::Nearest,
-                min_filter: wgpu::FilterMode::Nearest,
-                address_mode_u: wgpu::AddressMode::ClampToEdge,
-                address_mode_v: wgpu::AddressMode::ClampToEdge,
-            }),
-        ),
-    };
+    let equirectangular_environment_map = EquirectangularHdrEnvironmentMap { map: image };
     let equirectangular_environment_map_binding =
         equirectangular_environment_map.upload(device, queue, &eem_bind_group_layout);
 

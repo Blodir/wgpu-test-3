@@ -1,3 +1,15 @@
+use std::{fs::File, io::Read as _};
+
+use ddsfile::Dds;
+
+pub fn load_dds_raw(path: &str) -> Dds {
+    let mut file = File::open(path).unwrap();
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes).unwrap();
+
+    Dds::read(&mut &bytes[..]).unwrap()
+}
+
 fn align_to_256(n: usize) -> usize {
     (n + 255) & !255
 }

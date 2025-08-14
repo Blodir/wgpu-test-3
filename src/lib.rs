@@ -9,18 +9,24 @@ use std::{
 };
 use winit::{
     application::ApplicationHandler,
-    dpi::PhysicalPosition,
+    dpi::{PhysicalPosition, PhysicalSize},
     event::{DeviceEvent, ElementState, Event, KeyEvent, MouseScrollDelta, WindowEvent},
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
     keyboard::{KeyCode, PhysicalKey},
     window::{Window, WindowId},
 };
 
-pub mod dds;
-pub mod renderer;
-pub mod scene_graph;
+use crate::{
+    render_engine::{
+        render_resources::{EnvironmentMapHandle, ModelHandle, RenderResources},
+        wgpu_context::WgpuContext,
+        RenderEngine,
+    },
+    scene_tree::{Node, RenderDataType, Scene},
+};
 
-use renderer::{gltf::GLTF, renderer::Renderer};
+pub mod render_engine;
+pub mod scene_tree;
 
 pub fn align_to_256(n: usize) -> usize {
     (n + 255) & !255
@@ -38,25 +44,30 @@ pub fn strip_extension(path: &str) -> String {
 }
 
 struct App<'surface> {
-    renderer: Option<Arc<Mutex<Renderer<'surface>>>>,
+    renderer: Option<Arc<Mutex<RenderEngine>>>,
     window: Option<Arc<Window>>,
-    scene: Arc<GLTF>,
+    wgpu_context: Option<WgpuContext<'surface>>,
+    render_resources: Option<RenderResources>,
+    scene: Arc<Scene>,
     mouse_btn_is_pressed: bool,
     shift_is_pressed: bool,
 }
 
 impl App<'_> {
-    pub fn new(gltf: GLTF) -> Self {
+    pub fn new(scene: Scene) -> Self {
         Self {
             renderer: None,
             window: None,
-            scene: Arc::new(gltf),
+            wgpu_context: None,
+            render_resources: None,
+            scene: Arc::new(scene),
             mouse_btn_is_pressed: false,
             shift_is_pressed: false,
         }
     }
 
     pub fn reload_shaders(&mut self) {
+        /*
         if let Some(ref mut renderer_arc_mutex) = self.renderer {
             let mut renderer = renderer_arc_mutex.lock().unwrap();
             match renderer.reload_pbr_pipeline() {
@@ -64,6 +75,22 @@ impl App<'_> {
                 Err(e) => eprintln!("render error: {:?}", e),
             }
         }
+        */
+    }
+}
+
+fn resize(
+    physical_size: PhysicalSize<u32>,
+    wgpu_context: &mut WgpuContext,
+    renderer: &mut RenderEngine,
+) {
+    if physical_size.width > 0 && physical_size.height > 0 {
+        wgpu_context.surface_config.width = physical_size.width;
+        wgpu_context.surface_config.height = physical_size.height;
+        wgpu_context
+            .surface
+            .configure(&wgpu_context.device, &wgpu_context.surface_config);
+        renderer.resize(wgpu_context);
     }
 }
 
@@ -75,11 +102,24 @@ impl<'surface> ApplicationHandler for App<'surface> {
                 .unwrap(),
         );
         self.window = Some(window.clone());
-
-        let meshes = self.scene.to_pbr_meshes();
-        let temp_renderer = Renderer::new(window.clone(), meshes).block_on();
-        let renderer_arc_mutex = Arc::new(Mutex::new(temp_renderer));
-        self.renderer = Some(renderer_arc_mutex.clone());
+        let wgpu_context = WgpuContext::new(window).block_on();
+        let mut render_resources = RenderResources::new(&wgpu_context);
+        // TODO load all resources from scene
+        // temp hardcoded load
+        if let RenderDataType::Model(handle) = &self.scene.root.render_data {
+            render_resources
+                .load_model(handle.clone(), &wgpu_context)
+                .unwrap();
+        }
+        render_resources.load_environment_map(
+            EnvironmentMapHandle("assets/kloofendal_overcast_puresky_8k".to_string()),
+            &wgpu_context,
+        );
+        let temp_render_engine = RenderEngine::new(&wgpu_context, &render_resources);
+        let render_engine_arc_mutex = Arc::new(Mutex::new(temp_render_engine));
+        self.renderer = Some(render_engine_arc_mutex);
+        self.render_resources = Some(render_resources);
+        self.wgpu_context = Some(wgpu_context);
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
@@ -89,8 +129,12 @@ impl<'surface> ApplicationHandler for App<'surface> {
             }
             WindowEvent::RedrawRequested => {
                 if let Some(ref mut renderer_arc_mutex) = self.renderer {
-                    let mut renderer = renderer_arc_mutex.lock().unwrap();
-                    match renderer.render() {
+                    let renderer = renderer_arc_mutex.lock().unwrap();
+                    match renderer.render(
+                        &self.scene,
+                        self.render_resources.as_ref().unwrap(),
+                        self.wgpu_context.as_ref().unwrap(),
+                    ) {
                         Ok(_) => {}
                         Err(e) => eprintln!("render error: {:?}", e),
                     }
@@ -101,6 +145,7 @@ impl<'surface> ApplicationHandler for App<'surface> {
                 delta,
                 phase,
             } => {
+                /*
                 if let Some(ref mut renderer_arc_mutex) = self.renderer {
                     let mut renderer = renderer_arc_mutex.lock().unwrap();
                     let camera = renderer.get_camera_mut();
@@ -115,6 +160,7 @@ impl<'surface> ApplicationHandler for App<'surface> {
                         MouseScrollDelta::PixelDelta(pos) => (),
                     }
                 }
+                */
             }
             WindowEvent::MouseInput {
                 device_id,
@@ -156,8 +202,9 @@ impl<'surface> ApplicationHandler for App<'surface> {
             },
             WindowEvent::Resized(physical_size) => {
                 if let Some(ref mut renderer_arc_mutex) = self.renderer {
+                    let wgpu_context = self.wgpu_context.as_mut().unwrap();
                     let mut renderer = renderer_arc_mutex.lock().unwrap();
-                    renderer.resize(Some(physical_size));
+                    resize(physical_size, wgpu_context, &mut renderer);
                     self.window.as_mut().unwrap().request_redraw();
                 }
             }
@@ -166,8 +213,10 @@ impl<'surface> ApplicationHandler for App<'surface> {
                 inner_size_writer,
             } => {
                 if let Some(ref mut renderer_arc_mutex) = self.renderer {
+                    let wgpu_context = self.wgpu_context.as_mut().unwrap();
                     let mut renderer = renderer_arc_mutex.lock().unwrap();
-                    renderer.resize(None);
+                    let new_size = wgpu_context.window.inner_size();
+                    resize(new_size, wgpu_context, &mut renderer);
                     self.window.as_mut().unwrap().request_redraw();
                 }
             }
@@ -181,6 +230,7 @@ impl<'surface> ApplicationHandler for App<'surface> {
         device_id: winit::event::DeviceId,
         event: DeviceEvent,
     ) {
+        /*
         match event {
             DeviceEvent::MouseMotion { delta: (x, y) } => {
                 if !self.mouse_btn_is_pressed {
@@ -198,11 +248,14 @@ impl<'surface> ApplicationHandler for App<'surface> {
             }
             _ => (),
         }
+        */
     }
 }
 
-pub fn run(gltf: GLTF) {
-    let app = Arc::new(Mutex::new(App::new(gltf)));
+pub fn run() {
+    // TODO input scene
+    let scene = Scene::default();
+    let app = Arc::new(Mutex::new(App::new(scene)));
     let event_loop = EventLoop::new().unwrap();
     event_loop.set_control_flow(ControlFlow::Wait);
 
@@ -215,6 +268,7 @@ pub fn run(gltf: GLTF) {
         )
         .unwrap();
 
+    /*
     let app_clone1 = app.clone();
     thread::spawn(move || loop {
         match rx.recv_timeout(Duration::from_secs(1)) {
@@ -240,6 +294,7 @@ pub fn run(gltf: GLTF) {
             Err(e) => {}
         }
     });
+    */
 
     let app_clone2 = Arc::clone(&app);
     event_loop
