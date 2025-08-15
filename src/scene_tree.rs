@@ -3,9 +3,7 @@ use std::collections::HashMap;
 use glam::{Mat4, Vec3};
 
 use crate::render_engine::render_resources::{EnvironmentMapHandle, ModelHandle};
-
-#[derive(Eq, Hash, PartialEq, Clone, Debug)]
-pub struct NodeHandle(u32);
+use generational_arena::{Arena, Index};
 
 pub struct Sun {
     pub direction: [f32; 3],
@@ -59,15 +57,15 @@ pub enum RenderDataType {
 }
 
 pub struct Node {
-    pub parent: Option<NodeHandle>,
-    pub children: Vec<NodeHandle>,
+    pub parent: Option<Index>,
+    pub children: Vec<Index>,
     pub transform: Mat4,
     pub render_data: RenderDataType,
 }
 
 pub struct Scene {
-    pub root: NodeHandle,
-    pub nodes: HashMap<NodeHandle, Node>,
+    pub root: Index,
+    pub nodes: Arena<Node>,
     current_node_idx: u32,
     pub sun: Sun,
     pub camera: Camera,
@@ -75,25 +73,28 @@ pub struct Scene {
 }
 impl Default for Scene {
     fn default() -> Self {
-        let mut nodes = HashMap::new();
-        let root_handle = NodeHandle(0);
-        let child_handle = NodeHandle(1);
+        let mut nodes = Arena::new();
 
         let lantern_handle = ModelHandle("assets/local/Lantern/Lantern.json".to_string());
-        let child_node = Node {
-            parent: Some(root_handle.clone()),
+
+        let root_handle = nodes.insert(Node {
+            parent: None,
+            children: vec![],
+            transform: Mat4::IDENTITY,
+            render_data: RenderDataType::Model(lantern_handle.clone()),
+        });
+        let child_handle = nodes.insert(Node {
+            parent: Some(root_handle),
             children: vec![],
             transform: Mat4::from_translation(Vec3::new(8.0, 0.0, 8.0)),
-            render_data: RenderDataType::Model(lantern_handle.clone()),
-        };
-        let root_node = Node {
-            parent: None,
-            children: vec![child_handle.clone()],
-            transform: Mat4::IDENTITY,
             render_data: RenderDataType::Model(lantern_handle),
-        };
-        nodes.insert(root_handle.clone(), root_node);
-        nodes.insert(child_handle.clone(), child_node);
+        });
+        nodes
+            .get_mut(root_handle)
+            .unwrap()
+            .children
+            .push(child_handle);
+
         Self {
             root: root_handle,
             nodes,
@@ -102,12 +103,5 @@ impl Default for Scene {
             camera: Camera::default(),
             environment: EnvironmentMapHandle("assets/kloofendal_overcast_puresky_8k".to_string()),
         }
-    }
-}
-
-impl Scene {
-    pub fn next_node_handle(&mut self) -> NodeHandle {
-        self.current_node_idx += 1;
-        NodeHandle(self.current_node_idx - 1)
     }
 }

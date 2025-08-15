@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use generational_arena::Index;
 use glam::Mat4;
 use render_resources::ModelHandle;
 
@@ -17,7 +18,7 @@ use crate::{
         render_resources::RenderResources,
         wgpu_context::WgpuContext,
     },
-    scene_tree::{NodeHandle, RenderDataType, Scene},
+    scene_tree::{RenderDataType, Scene},
 };
 
 pub mod pipelines;
@@ -139,7 +140,7 @@ fn accumulate_model_transforms(
     scene: &Scene,
     models: &mut HashMap<ModelHandle, Vec<Mat4>>,
     base_transform: &Mat4,
-    node_handle: &NodeHandle,
+    node_handle: Index,
 ) {
     let node = scene.nodes.get(node_handle).unwrap();
     let RenderDataType::Model(model_handle) = &node.render_data;
@@ -147,7 +148,7 @@ fn accumulate_model_transforms(
     let transform = node.transform * base_transform;
     v.push(transform);
     for child in &node.children {
-        accumulate_model_transforms(scene, models, &transform, &child);
+        accumulate_model_transforms(scene, models, &transform, *child);
     }
 }
 
@@ -158,7 +159,7 @@ pub fn prepare_models(
     queue: &wgpu::Queue,
 ) -> impl Iterator<Item = ModelHandle> {
     let mut models = HashMap::<ModelHandle, Vec<Mat4>>::new();
-    accumulate_model_transforms(scene, &mut models, &Mat4::IDENTITY, &scene.root);
+    accumulate_model_transforms(scene, &mut models, &Mat4::IDENTITY, scene.root);
 
     for (handle, transforms) in &models {
         render_resources

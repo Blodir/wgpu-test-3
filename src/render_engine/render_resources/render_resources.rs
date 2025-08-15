@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use super::dds;
 use super::modelfile;
 use super::png;
+use generational_arena::Index;
 use glam::Mat3;
 use glam::Mat4;
 use glam::Quat;
@@ -484,14 +485,14 @@ impl RenderResources {
     pub fn load_scene_node(
         &mut self,
         scene: &crate::scene_tree::Scene,
-        node_handle: &crate::scene_tree::NodeHandle,
+        node_handle: Index,
         wgpu_context: &WgpuContext,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let node = &scene.nodes[node_handle];
         let crate::scene_tree::RenderDataType::Model(model_handle) = &node.render_data;
         self.load_model(model_handle.clone(), wgpu_context)?;
         for child_handle in &node.children {
-            self.load_scene_node(scene, child_handle, wgpu_context)?;
+            self.load_scene_node(scene, *child_handle, wgpu_context)?;
         }
         Ok(())
     }
@@ -502,7 +503,7 @@ impl RenderResources {
         wgpu_context: &WgpuContext,
     ) -> Result<(), Box<dyn std::error::Error>> {
         self.load_environment_map(scene.environment.clone(), wgpu_context);
-        self.load_scene_node(scene, &scene.root, wgpu_context)?;
+        self.load_scene_node(scene, scene.root, wgpu_context)?;
         Ok(())
     }
 
