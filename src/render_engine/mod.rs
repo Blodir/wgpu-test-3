@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use cgmath::{Matrix4, SquareMatrix as _};
+use glam::Mat4;
 use render_resources::ModelHandle;
 
 use crate::{
@@ -137,8 +137,8 @@ impl RenderEngine {
 
 fn accumulate_model_transforms(
     scene: &Scene,
-    models: &mut HashMap<ModelHandle, Vec<Matrix4<f32>>>,
-    base_transform: &Matrix4<f32>,
+    models: &mut HashMap<ModelHandle, Vec<Mat4>>,
+    base_transform: &Mat4,
     node_handle: &NodeHandle,
 ) {
     let node = scene.nodes.get(node_handle).unwrap();
@@ -157,8 +157,8 @@ pub fn prepare_models(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
 ) -> impl Iterator<Item = ModelHandle> {
-    let mut models = HashMap::<ModelHandle, Vec<Matrix4<f32>>>::new();
-    accumulate_model_transforms(scene, &mut models, &Matrix4::identity(), &scene.root);
+    let mut models = HashMap::<ModelHandle, Vec<Mat4>>::new();
+    accumulate_model_transforms(scene, &mut models, &Mat4::IDENTITY, &scene.root);
 
     for (handle, transforms) in &models {
         render_resources

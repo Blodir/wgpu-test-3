@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use cgmath::{InnerSpace as _, Matrix4, SquareMatrix, Vector3};
+use glam::{Mat4, Vec3};
 
 use crate::render_engine::render_resources::{EnvironmentMapHandle, ModelHandle};
 
@@ -14,32 +14,32 @@ pub struct Sun {
 impl Default for Sun {
     fn default() -> Self {
         Sun {
-            direction: Vector3::new(1.0, -1.0, 1.0).normalize().into(),
+            direction: Vec3::new(1.0, -1.0, 1.0).normalize().into(),
             color: [10.0, 10.0, 10.0],
         }
     }
 }
 
 pub struct Camera {
-    pub eye: cgmath::Point3<f32>,
-    pub target: cgmath::Point3<f32>,
-    pub up: cgmath::Vector3<f32>,
+    pub eye: Vec3,
+    pub target: Vec3,
+    pub up: Vec3,
     pub fovy: f32,
     pub znear: f32,
     pub zfar: f32,
-    pub rot_x: cgmath::Deg<f32>,
-    pub rot_y: cgmath::Deg<f32>,
+    pub rot_x: f32, // deg
+    pub rot_y: f32, // deg
 }
 impl Default for Camera {
     fn default() -> Self {
-        let eye: cgmath::Point3<f32> = (0.0, 0.0, 100.0).into();
-        let target: cgmath::Point3<f32> = (0.0, 0.0, 0.0).into();
-        let up: cgmath::Vector3<f32> = cgmath::Vector3::unit_y();
+        let eye: Vec3 = (0.0, 0.0, 100.0).into();
+        let target: Vec3 = (0.0, 0.0, 0.0).into();
+        let up: Vec3 = Vec3::Y;
         let fovy = 45.0f32;
         let znear = 0.1f32;
         let zfar = 100.0f32;
-        let rot_x = cgmath::Deg(0f32);
-        let rot_y = cgmath::Deg(0f32);
+        let rot_x = 0f32;
+        let rot_y = 0f32;
 
         Self {
             eye,
@@ -61,7 +61,7 @@ pub enum RenderDataType {
 pub struct Node {
     pub parent: Option<NodeHandle>,
     pub children: Vec<NodeHandle>,
-    pub transform: Matrix4<f32>,
+    pub transform: Mat4,
     pub render_data: RenderDataType,
 }
 
@@ -83,13 +83,13 @@ impl Default for Scene {
         let child_node = Node {
             parent: Some(root_handle.clone()),
             children: vec![],
-            transform: Matrix4::from_translation(Vector3::new(8.0, 0.0, 8.0)),
+            transform: Mat4::from_translation(Vec3::new(8.0, 0.0, 8.0)),
             render_data: RenderDataType::Model(lantern_handle.clone()),
         };
         let root_node = Node {
             parent: None,
             children: vec![child_handle.clone()],
-            transform: Matrix4::identity(),
+            transform: Mat4::IDENTITY,
             render_data: RenderDataType::Model(lantern_handle),
         };
         nodes.insert(root_handle.clone(), root_node);

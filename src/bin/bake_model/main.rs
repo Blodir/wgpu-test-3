@@ -1,5 +1,4 @@
-use cgmath::{Matrix4, SquareMatrix};
-use cgmath::{One, Quaternion, Rotation3, Vector3};
+use glam::{Mat4, Quat, Vec3};
 use gltf::{Document, Gltf, Primitive};
 use std::path::Path;
 use std::{collections::HashMap, env, fs::File, io::Write};
@@ -7,36 +6,27 @@ use wgpu_test_3::render_engine::pipelines::model::vertex::Vertex;
 use wgpu_test_3::render_engine::render_resources::dds::{create_dds, gltf_img_to_dxgi_format};
 use wgpu_test_3::render_engine::render_resources::modelfile;
 
-fn transform_to_matrix4(transform: gltf::scene::Transform) -> Matrix4<f32> {
+fn transform_to_mat4(transform: gltf::scene::Transform) -> Mat4 {
     match transform {
-        gltf::scene::Transform::Matrix { matrix } => {
-            // glTF uses column-major 4x4 matrices; cgmath does too
-            Matrix4::from(matrix)
-        }
+        gltf::scene::Transform::Matrix { matrix } => Mat4::from_cols_array_2d(&matrix),
         gltf::scene::Transform::Decomposed {
             translation,
             rotation,
             scale,
-        } => {
-            let t = Matrix4::from_translation(Vector3::from(translation));
-            let r = Matrix4::from(Quaternion::new(
-                rotation[3],
-                rotation[0],
-                rotation[1],
-                rotation[2],
-            ));
-            let s = Matrix4::from_nonuniform_scale(scale[0], scale[1], scale[2]);
-            t * r * s
-        }
+        } => Mat4::from_scale_rotation_translation(
+            Vec3::from(scale),
+            Quat::from_xyzw(rotation[0], rotation[1], rotation[2], rotation[3]),
+            Vec3::from(translation),
+        ),
     }
 }
 
 fn accumulate_primitive_instances(
     node: &gltf::Node,
-    transform: &Matrix4<f32>,
-    primitive_instances: &mut HashMap<(usize, usize), Vec<Matrix4<f32>>>,
+    transform: &Mat4,
+    primitive_instances: &mut HashMap<(usize, usize), Vec<Mat4>>,
 ) {
-    let t = transform * transform_to_matrix4(node.transform());
+    let t = transform * transform_to_mat4(node.transform());
     if let Some(mesh) = &node.mesh() {
         for primitive in mesh.primitives() {
             let arr = primitive_instances
@@ -748,10 +738,10 @@ fn bake(
             .cmp(&b.material().index().unwrap_or(0))
     });
 
-    let mut primitive_instances_map = HashMap::<(usize, usize), Vec<Matrix4<f32>>>::new();
+    let mut primitive_instances_map = HashMap::<(usize, usize), Vec<Mat4>>::new();
     // TODO multi scene support
     for node in gltf.scenes().next().unwrap().nodes() {
-        accumulate_primitive_instances(&node, &Matrix4::identity(), &mut primitive_instances_map);
+        accumulate_primitive_instances(&node, &Mat4::IDENTITY, &mut primitive_instances_map);
     }
 
     let mut output_primitives = vec![];
@@ -803,7 +793,7 @@ fn bake(
                 .get(&(mesh_idx, primitive.index()))
                 .unwrap()
                 .iter()
-                .map(|m| (*m).into())
+                .map(|m| (*m).to_cols_array_2d())
                 .collect(),
             // TODO default material!
             material: primitive.material().index().unwrap() as u32,

@@ -1,4 +1,4 @@
-use cgmath::{Deg, Matrix4, SquareMatrix};
+use glam::Mat4;
 use wgpu::util::DeviceExt;
 
 use super::equirectangular::FaceRotation;
@@ -106,17 +106,17 @@ impl DiffuseIrradiancePipeline {
             })
             .collect();
 
-        let face_rotations: &[Matrix4<f32>] = &[
-            Matrix4::from_angle_y(Deg(-90f32)), // right
-            Matrix4::from_angle_y(Deg(90f32)),  // left
-            Matrix4::from_angle_x(Deg(90f32)),  // top
-            Matrix4::from_angle_x(Deg(-90f32)), // bottom
-            Matrix4::identity(),                // front
-            Matrix4::from_angle_y(Deg(180f32)), // back
+        let face_rotations: &[Mat4] = &[
+            Mat4::from_rotation_y((-90f32).to_radians()), // right
+            Mat4::from_rotation_y((90f32).to_radians()),  // left
+            Mat4::from_rotation_x((90f32).to_radians()),  // top
+            Mat4::from_rotation_x((-90f32).to_radians()), // bottom
+            Mat4::IDENTITY,                               // front
+            Mat4::from_rotation_y((180f32).to_radians()), // back
         ];
 
         for face_index in 0..6 {
-            let fr: Matrix4<f32> = face_rotations[face_index];
+            let fr: Mat4 = face_rotations[face_index];
             let face_rotation = FaceRotation::from(fr);
             let face_rotation_binding =
                 face_rotation.upload(device, queue, &face_rot_bind_group_layout);

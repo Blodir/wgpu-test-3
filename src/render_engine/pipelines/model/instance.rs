@@ -1,4 +1,4 @@
-use cgmath::{Matrix, Matrix3, Matrix4, SquareMatrix};
+use glam::{Mat3, Mat4};
 
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
@@ -10,31 +10,20 @@ pub struct Instance {
 impl Default for Instance {
     fn default() -> Self {
         Self {
-            m4: Matrix4::identity().into(),
-            itr: Matrix3::identity().into(),
+            m4: Mat4::IDENTITY.to_cols_array_2d(),
+            itr: Mat3::IDENTITY.to_cols_array_2d(),
         }
     }
 }
 impl Instance {
-    pub fn from_transform(transform: Matrix4<f32>) -> Self {
-        Instance {
-            m4: transform.clone().into(),
-            itr: Matrix3::new(
-                transform.x.x,
-                transform.x.y,
-                transform.x.z,
-                transform.y.x,
-                transform.y.y,
-                transform.y.z,
-                transform.z.x,
-                transform.z.y,
-                transform.z.z,
-            )
-            .invert()
-            .unwrap()
+    pub fn from_transform(transform: Mat4) -> Self {
+        let m4 = transform.to_cols_array_2d();
+        let itr = Mat3::from_mat4(transform)
+            .inverse()
             .transpose()
-            .into(),
-        }
+            .to_cols_array_2d();
+
+        Instance { m4, itr }
     }
 }
 
@@ -86,10 +75,10 @@ impl Instance {
         }
     }
 
-    pub fn from(mat4: Matrix4<f32>, itr: Matrix3<f32>) -> Self {
+    pub fn from(mat4: Mat4, itr: Mat3) -> Self {
         Self {
-            m4: mat4.into(),
-            itr: itr.into(),
+            m4: mat4.to_cols_array_2d(),
+            itr: itr.to_cols_array_2d(),
         }
     }
 }

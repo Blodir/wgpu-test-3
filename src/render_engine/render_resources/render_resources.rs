@@ -3,7 +3,11 @@ use std::collections::HashMap;
 use super::dds;
 use super::modelfile;
 use super::png;
-use cgmath::{Matrix3, Matrix4, Quaternion, Rotation3 as _, SquareMatrix};
+use glam::Mat3;
+use glam::Mat4;
+use glam::Quat;
+use glam::Vec3;
+use glam::Vec4;
 use wgpu::{util::DeviceExt as _, SamplerDescriptor, TextureViewDescriptor};
 
 use crate::{
@@ -50,14 +54,14 @@ impl MaterialPool {
 
 fn mult_primitive_instances(
     model: &modelfile::Model,
-    transforms: &Vec<Matrix4<f32>>,
+    transforms: &Vec<Mat4>,
 ) -> (Vec<Instance>, Vec<u32>) {
     let mut instances: Vec<Instance> = vec![];
     let mut instance_counts = vec![];
     for prim in &model.primitives {
         let mut inst_count = 0;
         for instance in &prim.instances {
-            let inst_m4 = Matrix4::from(*instance);
+            let inst_m4 = Mat4::from_cols_array_2d(instance);
             for transform in transforms {
                 let t = transform * inst_m4;
                 instances.push(Instance::from_transform(t));
@@ -82,7 +86,7 @@ impl ModelData {
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        transforms: &Vec<Matrix4<f32>>,
+        transforms: &Vec<Mat4>,
     ) {
         let (instances, instance_counts) = mult_primitive_instances(&self.json, transforms);
         self.primitive_instance_counts = instance_counts;
@@ -285,26 +289,32 @@ impl CameraBinding {
         cam: &Camera,
         surface_config: &wgpu::SurfaceConfiguration,
     ) -> CameraMatrices {
-        let rot = Quaternion::from_angle_y(cam.rot_x) * Quaternion::from_angle_x(cam.rot_y);
-        let eye_rotated = cgmath::Transform::transform_point(&cgmath::Matrix4::from(rot), cam.eye);
-        let view = cgmath::Matrix4::look_at_rh(eye_rotated, cam.target, cam.up);
+        let rot = Quat::from_rotation_y((cam.rot_x).to_radians())
+            * Quat::from_rotation_x((cam.rot_y).to_radians());
+        let eye_rotated: Vec3 = rot * cam.eye;
+        let view = Mat4::look_at_rh(eye_rotated, cam.target, cam.up);
+
         let aspect = surface_config.width as f32 / surface_config.height as f32;
-        let proj = cgmath::perspective(cgmath::Deg(cam.fovy), aspect, cam.znear, cam.zfar);
-        let view_proj = wgpu_context::OPENGL_TO_WGPU_MATRIX * proj * view;
-        let m = view_proj;
-        let m3 = Matrix3::new(
-            m.x.x, m.x.y, m.x.z, m.y.x, m.y.y, m.y.z, m.z.x, m.z.y, m.z.z,
-        )
-        .invert()
-        .unwrap();
-        let inverse_view_proj_rot = Matrix4::new(
-            m3.x.x, m3.x.y, m3.x.z, 0.0, m3.y.x, m3.y.y, m3.y.z, 0.0, m3.z.x, m3.z.y, m3.z.z, 0.0,
-            0.0, 0.0, 0.0, 0.0,
+        // cam.fovy expected in radians (use cam.fovy.to_radians() if it’s degrees).
+        let proj = Mat4::perspective_rh(cam.fovy, aspect, cam.znear, cam.zfar);
+
+        let view_proj: Mat4 = wgpu_context::OPENGL_TO_WGPU_MATRIX * proj * view;
+
+        // Upper-left 3×3, inverted (no transpose here; cgmath code didn’t transpose either)
+        let m3 = Mat3::from_mat4(view_proj).inverse();
+
+        // Rebuild a 4×4 with zeroed last row/col (to match your cgmath layout exactly).
+        let inverse_view_proj_rot = Mat4::from_cols(
+            Vec4::new(m3.x_axis.x, m3.x_axis.y, m3.x_axis.z, 0.0),
+            Vec4::new(m3.y_axis.x, m3.y_axis.y, m3.y_axis.z, 0.0),
+            Vec4::new(m3.z_axis.x, m3.z_axis.y, m3.z_axis.z, 0.0),
+            Vec4::ZERO,
         );
+
         CameraMatrices {
-            view_proj: view_proj.into(),
-            position: eye_rotated.into(),
-            inverse_view_proj_rot: inverse_view_proj_rot.into(),
+            view_proj: view_proj.to_cols_array_2d(),
+            position: eye_rotated.to_array(),
+            inverse_view_proj_rot: inverse_view_proj_rot.to_cols_array_2d(),
         }
     }
 
@@ -725,8 +735,7 @@ impl RenderResources {
                     usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::INDEX,
                 });
 
-        let (instances, instance_counts) =
-            mult_primitive_instances(&model, &vec![Matrix4::identity()]);
+        let (instances, instance_counts) = mult_primitive_instances(&model, &vec![Mat4::IDENTITY]);
         let instance_buffer =
             wgpu_context
                 .device
