@@ -1,6 +1,6 @@
 use wgpu::util::DeviceExt;
 
-use crate::render_engine::utils;
+use crate::renderer::utils;
 
 const INDICES: &[u16] = &[0, 2, 1, 3, 2, 0];
 
@@ -22,7 +22,7 @@ impl SkyboxPipeline {
                 push_constant_ranges: &[],
             });
         let shader_module =
-            utils::create_shader_module(device, "src/render_engine/pipelines/shaders/skybox.wgsl");
+            utils::create_shader_module(device, "src/renderer/pipelines/shaders/skybox.wgsl");
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Skybox Render Pipeline"),
             layout: Some(&render_pipeline_layout),

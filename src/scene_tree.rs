@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use glam::{Mat4, Vec3};
 
-use crate::render_engine::render_resources::{EnvironmentMapHandle, ModelHandle};
+use crate::renderer::render_resources::{EnvironmentMapHandle, ModelHandle};
 use generational_arena::{Arena, Index};
 
 #[derive(Clone)]

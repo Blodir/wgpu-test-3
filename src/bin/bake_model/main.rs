@@ -2,9 +2,9 @@ use glam::{Mat4, Quat, Vec3};
 use gltf::{Document, Gltf, Primitive};
 use std::path::Path;
 use std::{collections::HashMap, env, fs::File, io::Write};
-use wgpu_test_3::render_engine::pipelines::model::vertex::Vertex;
-use wgpu_test_3::render_engine::render_resources::dds::{create_dds, gltf_img_to_dxgi_format};
-use wgpu_test_3::render_engine::render_resources::modelfile;
+use wgpu_test_3::renderer::pipelines::model::vertex::Vertex;
+use wgpu_test_3::renderer::render_resources::dds::{create_dds, gltf_img_to_dxgi_format};
+use wgpu_test_3::renderer::render_resources::modelfile;
 
 fn transform_to_mat4(transform: gltf::scene::Transform) -> Mat4 {
     match transform {

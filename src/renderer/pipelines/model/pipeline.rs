@@ -1,7 +1,7 @@
 use wgpu::{core::device, util::DeviceExt};
 
 use crate::{
-    render_engine::{
+    renderer::{
         pipelines::{
             model::{instance::Instance, material::MaterialBinding, vertex::Vertex},
             resources::depth_texture::DepthTexture,
@@ -65,7 +65,7 @@ impl ModelPipeline {
                 push_constant_ranges: &[],
             });
         let shader_module =
-            utils::create_shader_module(device, "src/render_engine/pipelines/shaders/pbr.wgsl");
+            utils::create_shader_module(device, "src/renderer/pipelines/shaders/pbr.wgsl");
         device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Model Pipeline"),
             layout: Some(&render_pipeline_layout),

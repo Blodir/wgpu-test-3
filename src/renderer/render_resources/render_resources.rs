@@ -12,8 +12,8 @@ use glam::Vec4;
 use wgpu::{util::DeviceExt as _, SamplerDescriptor, TextureViewDescriptor};
 
 use crate::{
-    render_engine::pipelines::model::{instance::Instance, material::MaterialBinding},
-    render_engine::wgpu_context::{self, WgpuContext},
+    renderer::pipelines::model::{instance::Instance, material::MaterialBinding},
+    renderer::wgpu_context::{self, WgpuContext},
     scene_tree::{Camera, Sun},
 };
 

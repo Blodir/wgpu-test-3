@@ -1,9 +1,9 @@
 use wgpu::util::DeviceExt as _;
 
 use crate::{
-    render_engine::render_resources::modelfile,
-    render_engine::render_resources::{RenderResources, TextureHandle},
-    render_engine::wgpu_context::WgpuContext,
+    renderer::render_resources::modelfile,
+    renderer::render_resources::{RenderResources, TextureHandle},
+    renderer::wgpu_context::WgpuContext,
 };
 
 pub struct MaterialBinding {

@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::render_engine::render_resources::TextureHandle;
+use crate::renderer::render_resources::TextureHandle;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Primitive {

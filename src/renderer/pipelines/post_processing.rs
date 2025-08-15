@@ -1,6 +1,6 @@
 use wgpu::util::DeviceExt;
 
-use crate::render_engine::{
+use crate::renderer::{
     pipelines::resources::{msaa_textures::MSAATextures, skybox_output::SkyboxOutputTexture},
     utils,
 };
@@ -111,7 +111,7 @@ impl PostProcessingPipeline {
             });
         let shader_module = utils::create_shader_module(
             device,
-            "src/render_engine/pipelines/shaders/post_processing.wgsl",
+            "src/renderer/pipelines/shaders/post_processing.wgsl",
         );
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Post Processing Render Pipeline"),

@@ -16,15 +16,15 @@ use winit::{
 };
 
 use crate::{
-    render_engine::{
+    renderer::{
         render_resources::{EnvironmentMapHandle, ModelHandle, RenderResources},
         wgpu_context::WgpuContext,
-        RenderEngine,
+        Renderer,
     },
     scene_tree::{Node, RenderDataType, Scene},
 };
 
-pub mod render_engine;
+pub mod renderer;
 pub mod scene_tree;
 
 pub fn align_to_256(n: usize) -> usize {
@@ -43,7 +43,7 @@ pub fn strip_extension(path: &str) -> String {
 }
 
 struct App<'surface> {
-    renderer: Option<Arc<Mutex<RenderEngine>>>,
+    renderer: Option<Arc<Mutex<Renderer>>>,
     window: Option<Arc<Window>>,
     wgpu_context: Option<WgpuContext<'surface>>,
     render_resources: Option<RenderResources>,
@@ -81,7 +81,7 @@ impl App<'_> {
 fn resize(
     physical_size: PhysicalSize<u32>,
     wgpu_context: &mut WgpuContext,
-    renderer: &mut RenderEngine,
+    renderer: &mut Renderer,
 ) {
     if physical_size.width > 0 && physical_size.height > 0 {
         wgpu_context.surface_config.width = physical_size.width;
@@ -106,9 +106,9 @@ impl<'surface> ApplicationHandler for App<'surface> {
         render_resources
             .load_scene(&self.scene, &wgpu_context)
             .unwrap();
-        let temp_render_engine = RenderEngine::new(&wgpu_context, &render_resources);
-        let render_engine_arc_mutex = Arc::new(Mutex::new(temp_render_engine));
-        self.renderer = Some(render_engine_arc_mutex);
+        let temp_renderer = Renderer::new(&wgpu_context, &render_resources);
+        let renderer_arc_mutex = Arc::new(Mutex::new(temp_renderer));
+        self.renderer = Some(renderer_arc_mutex);
         self.render_resources = Some(render_resources);
         self.wgpu_context = Some(wgpu_context);
     }
@@ -121,7 +121,7 @@ impl<'surface> ApplicationHandler for App<'surface> {
             WindowEvent::RedrawRequested => {
                 if let Some(ref mut renderer_arc_mutex) = self.renderer {
                     let renderer = renderer_arc_mutex.lock().unwrap();
-                    let snap = render_engine::render_snapshot::RenderSnapshot::build(&self.scene);
+                    let snap = renderer::render_snapshot::RenderSnapshot::build(&self.scene);
                     match renderer.render(
                         &snap,
                         self.render_resources.as_mut().unwrap(),
@@ -253,7 +253,7 @@ pub fn run() {
     let mut watcher = RecommendedWatcher::new(tx, Config::default()).unwrap();
     watcher
         .watch(
-            Path::new("src/renderer/shaders/"),
+            Path::new("src/renderer/pipelines/shaders/"),
             notify::RecursiveMode::Recursive,
         )
         .unwrap();

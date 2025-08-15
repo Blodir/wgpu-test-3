@@ -2,11 +2,12 @@ use std::collections::HashMap;
 
 use generational_arena::Index;
 use glam::Mat4;
-use render_resources::ModelHandle;
-use render_snapshot::accumulate_model_transforms;
+use super::render_resources::ModelHandle;
+use super::render_snapshot::accumulate_model_transforms;
+use super::render_snapshot;
 
 use crate::{
-    render_engine::{
+    renderer::{
         pipelines::{
             model::pipeline::ModelPipeline,
             post_processing::PostProcessingPipeline,
@@ -22,13 +23,7 @@ use crate::{
     scene_tree::{RenderDataType, Scene},
 };
 
-pub mod pipelines;
-pub mod render_resources;
-pub mod render_snapshot;
-pub mod utils;
-pub mod wgpu_context;
-
-pub struct RenderEngine {
+pub struct Renderer {
     skybox_output: SkyboxOutputTexture,
     depth_texture: DepthTexture,
     msaa_textures: MSAATextures,
@@ -36,7 +31,7 @@ pub struct RenderEngine {
     model_pipeline: ModelPipeline,
     post_pipeline: PostProcessingPipeline,
 }
-impl RenderEngine {
+impl Renderer {
     pub fn new(wgpu_context: &WgpuContext, render_resourcess: &RenderResources) -> Self {
         let skybox_output =
             SkyboxOutputTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
@@ -148,7 +143,7 @@ impl RenderEngine {
 
 pub fn prepare_camera(
     snap: &render_snapshot::RenderSnapshot,
-    render_resources: &mut crate::render_engine::render_resources::RenderResources,
+    render_resources: &mut crate::renderer::render_resources::RenderResources,
     queue: &wgpu::Queue,
     surface_config: &wgpu::SurfaceConfiguration,
 ) {
@@ -161,7 +156,7 @@ pub fn prepare_camera(
 
 pub fn prepare_sun(
     snap: &render_snapshot::RenderSnapshot,
-    render_resources: &mut crate::render_engine::render_resources::RenderResources,
+    render_resources: &mut crate::renderer::render_resources::RenderResources,
     queue: &wgpu::Queue,
 ) {
     if let Some(sun) = &snap.sun {
@@ -171,7 +166,7 @@ pub fn prepare_sun(
 
 pub fn prepare_env_map(
     snap: &render_snapshot::RenderSnapshot,
-    render_resources: &mut crate::render_engine::render_resources::RenderResources,
+    render_resources: &mut crate::renderer::render_resources::RenderResources,
     wgpu_context: &WgpuContext,
 ) {
     render_resources.load_environment_map(snap.environment_map.clone(), wgpu_context);
@@ -179,7 +174,7 @@ pub fn prepare_env_map(
 
 pub fn prepare_models<'a>(
     snap: &'a render_snapshot::RenderSnapshot,
-    render_resources: &mut crate::render_engine::render_resources::RenderResources,
+    render_resources: &mut crate::renderer::render_resources::RenderResources,
     device: &wgpu::Device,
     queue: &wgpu::Queue,
 ) -> impl Iterator<Item = &'a ModelHandle> + 'a {
