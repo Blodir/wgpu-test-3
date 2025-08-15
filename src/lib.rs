@@ -47,7 +47,7 @@ struct App<'surface> {
     window: Option<Arc<Window>>,
     wgpu_context: Option<WgpuContext<'surface>>,
     render_resources: Option<RenderResources>,
-    scene: Arc<Scene>,
+    scene: Scene,
     mouse_btn_is_pressed: bool,
     shift_is_pressed: bool,
 }
@@ -59,7 +59,7 @@ impl App<'_> {
             window: None,
             wgpu_context: None,
             render_resources: None,
-            scene: Arc::new(scene),
+            scene,
             mouse_btn_is_pressed: false,
             shift_is_pressed: false,
         }
@@ -121,8 +121,9 @@ impl<'surface> ApplicationHandler for App<'surface> {
             WindowEvent::RedrawRequested => {
                 if let Some(ref mut renderer_arc_mutex) = self.renderer {
                     let renderer = renderer_arc_mutex.lock().unwrap();
+                    let snap = render_engine::render_snapshot::RenderSnapshot::build(&self.scene);
                     match renderer.render(
-                        &self.scene,
+                        &snap,
                         self.render_resources.as_mut().unwrap(),
                         self.wgpu_context.as_ref().unwrap(),
                     ) {
@@ -136,22 +137,16 @@ impl<'surface> ApplicationHandler for App<'surface> {
                 delta,
                 phase,
             } => {
-                /*
-                if let Some(ref mut renderer_arc_mutex) = self.renderer {
-                    let mut renderer = renderer_arc_mutex.lock().unwrap();
-                    let camera = renderer.get_camera_mut();
-                    match delta {
-                        MouseScrollDelta::LineDelta(x, y) => {
-                            camera.eye.z = (camera.eye.z
-                                + ((if self.shift_is_pressed { 10f32 } else { 1f32 }) * -y as f32))
-                                .max(0f32);
-                            renderer.update_camera();
-                            self.window.as_mut().unwrap().request_redraw();
-                        }
-                        MouseScrollDelta::PixelDelta(pos) => (),
+                let camera = &mut self.scene.camera;
+                match delta {
+                    MouseScrollDelta::LineDelta(x, y) => {
+                        camera.eye.z = (camera.eye.z
+                            + ((if self.shift_is_pressed { 10f32 } else { 1f32 }) * -y as f32))
+                            .max(0f32);
+                        self.window.as_mut().unwrap().request_redraw();
                     }
+                    MouseScrollDelta::PixelDelta(pos) => (),
                 }
-                */
             }
             WindowEvent::MouseInput {
                 device_id,
@@ -231,25 +226,19 @@ impl<'surface> ApplicationHandler for App<'surface> {
         device_id: winit::event::DeviceId,
         event: DeviceEvent,
     ) {
-        /*
         match event {
             DeviceEvent::MouseMotion { delta: (x, y) } => {
                 if !self.mouse_btn_is_pressed {
                     return ();
                 }
-                if let Some(ref mut renderer_arc_mutex) = self.renderer {
-                    let mut renderer = renderer_arc_mutex.lock().unwrap();
-                    let camera = renderer.get_camera_mut();
-                    let sensitivity = 5f32;
-                    camera.rot_x = camera.rot_x - cgmath::Deg(x as f32 / sensitivity);
-                    camera.rot_y = camera.rot_y - cgmath::Deg(y as f32 / sensitivity);
-                    renderer.update_camera();
-                    self.window.as_mut().unwrap().request_redraw();
-                }
+                let camera = &mut self.scene.camera;
+                let sensitivity = 5f32;
+                camera.rot_x = camera.rot_x - (x as f32 / sensitivity);
+                camera.rot_y = camera.rot_y - (y as f32 / sensitivity);
+                self.window.as_mut().unwrap().request_redraw();
             }
             _ => (),
         }
-        */
     }
 }
 

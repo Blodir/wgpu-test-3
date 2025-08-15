@@ -177,8 +177,13 @@ impl SunBinding {
         }
     }
 
-    pub fn update() {
-        todo!();
+    pub fn update(&self, sun: &Sun, queue: &wgpu::Queue) {
+        queue.write_buffer(
+            &self.direction_buffer,
+            0,
+            bytemuck::cast_slice(&sun.direction),
+        );
+        queue.write_buffer(&self.color_buffer, 0, bytemuck::cast_slice(&sun.color));
     }
 }
 
@@ -602,6 +607,10 @@ impl RenderResources {
         handle: EnvironmentMapHandle,
         wgpu_context: &WgpuContext,
     ) {
+        if self.environment_maps.get(&handle).is_some() {
+            return;
+        }
+
         let (prefiltered_view, prefiltered_sampler) = {
             let handle = TextureHandle(handle.0.clone() + ".prefiltered.dds");
             self.load_dds_texture(handle.clone(), 6, wgpu_context);

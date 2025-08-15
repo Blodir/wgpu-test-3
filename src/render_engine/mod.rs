@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use generational_arena::Index;
 use glam::Mat4;
 use render_resources::ModelHandle;
+use render_snapshot::accumulate_model_transforms;
 
 use crate::{
     render_engine::{
@@ -23,6 +24,7 @@ use crate::{
 
 pub mod pipelines;
 pub mod render_resources;
+pub mod render_snapshot;
 pub mod utils;
 pub mod wgpu_context;
 
@@ -71,10 +73,25 @@ impl RenderEngine {
 
     pub fn render(
         &self,
-        scene: &Scene,
+        snap: &render_snapshot::RenderSnapshot,
         render_resources: &mut RenderResources,
         wgpu_context: &WgpuContext,
     ) -> Result<(), wgpu::SurfaceError> {
+        let models = prepare_models(
+            &snap,
+            render_resources,
+            &wgpu_context.device,
+            &wgpu_context.queue,
+        );
+        prepare_camera(
+            &snap,
+            render_resources,
+            &wgpu_context.queue,
+            &wgpu_context.surface_config,
+        );
+        prepare_sun(&snap, render_resources, &wgpu_context.queue);
+        prepare_env_map(&snap, render_resources, wgpu_context);
+
         let mut encoder =
             wgpu_context
                 .device
@@ -88,16 +105,9 @@ impl RenderEngine {
             &render_resources.camera.bind_group,
             &render_resources
                 .environment_maps
-                .get(&scene.environment)
+                .get(&snap.environment_map)
                 .expect("Requested environment map is not loaded.")
                 .bind_group,
-        );
-
-        let models = prepare_models(
-            scene,
-            render_resources,
-            &wgpu_context.device,
-            &wgpu_context.queue,
         );
 
         self.model_pipeline.render(
@@ -107,7 +117,7 @@ impl RenderEngine {
             &self.depth_texture.view,
             render_resources,
             models,
-            &scene.environment,
+            &snap.environment_map,
         );
 
         let output_surface_texture = wgpu_context.surface.get_current_texture()?;
@@ -136,32 +146,44 @@ impl RenderEngine {
     }
 }
 
-fn accumulate_model_transforms(
-    scene: &Scene,
-    models: &mut HashMap<ModelHandle, Vec<Mat4>>,
-    base_transform: &Mat4,
-    node_handle: Index,
+pub fn prepare_camera(
+    snap: &render_snapshot::RenderSnapshot,
+    render_resources: &mut crate::render_engine::render_resources::RenderResources,
+    queue: &wgpu::Queue,
+    surface_config: &wgpu::SurfaceConfiguration,
 ) {
-    let node = scene.nodes.get(node_handle).unwrap();
-    let RenderDataType::Model(model_handle) = &node.render_data;
-    let v = models.entry(model_handle.clone()).or_insert_with(Vec::new);
-    let transform = node.transform * base_transform;
-    v.push(transform);
-    for child in &node.children {
-        accumulate_model_transforms(scene, models, &transform, *child);
+    if let Some(camera) = &snap.camera {
+        render_resources
+            .camera
+            .update(camera, queue, surface_config);
     }
 }
 
-pub fn prepare_models(
-    scene: &Scene,
+pub fn prepare_sun(
+    snap: &render_snapshot::RenderSnapshot,
+    render_resources: &mut crate::render_engine::render_resources::RenderResources,
+    queue: &wgpu::Queue,
+) {
+    if let Some(sun) = &snap.sun {
+        render_resources.sun.update(sun, queue);
+    }
+}
+
+pub fn prepare_env_map(
+    snap: &render_snapshot::RenderSnapshot,
+    render_resources: &mut crate::render_engine::render_resources::RenderResources,
+    wgpu_context: &WgpuContext,
+) {
+    render_resources.load_environment_map(snap.environment_map.clone(), wgpu_context);
+}
+
+pub fn prepare_models<'a>(
+    snap: &'a render_snapshot::RenderSnapshot,
     render_resources: &mut crate::render_engine::render_resources::RenderResources,
     device: &wgpu::Device,
     queue: &wgpu::Queue,
-) -> impl Iterator<Item = ModelHandle> {
-    let mut models = HashMap::<ModelHandle, Vec<Mat4>>::new();
-    accumulate_model_transforms(scene, &mut models, &Mat4::IDENTITY, scene.root);
-
-    for (handle, transforms) in &models {
+) -> impl Iterator<Item = &'a ModelHandle> + 'a {
+    for (handle, transforms) in &snap.model_transforms {
         render_resources
             .models
             .get_mut(&handle)
@@ -169,5 +191,5 @@ pub fn prepare_models(
             .update_instance_buffer(device, queue, &transforms);
     }
 
-    models.into_iter().map(|(handle, _)| handle.clone())
+    snap.model_transforms.iter().map(|(handle, _)| handle)
 }

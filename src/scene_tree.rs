@@ -5,6 +5,7 @@ use glam::{Mat4, Vec3};
 use crate::render_engine::render_resources::{EnvironmentMapHandle, ModelHandle};
 use generational_arena::{Arena, Index};
 
+#[derive(Clone)]
 pub struct Sun {
     pub direction: [f32; 3],
     pub color: [f32; 3],
@@ -18,6 +19,7 @@ impl Default for Sun {
     }
 }
 
+#[derive(Clone)]
 pub struct Camera {
     pub eye: Vec3,
     pub target: Vec3,

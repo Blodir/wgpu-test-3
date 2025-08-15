@@ -109,14 +109,14 @@ impl ModelPipeline {
         })
     }
 
-    pub fn render(
+    pub fn render<'a>(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         msaa_texture_view: &wgpu::TextureView,
         msaa_resolve_texture_view: &wgpu::TextureView,
         depth_texture_view: &wgpu::TextureView,
         render_resources: &RenderResources,
-        model_handles: impl Iterator<Item = ModelHandle>,
+        model_handles: impl Iterator<Item = &'a ModelHandle>,
         environment_handle: &EnvironmentMapHandle,
     ) {
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
