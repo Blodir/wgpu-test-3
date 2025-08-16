@@ -86,6 +86,8 @@ pub fn dds_format_to_wgpu(format: ddsfile::DxgiFormat) -> wgpu::TextureFormat {
         DxgiFormat::BC2_UNorm_sRGB => wgpu::TextureFormat::Bc2RgbaUnormSrgb,
         DxgiFormat::BC2_UNorm => wgpu::TextureFormat::Bc2RgbaUnorm,
         DxgiFormat::R8_UNorm => wgpu::TextureFormat::R8Unorm,
+        DxgiFormat::R16G16B16A16_Float => wgpu::TextureFormat::Rgba16Float,
+        DxgiFormat::R32G32B32A32_Float => wgpu::TextureFormat::Rgba32Float,
         f => {
             dbg!(f);
             todo!();
@@ -301,6 +303,69 @@ pub fn upload_texture(
                     let padded_row_size = align_to_256(row_size);
                     let mip_size = row_size * height as usize;
 
+                    let mip_data = &data[current_offset..current_offset + mip_size];
+
+                    // Pad each row to 256-byte alignment
+                    let mut padded_data = vec![0u8; padded_row_size * height as usize];
+                    for row in 0..height as usize {
+                        let src_start = row * row_size;
+                        let dst_start = row * padded_row_size;
+                        padded_data[dst_start..dst_start + row_size]
+                            .copy_from_slice(&mip_data[src_start..src_start + row_size]);
+                    }
+
+                    queue.write_texture(
+                        image_copy_texture,
+                        &padded_data,
+                        wgpu::ImageDataLayout {
+                            offset: 0,
+                            bytes_per_row: Some(padded_row_size as u32),
+                            rows_per_image: Some(height),
+                        },
+                        extent,
+                    );
+
+                    current_offset += mip_size;
+                }
+                wgpu::TextureFormat::Rgba32Float => {
+                    // 4 channels * 32-bit float
+                    let bytes_per_pixel = std::mem::size_of::<f32>() * 4; // 16
+                    let row_size = width as usize * bytes_per_pixel; // unaligned row in bytes
+                    let padded_row_size = align_to_256(row_size); // must be multiple of 256
+                    let mip_size = row_size * height as usize; // bytes in this mip (tightly packed)
+
+                    // If your source is &[u8] containing RGBA32F bytes:
+                    let mip_data = &data[current_offset..current_offset + mip_size];
+
+                    // Pad each row to 256-byte alignment
+                    let mut padded_data = vec![0u8; padded_row_size * height as usize];
+                    for row in 0..height as usize {
+                        let src_start = row * row_size;
+                        let dst_start = row * padded_row_size;
+                        padded_data[dst_start..dst_start + row_size]
+                            .copy_from_slice(&mip_data[src_start..src_start + row_size]);
+                    }
+
+                    queue.write_texture(
+                        image_copy_texture,
+                        &padded_data,
+                        wgpu::ImageDataLayout {
+                            offset: 0,
+                            bytes_per_row: Some(padded_row_size as u32),
+                            rows_per_image: Some(height),
+                        },
+                        extent,
+                    );
+
+                    current_offset += mip_size;
+                }
+                wgpu::TextureFormat::Rgba16Float => {
+                    let bytes_per_pixel = std::mem::size_of::<u16>() * 4;
+                    let row_size = width as usize * bytes_per_pixel; // unaligned row in bytes
+                    let padded_row_size = align_to_256(row_size); // must be multiple of 256
+                    let mip_size = row_size * height as usize; // bytes in this mip (tightly packed)
+
+                    // If your source is &[u8] containing RGBA32F bytes:
                     let mip_data = &data[current_offset..current_offset + mip_size];
 
                     // Pad each row to 256-byte alignment

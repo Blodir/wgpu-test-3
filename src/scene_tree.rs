@@ -68,12 +68,32 @@ pub struct Node {
 pub struct Scene {
     pub root: Index,
     pub nodes: Arena<Node>,
-    current_node_idx: u32,
     pub sun: Sun,
     pub camera: Camera,
     pub environment: EnvironmentMapHandle,
 }
 impl Default for Scene {
+    fn default() -> Self {
+        let mut nodes = Arena::new();
+
+        let model_handle = ModelHandle("assets/local/Sponza/Sponza.json".to_string());
+
+        let root_handle = nodes.insert(Node {
+            parent: None,
+            children: vec![],
+            transform: Mat4::IDENTITY,
+            render_data: RenderDataType::Model(model_handle.clone()),
+        });
+
+        Self {
+            root: root_handle,
+            nodes,
+            sun: Sun::default(),
+            camera: Camera::default(),
+            environment: EnvironmentMapHandle("assets/kloofendal_overcast_puresky_8k".to_string()),
+        }
+    }
+    /*
     fn default() -> Self {
         let mut nodes = Arena::new();
 
@@ -100,10 +120,10 @@ impl Default for Scene {
         Self {
             root: root_handle,
             nodes,
-            current_node_idx: 2,
             sun: Sun::default(),
             camera: Camera::default(),
             environment: EnvironmentMapHandle("assets/kloofendal_overcast_puresky_8k".to_string()),
         }
     }
+    */
 }

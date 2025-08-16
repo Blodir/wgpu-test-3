@@ -1,5 +1,6 @@
 use notify::{Config, RecommendedWatcher, Watcher};
 use pollster::FutureExt as _;
+use renderer::render_snapshot::SnapshotHandoff;
 use std::{
     path::Path,
     sync::{mpsc::channel, Arc, Mutex},
@@ -47,6 +48,7 @@ struct App<'surface> {
     window: Option<Arc<Window>>,
     wgpu_context: Option<WgpuContext<'surface>>,
     render_resources: Option<RenderResources>,
+    snapshot_handoff: Arc<SnapshotHandoff>,
     scene: Scene,
     mouse_btn_is_pressed: bool,
     shift_is_pressed: bool,
@@ -59,6 +61,7 @@ impl App<'_> {
             window: None,
             wgpu_context: None,
             render_resources: None,
+            snapshot_handoff: Arc::new(SnapshotHandoff::new()),
             scene,
             mouse_btn_is_pressed: false,
             shift_is_pressed: false,
@@ -106,7 +109,11 @@ impl<'surface> ApplicationHandler for App<'surface> {
         render_resources
             .load_scene(&self.scene, &wgpu_context)
             .unwrap();
-        let temp_renderer = Renderer::new(&wgpu_context, &render_resources);
+        let temp_renderer = Renderer::new(
+            &wgpu_context,
+            &render_resources,
+            self.snapshot_handoff.clone(),
+        );
         let renderer_arc_mutex = Arc::new(Mutex::new(temp_renderer));
         self.renderer = Some(renderer_arc_mutex);
         self.render_resources = Some(render_resources);
@@ -122,8 +129,8 @@ impl<'surface> ApplicationHandler for App<'surface> {
                 if let Some(ref mut renderer_arc_mutex) = self.renderer {
                     let renderer = renderer_arc_mutex.lock().unwrap();
                     let snap = renderer::render_snapshot::RenderSnapshot::build(&self.scene);
+                    self.snapshot_handoff.publish(snap);
                     match renderer.render(
-                        &snap,
                         self.render_resources.as_mut().unwrap(),
                         self.wgpu_context.as_ref().unwrap(),
                     ) {

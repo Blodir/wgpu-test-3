@@ -1,5 +1,6 @@
 use glam::{Mat4, Quat, Vec3};
 use gltf::{Document, Gltf, Primitive};
+use std::fs;
 use std::path::Path;
 use std::{collections::HashMap, env, fs::File, io::Write};
 use wgpu_test_3::renderer::pipelines::model::vertex::Vertex;
@@ -264,25 +265,29 @@ fn read_position_buffer(
 fn read_normal_buffer(
     primitive: &gltf::Primitive,
     buffers: &Vec<gltf::buffer::Data>,
-) -> Vec<[f32; 3]> {
+) -> Option<Vec<[f32; 3]>> {
     let accessor = primitive
         .attributes()
-        .find(|(s, _)| *s == gltf::Semantic::Normals)
-        .expect("A primitive is missing the NORMALS attribute")
-        .1;
-    read3f32(&accessor, buffers)
+        .find(|(s, _)| *s == gltf::Semantic::Normals);
+    if let Some(accessor) = accessor {
+        Some(read3f32(&accessor.1, buffers))
+    } else {
+        None
+    }
 }
 
 fn read_tangents_buffer(
     primitive: &gltf::Primitive,
     buffers: &Vec<gltf::buffer::Data>,
-) -> Vec<[f32; 4]> {
+) -> Option<Vec<[f32; 4]>> {
     let accessor = primitive
         .attributes()
-        .find(|(s, _)| *s == gltf::Semantic::Tangents)
-        .expect("A primitive is missing the TANGENTS attribute")
-        .1;
-    read4f32(&accessor, buffers)
+        .find(|(s, _)| *s == gltf::Semantic::Tangents);
+    if let Some(accessor) = accessor {
+        Some(read4f32(&accessor.1, buffers))
+    } else {
+        None
+    }
 }
 
 fn read_weights_buffer(
@@ -394,6 +399,7 @@ fn read_occlusion_texcoord_buffer(
             .1;
         read2f32(&accessor, buffers)
     } else {
+        // placeholder
         let accessor = primitive
             .attributes()
             .find(|(s, _)| *s == gltf::Semantic::Positions)
@@ -407,17 +413,26 @@ fn read_emissive_texcoord_buffer(
     primitive: &gltf::Primitive,
     buffers: &Vec<gltf::buffer::Data>,
 ) -> Vec<[f32; 2]> {
-    let texcoord_idx = primitive
+    if let Some(texcoord_idx) = primitive
         .material()
         .emissive_texture()
-        .expect("A primitive is missing emissive texture")
-        .tex_coord();
-    let accessor = primitive
-        .attributes()
-        .find(|(s, _)| *s == gltf::Semantic::TexCoords(texcoord_idx))
-        .expect("A primitive is missing the emissive TEXCOORDS attribute")
-        .1;
-    read2f32(&accessor, buffers)
+        .map(|e| e.tex_coord())
+    {
+        let accessor = primitive
+            .attributes()
+            .find(|(s, _)| *s == gltf::Semantic::TexCoords(texcoord_idx))
+            .expect("A primitive is missing the emissive TEXCOORDS attribute")
+            .1;
+        read2f32(&accessor, buffers)
+    } else {
+        // placeholder
+        let accessor = primitive
+            .attributes()
+            .find(|(s, _)| *s == gltf::Semantic::Positions)
+            .expect("A primitive is missing the POSITION attribute")
+            .1;
+        vec![[0.0, 0.0]; accessor.count()]
+    }
 }
 
 fn resolve_uri_to_path(uri: &str, model_name: &str, tex_name: &str) -> String {
@@ -636,18 +651,28 @@ fn bake_metallic_roughness_tex(
     images: &Vec<gltf::image::Data>,
     model_name: &str,
 ) -> modelfile::SampledTexture {
-    let tex_info = material
+    if let Some(tex_info) = material
         .pbr_metallic_roughness()
         .metallic_roughness_texture()
-        .expect("A primitive is missing the metallic roughness texture");
-    bake_texture(
-        &tex_info.texture(),
-        images,
-        false,
-        material.alpha_mode(),
-        model_name,
-        "metallic_roughness",
-    )
+    {
+        bake_texture(
+            &tex_info.texture(),
+            images,
+            false,
+            material.alpha_mode(),
+            model_name,
+            "metallic_roughness",
+        )
+    } else {
+        println!("WARNING: material doesn't have a metallic roughness texture, using placeholder");
+        let data = gltf::image::Data {
+            pixels: bytemuck::cast_slice(&[0x0000u16, 0x0000u16, 0x3C00u16, 0x3C00u16]).to_vec(),
+            format: gltf::image::Format::R16G16B16A16,
+            width: 1,
+            height: 1,
+        };
+        bake_placeholder_texture(data, false, "metallic_roughness")
+    }
 }
 
 fn bake_normals_tex(
@@ -655,17 +680,25 @@ fn bake_normals_tex(
     images: &Vec<gltf::image::Data>,
     model_name: &str,
 ) -> modelfile::SampledTexture {
-    let tex_info = material
-        .normal_texture()
-        .expect("A primitive is missing the normals texture");
-    bake_texture(
-        &tex_info.texture(),
-        images,
-        false,
-        material.alpha_mode(),
-        model_name,
-        "normals",
-    )
+    if let Some(tex_info) = material.normal_texture() {
+        bake_texture(
+            &tex_info.texture(),
+            images,
+            false,
+            material.alpha_mode(),
+            model_name,
+            "normals",
+        )
+    } else {
+        println!("WARNING: material doesn't have a normals texture, using placeholder");
+        let data = gltf::image::Data {
+            pixels: bytemuck::cast_slice(&[0x0000u16, 0x0000u16, 0x3C00u16, 0x3C00u16]).to_vec(),
+            format: gltf::image::Format::R16G16B16A16,
+            width: 1,
+            height: 1,
+        };
+        bake_placeholder_texture(data, false, "normals")
+    }
 }
 
 fn bake_occlusion_tex(
@@ -699,17 +732,25 @@ fn bake_emissive_tex(
     images: &Vec<gltf::image::Data>,
     model_name: &str,
 ) -> modelfile::SampledTexture {
-    let tex_info = material
-        .emissive_texture()
-        .expect("A primitive is missing the emissive texture");
-    bake_texture(
-        &tex_info.texture(),
-        images,
-        false,
-        material.alpha_mode(),
-        model_name,
-        "emissive",
-    )
+    if let Some(tex_info) = material.emissive_texture() {
+        bake_texture(
+            &tex_info.texture(),
+            images,
+            false,
+            material.alpha_mode(),
+            model_name,
+            "emissive",
+        )
+    } else {
+        println!("WARNING: material doesn't have an emissive texture, using placeholder");
+        let data = gltf::image::Data {
+            pixels: vec![0u8],
+            format: gltf::image::Format::R8,
+            width: 1,
+            height: 1,
+        };
+        bake_placeholder_texture(data, false, "emissive")
+    }
 }
 
 fn filename_without_extension(path: &str) -> Option<&str> {
@@ -723,8 +764,9 @@ fn bake(
     input_path: String,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let model_name = filename_without_extension(&input_path).unwrap();
-    let binary_path = format!("assets/local/{}/{}.bin", model_name, model_name);
-    let json_path = format!("assets/local/{}/{}.json", model_name, model_name);
+    let directory_path = format!("assets/local/{}", model_name);
+    let binary_path = format!("{}/{}.bin", directory_path, model_name);
+    let json_path = format!("{}/{}.json", directory_path, model_name);
 
     /// list of pairs (mesh index, primitive)
     let mut primitives = vec![];
@@ -752,13 +794,29 @@ fn bake(
     let mut base_vertex = 0u32;
 
     for (mesh_idx, primitive) in primitives {
+        if primitive.mode() != gltf::mesh::Mode::Triangles {
+            println!("Warning: skipping non-triangle topology!");
+            continue;
+        }
         let index_bytes = read_index_buffer(&primitive, buffers);
         let index_bytes_count = index_bytes.len();
 
         let mut verts: Vec<Vertex> = vec![];
         let pos_buffer = read_position_buffer(&primitive, buffers);
-        let normals_buffer = read_normal_buffer(&primitive, buffers);
-        let tangents_buffer = read_tangents_buffer(&primitive, buffers);
+        let normals_buffer = match read_normal_buffer(&primitive, buffers) {
+            Some(t) => t,
+            None => {
+                println!("Warning: a primitive is missing the NORMALS attribute, skipping!");
+                continue;
+            }
+        };
+        let tangents_buffer = match read_tangents_buffer(&primitive, buffers) {
+            Some(t) => t,
+            None => {
+                println!("Warning: a primitive is missing the TANGENTS attribute, skipping!");
+                continue;
+            }
+        };
         let weights_buffer = read_weights_buffer(&primitive, buffers);
         let joints_buffer = read_joints_buffer(&primitive, buffers);
         let base_color_texcoord_buffer = read_base_color_texcoord_buffer(&primitive, buffers);
@@ -857,6 +915,7 @@ fn bake(
         },
     };
 
+    fs::create_dir_all(directory_path)?;
     let mut binary_file = File::create(binary_path)?;
     let final_binary_buffer: Vec<u8> = output_index_buffers
         .into_iter()
