@@ -19,3 +19,4 @@ block_compression = "0.5.0"
 glam = { version = "0.30.5", features = ["bytemuck", "serde"] }
 generational-arena = "0.2.9"
 arc-swap = "1.7.1"
+crossbeam-queue = "0.3.12"

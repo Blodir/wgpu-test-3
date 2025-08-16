@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Instant;
 
 use super::render_snapshot::accumulate_model_transforms;
 use super::render_snapshot::{self, SnapshotGuard};
@@ -7,6 +8,7 @@ use super::{render_resources::ModelHandle, render_snapshot::SnapshotHandoff};
 use generational_arena::Index;
 use glam::Mat4;
 
+use crate::scene_tree::Camera;
 use crate::{
     renderer::{
         pipelines::{
@@ -23,6 +25,20 @@ use crate::{
     },
     scene_tree::{RenderDataType, Scene},
 };
+
+// Common easing curves on [0,1] -> [0,1]
+#[inline]
+fn ease_smoothstep(t: f32) -> f32 {
+    t * t * (3.0 - 2.0 * t)
+} // C2
+#[inline]
+fn ease_smootherstep(t: f32) -> f32 {
+    t * t * t * (t * (t * 6.0 - 15.0) + 10.0)
+} // C3
+#[inline]
+fn ease_in_out_sine(t: f32) -> f32 {
+    0.5 - 0.5 * (std::f32::consts::PI * t).cos()
+}
 
 pub struct Renderer {
     skybox_output: SkyboxOutputTexture,
@@ -78,23 +94,27 @@ impl Renderer {
         render_resources: &mut RenderResources,
         wgpu_context: &WgpuContext,
     ) -> Result<(), wgpu::SurfaceError> {
-        let t = 1f32;
-        let snap = self.snapshot_handoff.load();
+        let snaps = self.snapshot_handoff.load();
+        let now = Instant::now();
+        let t = (now - snaps.curr_timestamp)
+            .div_duration_f32(snaps.curr_timestamp - snaps.prev_timestamp);
+        //let t = ease_smoothstep(t_raw); // or ease_smootherstep / ease_in_out_sine
         let models = prepare_models(
-            &snap,
+            &snaps,
             t,
             render_resources,
             &wgpu_context.device,
             &wgpu_context.queue,
         );
         prepare_camera(
-            &snap.1,
+            &snaps,
+            t,
             render_resources,
             &wgpu_context.queue,
             &wgpu_context.surface_config,
         );
-        prepare_sun(&snap.1, render_resources, &wgpu_context.queue);
-        prepare_env_map(&snap.1, render_resources, wgpu_context);
+        prepare_sun(&snaps.curr, render_resources, &wgpu_context.queue);
+        prepare_env_map(&snaps.curr, render_resources, wgpu_context);
 
         let mut encoder =
             wgpu_context
@@ -109,7 +129,7 @@ impl Renderer {
             &render_resources.camera.bind_group,
             &render_resources
                 .environment_maps
-                .get(&snap.1.environment_map)
+                .get(&snaps.curr.environment_map)
                 .expect("Requested environment map is not loaded.")
                 .bind_group,
         );
@@ -121,7 +141,7 @@ impl Renderer {
             &self.depth_texture.view,
             render_resources,
             models,
-            &snap.1.environment_map,
+            &snaps.curr.environment_map,
         );
 
         let output_surface_texture = wgpu_context.surface.get_current_texture()?;
@@ -150,17 +170,32 @@ impl Renderer {
     }
 }
 
+fn lerpf32(a: f32, b: f32, t: f32) -> f32 {
+    a + (b - a) * t
+}
+
 pub fn prepare_camera(
-    snap: &render_snapshot::RenderSnapshot,
+    snaps: &SnapshotGuard,
+    t: f32,
     render_resources: &mut crate::renderer::render_resources::RenderResources,
     queue: &wgpu::Queue,
     surface_config: &wgpu::SurfaceConfiguration,
 ) {
-    if let Some(camera) = &snap.camera {
-        render_resources
-            .camera
-            .update(camera, queue, surface_config);
-    }
+    let prev = &snaps.prev.camera;
+    let curr = &snaps.curr.camera;
+    let interpolated_camera = Camera {
+        eye: prev.eye.lerp(curr.eye, t),
+        target: prev.target.lerp(curr.target, t),
+        up: prev.up.lerp(curr.up, t),
+        fovy: lerpf32(prev.fovy, curr.fovy, t),
+        znear: lerpf32(prev.znear, curr.znear, t),
+        zfar: lerpf32(prev.zfar, curr.zfar, t),
+        rot_x: lerpf32(prev.rot_x, curr.rot_x, t),
+        rot_y: lerpf32(prev.rot_y, curr.rot_y, t),
+    };
+    render_resources
+        .camera
+        .update(&interpolated_camera, queue, surface_config);
 }
 
 pub fn prepare_sun(
@@ -182,17 +217,17 @@ pub fn prepare_env_map(
 }
 
 pub fn prepare_models<'a>(
-    snaps: &'a (SnapshotGuard, SnapshotGuard),
+    snaps: &'a SnapshotGuard,
     t: f32,
     render_resources: &mut crate::renderer::render_resources::RenderResources,
     device: &wgpu::Device,
     queue: &wgpu::Queue,
 ) -> impl Iterator<Item = &'a ModelHandle> + 'a {
-    for (model_handle, node_transforms) in &snaps.1.model_transforms {
+    for (model_handle, node_transforms) in &snaps.curr.model_transforms {
         let mut transforms = vec![];
         for (node_handle, curr_transform) in node_transforms {
             if let Some(prev_transform) = &snaps
-                .0
+                .prev
                 .model_transforms
                 .get(model_handle)
                 .and_then(|nodes| nodes.get(node_handle))
@@ -215,5 +250,5 @@ pub fn prepare_models<'a>(
     }
 
     // return model handles that should be rendered
-    snaps.1.model_transforms.iter().map(|(handle, _)| handle)
+    snaps.curr.model_transforms.iter().map(|(handle, _)| handle)
 }

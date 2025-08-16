@@ -1,6 +1,8 @@
+use crossbeam_queue::{ArrayQueue, SegQueue};
 use notify::{Config, RecommendedWatcher, Watcher};
 use pollster::FutureExt as _;
 use renderer::render_snapshot::SnapshotHandoff;
+use sim::{spawn_sim, InputEvent};
 use std::{
     path::Path,
     sync::{mpsc::channel, Arc, Mutex},
@@ -27,6 +29,7 @@ use crate::{
 
 pub mod renderer;
 pub mod scene_tree;
+pub mod sim;
 
 pub fn align_to_256(n: usize) -> usize {
     (n + 255) & !255
@@ -48,23 +51,19 @@ struct App<'surface> {
     window: Option<Arc<Window>>,
     wgpu_context: Option<WgpuContext<'surface>>,
     render_resources: Option<RenderResources>,
-    snapshot_handoff: Arc<SnapshotHandoff>,
-    scene: Scene,
-    mouse_btn_is_pressed: bool,
-    shift_is_pressed: bool,
+    snap_handoff: Arc<SnapshotHandoff>,
+    sim_inputs: Arc<SegQueue<InputEvent>>,
 }
 
 impl App<'_> {
-    pub fn new(scene: Scene) -> Self {
+    pub fn new(sim_inputs: Arc<SegQueue<InputEvent>>, snap_handoff: Arc<SnapshotHandoff>) -> Self {
         Self {
             renderer: None,
             window: None,
             wgpu_context: None,
             render_resources: None,
-            snapshot_handoff: Arc::new(SnapshotHandoff::new()),
-            scene,
-            mouse_btn_is_pressed: false,
-            shift_is_pressed: false,
+            snap_handoff,
+            sim_inputs,
         }
     }
 
@@ -106,14 +105,24 @@ impl<'surface> ApplicationHandler for App<'surface> {
         self.window = Some(window.clone());
         let wgpu_context = WgpuContext::new(window).block_on();
         let mut render_resources = RenderResources::new(&wgpu_context);
+        // TODO proper render resources loading!!!
+        render_resources.load_environment_map(
+            EnvironmentMapHandle("assets/kloofendal_overcast_puresky_8k".to_string()),
+            &wgpu_context,
+        );
+        render_resources
+            .load_model(
+                ModelHandle("assets/local/Sponza/Sponza.json".to_string()),
+                &wgpu_context,
+            )
+            .unwrap();
+        /*
         render_resources
             .load_scene(&self.scene, &wgpu_context)
             .unwrap();
-        let temp_renderer = Renderer::new(
-            &wgpu_context,
-            &render_resources,
-            self.snapshot_handoff.clone(),
-        );
+        */
+        let temp_renderer =
+            Renderer::new(&wgpu_context, &render_resources, self.snap_handoff.clone());
         let renderer_arc_mutex = Arc::new(Mutex::new(temp_renderer));
         self.renderer = Some(renderer_arc_mutex);
         self.render_resources = Some(render_resources);
@@ -128,8 +137,6 @@ impl<'surface> ApplicationHandler for App<'surface> {
             WindowEvent::RedrawRequested => {
                 if let Some(ref mut renderer_arc_mutex) = self.renderer {
                     let renderer = renderer_arc_mutex.lock().unwrap();
-                    let snap = renderer::render_snapshot::RenderSnapshot::build(&self.scene);
-                    self.snapshot_handoff.publish(snap);
                     match renderer.render(
                         self.render_resources.as_mut().unwrap(),
                         self.wgpu_context.as_ref().unwrap(),
@@ -139,71 +146,17 @@ impl<'surface> ApplicationHandler for App<'surface> {
                     }
                 }
             }
-            WindowEvent::MouseWheel {
-                device_id,
-                delta,
-                phase,
-            } => {
-                let camera = &mut self.scene.camera;
-                match delta {
-                    MouseScrollDelta::LineDelta(x, y) => {
-                        camera.eye.z = (camera.eye.z
-                            + ((if self.shift_is_pressed { 10f32 } else { 1f32 }) * -y as f32))
-                            .max(0f32);
-                        self.window.as_mut().unwrap().request_redraw();
-                    }
-                    MouseScrollDelta::PixelDelta(pos) => (),
-                }
-            }
-            WindowEvent::MouseInput {
-                device_id,
-                state,
-                button,
-            } => {
-                match button {
-                    winit::event::MouseButton::Left => match state {
-                        ElementState::Pressed => {
-                            self.mouse_btn_is_pressed = true;
-                        }
-                        ElementState::Released => {
-                            self.mouse_btn_is_pressed = false;
-                        }
-                    },
-                    _ => (),
-                };
-            }
-            WindowEvent::KeyboardInput {
-                device_id,
-                event,
-                is_synthetic,
-            } => match event {
-                KeyEvent {
-                    physical_key: PhysicalKey::Code(KeyCode::ShiftLeft),
-                    state: ElementState::Pressed,
-                    ..
-                } => {
-                    self.shift_is_pressed = true;
-                }
-                KeyEvent {
-                    physical_key: PhysicalKey::Code(KeyCode::ShiftLeft),
-                    state: ElementState::Released,
-                    ..
-                } => {
-                    self.shift_is_pressed = false;
-                }
-                _ => (),
-            },
             WindowEvent::Resized(physical_size) => {
                 if let Some(ref mut renderer_arc_mutex) = self.renderer {
                     let wgpu_context = self.wgpu_context.as_mut().unwrap();
                     let mut renderer = renderer_arc_mutex.lock().unwrap();
                     resize(physical_size, wgpu_context, &mut renderer);
                     self.render_resources.as_mut().unwrap().camera.update(
-                        &self.scene.camera,
+                        // TODO resize events should probably respect render loop interpolation
+                        &self.snap_handoff.load().curr.camera,
                         &wgpu_context.queue,
                         &wgpu_context.surface_config,
                     );
-                    self.window.as_mut().unwrap().request_redraw();
                 }
             }
             WindowEvent::ScaleFactorChanged {
@@ -216,15 +169,23 @@ impl<'surface> ApplicationHandler for App<'surface> {
                     let new_size = wgpu_context.window.inner_size();
                     resize(new_size, wgpu_context, &mut renderer);
                     self.render_resources.as_mut().unwrap().camera.update(
-                        &self.scene.camera,
+                        &self.snap_handoff.load().curr.camera,
                         &wgpu_context.queue,
                         &wgpu_context.surface_config,
                     );
-                    self.window.as_mut().unwrap().request_redraw();
                 }
+            }
+            WindowEvent::MouseWheel { .. }
+            | WindowEvent::MouseInput { .. }
+            | WindowEvent::KeyboardInput { .. } => {
+                self.sim_inputs.push(InputEvent::WindowEvent(event))
             }
             _ => (),
         }
+    }
+
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        self.window.as_mut().unwrap().request_redraw();
     }
 
     fn device_event(
@@ -234,28 +195,25 @@ impl<'surface> ApplicationHandler for App<'surface> {
         event: DeviceEvent,
     ) {
         match event {
-            DeviceEvent::MouseMotion { delta: (x, y) } => {
-                if !self.mouse_btn_is_pressed {
-                    return ();
-                }
-                let camera = &mut self.scene.camera;
-                let sensitivity = 5f32;
-                camera.rot_x = camera.rot_x - (x as f32 / sensitivity);
-                camera.rot_y = camera.rot_y - (y as f32 / sensitivity);
-                self.window.as_mut().unwrap().request_redraw();
-            }
+            DeviceEvent::MouseMotion { .. } => self.sim_inputs.push(InputEvent::DeviceEvent(event)),
             _ => (),
         }
     }
 }
 
 pub fn run() {
-    // TODO input scene
-    let scene = Scene::default();
-    let app = Arc::new(Mutex::new(App::new(scene)));
-    let event_loop = EventLoop::new().unwrap();
-    event_loop.set_control_flow(ControlFlow::Wait);
+    let snap_handoff = Arc::new(SnapshotHandoff::new());
+    let sim_inputs = Arc::new(SegQueue::<InputEvent>::new());
+    let sim_handle = spawn_sim(sim_inputs.clone(), snap_handoff.clone());
 
+    let app = Arc::new(Mutex::new(App::new(
+        sim_inputs.clone(),
+        snap_handoff.clone(),
+    )));
+    let event_loop = EventLoop::new().unwrap();
+    event_loop.set_control_flow(ControlFlow::Poll);
+
+    /*
     let (tx, rx) = channel();
     let mut watcher = RecommendedWatcher::new(tx, Config::default()).unwrap();
     watcher
@@ -265,7 +223,6 @@ pub fn run() {
         )
         .unwrap();
 
-    /*
     let app_clone1 = app.clone();
     thread::spawn(move || loop {
         match rx.recv_timeout(Duration::from_secs(1)) {
@@ -314,4 +271,7 @@ pub fn run() {
             }
         })
         .unwrap();
+
+    sim_inputs.push(InputEvent::Exit);
+    sim_handle.join().unwrap();
 }

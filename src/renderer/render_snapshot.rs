@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc, time::Instant};
 
 use arc_swap::{ArcSwap, Guard};
 use generational_arena::Index;
@@ -29,7 +29,7 @@ pub fn accumulate_model_transforms(
 pub struct RenderSnapshot {
     pub model_transforms: HashMap<ModelHandle, HashMap<Index, Mat4>>,
     pub environment_map: EnvironmentMapHandle,
-    pub camera: Option<Camera>,
+    pub camera: Camera,
     pub sun: Option<Sun>,
 }
 impl RenderSnapshot {
@@ -39,7 +39,7 @@ impl RenderSnapshot {
 
         // TODO dirty check
         let environment_map = scene.environment.clone();
-        let camera = Some(scene.camera.clone());
+        let camera = scene.camera.clone();
         let sun = Some(scene.sun.clone());
         Self {
             model_transforms,
@@ -56,34 +56,57 @@ impl Default for RenderSnapshot {
             environment_map: EnvironmentMapHandle(
                 "assets/kloofendal_overcast_puresky_8k".to_string(),
             ),
-            camera: None,
+            camera: Camera::default(),
             sun: None,
         }
     }
 }
 
-pub type SnapshotGuard = Guard<Arc<RenderSnapshot>>;
+pub type SnapshotGuard = Guard<Arc<SnapshotPair>>;
+
+#[derive(Clone)]
+pub struct SnapshotPair {
+    pub prev: Arc<RenderSnapshot>,
+    pub prev_timestamp: Instant,
+    pub curr: Arc<RenderSnapshot>,
+    pub curr_timestamp: Instant,
+    pub gen: u64, // optional: monotonic generation
+}
 
 pub struct SnapshotHandoff {
-    current: ArcSwap<RenderSnapshot>,
-    previous: ArcSwap<RenderSnapshot>,
+    pair: ArcSwap<SnapshotPair>,
 }
+
 impl SnapshotHandoff {
     pub fn new() -> Self {
+        let init = Arc::new(RenderSnapshot::default());
+        let pair = SnapshotPair {
+            prev: init.clone(),
+            prev_timestamp: Instant::now(),
+            curr: init,
+            curr_timestamp: Instant::now(),
+            gen: 0,
+        };
         Self {
-            current: ArcSwap::from_pointee(RenderSnapshot::default()),
-            previous: ArcSwap::from_pointee(RenderSnapshot::default()),
+            pair: ArcSwap::from(Arc::new(pair)),
         }
     }
 
+    /// Producer: publish a new current; previous becomes the old current.
     pub fn publish(&self, snap: RenderSnapshot) {
-        // this swap probably doesn't have to be atomic, since it's fine if the render thread
-        // reads (current, current) for one frame
-        self.previous.store(self.current.load_full());
-        self.current.store(Arc::new(snap));
+        let old = self.pair.load(); // coherent view
+        let next = SnapshotPair {
+            prev: old.curr.clone(),
+            prev_timestamp: old.curr_timestamp,
+            curr: Arc::new(snap),
+            curr_timestamp: Instant::now(),
+            gen: old.gen + 1,
+        };
+        self.pair.store(Arc::new(next)); // atomic pointer swap
     }
 
-    pub fn load(&self) -> (SnapshotGuard, SnapshotGuard) {
-        (self.previous.load(), self.current.load())
+    /// Consumer: single atomic load returns a coherent (prev,curr) pair.
+    pub fn load(&self) -> SnapshotGuard {
+        self.pair.load()
     }
 }
