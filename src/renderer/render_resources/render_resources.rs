@@ -104,12 +104,18 @@ impl ModelData {
     }
 }
 
-pub struct SunBinding {
-    direction_buffer: wgpu::Buffer,
-    color_buffer: wgpu::Buffer,
+pub struct LightsBinding {
+    prefiltered_view: wgpu::TextureView,
+    di_view: wgpu::TextureView,
+    brdf_view: wgpu::TextureView,
+    prefiltered_sampler: wgpu::Sampler,
+    di_sampler: wgpu::Sampler,
+    brdf_sampler: wgpu::Sampler,
+    sun_direction_buffer: wgpu::Buffer,
+    sun_color_buffer: wgpu::Buffer,
     pub bind_group: wgpu::BindGroup,
 }
-impl SunBinding {
+impl LightsBinding {
     pub fn new(
         sun: &Sun,
         device: &wgpu::Device,
@@ -142,18 +148,70 @@ impl SunBinding {
             label: Some("Lights Bind Group"),
         });
 
-        SunBinding {
+        LightsBinding {
             bind_group,
-            direction_buffer,
-            color_buffer,
+            sun_direction_buffer: direction_buffer,
+            sun_color_buffer: color_buffer,
         }
     }
 
     pub fn desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
         wgpu::BindGroupLayoutDescriptor {
             entries: &[
+                // prefiltered
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::Cube,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+                // Diffuse irradiance
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::Cube,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+                // BRDF LUT
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 5,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+                // sun dir
+                wgpu::BindGroupLayoutEntry {
+                    binding: 6,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
@@ -162,8 +220,9 @@ impl SunBinding {
                     },
                     count: None,
                 },
+                // sun color
                 wgpu::BindGroupLayoutEntry {
-                    binding: 1,
+                    binding: 7,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
@@ -173,18 +232,20 @@ impl SunBinding {
                     count: None,
                 },
             ],
-            label: Some("Sun Bind Group Layout"),
+            label: Some("Lights Group Layout"),
         }
     }
 
-    pub fn update(&self, sun: &Sun, queue: &wgpu::Queue) {
+    pub fn update_sun(&self, sun: &Sun, queue: &wgpu::Queue) {
         queue.write_buffer(
-            &self.direction_buffer,
+            &self.sun_direction_buffer,
             0,
             bytemuck::cast_slice(&sun.direction),
         );
-        queue.write_buffer(&self.color_buffer, 0, bytemuck::cast_slice(&sun.color));
+        queue.write_buffer(&self.sun_color_buffer, 0, bytemuck::cast_slice(&sun.color));
     }
+
+    pub fn update_environment_map(&self) {}
 }
 
 pub struct CameraMatrices {
@@ -434,7 +495,7 @@ impl Layouts {
             .create_bind_group_layout(&EnvironmentMapBinding::desc());
         let sun = wgpu_context
             .device
-            .create_bind_group_layout(&SunBinding::desc());
+            .create_bind_group_layout(&LightsBinding::desc());
         let material = wgpu_context
             .device
             .create_bind_group_layout(&MaterialBinding::desc());
@@ -459,14 +520,13 @@ pub struct RenderResources {
     pub textures: HashMap<TextureHandle, wgpu::Texture>,
     pub sampled_textures: HashMap<TextureHandle, SampledTexture>,
     pub camera: CameraBinding,
-    pub sun: SunBinding,
-    pub environment_maps: HashMap<EnvironmentMapHandle, EnvironmentMapBinding>,
+    pub lights: LightsBinding,
 }
 impl RenderResources {
     pub fn new(wgpu_context: &WgpuContext) -> Self {
         let layouts = Layouts::new(wgpu_context);
         let sun = Sun::default();
-        let sun_binding = SunBinding::new(&sun, &wgpu_context.device, &layouts.sun);
+        let lights_binding = LightsBinding::new(&sun, &wgpu_context.device, &layouts.sun);
         let camera = Camera::default();
         let camera_binding = CameraBinding::new(
             &camera,
@@ -481,8 +541,7 @@ impl RenderResources {
             textures: HashMap::new(),
             sampled_textures: HashMap::new(),
             camera: camera_binding,
-            sun: sun_binding,
-            environment_maps: HashMap::new(),
+            lights: lights_binding,
         };
         this
     }

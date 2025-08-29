@@ -204,7 +204,7 @@ pub fn prepare_sun(
     queue: &wgpu::Queue,
 ) {
     if let Some(sun) = &snap.sun {
-        render_resources.sun.update(sun, queue);
+        render_resources.lights.update_sun(sun, queue);
     }
 }
 

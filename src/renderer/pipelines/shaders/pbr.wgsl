@@ -89,15 +89,11 @@ fn vs_main(
     var out: VertexOutput;
     out.clip_position = view_proj * transform * vec4<f32>(model.position, 1.0);
 
-    //let N = normalize((transform * vec4f(model.normal, 0.0)).xyz);
     let N = normalize(inverse_transpose_rot * model.normal);
-    //let T = normalize((transform * vec4f(model.tangent.xyz, 0.0)).xyz);
     let T = normalize(inverse_transpose_rot * model.tangent.xyz);
-    //let B = normalize((transform * vec4f(model.tangent.w * cross(model.normal, model.tangent.xyz), 0.0)).xyz);
     let B = normalize(model.tangent.w * cross(N, T));
     out.normal = N;
     out.tangent = T;
-    // http://www.mikktspace.com/
     out.bitangent = B;
 
     out.world_position = transform * vec4f(model.position, 1.0);
