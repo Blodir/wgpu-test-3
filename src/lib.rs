@@ -46,11 +46,15 @@ pub fn strip_extension(path: &str) -> String {
     }
 }
 
+struct RenderContext<'surface> {
+    renderer: Arc<Mutex<Renderer>>,
+    window: Arc<Window>,
+    wgpu_context: WgpuContext<'surface>,
+    render_resources: RenderResources,
+}
+
 struct App<'surface> {
-    renderer: Option<Arc<Mutex<Renderer>>>,
-    window: Option<Arc<Window>>,
-    wgpu_context: Option<WgpuContext<'surface>>,
-    render_resources: Option<RenderResources>,
+    render_context: Option<RenderContext<'surface>>,
     snap_handoff: Arc<SnapshotHandoff>,
     sim_inputs: Arc<SegQueue<InputEvent>>,
 }
@@ -58,10 +62,7 @@ struct App<'surface> {
 impl App<'_> {
     pub fn new(sim_inputs: Arc<SegQueue<InputEvent>>, snap_handoff: Arc<SnapshotHandoff>) -> Self {
         Self {
-            renderer: None,
-            window: None,
-            wgpu_context: None,
-            render_resources: None,
+            render_context: None,
             snap_handoff,
             sim_inputs,
         }
@@ -102,8 +103,7 @@ impl<'surface> ApplicationHandler for App<'surface> {
                 .create_window(Window::default_attributes())
                 .unwrap(),
         );
-        self.window = Some(window.clone());
-        let wgpu_context = WgpuContext::new(window).block_on();
+        let wgpu_context = WgpuContext::new(window.clone()).block_on();
         let mut render_resources = RenderResources::new(&wgpu_context);
         // TODO proper render resources loading!!!
         render_resources.load_environment_map(
@@ -121,12 +121,19 @@ impl<'surface> ApplicationHandler for App<'surface> {
             .load_scene(&self.scene, &wgpu_context)
             .unwrap();
         */
-        let temp_renderer =
-            Renderer::new(&wgpu_context, &render_resources, self.snap_handoff.clone());
-        let renderer_arc_mutex = Arc::new(Mutex::new(temp_renderer));
-        self.renderer = Some(renderer_arc_mutex);
-        self.render_resources = Some(render_resources);
-        self.wgpu_context = Some(wgpu_context);
+        let renderer = Arc::new(
+            Mutex::new(
+                Renderer::new(&wgpu_context, &render_resources, self.snap_handoff.clone())
+            )
+        );
+        self.render_context = Some(
+            RenderContext {
+                window,
+                renderer,
+                render_resources,
+                wgpu_context,
+            }
+        );
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
@@ -135,11 +142,11 @@ impl<'surface> ApplicationHandler for App<'surface> {
                 event_loop.exit();
             }
             WindowEvent::RedrawRequested => {
-                if let Some(ref mut renderer_arc_mutex) = self.renderer {
-                    let renderer = renderer_arc_mutex.lock().unwrap();
+                if let Some(ref mut render_context) = self.render_context {
+                    let renderer = render_context.renderer.lock().unwrap();
                     match renderer.render(
-                        self.render_resources.as_mut().unwrap(),
-                        self.wgpu_context.as_ref().unwrap(),
+                        &mut render_context.render_resources,
+                        &render_context.wgpu_context,
                     ) {
                         Ok(_) => {}
                         Err(e) => eprintln!("render error: {:?}", e),
@@ -147,11 +154,11 @@ impl<'surface> ApplicationHandler for App<'surface> {
                 }
             }
             WindowEvent::Resized(physical_size) => {
-                if let Some(ref mut renderer_arc_mutex) = self.renderer {
-                    let wgpu_context = self.wgpu_context.as_mut().unwrap();
-                    let mut renderer = renderer_arc_mutex.lock().unwrap();
+                if let Some(ref mut render_context) = self.render_context {
+                    let mut renderer = render_context.renderer.lock().unwrap();
+                    let wgpu_context = &mut render_context.wgpu_context;
                     resize(physical_size, wgpu_context, &mut renderer);
-                    self.render_resources.as_mut().unwrap().camera.update(
+                    render_context.render_resources.camera.update(
                         // TODO resize events should probably respect render loop interpolation
                         &self.snap_handoff.load().curr.camera,
                         &wgpu_context.queue,
@@ -163,12 +170,12 @@ impl<'surface> ApplicationHandler for App<'surface> {
                 scale_factor,
                 inner_size_writer,
             } => {
-                if let Some(ref mut renderer_arc_mutex) = self.renderer {
-                    let wgpu_context = self.wgpu_context.as_mut().unwrap();
-                    let mut renderer = renderer_arc_mutex.lock().unwrap();
+                if let Some(ref mut render_context) = self.render_context {
+                    let mut renderer = render_context.renderer.lock().unwrap();
+                    let wgpu_context = &mut render_context.wgpu_context;
                     let new_size = wgpu_context.window.inner_size();
                     resize(new_size, wgpu_context, &mut renderer);
-                    self.render_resources.as_mut().unwrap().camera.update(
+                    render_context.render_resources.camera.update(
                         &self.snap_handoff.load().curr.camera,
                         &wgpu_context.queue,
                         &wgpu_context.surface_config,
@@ -185,7 +192,7 @@ impl<'surface> ApplicationHandler for App<'surface> {
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
-        self.window.as_mut().unwrap().request_redraw();
+        self.render_context.as_mut().unwrap().window.request_redraw();
     }
 
     fn device_event(
