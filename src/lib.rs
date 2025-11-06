@@ -2,6 +2,7 @@ use crossbeam_queue::{ArrayQueue, SegQueue};
 use notify::{Config, RecommendedWatcher, Watcher};
 use pollster::FutureExt as _;
 use renderer::render_snapshot::SnapshotHandoff;
+use scene_tree::Sun;
 use sim::{spawn_sim, InputEvent};
 use std::{
     path::Path,
@@ -106,21 +107,13 @@ impl<'surface> ApplicationHandler for App<'surface> {
         let wgpu_context = WgpuContext::new(window.clone()).block_on();
         let mut render_resources = RenderResources::new(&wgpu_context);
         // TODO proper render resources loading!!!
-        render_resources.load_environment_map(
-            EnvironmentMapHandle("assets/kloofendal_overcast_puresky_8k".to_string()),
-            &wgpu_context,
-        );
+        render_resources.load_lights(&wgpu_context, Sun::default(), EnvironmentMapHandle("assets/kloofendal_overcast_puresky_8k".to_string()));
         render_resources
             .load_model(
                 ModelHandle("assets/local/Sponza/Sponza.json".to_string()),
                 &wgpu_context,
             )
             .unwrap();
-        /*
-        render_resources
-            .load_scene(&self.scene, &wgpu_context)
-            .unwrap();
-        */
         let renderer = Arc::new(
             Mutex::new(
                 Renderer::new(&wgpu_context, &render_resources, self.snap_handoff.clone())

@@ -7,7 +7,7 @@ use crate::{
             resources::depth_texture::DepthTexture,
         },
         render_resources::{
-            modelfile, EnvironmentMapHandle, ModelHandle, RenderResources, TextureHandle,
+            modelfile, ModelHandle, RenderResources, TextureHandle,
         },
         utils,
     },
@@ -24,17 +24,15 @@ impl ModelPipeline {
         device: &wgpu::Device,
         surface_config: &wgpu::SurfaceConfiguration,
         camera_bind_group_layout: &wgpu::BindGroupLayout,
-        sun_bind_group_layout: &wgpu::BindGroupLayout,
-        environment_map_bind_group_layout: &wgpu::BindGroupLayout,
+        lights_bind_group_layout: &wgpu::BindGroupLayout,
     ) -> Self {
         let material_bind_group_layout = device.create_bind_group_layout(&MaterialBinding::desc());
         let render_pipeline = Self::build_pipeline(
             device,
             surface_config,
             camera_bind_group_layout,
-            sun_bind_group_layout,
+            lights_bind_group_layout,
             &material_bind_group_layout,
-            environment_map_bind_group_layout,
         );
 
         Self {
@@ -47,16 +45,14 @@ impl ModelPipeline {
         device: &wgpu::Device,
         surface_config: &wgpu::SurfaceConfiguration,
         camera_bind_group_layout: &wgpu::BindGroupLayout,
-        sun_bind_group_layout: &wgpu::BindGroupLayout,
+        lights_bind_group_layout: &wgpu::BindGroupLayout,
         material_bind_group_layout: &wgpu::BindGroupLayout,
-        environment_map_bind_group_layout: &wgpu::BindGroupLayout,
     ) -> wgpu::RenderPipeline {
         let vertex_buffer_layouts = &[Instance::desc(), Vertex::desc()];
         let bind_group_layouts = &[
             camera_bind_group_layout,
-            sun_bind_group_layout,
+            lights_bind_group_layout,
             material_bind_group_layout,
-            environment_map_bind_group_layout,
         ];
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -117,7 +113,6 @@ impl ModelPipeline {
         depth_texture_view: &wgpu::TextureView,
         render_resources: &RenderResources,
         model_handles: impl Iterator<Item = &'a ModelHandle>,
-        environment_handle: &EnvironmentMapHandle,
     ) {
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Model Render Pass"),
@@ -143,12 +138,9 @@ impl ModelPipeline {
 
         render_pass.set_pipeline(&self.render_pipeline);
         render_pass.set_bind_group(0u32, &render_resources.camera.bind_group, &[]);
-        render_pass.set_bind_group(1u32, &render_resources.sun.bind_group, &[]);
-        render_pass.set_bind_group(
-            3u32,
-            &render_resources.environment_maps[environment_handle].bind_group,
-            &[],
-        );
+        if let Some(lights) = render_resources.lights.as_ref() {
+            render_pass.set_bind_group(1, &lights.bind_group, &[]);
+        }
 
         for model_handle in model_handles {
             let model = render_resources.models.get(&model_handle).unwrap();

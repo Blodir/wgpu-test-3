@@ -1,7 +1,7 @@
 @group(0) @binding(2) var<uniform> inverse_view_proj_rot: mat4x4<f32>;
 
-@group(1) @binding(0) var environment_texture: texture_cube<f32>;
-@group(1) @binding(1) var environment_texture_sampler: sampler;
+@group(1) @binding(2) var environment_texture: texture_cube<f32>;
+@group(1) @binding(3) var environment_texture_sampler: sampler;
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,

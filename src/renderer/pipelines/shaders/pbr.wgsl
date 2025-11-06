@@ -3,6 +3,12 @@
 
 @group(1) @binding(0) var<uniform> light_dir: vec3<f32>;
 @group(1) @binding(1) var<uniform> light_col: vec3<f32>;
+@group(1) @binding(2) var environment_texture: texture_cube<f32>;
+@group(1) @binding(3) var environment_texture_sampler: sampler;
+@group(1) @binding(4) var diffuse_irradiance_texture: texture_cube<f32>;
+@group(1) @binding(5) var diffuse_irradiance_texture_sampler: sampler;
+@group(1) @binding(6) var brdf_lut: texture_2d<f32>;
+@group(1) @binding(7) var brdf_lut_sampler: sampler;
 
 @group(2) @binding(0) var<uniform> base_color_factor: vec4<f32>;
 @group(2) @binding(1) var<uniform> metallic_factor: f32;
@@ -19,13 +25,6 @@
 @group(2) @binding(12) var metallic_roughness_texture: texture_2d<f32>;
 @group(2) @binding(13) var metallic_roughness_texture_sampler: sampler;
 @group(2) @binding(14) var<uniform> normal_texture_scale: f32;
-
-@group(3) @binding(0) var environment_texture: texture_cube<f32>;
-@group(3) @binding(1) var environment_texture_sampler: sampler;
-@group(3) @binding(2) var diffuse_irradiance_texture: texture_cube<f32>;
-@group(3) @binding(3) var diffuse_irradiance_texture_sampler: sampler;
-@group(3) @binding(4) var brdf_lut: texture_2d<f32>;
-@group(3) @binding(5) var brdf_lut_sampler: sampler;
 
 struct InstanceInput {
     @location(0) m_1: vec4<f32>,
@@ -145,7 +144,7 @@ fn fresnel_schlick_roughness(cos_theta: f32, F0: vec3f, roughness: f32) -> vec3f
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    let normal_sample = 
+    let normal_sample =
         textureSample(
             normal_texture,
             normal_texture_sampler,
@@ -178,7 +177,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         );
     let surface_metallic = metallic_roughness.b * metallic_factor;
     let surface_roughness = metallic_roughness.g * roughness_factor;
-    let surface_emissive_sample = 
+    let surface_emissive_sample =
         textureSample(
             emissive_texture,
             emissive_texture_sampler,
@@ -222,7 +221,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     var k_d2 = 1.0 - k_s2;
     k_d2 *= 1.0 - surface_metallic;
 
-    let irradiance = 
+    let irradiance =
         textureSample(
             diffuse_irradiance_texture,
             diffuse_irradiance_texture_sampler,
@@ -241,4 +240,3 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     return vec4f(col, 1.0);
 }
-

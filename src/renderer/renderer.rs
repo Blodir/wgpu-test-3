@@ -63,14 +63,13 @@ impl Renderer {
         let skybox_pipeline = SkyboxPipeline::new(
             &wgpu_context.device,
             &render_resourcess.layouts.camera,
-            &render_resourcess.layouts.environment_map,
+            &render_resourcess.layouts.lights,
         );
         let model_pipeline = ModelPipeline::new(
             &wgpu_context.device,
             &wgpu_context.surface_config,
             &render_resourcess.layouts.camera,
-            &render_resourcess.layouts.sun,
-            &render_resourcess.layouts.environment_map,
+            &render_resourcess.layouts.lights,
         );
         let post_pipeline = PostProcessingPipeline::new(
             &wgpu_context.device,
@@ -113,8 +112,7 @@ impl Renderer {
             &wgpu_context.queue,
             &wgpu_context.surface_config,
         );
-        prepare_sun(&snaps.curr, render_resources, &wgpu_context.queue);
-        prepare_env_map(&snaps.curr, render_resources, wgpu_context);
+        prepare_lights(&snaps.curr, render_resources, &wgpu_context.queue);
 
         let mut encoder =
             wgpu_context
@@ -123,16 +121,14 @@ impl Renderer {
                     label: Some("Render Encoder"),
                 });
 
-        self.skybox_pipeline.render(
-            &mut encoder,
-            &self.skybox_output.view,
-            &render_resources.camera.bind_group,
-            &render_resources
-                .environment_maps
-                .get(&snaps.curr.environment_map)
-                .expect("Requested environment map is not loaded.")
-                .bind_group,
-        );
+        if let Some(lights) = render_resources.lights.as_ref() {
+            self.skybox_pipeline.render(
+                &mut encoder,
+                &self.skybox_output.view,
+                &render_resources.camera.bind_group,
+                &lights.bind_group,
+            );
+        }
 
         self.model_pipeline.render(
             &mut encoder,
@@ -141,7 +137,6 @@ impl Renderer {
             &self.depth_texture.view,
             render_resources,
             models,
-            &snaps.curr.environment_map,
         );
 
         let output_surface_texture = wgpu_context.surface.get_current_texture()?;
@@ -198,22 +193,18 @@ pub fn prepare_camera(
         .update(&interpolated_camera, queue, surface_config);
 }
 
-pub fn prepare_sun(
+pub fn prepare_lights(
     snap: &render_snapshot::RenderSnapshot,
     render_resources: &mut crate::renderer::render_resources::RenderResources,
     queue: &wgpu::Queue,
 ) {
+    // TODO
+    /*
     if let Some(sun) = &snap.sun {
         render_resources.lights.update_sun(sun, queue);
     }
-}
-
-pub fn prepare_env_map(
-    snap: &render_snapshot::RenderSnapshot,
-    render_resources: &mut crate::renderer::render_resources::RenderResources,
-    wgpu_context: &WgpuContext,
-) {
-    render_resources.load_environment_map(snap.environment_map.clone(), wgpu_context);
+    render_resources.lights.update_environment_map(&snap.environment_map, queue);
+    */
 }
 
 pub fn prepare_models<'a>(

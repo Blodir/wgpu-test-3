@@ -12,9 +12,9 @@ impl SkyboxPipeline {
     pub fn new(
         device: &wgpu::Device,
         camera_bind_group_layout: &wgpu::BindGroupLayout,
-        environment_map_bind_group_layout: &wgpu::BindGroupLayout,
+        lights_bind_group_layout: &wgpu::BindGroupLayout,
     ) -> Self {
-        let bind_group_layouts = &[camera_bind_group_layout, environment_map_bind_group_layout];
+        let bind_group_layouts = &[camera_bind_group_layout, lights_bind_group_layout];
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Skybox Pipeline Layout"),
@@ -69,7 +69,7 @@ impl SkyboxPipeline {
         encoder: &mut wgpu::CommandEncoder,
         output_texture_view: &wgpu::TextureView,
         camera_bind_group: &wgpu::BindGroup,
-        environment_map_bind_group: &wgpu::BindGroup,
+        lights_bind_group: &wgpu::BindGroup,
     ) {
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Skybox Render Pass"),
@@ -93,7 +93,7 @@ impl SkyboxPipeline {
 
         render_pass.set_pipeline(&self.render_pipeline);
         render_pass.set_bind_group(0u32, camera_bind_group, &[]);
-        render_pass.set_bind_group(1u32, &environment_map_bind_group, &[]);
+        render_pass.set_bind_group(1u32, &lights_bind_group, &[]);
         render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
         render_pass.draw_indexed(0..INDICES.len() as u32, 0, 0..1);
     }

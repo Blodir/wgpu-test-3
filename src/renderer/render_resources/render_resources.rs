@@ -116,66 +116,32 @@ pub struct LightsBinding {
     pub bind_group: wgpu::BindGroup,
 }
 impl LightsBinding {
-    pub fn new(
-        sun: &Sun,
-        device: &wgpu::Device,
-        bind_group_layout: &wgpu::BindGroupLayout,
-    ) -> Self {
-        let direction_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Sun Direction Buffer"),
-            contents: bytemuck::cast_slice(&sun.direction),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-
-        let color_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Sun Color Buffer"),
-            contents: bytemuck::cast_slice(&sun.color),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: direction_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: color_buffer.as_entire_binding(),
-                },
-            ],
-            label: Some("Lights Bind Group"),
-        });
-
-        LightsBinding {
-            bind_group,
-            sun_direction_buffer: direction_buffer,
-            sun_color_buffer: color_buffer,
-        }
-    }
-
     pub fn desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
         wgpu::BindGroupLayoutDescriptor {
             entries: &[
-                // prefiltered
+                // sun dir
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::Cube,
-                        multisampled: false,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
                     },
                     count: None,
                 },
+                // sun color
                 wgpu::BindGroupLayoutEntry {
                     binding: 1,
                     visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
                     count: None,
                 },
-                // Diffuse irradiance
+                // prefiltered
                 wgpu::BindGroupLayoutEntry {
                     binding: 2,
                     visibility: wgpu::ShaderStages::FRAGMENT,
@@ -192,13 +158,13 @@ impl LightsBinding {
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
-                // BRDF LUT
+                // Diffuse irradiance
                 wgpu::BindGroupLayoutEntry {
                     binding: 4,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Texture {
                         sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
+                        view_dimension: wgpu::TextureViewDimension::Cube,
                         multisampled: false,
                     },
                     count: None,
@@ -209,26 +175,21 @@ impl LightsBinding {
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
-                // sun dir
+                // BRDF LUT
                 wgpu::BindGroupLayoutEntry {
                     binding: 6,
                     visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
                     },
                     count: None,
                 },
-                // sun color
                 wgpu::BindGroupLayoutEntry {
                     binding: 7,
                     visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
             ],
@@ -245,7 +206,15 @@ impl LightsBinding {
         queue.write_buffer(&self.sun_color_buffer, 0, bytemuck::cast_slice(&sun.color));
     }
 
-    pub fn update_environment_map(&self) {}
+    pub fn update_environment_map(
+        &self,
+        queue: &wgpu::Queue,
+        prefiltered_texture: &wgpu::Texture,
+        di_texture: &wgpu::Texture,
+        brdf_texture: &wgpu::Texture,
+    ) {
+        todo!()
+    }
 }
 
 pub struct CameraMatrices {
@@ -410,79 +379,9 @@ impl CameraBinding {
     }
 }
 
-pub struct EnvironmentMapBinding {
-    pub prefiltered_view: wgpu::TextureView,
-    pub di_view: wgpu::TextureView,
-    pub brdf_view: wgpu::TextureView,
-    pub prefiltered_sampler: wgpu::Sampler,
-    pub di_sampler: wgpu::Sampler,
-    pub brdf_sampler: wgpu::Sampler,
-    pub bind_group: wgpu::BindGroup,
-}
-impl EnvironmentMapBinding {
-    pub fn desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
-        wgpu::BindGroupLayoutDescriptor {
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::Cube,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-                // Diffuse irradiance
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::Cube,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 3,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-                // BRDF LUT
-                wgpu::BindGroupLayoutEntry {
-                    binding: 4,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 5,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-            ],
-            label: Some("Environment Map Bind Group Layout"),
-        }
-    }
-}
-
 pub struct Layouts {
     pub camera: wgpu::BindGroupLayout,
-    pub environment_map: wgpu::BindGroupLayout,
-    pub sun: wgpu::BindGroupLayout,
+    pub lights: wgpu::BindGroupLayout,
     pub material: wgpu::BindGroupLayout,
 }
 impl Layouts {
@@ -490,10 +389,7 @@ impl Layouts {
         let camera = wgpu_context
             .device
             .create_bind_group_layout(&CameraBinding::desc());
-        let environment_map = wgpu_context
-            .device
-            .create_bind_group_layout(&EnvironmentMapBinding::desc());
-        let sun = wgpu_context
+        let lights = wgpu_context
             .device
             .create_bind_group_layout(&LightsBinding::desc());
         let material = wgpu_context
@@ -501,8 +397,7 @@ impl Layouts {
             .create_bind_group_layout(&MaterialBinding::desc());
         Self {
             camera,
-            environment_map,
-            sun,
+            lights,
             material,
         }
     }
@@ -520,13 +415,11 @@ pub struct RenderResources {
     pub textures: HashMap<TextureHandle, wgpu::Texture>,
     pub sampled_textures: HashMap<TextureHandle, SampledTexture>,
     pub camera: CameraBinding,
-    pub lights: LightsBinding,
+    pub lights: Option<LightsBinding>,
 }
 impl RenderResources {
     pub fn new(wgpu_context: &WgpuContext) -> Self {
         let layouts = Layouts::new(wgpu_context);
-        let sun = Sun::default();
-        let lights_binding = LightsBinding::new(&sun, &wgpu_context.device, &layouts.sun);
         let camera = Camera::default();
         let camera_binding = CameraBinding::new(
             &camera,
@@ -534,41 +427,142 @@ impl RenderResources {
             &wgpu_context.surface_config,
             &layouts.camera,
         );
-        let this = RenderResources {
+        let mut this = RenderResources {
             layouts,
             models: HashMap::new(),
             materials: MaterialPool::new(),
             textures: HashMap::new(),
             sampled_textures: HashMap::new(),
             camera: camera_binding,
-            lights: lights_binding,
+            lights: None,
         };
         this
     }
 
-    pub fn load_scene_node(
+    pub fn load_lights(
         &mut self,
-        scene: &crate::scene_tree::Scene,
-        node_handle: Index,
         wgpu_context: &WgpuContext,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let node = &scene.nodes[node_handle];
-        let crate::scene_tree::RenderDataType::Model(model_handle) = &node.render_data;
-        self.load_model(model_handle.clone(), wgpu_context)?;
-        for child_handle in &node.children {
-            self.load_scene_node(scene, *child_handle, wgpu_context)?;
-        }
-        Ok(())
-    }
+        sun: Sun,
+        environment_map: EnvironmentMapHandle,
+    ) {
+        let direction_buffer = wgpu_context.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Sun Direction Buffer"),
+            contents: bytemuck::cast_slice(&sun.direction),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+        let color_buffer = wgpu_context.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Sun Color Buffer"),
+            contents: bytemuck::cast_slice(&sun.color),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
 
-    pub fn load_scene(
-        &mut self,
-        scene: &crate::scene_tree::Scene,
-        wgpu_context: &WgpuContext,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        self.load_environment_map(scene.environment.clone(), wgpu_context);
-        self.load_scene_node(scene, scene.root, wgpu_context)?;
-        Ok(())
+        let prefiltered_handle = TextureHandle(environment_map.0.clone() + ".prefiltered.dds");
+        self.load_dds_texture(prefiltered_handle.clone(), 6, wgpu_context);
+        let prefiltered_texture = self.textures.get(&prefiltered_handle).unwrap();
+
+        let prefiltered_view = prefiltered_texture.create_view(&wgpu::TextureViewDescriptor {
+            dimension: Some(wgpu::TextureViewDimension::Cube),
+            array_layer_count: Some(6),
+            mip_level_count: Some(prefiltered_texture.mip_level_count()),
+            ..Default::default()
+        });
+        let prefiltered_sampler = wgpu_context.device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("Env Cubemap Sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::FilterMode::Linear,
+            lod_min_clamp: 0.0,
+            lod_max_clamp: 100.0,
+            compare: None,
+            anisotropy_clamp: 1,
+            border_color: None,
+        });
+
+        let di_handle = TextureHandle(environment_map.0.clone() + ".di.dds");
+        self.load_dds_texture(di_handle.clone(), 6, wgpu_context);
+        let di_texture = self.textures.get(&di_handle).unwrap();
+
+        let di_view = di_texture.create_view(&wgpu::TextureViewDescriptor {
+            dimension: Some(wgpu::TextureViewDimension::Cube),
+            array_layer_count: Some(6),
+            mip_level_count: Some(di_texture.mip_level_count()),
+            ..Default::default()
+        });
+        let di_sampler = wgpu_context.device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("Cubemap Sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::FilterMode::Linear,
+            lod_min_clamp: 0.0,
+            lod_max_clamp: 100.0,
+            compare: None,
+            anisotropy_clamp: 1,
+            border_color: None,
+        });
+
+        let brdf_handle = TextureHandle("assets/brdf_lut.png".to_string());
+        self.load_png_texture(brdf_handle.clone(), false, wgpu_context);
+        let brdf_texture = self.textures.get(&brdf_handle).unwrap();
+
+        let brdf_view = brdf_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let brdf_sampler = wgpu_context.device.create_sampler(&SamplerDescriptor::default());
+
+        let bind_group = wgpu_context.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &self.layouts.lights,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: direction_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: color_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(&prefiltered_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::Sampler(&prefiltered_sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: wgpu::BindingResource::TextureView(&di_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: wgpu::BindingResource::Sampler(&di_sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 6,
+                    resource: wgpu::BindingResource::TextureView(&brdf_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 7,
+                    resource: wgpu::BindingResource::Sampler(&brdf_sampler),
+                },
+            ],
+            label: Some("Lights Bind Group"),
+        });
+
+        self.lights = Some(LightsBinding {
+            bind_group,
+            sun_direction_buffer: direction_buffer,
+            sun_color_buffer: color_buffer,
+            prefiltered_view,
+            di_view,
+            brdf_view,
+            prefiltered_sampler,
+            di_sampler,
+            brdf_sampler,
+        });
     }
 
     pub fn load_dds_texture(
@@ -659,130 +653,6 @@ impl RenderResources {
         let handle = self.materials.insert(binding);
 
         Ok(handle)
-    }
-
-    pub fn load_environment_map(
-        &mut self,
-        handle: EnvironmentMapHandle,
-        wgpu_context: &WgpuContext,
-    ) {
-        if self.environment_maps.get(&handle).is_some() {
-            return;
-        }
-
-        let (prefiltered_view, prefiltered_sampler) = {
-            let handle = TextureHandle(handle.0.clone() + ".prefiltered.dds");
-            self.load_dds_texture(handle.clone(), 6, wgpu_context);
-            let texture = self.textures.get(&handle).unwrap();
-            let view = texture.create_view(&wgpu::TextureViewDescriptor {
-                dimension: Some(wgpu::TextureViewDimension::Cube),
-                array_layer_count: Some(6),
-                mip_level_count: Some(texture.mip_level_count()),
-                ..Default::default()
-            });
-            let sampler = wgpu_context
-                .device
-                .create_sampler(&wgpu::SamplerDescriptor {
-                    label: Some("Env Cubemap Sampler"),
-                    address_mode_u: wgpu::AddressMode::ClampToEdge,
-                    address_mode_v: wgpu::AddressMode::ClampToEdge,
-                    address_mode_w: wgpu::AddressMode::ClampToEdge,
-                    mag_filter: wgpu::FilterMode::Linear,
-                    min_filter: wgpu::FilterMode::Linear,
-                    mipmap_filter: wgpu::FilterMode::Linear,
-                    lod_min_clamp: 0.0,
-                    lod_max_clamp: 100.0,
-                    compare: None,
-                    anisotropy_clamp: 1,
-                    border_color: None,
-                });
-            (view, sampler)
-        };
-
-        let (di_view, di_sampler) = {
-            let handle = TextureHandle(handle.0.clone() + ".di.dds");
-            self.load_dds_texture(handle.clone(), 6, wgpu_context);
-            let texture = self.textures.get(&handle).unwrap();
-            let view = texture.create_view(&wgpu::TextureViewDescriptor {
-                dimension: Some(wgpu::TextureViewDimension::Cube),
-                array_layer_count: Some(6),
-                mip_level_count: Some(texture.mip_level_count()),
-                ..Default::default()
-            });
-            let sampler = wgpu_context
-                .device
-                .create_sampler(&wgpu::SamplerDescriptor {
-                    label: Some("Cubemap Sampler"),
-                    address_mode_u: wgpu::AddressMode::ClampToEdge,
-                    address_mode_v: wgpu::AddressMode::ClampToEdge,
-                    address_mode_w: wgpu::AddressMode::ClampToEdge,
-                    mag_filter: wgpu::FilterMode::Linear,
-                    min_filter: wgpu::FilterMode::Linear,
-                    mipmap_filter: wgpu::FilterMode::Linear,
-                    lod_min_clamp: 0.0,
-                    lod_max_clamp: 100.0,
-                    compare: None,
-                    anisotropy_clamp: 1,
-                    border_color: None,
-                });
-            (view, sampler)
-        };
-
-        let (brdf_view, brdf_sampler) = {
-            let handle = TextureHandle("assets/brdf_lut.png".to_string());
-            self.load_png_texture(handle.clone(), false, wgpu_context);
-            let texture = self.textures.get(&handle).unwrap();
-            let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-            let sampler = wgpu_context
-                .device
-                .create_sampler(&SamplerDescriptor::default());
-            (view, sampler)
-        };
-
-        let bind_group = wgpu_context
-            .device
-            .create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("Environment Map Bind Group"),
-                layout: &self.layouts.environment_map,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::TextureView(&prefiltered_view),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::Sampler(&prefiltered_sampler),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 2,
-                        resource: wgpu::BindingResource::TextureView(&di_view),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 3,
-                        resource: wgpu::BindingResource::Sampler(&di_sampler),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 4,
-                        resource: wgpu::BindingResource::TextureView(&brdf_view),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 5,
-                        resource: wgpu::BindingResource::Sampler(&brdf_sampler),
-                    },
-                ],
-            });
-
-        let binding = EnvironmentMapBinding {
-            prefiltered_view,
-            di_view,
-            brdf_view,
-            prefiltered_sampler,
-            di_sampler,
-            brdf_sampler,
-            bind_group,
-        };
-
-        self.environment_maps.insert(handle, binding);
     }
 
     pub fn load_model(
