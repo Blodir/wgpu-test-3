@@ -383,6 +383,7 @@ pub struct Layouts {
     pub camera: wgpu::BindGroupLayout,
     pub lights: wgpu::BindGroupLayout,
     pub material: wgpu::BindGroupLayout,
+    pub bones: wgpu::BindGroupLayout,
 }
 impl Layouts {
     pub fn new(wgpu_context: &WgpuContext) -> Self {
@@ -395,10 +396,14 @@ impl Layouts {
         let material = wgpu_context
             .device
             .create_bind_group_layout(&MaterialBinding::desc());
+        let bones = wgpu_context
+            .device
+            .create_bind_group_layout(&BonesBinding::desc());
         Self {
             camera,
             lights,
             material,
+            bones
         }
     }
 }
@@ -406,6 +411,72 @@ impl Layouts {
 pub struct SampledTexture {
     pub view: wgpu::TextureView,
     pub sampler: wgpu::Sampler,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct BoneMat34 {
+    pub mat: [[f32; 4]; 3],
+}
+impl Default for BoneMat34 {
+    fn default() -> Self {
+        Self {
+            mat: [
+                [0f32, 0f32, 0f32, 0f32],
+                [0f32, 0f32, 0f32, 0f32],
+                [0f32, 0f32, 0f32, 0f32],
+            ]
+        }
+    }
+}
+
+pub struct BonesBinding {
+    pub bind_group: wgpu::BindGroup,
+    buffer: wgpu::Buffer,
+}
+impl BonesBinding {
+    pub fn desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
+        wgpu::BindGroupLayoutDescriptor {
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ],
+            label: Some("Bones Bind Group Layout"),
+        }
+    }
+    pub fn new(layout: &wgpu::BindGroupLayout, device: &wgpu::Device) -> Self {
+        let data: Vec<BoneMat34> = vec![BoneMat34::default()];
+        // TODO allocate extra space
+        let storage_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Bones SSBO"),
+            contents: bytemuck::cast_slice(&data),
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST, // COPY_DST if you'll update it
+        });
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Bones Bind Group"),
+            layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: storage_buffer.as_entire_binding(),
+            }]
+        });
+        Self {
+            bind_group,
+            buffer: storage_buffer,
+        }
+    }
+    pub fn update(&mut self, data: Vec<BoneMat34>, queue: &wgpu::Queue) {
+        // TODO check if there's enough space?
+        queue.write_buffer(&self.buffer, 0, bytemuck::cast_slice(&data));
+    }
 }
 
 pub struct RenderResources {
@@ -416,6 +487,7 @@ pub struct RenderResources {
     pub sampled_textures: HashMap<TextureHandle, SampledTexture>,
     pub camera: CameraBinding,
     pub lights: Option<LightsBinding>,
+    pub bones: BonesBinding,
 }
 impl RenderResources {
     pub fn new(wgpu_context: &WgpuContext) -> Self {
@@ -427,7 +499,8 @@ impl RenderResources {
             &wgpu_context.surface_config,
             &layouts.camera,
         );
-        let mut this = RenderResources {
+        let bones = BonesBinding::new(&layouts.bones, &wgpu_context.device);
+        let this = RenderResources {
             layouts,
             models: HashMap::new(),
             materials: MaterialPool::new(),
@@ -435,6 +508,7 @@ impl RenderResources {
             sampled_textures: HashMap::new(),
             camera: camera_binding,
             lights: None,
+            bones,
         };
         this
     }

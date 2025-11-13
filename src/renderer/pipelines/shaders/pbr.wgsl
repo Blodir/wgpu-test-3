@@ -26,6 +26,14 @@
 @group(2) @binding(13) var metallic_roughness_texture_sampler: sampler;
 @group(2) @binding(14) var<uniform> normal_texture_scale: f32;
 
+struct BoneMat34 {
+    r0 : vec4<f32>,
+    r1 : vec4<f32>,
+    r2 : vec4<f32>,
+};
+
+@group(3) @binding(0) var<storage, read> bones: array<BoneMat34>;
+
 struct InstanceInput {
     @location(0) m_1: vec4<f32>,
     @location(1) m_2: vec4<f32>,
@@ -34,20 +42,21 @@ struct InstanceInput {
     @location(4) itr_1: vec3<f32>,
     @location(5) itr_2: vec3<f32>,
     @location(6) itr_3: vec3<f32>,
+    @location(7) palette_offset: u32,
 }
 
 struct VertexInput {
-    @location(7) tangent: vec4<f32>,
-    @location(8) weights: vec4<f32>,
-    @location(9) position: vec3<f32>,
-    @location(10) normal: vec3<f32>,
+    @location(8) tangent: vec4<f32>,
+    @location(9) weights: vec4<f32>,
+    @location(10) position: vec3<f32>,
+    @location(11) normal: vec3<f32>,
     // optimization: combining normal and occlusion tex coords
-    @location(11) normal_tex_coords: vec4<f32>,
+    @location(12) normal_tex_coords: vec4<f32>,
     //@location(12) occlusion_tex_coords: vec2<f32>,
     // optimization: combining emissive base color tex coords
-    @location(12) emissive_base_color_tex_coords: vec4<f32>,
-    @location(13) metallic_roughness_tex_coords: vec2<f32>,
-    @location(14) joints: vec4<u32>, // reinterpreting u8 as u32, since u8 is not supported by wgsl
+    @location(13) emissive_base_color_tex_coords: vec4<f32>,
+    @location(14) metallic_roughness_tex_coords: vec2<f32>,
+    @location(15) joints: vec4<u32>, // reinterpreting u8 as u32, since u8 is not supported by wgsl
 }
 
 struct VertexOutput {

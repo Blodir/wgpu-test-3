@@ -141,6 +141,7 @@ impl ModelPipeline {
         if let Some(lights) = render_resources.lights.as_ref() {
             render_pass.set_bind_group(1, &lights.bind_group, &[]);
         }
+        render_pass.set_bind_group(3, &render_resources.bones.bind_group, &[]);
 
         for model_handle in model_handles {
             let model = render_resources.models.get(&model_handle).unwrap();

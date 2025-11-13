@@ -32,7 +32,7 @@ impl Default for Vertex {
 }
 
 impl Vertex {
-    const BASE_SHADER_LOCATION: u32 = 7;
+    const BASE_SHADER_LOCATION: u32 = 8;
     const OFFSET_TAN: wgpu::BufferAddress = 0;
     const OFFSET_WEI: wgpu::BufferAddress =
         Self::OFFSET_TAN + size_of::<[f32; 4]>() as wgpu::BufferAddress;

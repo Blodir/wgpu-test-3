@@ -5,6 +5,7 @@ use glam::{Mat3, Mat4};
 pub struct Instance {
     pub m4: [[f32; 4]; 4],
     pub itr: [[f32; 3]; 3],
+    pub palette_offset: u32,
 }
 
 impl Default for Instance {
@@ -12,6 +13,7 @@ impl Default for Instance {
         Self {
             m4: Mat4::IDENTITY.to_cols_array_2d(),
             itr: Mat3::IDENTITY.to_cols_array_2d(),
+            palette_offset: 0,
         }
     }
 }
@@ -23,13 +25,13 @@ impl Instance {
             .transpose()
             .to_cols_array_2d();
 
-        Instance { m4, itr }
+        Instance { m4, itr, palette_offset: 0 }
     }
 }
 
 impl Instance {
     const BASE_SHADER_LOCATION: u32 = 0;
-    const ATTRIBUTES: [wgpu::VertexAttribute; 7] = [
+    const ATTRIBUTES: [wgpu::VertexAttribute; 8] = [
         wgpu::VertexAttribute {
             offset: 0,
             shader_location: Self::BASE_SHADER_LOCATION + 0,
@@ -65,6 +67,11 @@ impl Instance {
             shader_location: Self::BASE_SHADER_LOCATION + 6,
             format: wgpu::VertexFormat::Float32x3,
         },
+        wgpu::VertexAttribute {
+            offset: size_of::<[f32; 25]>() as wgpu::BufferAddress,
+            shader_location: Self::BASE_SHADER_LOCATION + 7,
+            format: wgpu::VertexFormat::Uint32,
+        },
     ];
 
     pub fn desc() -> wgpu::VertexBufferLayout<'static> {
@@ -75,10 +82,11 @@ impl Instance {
         }
     }
 
-    pub fn from(mat4: Mat4, itr: Mat3) -> Self {
+    pub fn from(mat4: Mat4, itr: Mat3, palette_offset: u32) -> Self {
         Self {
             m4: mat4.to_cols_array_2d(),
             itr: itr.to_cols_array_2d(),
+            palette_offset
         }
     }
 }
