@@ -1,11 +1,12 @@
 use glam::{Mat4, Quat, Vec3};
-use gltf::{Document, Gltf, Primitive};
+use gltf::{Document, Gltf, Node, Primitive};
+use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 use std::{collections::HashMap, env, fs::File, io::Write};
 use wgpu_test_3::renderer::pipelines::model::vertex::Vertex;
 use wgpu_test_3::renderer::render_resources::dds::{create_dds, gltf_img_to_dxgi_format};
-use wgpu_test_3::renderer::render_resources::modelfile;
+use wgpu_test_3::renderer::render_resources::{modelfile, skeletonfile};
 
 fn transform_to_mat4(transform: gltf::scene::Transform) -> Mat4 {
     match transform {
@@ -178,6 +179,39 @@ fn read4f32(accessor: &gltf::Accessor, buffers: &Vec<gltf::buffer::Data>) -> Vec
             bytemuck::cast::<[u8; 4], f32>(data[idx + 8..idx + 12].try_into().unwrap()),
             bytemuck::cast::<[u8; 4], f32>(data[idx + 12..idx + 16].try_into().unwrap()),
         ];
+    }
+
+    output
+}
+
+fn read_mat4(accessor: &gltf::Accessor, buffers: &Vec<gltf::buffer::Data>) -> Vec<[[f32; 4]; 4]> {
+    assert_eq!(accessor.data_type(), gltf::accessor::DataType::F32);
+    assert_eq!(accessor.dimensions(), gltf::accessor::Dimensions::Mat4);
+
+    let data = read_accessor_data(accessor, buffers);
+
+    let count = accessor.count();
+    let mut output = Vec::<[[f32; 4]; 4]>::with_capacity(count);
+    let stride = 4 * 4 * 4;
+
+    for i in 0..count {
+        let idx = i * stride;
+
+        let mut mat = [
+            [0f32, 0f32, 0f32, 0f32],
+            [0f32, 0f32, 0f32, 0f32],
+            [0f32, 0f32, 0f32, 0f32],
+            [0f32, 0f32, 0f32, 0f32],
+        ];
+        for row in 0..4 {
+            for col in 0..4 {
+                // gltf matrices are column-major
+                let offset = idx + col * 16 + row * 4;
+                mat[row][col] =
+                    bytemuck::cast::<[u8; 4], f32>(data[offset..offset + 4].try_into().unwrap());
+            }
+        }
+        output.push(mat);
     }
 
     output
@@ -757,6 +791,85 @@ fn filename_without_extension(path: &str) -> Option<&str> {
     Path::new(path).file_stem().and_then(|s| s.to_str())
 }
 
+fn col_major_to_row_major(m: [[f32; 4]; 4]) -> [[f32; 4]; 4] {
+    let mut out = [[0.0; 4]; 4];
+    for r in 0..4 {
+        for c in 0..4 {
+            out[r][c] = m[c][r];
+        }
+    }
+    out
+}
+
+/// returns reindexing map
+fn bake_skeletonfile(
+    gltf: &Document,
+    buffers: &Vec<gltf::buffer::Data>,
+    model_name: &str,
+) -> Result<HashMap<u32, u32>, Box<dyn std::error::Error>> {
+    let output_path = format!("assets/local/{}/{}.skeleton.json", model_name, model_name);
+    let nodes: Vec<Node> = gltf.nodes().collect();
+    let mut joint_idxs = HashSet::<usize>::new();
+    let mut reindex = HashMap::<u32, u32>::new();
+    let mut inverse_bind_matrices = HashMap::<u32, [[f32; 4]; 4]>::new();
+
+    // collect joint idxs from all skins
+    for ref skin in gltf.skins() {
+        for joint in skin.joints() {
+            joint_idxs.insert(joint.index());
+        }
+        // for each skin read inverseBindMatrices accessor
+        //  if multiple skins access the same joint, just overwrite the inverseBindMatrix with the most recent one
+        //  (all skins must share the same bind pose)
+        let ibms = skin
+            .inverse_bind_matrices()
+            .map(|accessor| read_mat4(&accessor, buffers))
+            .unwrap_or(vec![]);
+        for (idx, ibm) in ibms.iter().enumerate() {
+            inverse_bind_matrices.insert(idx as u32, *ibm);
+        }
+    }
+    let mut joints = Vec::<&Node>::new();
+    for old_idx in joint_idxs {
+        let new_idx = joints.len();
+        joints.push(&nodes[old_idx]);
+        // create re-index hashMap for the joint indices
+        reindex.insert(old_idx as u32, new_idx as u32);
+    }
+
+    // create skeleton Joint node from each of the joints and store them in a new array
+    let mut output_joints: Vec<skeletonfile::Joint> = vec![];
+    for gltf_joint in joints {
+        let mapped_joint = skeletonfile::Joint {
+            name: gltf_joint.name().map(|slice| slice.to_string()),
+            children: gltf_joint
+                .children()
+                .map(|child| *reindex.get(&(child.index() as u32)).unwrap())
+                .collect(),
+            trs: col_major_to_row_major(gltf_joint.transform().matrix()),
+            inverse_bind_matrix: inverse_bind_matrices
+                .get(&(gltf_joint.index() as u32))
+                .map(|v| *v)
+                .unwrap_or([
+                    [1f32, 0f32, 0f32, 0f32],
+                    [0f32, 1f32, 0f32, 0f32],
+                    [0f32, 0f32, 1f32, 0f32],
+                    [0f32, 0f32, 0f32, 1f32],
+                ]),
+        };
+        output_joints.push(mapped_joint);
+    }
+
+    // write skeletonfile
+    let skeleton = skeletonfile::Skeleton {
+        joints: output_joints,
+    };
+    let json = serde_json::to_string_pretty(&skeleton)?;
+    std::fs::write(output_path, json)?;
+
+    Ok(reindex)
+}
+
 fn bake(
     gltf: &Document,
     buffers: &Vec<gltf::buffer::Data>,
@@ -768,7 +881,9 @@ fn bake(
     let binary_path = format!("{}/{}.bin", directory_path, model_name);
     let json_path = format!("{}/{}.json", directory_path, model_name);
 
-    /// list of pairs (mesh index, primitive)
+    let joint_reindex = bake_skeletonfile(gltf, buffers, model_name)?;
+
+    // list of pairs (mesh index, primitive)
     let mut primitives = vec![];
     for mesh in gltf.meshes() {
         primitives.extend(mesh.primitives().map(|p| (mesh.index(), p)));
@@ -831,7 +946,8 @@ fn bake(
                 normal: normals_buffer[i],
                 tangent: tangents_buffer[i],
                 weights: weights_buffer[i],
-                joints: joints_buffer[i],
+                joints: joints_buffer[i]
+                    .map(|idx| *joint_reindex.get(&(idx as u32)).unwrap_or(&0u32) as u8),
                 base_color_tex_coords: base_color_texcoord_buffer[i],
                 normal_tex_coords: normals_texcoord_buffer[i],
                 metallic_roughness_tex_coords: metallic_roughness_texcoord_buffer[i],
