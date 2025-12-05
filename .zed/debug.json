@@ -1,0 +1,45 @@
+// Project-local debug tasks
+//
+// For more documentation on how to configure debug tasks,
+// see: https://zed.dev/docs/debugger
+[
+  {
+    "adapter": "CodeLLDB",
+    "configuration": {
+      "request": "launch",
+      "program": "C:\\git\\wgpu-test-3\\target\\debug\\bake_model.exe",
+      "args": [
+        ".\\assets\\Lantern.glb"
+      ],
+      "cwd": "C:\\git\\wgpu-test-3"
+    },
+    "label": "run bake_model",
+    "build": {
+      "label": "run bake_model",
+      "command": "cargo",
+      "args": [
+        "build",
+        "--package",
+        "wgpu-test-3",
+        "--bin",
+        "bake_model"
+      ],
+      "env": {
+        "RUSTC_TOOLCHAIN": "C:\\Users\\Pyry\\.rustup\\toolchains\\stable-x86_64-pc-windows-msvc"
+      },
+      "cwd": "C:\\git\\wgpu-test-3",
+      "use_new_terminal": false,
+      "allow_concurrent_runs": false,
+      "reveal": "always",
+      "reveal_target": "dock",
+      "hide": "never",
+      "tags": [],
+      "shell": "system",
+      "show_summary": false,
+      "show_command": false
+    },
+    "sourceLanguages": [
+      "rust"
+    ]
+  }
+]

@@ -666,18 +666,28 @@ fn bake_base_color_tex(
     images: &Vec<gltf::image::Data>,
     model_name: &str,
 ) -> modelfile::SampledTexture {
-    let tex_info = material
+    if let Some(tex_info) = material
         .pbr_metallic_roughness()
         .base_color_texture()
-        .expect("A primitive is missing the base color texture");
-    bake_texture(
-        &tex_info.texture(),
-        images,
-        true,
-        material.alpha_mode(),
-        model_name,
-        "base_color",
-    )
+    {
+        bake_texture(
+            &tex_info.texture(),
+            images,
+            true,
+            material.alpha_mode(),
+            model_name,
+            "base_color",
+        )
+    } else {
+        println!("WARNING: material doesn't have a base color texture, using placeholder");
+        let data = gltf::image::Data {
+            pixels: bytemuck::cast_slice(&[1u16, 1u16, 1u16, 1u16]).to_vec(),
+            format: gltf::image::Format::R16G16B16A16,
+            width: 1,
+            height: 1,
+        };
+        bake_placeholder_texture(data, true, "base_color")
+    }
 }
 
 fn bake_metallic_roughness_tex(
@@ -808,6 +818,8 @@ fn bake_skeletonfile(
     model_name: &str,
 ) -> Result<HashMap<u32, u32>, Box<dyn std::error::Error>> {
     let output_path = format!("assets/local/{}/{}.skeleton.json", model_name, model_name);
+    // Ensure the target folder exists before writing the skeleton file
+    ensure_parent_dir_exists(Path::new(&output_path))?;
     let nodes: Vec<Node> = gltf.nodes().collect();
     let mut joint_idxs = HashSet::<usize>::new();
     let mut reindex = HashMap::<u32, u32>::new();
