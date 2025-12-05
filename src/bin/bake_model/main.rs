@@ -1,5 +1,6 @@
 use glam::{Mat4, Quat, Vec3};
 use gltf::{Document, Gltf, Node, Primitive};
+use tangents::generate_tangents_for_mesh;
 use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
@@ -7,6 +8,8 @@ use std::{collections::HashMap, env, fs::File, io::Write};
 use wgpu_test_3::renderer::pipelines::model::vertex::Vertex;
 use wgpu_test_3::renderer::render_resources::dds::{create_dds, gltf_img_to_dxgi_format};
 use wgpu_test_3::renderer::render_resources::{modelfile, skeletonfile};
+
+mod tangents;
 
 fn transform_to_mat4(transform: gltf::scene::Transform) -> Mat4 {
     match transform {
@@ -236,7 +239,7 @@ fn read4u8(accessor: &gltf::Accessor, buffers: &Vec<gltf::buffer::Data>) -> Vec<
     output
 }
 
-fn read_index_buffer(primitive: &gltf::Primitive, buffers: &Vec<gltf::buffer::Data>) -> Vec<u8> {
+fn read_index_buffer(primitive: &gltf::Primitive, buffers: &Vec<gltf::buffer::Data>) -> Vec<u32> {
     if primitive.indices().is_none() {
         println!(
             "WARNING: primitive {} has no index buffer, so we generate it",
@@ -280,8 +283,7 @@ fn read_index_buffer(primitive: &gltf::Primitive, buffers: &Vec<gltf::buffer::Da
             _ => panic!(),
         };
     }
-    let bytes: Vec<u8> = bytemuck::cast_slice(&output).to_vec();
-    bytes
+    output
 }
 
 fn read_position_buffer(
@@ -385,18 +387,26 @@ fn read_base_color_texcoord_buffer(
     primitive: &gltf::Primitive,
     buffers: &Vec<gltf::buffer::Data>,
 ) -> Vec<[f32; 2]> {
-    let texcoord_idx = primitive
+    if let Some(base_color) = primitive
         .material()
         .pbr_metallic_roughness()
         .base_color_texture()
-        .expect("A primitive is missing base color texture")
-        .tex_coord();
-    let accessor = primitive
-        .attributes()
-        .find(|(s, _)| *s == gltf::Semantic::TexCoords(texcoord_idx))
-        .expect("A primitive is missing the base color TEXCOORDS attribute")
-        .1;
-    read2f32(&accessor, buffers)
+    {
+        let texcoord_idx = base_color.tex_coord();
+        let accessor = primitive
+            .attributes()
+            .find(|(s, _)| *s == gltf::Semantic::TexCoords(texcoord_idx))
+            .expect("A primitive is missing the base color TEXCOORDS attribute")
+            .1;
+        read2f32(&accessor, buffers)
+    } else {
+        let accessor = primitive
+            .attributes()
+            .find(|(s, _)| *s == gltf::Semantic::Positions)
+            .expect("A primitive is missing the POSITION attribute")
+            .1;
+        vec![[0f32, 0f32]; accessor.count()]
+    }
 }
 
 fn read_metallic_roughness_texcoord_buffer(
@@ -925,7 +935,15 @@ fn bake(
             println!("Warning: skipping non-triangle topology!");
             continue;
         }
-        let index_bytes = read_index_buffer(&primitive, buffers);
+        let indices = read_index_buffer(&primitive, buffers);
+        if indices.len() % 3 != 0 {
+            println!(
+                "Warning: primitive {} has a non-triangular index count, skipping!",
+                primitive.index()
+            );
+            continue;
+        }
+        let index_bytes: Vec<u8> = bytemuck::cast_slice(&indices).to_vec();
         let index_bytes_count = index_bytes.len();
 
         let mut verts: Vec<Vertex> = vec![];
@@ -937,21 +955,36 @@ fn bake(
                 continue;
             }
         };
-        let tangents_buffer = match read_tangents_buffer(&primitive, buffers) {
-            Some(t) => t,
-            None => {
-                println!("Warning: a primitive is missing the TANGENTS attribute, skipping!");
-                continue;
-            }
-        };
-        let weights_buffer = read_weights_buffer(&primitive, buffers);
-        let joints_buffer = read_joints_buffer(&primitive, buffers);
         let base_color_texcoord_buffer = read_base_color_texcoord_buffer(&primitive, buffers);
         let normals_texcoord_buffer = read_normals_texcoord_buffer(&primitive, buffers);
         let metallic_roughness_texcoord_buffer =
             read_metallic_roughness_texcoord_buffer(&primitive, buffers);
         let occlusion_texcoord_buffer = read_occlusion_texcoord_buffer(&primitive, buffers);
         let emissive_texcoord_buffer = read_emissive_texcoord_buffer(&primitive, buffers);
+        let tangents_buffer = match read_tangents_buffer(&primitive, buffers) {
+            Some(t) => t,
+            None => {
+                match generate_tangents_for_mesh(
+                    &pos_buffer,
+                    &normals_buffer,
+                    &normals_texcoord_buffer,
+                    &indices,
+                ) {
+                    Ok(t) => t,
+                    Err(e) => {
+                        println!(
+                            "Warning: failed to generate tangents for primitive {} of mesh {}: {}",
+                            primitive.index(),
+                            mesh_idx,
+                            e
+                        );
+                        continue;
+                    }
+                }
+            }
+        };
+        let weights_buffer = read_weights_buffer(&primitive, buffers);
+        let joints_buffer = read_joints_buffer(&primitive, buffers);
         for i in 0..pos_buffer.len() {
             let vert = Vertex {
                 position: pos_buffer[i],
