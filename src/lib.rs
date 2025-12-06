@@ -110,7 +110,7 @@ impl<'surface> ApplicationHandler for App<'surface> {
         render_resources.load_lights(&wgpu_context, Sun::default(), EnvironmentMapHandle("assets/kloofendal_overcast_puresky_8k".to_string()));
         render_resources
             .load_model(
-                ModelHandle("assets/local/RiggedSimple/RiggedSimple.json".to_string()),
+                ModelHandle("assets/local/RiggedFigure/RiggedFigure.json".to_string()),
                 &wgpu_context,
             )
             .unwrap();

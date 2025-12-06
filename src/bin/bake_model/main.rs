@@ -206,11 +206,11 @@ fn read_mat4(accessor: &gltf::Accessor, buffers: &Vec<gltf::buffer::Data>) -> Ve
             [0f32, 0f32, 0f32, 0f32],
             [0f32, 0f32, 0f32, 0f32],
         ];
-        for row in 0..4 {
-            for col in 0..4 {
-                // gltf matrices are column-major
+        for col in 0..4 {
+            for row in 0..4 {
+                // gltf matrices are column-major; store them column-major as well
                 let offset = idx + col * 16 + row * 4;
-                mat[row][col] =
+                mat[col][row] =
                     bytemuck::cast::<[u8; 4], f32>(data[offset..offset + 4].try_into().unwrap());
             }
         }
@@ -886,18 +886,33 @@ fn bake_skeletonfile(
 
     // collect joint idxs from all skins
     for ref skin in gltf.skins() {
-        for joint in skin.joints() {
+        let joints: Vec<_> = skin.joints().collect();
+        for joint in &joints {
             joint_idxs.insert(joint.index());
         }
         // for each skin read inverseBindMatrices accessor
         //  if multiple skins access the same joint, just overwrite the inverseBindMatrix with the most recent one
         //  (all skins must share the same bind pose)
-        let ibms = skin
-            .inverse_bind_matrices()
-            .map(|accessor| read_mat4(&accessor, buffers))
-            .unwrap_or(vec![]);
-        for (idx, ibm) in ibms.iter().enumerate() {
-            inverse_bind_matrices.insert(idx as u32, *ibm);
+        if let Some(accessor) = skin.inverse_bind_matrices() {
+            let ibms = read_mat4(&accessor, buffers);
+            if ibms.len() != joints.len() {
+                return Err(format!(
+                    "inverseBindMatrices count ({}) does not match joint count ({}) for skin {}",
+                    ibms.len(),
+                    joints.len(),
+                    skin.index()
+                )
+                .into());
+            }
+            for (joint_node, ibm) in joints.iter().zip(ibms.iter()) {
+                inverse_bind_matrices.insert(joint_node.index() as u32, *ibm);
+            }
+        } else {
+            return Err(format!(
+                "Skin {} is missing inverseBindMatrices; cannot bake skeleton",
+                skin.index()
+            )
+            .into());
         }
     }
     let mut joints = Vec::<&Node>::new();
@@ -917,16 +932,10 @@ fn bake_skeletonfile(
                 .children()
                 .map(|child| *reindex.get(&(child.index() as u32)).unwrap())
                 .collect(),
-            trs: col_major_to_row_major(gltf_joint.transform().matrix()),
-            inverse_bind_matrix: inverse_bind_matrices
-                .get(&(gltf_joint.index() as u32))
-                .map(|v| *v)
-                .unwrap_or([
-                    [1f32, 0f32, 0f32, 0f32],
-                    [0f32, 1f32, 0f32, 0f32],
-                    [0f32, 0f32, 1f32, 0f32],
-                    [0f32, 0f32, 0f32, 1f32],
-                ]),
+            trs: gltf_joint.transform().matrix(),
+            inverse_bind_matrix: *inverse_bind_matrices.get(&(gltf_joint.index() as u32)).ok_or_else(
+                || format!("Missing inverse bind matrix for joint {}", gltf_joint.index())
+            )?,
         };
         output_joints.push(mapped_joint);
     }

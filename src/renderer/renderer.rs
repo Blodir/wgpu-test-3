@@ -7,7 +7,7 @@ use super::render_snapshot::accumulate_model_transforms;
 use super::render_snapshot::{self, SnapshotGuard};
 use super::{render_resources::ModelHandle, render_snapshot::SnapshotHandoff};
 use generational_arena::Index;
-use glam::Mat4;
+use glam::{Mat4, Vec4};
 
 use crate::scene_tree::Camera;
 use crate::{
@@ -21,7 +21,7 @@ use crate::{
             },
             skybox::SkyboxPipeline,
         },
-        render_resources::RenderResources,
+        render_resources::{RenderResources, skeletonfile},
         wgpu_context::WgpuContext,
     },
     scene_tree::{RenderDataType, Scene},
@@ -53,7 +53,7 @@ pub struct Renderer {
 impl Renderer {
     pub fn new(
         wgpu_context: &WgpuContext,
-        render_resourcess: &RenderResources,
+        render_resources: &RenderResources,
         snapshot_handoff: Arc<SnapshotHandoff>,
     ) -> Self {
         let skybox_output =
@@ -63,14 +63,15 @@ impl Renderer {
 
         let skybox_pipeline = SkyboxPipeline::new(
             &wgpu_context.device,
-            &render_resourcess.layouts.camera,
-            &render_resourcess.layouts.lights,
+            &render_resources.layouts.camera,
+            &render_resources.layouts.lights,
         );
         let model_pipeline = ModelPipeline::new(
             &wgpu_context.device,
             &wgpu_context.surface_config,
-            &render_resourcess.layouts.camera,
-            &render_resourcess.layouts.lights,
+            &render_resources.layouts.camera,
+            &render_resources.layouts.lights,
+            &render_resources.layouts.bones,
         );
         let post_pipeline = PostProcessingPipeline::new(
             &wgpu_context.device,
@@ -215,16 +216,25 @@ pub fn prepare_models<'a>(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
 ) -> impl Iterator<Item = &'a ModelHandle> + 'a {
-    let mut joint_pallette: Vec<BoneMat34> = vec![];
-    let mut pallette_offset = 0u32;
+    let mut joint_palette: Vec<BoneMat34> = vec![];
+    let mut palette_offset = 0u32;
 
     for (model_handle, node_transforms) in &snaps.curr.model_transforms {
         let mut instance_data = vec![];
 
-        // TODO real jointmatrices calculation
-        let joint_matrices: Vec<BoneMat34> = render_resources.skeletons.get(
-            &SkeletonHandle(render_resources.models.get(model_handle).unwrap().json.skeletonfile_path.clone())
-        ).unwrap().joints.iter().map(|joint| BoneMat34::default()).collect();
+        let joint_matrices = {
+            let skeleton_handle = SkeletonHandle(
+                render_resources
+                    .models
+                    .get(model_handle)
+                    .unwrap()
+                    .json
+                    .skeletonfile_path
+                    .clone(),
+            );
+            let skeleton = render_resources.skeletons.get(&skeleton_handle).unwrap();
+            calculate_joint_matrices(skeleton)
+        };
 
         for (node_idx, curr_transform) in node_transforms {
             if let Some(prev_transform) = &snaps
@@ -238,12 +248,12 @@ pub fn prepare_models<'a>(
                 let s3 = s1.lerp(s2, t);
                 let r3 = r1.slerp(r2, t);
                 let t3 = t1.lerp(t2, t);
-                instance_data.push((Mat4::from_scale_rotation_translation(s3, r3, t3), pallette_offset));
+                instance_data.push((Mat4::from_scale_rotation_translation(s3, r3, t3), palette_offset));
             } else {
-                instance_data.push((curr_transform.clone(), pallette_offset));
+                instance_data.push((curr_transform.clone(), palette_offset));
             }
-            joint_pallette.append(&mut joint_matrices.clone());
-            pallette_offset += joint_matrices.len() as u32;
+            joint_palette.extend_from_slice(&joint_matrices);
+            palette_offset += joint_matrices.len() as u32;
         }
         render_resources
             .models
@@ -252,8 +262,72 @@ pub fn prepare_models<'a>(
             .update_instance_buffer(device, queue, &instance_data);
     }
 
-    render_resources.bones.update(joint_pallette, queue);
+    render_resources.bones.update(joint_palette, queue);
 
     // return model handles that should be rendered
     snaps.curr.model_transforms.iter().map(|(handle, _)| handle)
+}
+
+fn mat4_from_row_major(m: [[f32; 4]; 4]) -> Mat4 {
+    Mat4::from_cols(
+        Vec4::new(m[0][0], m[1][0], m[2][0], m[3][0]),
+        Vec4::new(m[0][1], m[1][1], m[2][1], m[3][1]),
+        Vec4::new(m[0][2], m[1][2], m[2][2], m[3][2]),
+        Vec4::new(m[0][3], m[1][3], m[2][3], m[3][3]),
+    )
+}
+
+fn mat4_to_bone_mat34(m: Mat4) -> BoneMat34 {
+    let cols = m.to_cols_array_2d();
+    BoneMat34 {
+        mat: [
+            [cols[0][0], cols[1][0], cols[2][0], cols[3][0]],
+            [cols[0][1], cols[1][1], cols[2][1], cols[3][1]],
+            [cols[0][2], cols[1][2], cols[2][2], cols[3][2]],
+        ],
+    }
+}
+
+fn calculate_joint_matrices(skeleton: &skeletonfile::Skeleton) -> Vec<BoneMat34> {
+    let joint_count = skeleton.joints.len();
+    if joint_count == 0 {
+        return vec![];
+    }
+
+    // TODO add a "roots" array to skeletonfile so we can get rid of this step entirely
+    // this parents vec is only used for identifying roots
+    let mut parents: Vec<Option<usize>> = vec![None; joint_count];
+    for (idx, joint) in skeleton.joints.iter().enumerate() {
+        for child in &joint.children {
+            parents[*child as usize] = Some(idx);
+        }
+    }
+
+    let mut global_transforms = vec![Mat4::IDENTITY; joint_count];
+    let mut stack: Vec<(usize, Mat4)> = parents
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, parent)| if parent.is_none() { Some((idx, Mat4::IDENTITY)) } else { None })
+        .collect();
+
+    while let Some((idx, parent_mat)) = stack.pop() {
+        let joint = &skeleton.joints[idx];
+        let local = Mat4::from_cols_array_2d(&joint.trs);
+        let world = parent_mat * local;
+        global_transforms[idx] = world;
+
+        for child in &joint.children {
+            stack.push((*child as usize, world));
+        }
+    }
+
+    global_transforms
+        .iter()
+        .enumerate()
+        .map(|(idx, global)| {
+            let inv_bind = Mat4::from_cols_array_2d(&skeleton.joints[idx].inverse_bind_matrix);
+            let skinned = *global * inv_bind;
+            mat4_to_bone_mat34(skinned)
+        })
+        .collect()
 }

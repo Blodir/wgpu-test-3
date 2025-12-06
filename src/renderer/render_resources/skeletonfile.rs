@@ -4,9 +4,9 @@ use serde::{Deserialize, Serialize};
 pub struct Joint {
     pub name: Option<String>,
     pub children: Vec<u32>,
-    /// row-major
+    /// column-major
     pub trs: [[f32; 4]; 4],
-    /// row-major
+    /// column-major
     pub inverse_bind_matrix: [[f32; 4]; 4],
 }
 

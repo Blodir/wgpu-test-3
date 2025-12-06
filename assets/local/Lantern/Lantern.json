@@ -187,6 +187,7 @@
     }
   ],
   "buffer_path": "assets/local/Lantern/Lantern.bin",
+  "skeletonfile_path": "assets/local/Lantern/Lantern.skeleton.json",
   "vertex_buffer_start_offset": 64728,
   "aabb": {
     "min": [

@@ -25,6 +25,7 @@ impl ModelPipeline {
         surface_config: &wgpu::SurfaceConfiguration,
         camera_bind_group_layout: &wgpu::BindGroupLayout,
         lights_bind_group_layout: &wgpu::BindGroupLayout,
+        bones_bind_group_layout: &wgpu::BindGroupLayout,
     ) -> Self {
         let material_bind_group_layout = device.create_bind_group_layout(&MaterialBinding::desc());
         let render_pipeline = Self::build_pipeline(
@@ -33,6 +34,7 @@ impl ModelPipeline {
             camera_bind_group_layout,
             lights_bind_group_layout,
             &material_bind_group_layout,
+            &bones_bind_group_layout,
         );
 
         Self {
@@ -47,12 +49,14 @@ impl ModelPipeline {
         camera_bind_group_layout: &wgpu::BindGroupLayout,
         lights_bind_group_layout: &wgpu::BindGroupLayout,
         material_bind_group_layout: &wgpu::BindGroupLayout,
+        bones_bind_group_layout: &wgpu::BindGroupLayout,
     ) -> wgpu::RenderPipeline {
         let vertex_buffer_layouts = &[Instance::desc(), Vertex::desc()];
         let bind_group_layouts = &[
             camera_bind_group_layout,
             lights_bind_group_layout,
             material_bind_group_layout,
+            bones_bind_group_layout,
         ];
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {

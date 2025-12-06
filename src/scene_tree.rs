@@ -76,7 +76,7 @@ impl Default for Scene {
     fn default() -> Self {
         let mut nodes = Arena::new();
 
-        let model_handle = ModelHandle("assets/local/RiggedSimple/RiggedSimple.json".to_string());
+        let model_handle = ModelHandle("assets/local/RiggedFigure/RiggedFigure.json".to_string());
 
         let root_handle = nodes.insert(Node {
             parent: None,

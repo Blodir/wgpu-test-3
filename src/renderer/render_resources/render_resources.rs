@@ -457,12 +457,12 @@ impl BonesBinding {
         }
     }
     pub fn new(layout: &wgpu::BindGroupLayout, device: &wgpu::Device) -> Self {
-        let data: Vec<BoneMat34> = vec![BoneMat34::default()];
+        let data: Vec<BoneMat34> = vec![BoneMat34::default(); 1024];
         // TODO allocate extra space
         let storage_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Bones SSBO"),
             contents: bytemuck::cast_slice(&data),
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST, // COPY_DST if you'll update it
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         });
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Bones Bind Group"),
