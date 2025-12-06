@@ -239,6 +239,30 @@ fn read4u8(accessor: &gltf::Accessor, buffers: &Vec<gltf::buffer::Data>) -> Vec<
     output
 }
 
+fn read4u16(accessor: &gltf::Accessor, buffers: &Vec<gltf::buffer::Data>) -> Vec<[u16; 4]> {
+    assert_eq!(accessor.data_type(), gltf::accessor::DataType::U16);
+    assert_eq!(accessor.dimensions(), gltf::accessor::Dimensions::Vec4);
+
+    let data = read_accessor_data(&accessor, buffers);
+
+    let count = accessor.count();
+    let mut output = vec![[0u16, 0u16, 0u16, 0u16]; count];
+    let stride = 8;
+
+    for i in 0..count {
+        let idx = i * stride;
+
+        output[i] = [
+            bytemuck::cast::<[u8; 2], u16>(data[idx..idx + 2].try_into().unwrap()),
+            bytemuck::cast::<[u8; 2], u16>(data[idx + 2..idx + 4].try_into().unwrap()),
+            bytemuck::cast::<[u8; 2], u16>(data[idx + 4..idx + 6].try_into().unwrap()),
+            bytemuck::cast::<[u8; 2], u16>(data[idx + 6..idx + 8].try_into().unwrap()),
+        ];
+    }
+
+    output
+}
+
 fn read_index_buffer(primitive: &gltf::Primitive, buffers: &Vec<gltf::buffer::Data>) -> Vec<u32> {
     if primitive.indices().is_none() {
         println!(
@@ -346,23 +370,32 @@ fn read_weights_buffer(
     }
 }
 
+enum JointsBuffer {
+    U8(Vec<[u8; 4]>),
+    U16(Vec<[u16; 4]>),
+}
+
 fn read_joints_buffer(
     primitive: &gltf::Primitive,
     buffers: &Vec<gltf::buffer::Data>,
-) -> Vec<[u8; 4]> {
+) -> JointsBuffer {
     if let Some(accessor) = primitive
         .attributes()
         .find(|(s, _)| *s == gltf::Semantic::Joints(0))
         .map(|e| e.1)
     {
-        read4u8(&accessor, buffers)
+        match accessor.data_type() {
+            gltf::accessor::DataType::U8 => JointsBuffer::U8(read4u8(&accessor, buffers)),
+            gltf::accessor::DataType::U16 => JointsBuffer::U16(read4u16(&accessor, buffers)),
+            _ => panic!("Joints buffer has an unrecognized data type!")
+        }
     } else {
         let accessor = primitive
             .attributes()
             .find(|(s, _)| *s == gltf::Semantic::Positions)
             .expect("A primitive is missing the POSITION attribute")
             .1;
-        vec![[0, 0, 0, 0]; accessor.count()]
+        JointsBuffer::U8(vec![[0u8, 0u8, 0u8, 0u8]; accessor.count()])
     }
 }
 
@@ -370,17 +403,26 @@ fn read_normals_texcoord_buffer(
     primitive: &gltf::Primitive,
     buffers: &Vec<gltf::buffer::Data>,
 ) -> Vec<[f32; 2]> {
-    let texcoord_idx = primitive
+    if let Some(normal_texture) =
+        primitive
         .material()
         .normal_texture()
-        .expect("A primitive is missing the normal texture")
-        .tex_coord();
-    let accessor = primitive
-        .attributes()
-        .find(|(s, _)| *s == gltf::Semantic::TexCoords(texcoord_idx))
-        .expect("A primitive is missing the normal TEXCOORDS attribute")
-        .1;
-    read2f32(&accessor, buffers)
+    {
+        let texcoord_idx = normal_texture.tex_coord();
+        let accessor = primitive
+            .attributes()
+            .find(|(s, _)| *s == gltf::Semantic::TexCoords(texcoord_idx))
+            .expect("A primitive is missing the normal TEXCOORDS attribute")
+            .1;
+        read2f32(&accessor, buffers)
+    } else {
+        let accessor = primitive
+            .attributes()
+            .find(|(s, _)| *s == gltf::Semantic::Positions)
+            .expect("A primitive is missing the POSITION attribute")
+            .1;
+        vec![[0f32, 0f32]; accessor.count()]
+    }
 }
 
 fn read_base_color_texcoord_buffer(
@@ -413,18 +455,26 @@ fn read_metallic_roughness_texcoord_buffer(
     primitive: &gltf::Primitive,
     buffers: &Vec<gltf::buffer::Data>,
 ) -> Vec<[f32; 2]> {
-    let texcoord_idx = primitive
+    if let Some(metallic_roughness) = primitive
         .material()
         .pbr_metallic_roughness()
         .metallic_roughness_texture()
-        .expect("A primitive is missing metallic roughness texture")
-        .tex_coord();
-    let accessor = primitive
-        .attributes()
-        .find(|(s, _)| *s == gltf::Semantic::TexCoords(texcoord_idx))
-        .expect("A primitive is missing the metallic roughness TEXCOORDS attribute")
-        .1;
-    read2f32(&accessor, buffers)
+    {
+        let texcoord_idx = metallic_roughness.tex_coord();
+        let accessor = primitive
+            .attributes()
+            .find(|(s, _)| *s == gltf::Semantic::TexCoords(texcoord_idx))
+            .expect("A primitive is missing the metallic roughness TEXCOORDS attribute")
+            .1;
+        read2f32(&accessor, buffers)
+    } else {
+        let accessor = primitive
+            .attributes()
+            .find(|(s, _)| *s == gltf::Semantic::Positions)
+            .expect("A primitive is missing the POSITION attribute")
+            .1;
+        vec![[0f32, 0f32]; accessor.count()]
+    }
 }
 
 fn read_occlusion_texcoord_buffer(
@@ -991,8 +1041,12 @@ fn bake(
                 normal: normals_buffer[i],
                 tangent: tangents_buffer[i],
                 weights: weights_buffer[i],
-                joints: joints_buffer[i]
-                    .map(|idx| *joint_reindex.get(&(idx as u32)).unwrap_or(&0u32) as u8),
+                joints: match &joints_buffer {
+                    JointsBuffer::U8(buffer) => buffer[i]
+                        .map(|idx| *joint_reindex.get(&(idx as u32)).unwrap_or(&0u32) as u8),
+                    JointsBuffer::U16(buffer) => buffer[i]
+                        .map(|idx| *joint_reindex.get(&(idx as u32)).unwrap_or(&0u32) as u8),
+                },
                 base_color_tex_coords: base_color_texcoord_buffer[i],
                 normal_tex_coords: normals_texcoord_buffer[i],
                 metallic_roughness_tex_coords: metallic_roughness_texcoord_buffer[i],
