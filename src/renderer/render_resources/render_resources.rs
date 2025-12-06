@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use super::dds;
 use super::modelfile;
 use super::png;
+use super::skeletonfile;
 use generational_arena::Index;
 use glam::Mat3;
 use glam::Mat4;
@@ -19,6 +20,9 @@ use crate::{
 
 #[derive(Eq, Hash, PartialEq, Clone, Debug)]
 pub struct ModelHandle(pub String);
+
+#[derive(Eq, Hash, PartialEq, Clone, Debug)]
+pub struct SkeletonHandle(pub String);
 
 #[derive(Eq, Hash, PartialEq, Clone, Debug)]
 pub struct TextureHandle(pub String);
@@ -53,9 +57,9 @@ impl MaterialPool {
     }
 }
 
-fn mult_primitive_instances(
+fn build_primitive_instances(
     model: &modelfile::Model,
-    transforms: &Vec<Mat4>,
+    instance_data: &Vec<(Mat4, u32)>,
 ) -> (Vec<Instance>, Vec<u32>) {
     let mut instances: Vec<Instance> = vec![];
     let mut instance_counts = vec![];
@@ -63,9 +67,9 @@ fn mult_primitive_instances(
         let mut inst_count = 0;
         for instance in &prim.instances {
             let inst_m4 = Mat4::from_cols_array_2d(instance);
-            for transform in transforms {
+            for (transform, palette_offset) in instance_data {
                 let t = transform * inst_m4;
-                instances.push(Instance::from_transform(t));
+                instances.push(Instance::new(t, *palette_offset));
                 inst_count += 1;
             }
         }
@@ -87,9 +91,9 @@ impl ModelData {
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        transforms: &Vec<Mat4>,
+        instance_data: &Vec<(Mat4, u32)>,
     ) {
-        let (instances, instance_counts) = mult_primitive_instances(&self.json, transforms);
+        let (instances, instance_counts) = build_primitive_instances(&self.json, instance_data);
         self.primitive_instance_counts = instance_counts;
         let instance_bytes: &[u8] = bytemuck::cast_slice(&instances);
         if self.instance_buffer.size() >= instance_bytes.len() as u64 {
@@ -422,9 +426,9 @@ impl Default for BoneMat34 {
     fn default() -> Self {
         Self {
             mat: [
-                [0f32, 0f32, 0f32, 0f32],
-                [0f32, 0f32, 0f32, 0f32],
-                [0f32, 0f32, 0f32, 0f32],
+                [1f32, 0f32, 0f32, 0f32],
+                [0f32, 1f32, 0f32, 0f32],
+                [0f32, 0f32, 1f32, 0f32],
             ]
         }
     }
@@ -482,6 +486,7 @@ impl BonesBinding {
 pub struct RenderResources {
     pub layouts: Layouts,
     pub models: HashMap<ModelHandle, ModelData>,
+    pub skeletons: HashMap<SkeletonHandle, skeletonfile::Skeleton>,
     pub materials: MaterialPool,
     pub textures: HashMap<TextureHandle, wgpu::Texture>,
     pub sampled_textures: HashMap<TextureHandle, SampledTexture>,
@@ -503,6 +508,7 @@ impl RenderResources {
         let this = RenderResources {
             layouts,
             models: HashMap::new(),
+            skeletons: HashMap::new(),
             materials: MaterialPool::new(),
             textures: HashMap::new(),
             sampled_textures: HashMap::new(),
@@ -729,6 +735,17 @@ impl RenderResources {
         Ok(handle)
     }
 
+    pub fn load_skeleton(
+        &mut self,
+        handle: SkeletonHandle,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let json_file = std::fs::File::open(&handle.0)?;
+        let json_reader = std::io::BufReader::new(json_file);
+        let skeleton: skeletonfile::Skeleton = serde_json::from_reader(json_reader)?;
+        self.skeletons.insert(handle, skeleton);
+        Ok(())
+    }
+
     pub fn load_model(
         &mut self,
         handle: ModelHandle,
@@ -748,7 +765,7 @@ impl RenderResources {
                     usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::INDEX,
                 });
 
-        let (instances, instance_counts) = mult_primitive_instances(&model, &vec![Mat4::IDENTITY]);
+        let (instances, instance_counts) = build_primitive_instances(&model, &vec![(Mat4::IDENTITY, 0u32)]);
         let instance_buffer =
             wgpu_context
                 .device
@@ -765,6 +782,11 @@ impl RenderResources {
             }
             mats
         };
+
+        let skeleton_handle = SkeletonHandle(model.skeletonfile_path.clone());
+        if !self.skeletons.contains_key(&skeleton_handle) {
+            self.load_skeleton(skeleton_handle)?;
+        }
 
         self.models.insert(
             handle,

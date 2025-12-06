@@ -18,14 +18,14 @@ impl Default for Instance {
     }
 }
 impl Instance {
-    pub fn from_transform(transform: Mat4) -> Self {
+    pub fn new(transform: Mat4, palette_offset: u32) -> Self {
         let m4 = transform.to_cols_array_2d();
         let itr = Mat3::from_mat4(transform)
             .inverse()
             .transpose()
             .to_cols_array_2d();
 
-        Instance { m4, itr, palette_offset: 0 }
+        Instance { m4, itr, palette_offset }
     }
 }
 

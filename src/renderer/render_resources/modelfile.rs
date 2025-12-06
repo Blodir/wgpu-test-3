@@ -25,6 +25,7 @@ pub struct Model {
     pub primitives: Vec<Primitive>,
     pub materials: Vec<Material>,
     pub buffer_path: String,
+    pub skeletonfile_path: String,
     pub vertex_buffer_start_offset: u32,
     pub aabb: Aabb,
 }

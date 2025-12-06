@@ -875,11 +875,10 @@ fn col_major_to_row_major(m: [[f32; 4]; 4]) -> [[f32; 4]; 4] {
 fn bake_skeletonfile(
     gltf: &Document,
     buffers: &Vec<gltf::buffer::Data>,
-    model_name: &str,
+    output_path: &str,
 ) -> Result<HashMap<u32, u32>, Box<dyn std::error::Error>> {
-    let output_path = format!("assets/local/{}/{}.skeleton.json", model_name, model_name);
     // Ensure the target folder exists before writing the skeleton file
-    ensure_parent_dir_exists(Path::new(&output_path))?;
+    ensure_parent_dir_exists(Path::new(output_path))?;
     let nodes: Vec<Node> = gltf.nodes().collect();
     let mut joint_idxs = HashSet::<usize>::new();
     let mut reindex = HashMap::<u32, u32>::new();
@@ -953,7 +952,8 @@ fn bake(
     let binary_path = format!("{}/{}.bin", directory_path, model_name);
     let json_path = format!("{}/{}.json", directory_path, model_name);
 
-    let joint_reindex = bake_skeletonfile(gltf, buffers, model_name)?;
+    let skeletonfile_path = format!("assets/local/{}/{}.skeleton.json", model_name, model_name);
+    let joint_reindex = bake_skeletonfile(gltf, buffers, &skeletonfile_path)?;
 
     // list of pairs (mesh index, primitive)
     let mut primitives = vec![];
@@ -1117,8 +1117,8 @@ fn bake(
 
     let model = modelfile::Model {
         buffer_path: binary_path.to_string(),
+        skeletonfile_path: skeletonfile_path.to_string(),
         // vertex buffer starts immediately after indices
-
         // note: vertex buffer requires alignment to 4 bytes, but since indices are u32, it's already aligned!
         vertex_buffer_start_offset: current_index_byte_offset as u32,
         primitives: output_primitives,

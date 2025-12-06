@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
 
+use super::render_resources::{BoneMat34, SkeletonHandle};
 use super::render_snapshot::accumulate_model_transforms;
 use super::render_snapshot::{self, SnapshotGuard};
 use super::{render_resources::ModelHandle, render_snapshot::SnapshotHandoff};
@@ -214,31 +215,44 @@ pub fn prepare_models<'a>(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
 ) -> impl Iterator<Item = &'a ModelHandle> + 'a {
+    let mut joint_pallette: Vec<BoneMat34> = vec![];
+    let mut pallette_offset = 0u32;
+
     for (model_handle, node_transforms) in &snaps.curr.model_transforms {
-        let mut transforms = vec![];
-        for (node_handle, curr_transform) in node_transforms {
+        let mut instance_data = vec![];
+
+        // TODO real jointmatrices calculation
+        let joint_matrices: Vec<BoneMat34> = render_resources.skeletons.get(
+            &SkeletonHandle(render_resources.models.get(model_handle).unwrap().json.skeletonfile_path.clone())
+        ).unwrap().joints.iter().map(|joint| BoneMat34::default()).collect();
+
+        for (node_idx, curr_transform) in node_transforms {
             if let Some(prev_transform) = &snaps
                 .prev
                 .model_transforms
                 .get(model_handle)
-                .and_then(|nodes| nodes.get(node_handle))
+                .and_then(|nodes| nodes.get(node_idx))
             {
                 let (s1, r1, t1) = prev_transform.to_scale_rotation_translation();
                 let (s2, r2, t2) = curr_transform.to_scale_rotation_translation();
                 let s3 = s1.lerp(s2, t);
                 let r3 = r1.slerp(r2, t);
                 let t3 = t1.lerp(t2, t);
-                transforms.push(Mat4::from_scale_rotation_translation(s3, r3, t3));
+                instance_data.push((Mat4::from_scale_rotation_translation(s3, r3, t3), pallette_offset));
             } else {
-                transforms.push(curr_transform.clone());
+                instance_data.push((curr_transform.clone(), pallette_offset));
             }
+            joint_pallette.append(&mut joint_matrices.clone());
+            pallette_offset += joint_matrices.len() as u32;
         }
         render_resources
             .models
             .get_mut(&model_handle)
             .unwrap()
-            .update_instance_buffer(device, queue, &transforms);
+            .update_instance_buffer(device, queue, &instance_data);
     }
+
+    render_resources.bones.update(joint_pallette, queue);
 
     // return model handles that should be rendered
     snaps.curr.model_transforms.iter().map(|(handle, _)| handle)
