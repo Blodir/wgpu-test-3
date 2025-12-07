@@ -1,9 +1,9 @@
 use gltf::animation::Interpolation;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Target {
-    PrimitiveInstance(u32),
+    PrimitiveGroup(u32),
     SkeletonJoint(u32),
 }
 
@@ -11,6 +11,8 @@ pub enum Target {
 pub struct AnimationClip {
     pub duration: f32,
     pub tracks: Vec<Track>,
+    pub primitive_groups: Vec<Vec<u32>>,
+    pub binary_path: String,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -21,8 +23,8 @@ pub struct Track {
     pub shared_times: Option<BinRef>,
 
     pub translation: Option<Sampler3>,
-    pub rotation:    Option<SamplerQuat>,
-    pub scale:       Option<Sampler3>,
+    pub rotation: Option<SamplerQuat>,
+    pub scale: Option<Sampler3>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]

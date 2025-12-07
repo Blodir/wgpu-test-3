@@ -1,12 +1,12 @@
 use glam::{Mat4, Quat, Vec3};
 use gltf::{Document, Gltf, Node, Primitive};
-use tangents::generate_tangents_for_mesh;
-use wgpu_test_3::renderer::render_resources::animationfile::{Target, Track};
 use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 use std::{collections::HashMap, env, fs::File, io::Write};
+use tangents::generate_tangents_for_mesh;
 use wgpu_test_3::renderer::pipelines::model::vertex::Vertex;
+use wgpu_test_3::renderer::render_resources::animationfile::{Target, Track};
 use wgpu_test_3::renderer::render_resources::dds::{create_dds, gltf_img_to_dxgi_format};
 use wgpu_test_3::renderer::render_resources::{animationfile, modelfile, skeletonfile};
 
@@ -407,7 +407,7 @@ fn read_joints_buffer(
         match accessor.data_type() {
             gltf::accessor::DataType::U8 => JointsBuffer::U8(read4u8(&accessor, buffers)),
             gltf::accessor::DataType::U16 => JointsBuffer::U16(read4u16(&accessor, buffers)),
-            _ => panic!("Joints buffer has an unrecognized data type!")
+            _ => panic!("Joints buffer has an unrecognized data type!"),
         }
     } else {
         let accessor = primitive
@@ -423,11 +423,7 @@ fn read_normals_texcoord_buffer(
     primitive: &gltf::Primitive,
     buffers: &Vec<gltf::buffer::Data>,
 ) -> Vec<[f32; 2]> {
-    if let Some(normal_texture) =
-        primitive
-        .material()
-        .normal_texture()
-    {
+    if let Some(normal_texture) = primitive.material().normal_texture() {
         let texcoord_idx = normal_texture.tex_coord();
         let accessor = primitive
             .attributes()
@@ -746,10 +742,7 @@ fn bake_base_color_tex(
     images: &Vec<gltf::image::Data>,
     model_name: &str,
 ) -> modelfile::SampledTexture {
-    if let Some(tex_info) = material
-        .pbr_metallic_roughness()
-        .base_color_texture()
-    {
+    if let Some(tex_info) = material.pbr_metallic_roughness().base_color_texture() {
         bake_texture(
             &tex_info.texture(),
             images,
@@ -910,6 +903,8 @@ fn bake_animation(
         .map(|s| readf32(&s.input(), buffers).last().unwrap().clone())
         .max_by(|a, b| a.partial_cmp(b).unwrap())
         .unwrap_or(0f32);
+    let mut tracks: Vec<Track> = vec![];
+    let mut binary_data: Vec<u8> = vec![];
 
     let mut targets = HashMap::<Target, TempTargetSamplers>::new();
     for channel in animation.channels() {
@@ -917,12 +912,42 @@ fn bake_animation(
         //  use joint_reindex to get the joint index in the skeletonfile
         // if not, then need to find the primitive instance indices
         // collect the samplers in targets hashmap
-
     }
+
+    // for each target
+    for (target, samplers) in targets {
+        // check if all target channels share the same time array
+
+        // read binary times arrays (always scalar f32)
+        // let shared_times: Option<Vec<u8>> = ...
+        // let translation_times: Option<Vec<u8>> = ...
+
+        // read binary data arrays
+        // let translation_data: Option<Vec<u8>> = ... (vec3 f32)
+        // let rotation_data: Option<Vec<u8>> = ... (vec4 f32)
+        // let scale_data: Option<Vec<u8>> = ... (vec3 f32)
+
+        // BIG TODO need to map the data because hierarchy gets flattened... so all data takes parents into account
+
+        // construct binary refs
+
+        let track = animationfile::Track {
+            target,
+            shared_times: todo!(),
+            translation: todo!(),
+            rotation: todo!(),
+            scale: todo!(),
+        };
+        // append binary_data
+        tracks.push(track);
+    }
+
+    // write binary file
 
     let animation_clip = animationfile::AnimationClip {
         duration,
-        tracks: todo!(),
+        tracks,
+        binary_path: todo!(),
     };
 
     let json = serde_json::to_string_pretty(&animation_clip)?;
@@ -993,9 +1018,14 @@ fn bake_skeletonfile(
                 .map(|child| *reindex.get(&(child.index() as u32)).unwrap())
                 .collect(),
             trs: gltf_joint.transform().matrix(),
-            inverse_bind_matrix: *inverse_bind_matrices.get(&(gltf_joint.index() as u32)).ok_or_else(
-                || format!("Missing inverse bind matrix for joint {}", gltf_joint.index())
-            )?,
+            inverse_bind_matrix: *inverse_bind_matrices
+                .get(&(gltf_joint.index() as u32))
+                .ok_or_else(|| {
+                    format!(
+                        "Missing inverse bind matrix for joint {}",
+                        gltf_joint.index()
+                    )
+                })?,
         };
         output_joints.push(mapped_joint);
     }
