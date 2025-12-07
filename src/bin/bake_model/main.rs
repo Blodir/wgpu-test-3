@@ -1,13 +1,14 @@
 use glam::{Mat4, Quat, Vec3};
 use gltf::{Document, Gltf, Node, Primitive};
 use tangents::generate_tangents_for_mesh;
+use wgpu_test_3::renderer::render_resources::animationfile::{Target, Track};
 use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 use std::{collections::HashMap, env, fs::File, io::Write};
 use wgpu_test_3::renderer::pipelines::model::vertex::Vertex;
 use wgpu_test_3::renderer::render_resources::dds::{create_dds, gltf_img_to_dxgi_format};
-use wgpu_test_3::renderer::render_resources::{modelfile, skeletonfile};
+use wgpu_test_3::renderer::render_resources::{animationfile, modelfile, skeletonfile};
 
 mod tangents;
 
@@ -116,6 +117,25 @@ fn read_accessor_data(accessor: &gltf::Accessor, buffers: &[gltf::buffer::Data])
     }
 
     data
+}
+
+fn readf32(accessor: &gltf::Accessor, buffers: &Vec<gltf::buffer::Data>) -> Vec<f32> {
+    assert_eq!(accessor.data_type(), gltf::accessor::DataType::F32);
+    assert_eq!(accessor.dimensions(), gltf::accessor::Dimensions::Scalar);
+
+    let data = read_accessor_data(&accessor, buffers);
+
+    let count = accessor.count();
+    let mut output = vec![0f32; count];
+    let stride = 4;
+
+    for i in 0..count {
+        let idx = i * stride;
+
+        output[i] = bytemuck::cast::<[u8; 4], f32>(data[idx..idx + 4].try_into().unwrap());
+    }
+
+    output
 }
 
 fn read2f32(accessor: &gltf::Accessor, buffers: &Vec<gltf::buffer::Data>) -> Vec<[f32; 2]> {
@@ -869,6 +889,46 @@ fn col_major_to_row_major(m: [[f32; 4]; 4]) -> [[f32; 4]; 4] {
         }
     }
     out
+}
+
+struct TempTargetSamplers<'a> {
+    translation: Option<&'a gltf::animation::Sampler<'a>>,
+    rotation: Option<&'a gltf::animation::Sampler<'a>>,
+    scale: Option<&'a gltf::animation::Sampler<'a>>,
+}
+
+fn bake_animation(
+    gltf: &Document,
+    animation: &gltf::Animation,
+    buffers: &Vec<gltf::buffer::Data>,
+    joint_reindex: HashMap<u32, u32>,
+    output_path: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let duration = animation
+        .samplers()
+        .into_iter()
+        .map(|s| readf32(&s.input(), buffers).last().unwrap().clone())
+        .max_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap_or(0f32);
+
+    let mut targets = HashMap::<Target, TempTargetSamplers>::new();
+    for channel in animation.channels() {
+        // check if the target node is part of a skeleton
+        //  use joint_reindex to get the joint index in the skeletonfile
+        // if not, then need to find the primitive instance indices
+        // collect the samplers in targets hashmap
+
+    }
+
+    let animation_clip = animationfile::AnimationClip {
+        duration,
+        tracks: todo!(),
+    };
+
+    let json = serde_json::to_string_pretty(&animation_clip)?;
+    std::fs::write(output_path, json)?;
+
+    Ok(())
 }
 
 /// returns reindexing map
