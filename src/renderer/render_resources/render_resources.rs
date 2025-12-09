@@ -1,9 +1,12 @@
 use std::collections::HashMap;
 
+use super::animation::AnimationClip;
+use super::animationfile;
 use super::dds;
 use super::modelfile;
 use super::png;
 use super::skeletonfile;
+use super::skeletonfile::Skeleton;
 use generational_arena::Index;
 use glam::Mat3;
 use glam::Mat4;
@@ -29,6 +32,9 @@ pub struct TextureHandle(pub String);
 
 #[derive(Eq, Hash, PartialEq, Clone, Debug)]
 pub struct MaterialHandle(u32);
+
+#[derive(Eq, Hash, PartialEq, Clone, Debug)]
+pub struct AnimationHandle(pub String);
 
 #[derive(Eq, Hash, PartialEq, Clone, Debug)]
 pub struct EnvironmentMapHandle(pub String);
@@ -85,6 +91,8 @@ pub struct ModelData {
     pub primitive_instance_counts: Vec<u32>,
     pub json: modelfile::Model,
     pub materials: Vec<MaterialHandle>,
+    pub animations: Vec<AnimationHandle>,
+    pub skeleton: SkeletonHandle,
 }
 impl ModelData {
     pub fn update_instance_buffer(
@@ -488,6 +496,7 @@ pub struct RenderResources {
     pub models: HashMap<ModelHandle, ModelData>,
     pub skeletons: HashMap<SkeletonHandle, skeletonfile::Skeleton>,
     pub materials: MaterialPool,
+    pub animations: HashMap<AnimationHandle, AnimationClip>,
     pub textures: HashMap<TextureHandle, wgpu::Texture>,
     pub sampled_textures: HashMap<TextureHandle, SampledTexture>,
     pub camera: CameraBinding,
@@ -510,6 +519,7 @@ impl RenderResources {
             models: HashMap::new(),
             skeletons: HashMap::new(),
             materials: MaterialPool::new(),
+            animations: HashMap::new(),
             textures: HashMap::new(),
             sampled_textures: HashMap::new(),
             camera: camera_binding,
@@ -746,6 +756,114 @@ impl RenderResources {
         Ok(())
     }
 
+    pub fn load_animation(
+        &mut self,
+        path: &str,
+    ) -> Result<AnimationHandle, Box<dyn std::error::Error>> {
+        let handle = AnimationHandle(path.to_string());
+        if self.animations.get(&handle).is_some() {
+            return Ok(handle);
+        }
+
+        let json_file = std::fs::File::open(&handle.0)?;
+        let json_reader = std::io::BufReader::new(json_file);
+        let header: animationfile::AnimationClip = serde_json::from_reader(json_reader)?;
+        let bytes = std::fs::read(header.binary_path)?;
+
+        let read_f32_ref = |r: &animationfile::BinRef| -> Box<[f32]> {
+            let count = r.count as usize;
+            let mut output = vec![0f32; count];
+            let stride = 4;
+
+            for i in 0..count {
+                let idx = r.offset as usize + i * stride;
+                output[i] = bytemuck::cast::<[u8; 4], f32>(bytes[idx..idx + 4].try_into().unwrap());
+            }
+
+            output.into_boxed_slice()
+        };
+        let read_vec3_ref = |r: &animationfile::BinRef| -> Box<[Vec3]> {
+            let count = r.count as usize;
+            let mut output = vec![];
+            let stride = 12;
+
+            for i in 0..count {
+                let idx = r.offset as usize + i * stride;
+                output.push(
+                    Vec3::from_array([
+                        bytemuck::cast::<[u8; 4], f32>(bytes[idx..idx + 4].try_into().unwrap()),
+                        bytemuck::cast::<[u8; 4], f32>(bytes[idx + 4..idx + 8].try_into().unwrap()),
+                        bytemuck::cast::<[u8; 4], f32>(bytes[idx + 8..idx + 12].try_into().unwrap()),
+                    ])
+                );
+            }
+
+            output.into_boxed_slice()
+        };
+        let read_quat_ref = |r: &animationfile::BinRef| -> Box<[Quat]> {
+            let count = r.count as usize;
+            let mut output = vec![];
+            let stride = 16;
+
+            for i in 0..count {
+                let idx = r.offset as usize + i * stride;
+                output.push(
+                    Quat::from_array([
+                        bytemuck::cast::<[u8; 4], f32>(bytes[idx..idx + 4].try_into().unwrap()),
+                        bytemuck::cast::<[u8; 4], f32>(bytes[idx + 4..idx + 8].try_into().unwrap()),
+                        bytemuck::cast::<[u8; 4], f32>(bytes[idx + 8..idx + 12].try_into().unwrap()),
+                        bytemuck::cast::<[u8; 4], f32>(bytes[idx + 12..idx + 16].try_into().unwrap()),
+                    ])
+                );
+            }
+
+            output.into_boxed_slice()
+        };
+
+        let duration = header.duration;
+        let primitive_groups = header.primitive_groups;
+        let tracks: Vec<super::animation::Track> = header.tracks.iter().map(|track| {
+            let target = track.target;
+            let shared_times = track.shared_times.as_ref().map(read_f32_ref);
+            let translation = track.translation.as_ref().map(|s| {
+                let interpolation = s.interpolation;
+                let times = s.times.as_ref().map(read_f32_ref);
+                let values = read_vec3_ref(&s.values);
+                super::animation::Channel::<Vec3> {
+                    interpolation, times, values
+                }
+            });
+            let rotation = track.rotation.as_ref().map(|s| {
+                let interpolation = s.interpolation;
+                let times = s.times.as_ref().map(read_f32_ref);
+                let values = read_quat_ref(&s.values);
+                super::animation::Channel::<Quat> {
+                    interpolation, times, values
+                }
+            });
+            let scale = track.translation.as_ref().map(|s| {
+                let interpolation = s.interpolation;
+                let times = s.times.as_ref().map(read_f32_ref);
+                let values = read_vec3_ref(&s.values);
+                super::animation::Channel::<Vec3> {
+                    interpolation, times, values
+                }
+            });
+            super::animation::Track {
+                target, shared_times, translation, rotation, scale
+            }
+        }).collect();
+
+        let animation = super::animation::AnimationClip {
+            duration,
+            tracks,
+            primitive_groups,
+        };
+
+        self.animations.insert(handle.clone(), animation);
+        Ok(handle)
+    }
+
     pub fn load_model(
         &mut self,
         handle: ModelHandle,
@@ -785,8 +903,16 @@ impl RenderResources {
 
         let skeleton_handle = SkeletonHandle(model.skeletonfile_path.clone());
         if !self.skeletons.contains_key(&skeleton_handle) {
-            self.load_skeleton(skeleton_handle)?;
+            self.load_skeleton(skeleton_handle.clone())?;
         }
+
+        let animations = {
+            let mut anims = vec![];
+            for path in &model.animations {
+                anims.push(self.load_animation(path)?);
+            }
+            anims
+        };
 
         self.models.insert(
             handle,
@@ -796,6 +922,8 @@ impl RenderResources {
                 instance_buffer,
                 primitive_instance_counts: instance_counts,
                 materials,
+                skeleton: skeleton_handle,
+                animations
             },
         );
 

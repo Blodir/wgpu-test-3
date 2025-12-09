@@ -1,3 +1,4 @@
+use animations::bake_animation;
 use glam::Mat4;
 use gltf::Document;
 use std::fs;
@@ -355,6 +356,17 @@ fn bake(
     let skeletonfile_path = format!("assets/local/{}/{}.skeleton.json", model_name, model_name);
     let joint_reindex = bake_skeletonfile(gltf, buffers, &skeletonfile_path)?;
 
+    let animations: Result<Vec<_>, _> = gltf.animations()
+        .enumerate()
+        .map(|(idx, anim)| -> Result<String, Box<dyn std::error::Error>> {
+            let anim_json_path = format!("assets/local/{}/{}_{}.animation.json", model_name, model_name, idx);
+            let anim_bin_path  = format!("assets/local/{}/{}_{}.animation.bin",  model_name, model_name, idx);
+            bake_animation(&anim, buffers, &joint_reindex, &anim_json_path, &anim_bin_path)?;
+            Ok(anim_json_path)
+        })
+        .collect();
+    let animations = animations?;
+
     // list of pairs (mesh index, primitive)
     let mut primitives = vec![];
     for mesh in gltf.meshes() {
@@ -523,6 +535,7 @@ fn bake(
         vertex_buffer_start_offset: current_index_byte_offset as u32,
         primitives: output_primitives,
         materials,
+        animations,
         // TODO bounding box
         aabb: modelfile::Aabb {
             min: [0f32, 0f32, 0f32],

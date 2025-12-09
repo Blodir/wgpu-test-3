@@ -4,4 +4,5 @@ pub mod png;
 pub mod render_resources;
 pub mod skeletonfile;
 pub mod animationfile;
+pub mod animation;
 pub use render_resources::*;

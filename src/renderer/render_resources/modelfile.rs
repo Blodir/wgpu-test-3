@@ -26,6 +26,7 @@ pub struct Model {
     pub materials: Vec<Material>,
     pub buffer_path: String,
     pub skeletonfile_path: String,
+    pub animations: Vec<String>,
     pub vertex_buffer_start_offset: u32,
     pub aabb: Aabb,
 }
