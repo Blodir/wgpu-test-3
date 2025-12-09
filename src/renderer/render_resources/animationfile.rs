@@ -1,10 +1,23 @@
-use gltf::animation::Interpolation;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Target {
     PrimitiveGroup(u32),
     SkeletonJoint(u32),
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
+pub enum Interpolation {
+    Linear, Step, CubicSpline
+}
+impl From<gltf::animation::Interpolation> for Interpolation {
+    fn from(value: gltf::animation::Interpolation) -> Self {
+        match value {
+            gltf::animation::Interpolation::Linear => Interpolation::Linear,
+            gltf::animation::Interpolation::Step => Interpolation::Step,
+            gltf::animation::Interpolation::CubicSpline => Interpolation::CubicSpline,
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug)]

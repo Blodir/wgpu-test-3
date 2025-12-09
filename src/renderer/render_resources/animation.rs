@@ -2,7 +2,7 @@
 
 use glam::{Quat, Vec3};
 
-use super::animationfile::Target;
+use super::animationfile::{Interpolation, Target};
 
 pub struct AnimationClip {
     pub duration: f32,
@@ -21,5 +21,5 @@ pub struct Track {
 pub struct Channel<T> {
     pub times: Option<Box<[f32]>>,  // None = use Track.shared_times
     pub values: Box<[T]>,
-    pub interpolation: gltf::animation::Interpolation,
+    pub interpolation: Interpolation,
 }

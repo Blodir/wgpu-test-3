@@ -151,7 +151,7 @@ pub fn bake_animation(
 
         let translation = translation_values_data.map(|values_data| {
             let times = translation_times;
-            let interpolation = samplers.translation.unwrap().interpolation();
+            let interpolation = samplers.translation.unwrap().interpolation().into();
 
             let offset = current_binary_offset;
             let count = values_data.len() as u32;
@@ -164,7 +164,7 @@ pub fn bake_animation(
 
         let rotation = rotation_values_data.map(|values_data| {
             let times = rotation_times;
-            let interpolation = samplers.rotation.unwrap().interpolation();
+            let interpolation = samplers.rotation.unwrap().interpolation().into();
 
             let offset = current_binary_offset;
             let count = values_data.len() as u32;
@@ -177,7 +177,7 @@ pub fn bake_animation(
 
         let scale = scale_values_data.map(|values_data| {
             let times = scale_times;
-            let interpolation = samplers.scale.unwrap().interpolation();
+            let interpolation = samplers.scale.unwrap().interpolation().into();
 
             let offset = current_binary_offset;
             let count = values_data.len() as u32;
