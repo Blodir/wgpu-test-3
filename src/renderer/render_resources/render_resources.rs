@@ -841,7 +841,7 @@ impl RenderResources {
                     interpolation, times, values
                 }
             });
-            let scale = track.translation.as_ref().map(|s| {
+            let scale = track.scale.as_ref().map(|s| {
                 let interpolation = s.interpolation;
                 let times = s.times.as_ref().map(read_f32_ref);
                 let values = read_vec3_ref(&s.values);

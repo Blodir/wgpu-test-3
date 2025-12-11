@@ -367,12 +367,19 @@ fn bake(
         .collect();
     let animations = animations?;
 
-    // list of pairs (mesh index, primitive)
-    let mut primitives = vec![];
-    for mesh in gltf.meshes() {
-        primitives.extend(mesh.primitives().map(|p| (mesh.index(), p)));
+    // (mesh, skin)
+    let mut meshes_and_skins = vec![];
+    for node in gltf.nodes() {
+        if let Some(mesh) = node.mesh() {
+            meshes_and_skins.push((mesh, node.skin()))
+        }
     }
-    primitives.sort_by(|(_, a), (_, b)| {
+    // (mesh index, skin index, primitive)
+    let mut primitives = vec![];
+    for (mesh, skin) in meshes_and_skins {
+        primitives.extend(mesh.primitives().map(|p| (mesh.index(), skin.as_ref().map(|s| s.index()), p)));
+    }
+    primitives.sort_by(|(_, _, a), (_, _, b)| {
         a.material()
             .index()
             .unwrap_or(0)
@@ -384,6 +391,7 @@ fn bake(
     for node in gltf.scenes().next().unwrap().nodes() {
         accumulate_primitive_instances(&node, &Mat4::IDENTITY, &mut primitive_instances_map);
     }
+    let skins: Vec<_> = gltf.skins().collect();
 
     let mut output_primitives = vec![];
     let mut output_vertex_buffers = vec![];
@@ -392,7 +400,7 @@ fn bake(
     let mut current_index_byte_offset = 0usize;
     let mut base_vertex = 0u32;
 
-    for (mesh_idx, primitive) in primitives {
+    for (mesh_idx, maybe_skin_idx, primitive) in primitives {
         if primitive.mode() != gltf::mesh::Mode::Triangles {
             println!("Warning: skipping non-triangle topology!");
             continue;
@@ -454,10 +462,20 @@ fn bake(
                 tangent: tangents_buffer[i],
                 weights: weights_buffer[i],
                 joints: match &joints_buffer {
-                    JointsBuffer::U8(buffer) => buffer[i]
-                        .map(|idx| *joint_reindex.get(&(idx as u32)).unwrap_or(&0u32) as u8),
-                    JointsBuffer::U16(buffer) => buffer[i]
-                        .map(|idx| *joint_reindex.get(&(idx as u32)).unwrap_or(&0u32) as u8),
+                    JointsBuffer::U8(buffer) => buffer[i].map(|skin_joint_idx| {
+                        let maybe_node_idx = maybe_skin_idx.map(|i| {
+                            let joints: Vec<_> = skins[i].joints().collect();
+                            joints[skin_joint_idx as usize].index()
+                        });
+                        *maybe_node_idx.and_then(|node_idx| joint_reindex.get(&(node_idx as u32))).unwrap_or(&0u32) as u8
+                    }),
+                    JointsBuffer::U16(buffer) => buffer[i].map(|skin_joint_idx| {
+                        let maybe_node_idx = maybe_skin_idx.map(|i| {
+                            let joints: Vec<_> = skins[i].joints().collect();
+                            joints[skin_joint_idx as usize].index()
+                        });
+                        *maybe_node_idx.and_then(|node_idx| joint_reindex.get(&(node_idx as u32))).unwrap_or(&0u32) as u8
+                    }),
                 },
                 base_color_tex_coords: base_color_texcoord_buffer[i],
                 normal_tex_coords: normals_texcoord_buffer[i],

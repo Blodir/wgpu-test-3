@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Instant};
 
 use glam::{Mat4, Vec3};
 
@@ -71,12 +71,13 @@ pub struct Scene {
     pub sun: Sun,
     pub camera: Camera,
     pub environment: EnvironmentMapHandle,
+    pub global_time_sec: f32,
 }
 impl Default for Scene {
     fn default() -> Self {
         let mut nodes = Arena::new();
 
-        let model_handle = ModelHandle("assets/local/RiggedFigure/RiggedFigure.json".to_string());
+        let model_handle = ModelHandle("assets/local/CesiumMan/CesiumMan.json".to_string());
 
         let root_handle = nodes.insert(Node {
             parent: None,
@@ -91,6 +92,7 @@ impl Default for Scene {
             sun: Sun::default(),
             camera: Camera::default(),
             environment: EnvironmentMapHandle("assets/kloofendal_overcast_puresky_8k".to_string()),
+            global_time_sec: 0.0
         }
     }
     /*

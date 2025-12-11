@@ -10,7 +10,7 @@ use super::render_resources::{EnvironmentMapHandle, ModelHandle};
 
 pub fn accumulate_model_transforms(
     scene: &Scene,
-    models: &mut HashMap<ModelHandle, HashMap<Index, Mat4>>,
+    models: &mut HashMap<ModelHandle, HashMap<Index, ModelInstance>>,
     base_transform: &Mat4,
     node_handle: Index,
 ) {
@@ -20,29 +20,48 @@ pub fn accumulate_model_transforms(
         .entry(model_handle.clone())
         .or_insert_with(HashMap::new);
     let transform = node.transform * base_transform;
-    v.insert(node_handle, transform);
+    let duration = 5.0;
+    let animation = Some(AnimationInstance {
+        clip_idx: 0,
+        clip_time: scene.global_time_sec % duration / duration,
+    });
+    let inst = ModelInstance {
+        transform, animation
+    };
+    v.insert(node_handle, inst);
     for child in &node.children {
         accumulate_model_transforms(scene, models, &transform, *child);
     }
 }
 
+pub struct AnimationInstance {
+    pub clip_idx: u32,
+    /// 0..1
+    pub clip_time: f32,
+}
+
+pub struct ModelInstance {
+    pub transform: Mat4,
+    pub animation: Option<AnimationInstance>,
+}
+
 pub struct RenderSnapshot {
-    pub model_transforms: HashMap<ModelHandle, HashMap<Index, Mat4>>,
+    pub model_instances: HashMap<ModelHandle, HashMap<Index, ModelInstance>>,
     pub environment_map: EnvironmentMapHandle,
     pub camera: Camera,
     pub sun: Option<Sun>,
 }
 impl RenderSnapshot {
     pub fn build(scene: &Scene) -> Self {
-        let mut model_transforms = HashMap::<ModelHandle, HashMap<Index, Mat4>>::new();
-        accumulate_model_transforms(scene, &mut model_transforms, &Mat4::IDENTITY, scene.root);
+        let mut model_instances = HashMap::<ModelHandle, HashMap<Index, ModelInstance>>::new();
+        accumulate_model_transforms(scene, &mut model_instances, &Mat4::IDENTITY, scene.root);
 
         // TODO dirty check
         let environment_map = scene.environment.clone();
         let camera = scene.camera.clone();
         let sun = Some(scene.sun.clone());
         Self {
-            model_transforms,
+            model_instances,
             environment_map,
             camera,
             sun,
@@ -52,7 +71,7 @@ impl RenderSnapshot {
 impl Default for RenderSnapshot {
     fn default() -> Self {
         Self {
-            model_transforms: HashMap::new(),
+            model_instances: HashMap::new(),
             environment_map: EnvironmentMapHandle(
                 "assets/kloofendal_overcast_puresky_8k".to_string(),
             ),

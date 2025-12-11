@@ -180,6 +180,7 @@ pub fn bake_animation(
             let interpolation = samplers.scale.unwrap().interpolation().into();
 
             let offset = current_binary_offset;
+            assert_eq!(current_binary_offset, binary_data.len() as u32);
             let count = values_data.len() as u32;
             binary_data.extend_from_slice(bytemuck::cast_slice(&values_data));
             current_binary_offset = binary_data.len() as u32;

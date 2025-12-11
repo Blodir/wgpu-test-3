@@ -34,7 +34,9 @@ pub fn spawn_sim(
         let mut next = Instant::now() + TICK;
         let mut shift_is_pressed = false;
         let mut mouse_btn_is_pressed = false;
+        let sim_start_time = Instant::now();
         loop {
+            scene.global_time_sec = next.duration_since(sim_start_time).as_secs_f32();
             'a: while let Some(event) = inputs.pop() {
                 match event {
                     InputEvent::Exit => return (),
