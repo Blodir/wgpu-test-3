@@ -272,7 +272,7 @@ pub fn prepare_models<'a>(
                     .get(model_handle)
                     .and_then(|nodes| nodes.get(node_idx))
                     .and_then(|node| node.animation.as_ref())
-                    .map(|prev_anim| lerp_wrap_unit(prev_anim.clip_time, anim_instance.clip_time, t))
+                    .map(|prev_anim| lerpf32(prev_anim.clip_time, anim_instance.clip_time, t))
                     .unwrap_or(0f32);
                 calculate_joint_matrices(skeleton, anim_resource, *clip_time)
             };
@@ -361,8 +361,7 @@ fn calculate_joint_matrices(skeleton: &skeletonfile::Skeleton, animation: &Anima
 
     let mut joint_matrices: Vec<_> = skeleton.joints.iter().map(|joint| Mat4::from_cols_array_2d(&joint.trs)).collect();
     for track in &animation.tracks {
-        // current_animation_time is normalized 0..1; wrap to duration and clamp to last key
-        let t = (current_animation_time % 1.0) * animation.duration;
+        let t = current_animation_time % animation.duration;
         let translation = track.translation.as_ref().map(|channel| {
             let times = channel.times.as_ref().or(track.shared_times.as_ref()).unwrap();
             let values = &channel.values;
