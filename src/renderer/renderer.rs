@@ -364,7 +364,7 @@ fn calculate_joint_matrices(skeleton: &skeletonfile::Skeleton, animation: &Anima
         // current_animation_time is normalized 0..1; wrap to duration and clamp to last key
         let t = (current_animation_time % 1.0) * animation.duration;
         let translation = track.translation.as_ref().map(|channel| {
-            let times = channel.times.as_ref().unwrap_or(track.shared_times.as_ref().unwrap());
+            let times = channel.times.as_ref().or(track.shared_times.as_ref()).unwrap();
             let values = &channel.values;
             let (i0, i1) = bin_search_anim_indices(times, t);
             let (t0, t1) = (times[i0], times[i1]);
@@ -382,7 +382,7 @@ fn calculate_joint_matrices(skeleton: &skeletonfile::Skeleton, animation: &Anima
         });
 
         let rotation = track.rotation.as_ref().map(|channel| {
-            let times = channel.times.as_ref().unwrap_or(track.shared_times.as_ref().unwrap());
+            let times = channel.times.as_ref().or(track.shared_times.as_ref()).unwrap();
             let values = &channel.values;
             let (i0, i1) = bin_search_anim_indices(times, t);
             let (t0, t1) = (times[i0], times[i1]);
@@ -400,7 +400,7 @@ fn calculate_joint_matrices(skeleton: &skeletonfile::Skeleton, animation: &Anima
         });
 
         let scale = track.scale.as_ref().map(|channel| {
-            let times = channel.times.as_ref().unwrap_or(track.shared_times.as_ref().unwrap());
+            let times = channel.times.as_ref().or(track.shared_times.as_ref()).unwrap();
             let values = &channel.values;
             let (i0, i1) = bin_search_anim_indices(times, t);
             let (t0, t1) = (times[i0], times[i1]);

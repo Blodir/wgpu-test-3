@@ -17,12 +17,14 @@ use wgpu_test_3::renderer::render_resources::dds::{create_dds, gltf_img_to_dxgi_
 use wgpu_test_3::renderer::render_resources::modelfile;
 
 mod tangents;
+mod normals;
 mod gltf_utils;
 mod skeletons;
 mod utils;
 mod animations;
 use skeletons::bake_skeletonfile;
 use utils::ensure_parent_dir_exists;
+use normals::generate_flat_normals_for_mesh;
 
 fn resolve_uri_to_path(uri: &str, model_name: &str, tex_name: &str) -> String {
     if uri.starts_with("data:") {
@@ -255,7 +257,7 @@ fn bake_metallic_roughness_tex(
     } else {
         println!("WARNING: material doesn't have a metallic roughness texture, using placeholder");
         let data = gltf::image::Data {
-            pixels: bytemuck::cast_slice(&[0x0000u16, 0x0000u16, 0x3C00u16, 0x3C00u16]).to_vec(),
+            pixels: bytemuck::cast_slice(&[0x0000u16, 0x3800u16, 0x0000u16, 0x3C00u16]).to_vec(),
             format: gltf::image::Format::R16G16B16A16,
             width: 1,
             height: 1,
@@ -420,10 +422,18 @@ fn bake(
         let pos_buffer = read_position_buffer(&primitive, buffers);
         let normals_buffer = match read_normal_buffer(&primitive, buffers) {
             Some(t) => t,
-            None => {
-                println!("Warning: a primitive is missing the NORMALS attribute, skipping!");
-                continue;
-            }
+            None => match generate_flat_normals_for_mesh(&pos_buffer, &indices) {
+                Ok(n) => n,
+                Err(e) => {
+                    println!(
+                        "Warning: failed to generate flat normals for primitive {} of mesh {}: {}",
+                        primitive.index(),
+                        mesh_idx,
+                        e
+                    );
+                    continue;
+                }
+            },
         };
         let base_color_texcoord_buffer = read_base_color_texcoord_buffer(&primitive, buffers);
         let normals_texcoord_buffer = read_normals_texcoord_buffer(&primitive, buffers);

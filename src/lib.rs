@@ -110,7 +110,7 @@ impl<'surface> ApplicationHandler for App<'surface> {
         render_resources.load_lights(&wgpu_context, Sun::default(), EnvironmentMapHandle("assets/kloofendal_overcast_puresky_8k".to_string()));
         render_resources
             .load_model(
-                ModelHandle("assets/local/CesiumMan/CesiumMan.json".to_string()),
+                ModelHandle("assets/local/Fox/Fox.json".to_string()),
                 &wgpu_context,
             )
             .unwrap();

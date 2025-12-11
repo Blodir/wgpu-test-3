@@ -20,9 +20,9 @@ pub fn accumulate_model_transforms(
         .entry(model_handle.clone())
         .or_insert_with(HashMap::new);
     let transform = node.transform * base_transform;
-    let duration = 5.0;
+    let duration = 2.0;
     let animation = Some(AnimationInstance {
-        clip_idx: 0,
+        clip_idx: 1,
         clip_time: scene.global_time_sec % duration / duration,
     });
     let inst = ModelInstance {
