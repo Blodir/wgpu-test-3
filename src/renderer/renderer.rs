@@ -1,5 +1,6 @@
 use std::cmp::Ordering;
 use std::collections::HashMap;
+use std::f32;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -10,6 +11,7 @@ use super::{render_resources::ModelHandle, render_snapshot::SnapshotHandoff};
 use generational_arena::Index;
 use glam::{Mat4, Quat, Vec3, Vec4};
 
+use crate::animator::{self, AnimationTransitionSnapshot, TimeWrapMode};
 use crate::scene_tree::Camera;
 use crate::{
     renderer::{
@@ -281,7 +283,7 @@ pub fn prepare_models<'a>(
                             })
                             .map(|prev_time| lerpf32(prev_time, animation_state_snapshot.animation_time, t))
                             .unwrap_or(0f32);
-                        AnimationData::Single(clip, *clip_time)
+                        AnimationData::Single(SingleAnimationData { clip, time: *clip_time, time_wrap_mode: animation_state_snapshot.time_wrap })
                     },
                     crate::animator::AnimationSnapshot::AnimationTransitionSnapshot(animation_transition_snapshot) => {
                         let from_handle = &model_data.animations[animation_transition_snapshot.from_clip_idx as usize];
@@ -303,7 +305,10 @@ pub fn prepare_models<'a>(
                         let from_time = lerpf32(prev_times.0, animation_transition_snapshot.from_time, t);
                         let to_time = lerpf32(prev_times.1, animation_transition_snapshot.to_time, t);
 
-                        AnimationData::Blend(BlendAnimationData { from_clip, to_clip, from_time, to_time, blend_time })
+                        let from_time_wrap_mode = animation_transition_snapshot.from_time_wrap;
+                        let to_time_wrap_mode = animation_transition_snapshot.to_time_wrap;
+
+                        AnimationData::Blend(BlendAnimationData { from_clip, to_clip, from_time, to_time, blend_time, to_time_wrap_mode, from_time_wrap_mode })
                     },
                 };
                 compute_joint_matrices(skeleton, anim_data)
@@ -397,10 +402,22 @@ fn interpolate_channel_value_quat(track: &Track,channel: &Channel<Quat>, t: f32)
 }
 
 /// SRT form
-fn compute_animated_pose(animation: &AnimationClip, skeleton: &skeletonfile::Skeleton, base_locals: &Vec<(Vec3, Quat, Vec3)>, animation_time: f32) -> Vec<Option<(Vec3, Quat, Vec3)>> {
+fn compute_animated_pose(animation: &AnimationClip, skeleton: &skeletonfile::Skeleton, base_locals: &Vec<(Vec3, Quat, Vec3)>, animation_time: f32, time_wrap_mode: &animator::TimeWrapMode) -> Vec<Option<(Vec3, Quat, Vec3)>> {
     let mut joints: Vec<Option<(Vec3, Quat, Vec3)>> = vec![None; skeleton.joints.len()];
     for track in &animation.tracks {
-        let t = animation_time % animation.duration;
+        let t = if animation.duration <= f32::EPSILON {
+            0.0
+        } else {
+            match time_wrap_mode {
+                animator::TimeWrapMode::Clamp => animation_time.clamp(0.0, animation.duration),
+                animator::TimeWrapMode::Repeat => animation_time.rem_euclid(animation.duration),
+                animator::TimeWrapMode::PingPong => {
+                    let period = animation.duration * 2.0;
+                    let t2 = animation_time.rem_euclid(period);
+                    if t2 <= animation.duration { t2 } else { period - t2 }
+                },
+            }
+        };
         let translation = track.translation.as_ref().map(|channel| interpolate_channel_value_vec3(track, channel, t));
         let rotation = track.rotation.as_ref().map(|channel| interpolate_channel_value_quat(track, channel, t));
         let scale = track.scale.as_ref().map(|channel| interpolate_channel_value_vec3(track, channel, t));
@@ -422,16 +439,24 @@ fn compute_animated_pose(animation: &AnimationClip, skeleton: &skeletonfile::Ske
     joints
 }
 
+struct SingleAnimationData<'a> {
+    clip: &'a AnimationClip,
+    time: f32,
+    time_wrap_mode: TimeWrapMode,
+}
+
 struct BlendAnimationData<'a> {
     from_clip: &'a AnimationClip,
     to_clip: &'a AnimationClip,
     from_time: f32,
     to_time: f32,
     blend_time: f32,
+    to_time_wrap_mode: TimeWrapMode,
+    from_time_wrap_mode: TimeWrapMode,
 }
 
 enum AnimationData<'a> {
-    Single(&'a AnimationClip, f32),
+    Single(SingleAnimationData<'a>),
     Blend(BlendAnimationData<'a>)
 }
 fn compute_joint_matrices<'a>(skeleton: &skeletonfile::Skeleton, animation: AnimationData<'a>) -> Vec<BoneMat34> {
@@ -465,17 +490,17 @@ fn compute_joint_matrices<'a>(skeleton: &skeletonfile::Skeleton, animation: Anim
 
     let mut joint_matrices: Vec<_> = skeleton.joints.iter().map(|joint| Mat4::from_cols_array_2d(&joint.trs)).collect();
     match animation {
-        AnimationData::Single(animation_clip, time) => {
-            let pose = compute_animated_pose(animation_clip, skeleton, &base_locals, time);
+        AnimationData::Single(SingleAnimationData { clip, time, time_wrap_mode }) => {
+            let pose = compute_animated_pose(clip, skeleton, &base_locals, time, &time_wrap_mode);
             for (idx, maybe_joint) in pose.iter().enumerate() {
                 if let Some(joint) = maybe_joint {
                     joint_matrices[idx] = Mat4::from_scale_rotation_translation(joint.0, joint.1, joint.2);
                 }
             }
         },
-        AnimationData::Blend(BlendAnimationData { from_clip, to_clip, from_time, to_time, blend_time }) => {
-            let pose_1 = compute_animated_pose(from_clip, skeleton, &base_locals, from_time);
-            let pose_2 = compute_animated_pose(to_clip, skeleton, &base_locals, to_time);
+        AnimationData::Blend(BlendAnimationData { from_clip, to_clip, from_time, to_time, blend_time, to_time_wrap_mode, from_time_wrap_mode }) => {
+            let pose_1 = compute_animated_pose(from_clip, skeleton, &base_locals, from_time, &from_time_wrap_mode);
+            let pose_2 = compute_animated_pose(to_clip, skeleton, &base_locals, to_time, &to_time_wrap_mode);
             let blend_t = (to_time / blend_time).min(1.0);
             for idx in 0..skeleton.joints.len() {
                 let maybe_joint_1 = pose_1[idx];

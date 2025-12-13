@@ -112,7 +112,9 @@ impl Scene {
                 // TODO remove this after testing
                 // automatically transition for fun
 
-                let phase = self.global_time_sec % 8.0;
+                let cycle_duration = 16.0;
+                let phase = self.global_time_sec % cycle_duration;
+                let a = cycle_duration / 4.0;
                 if (phase - 0.0).abs() < dt {
                     // look -> walk
                     if let animator::AnimatorState::State(state) = animated_model.animator.get_current_state() {
@@ -121,7 +123,7 @@ impl Scene {
                             Err(_) => println!("Incorrect transition"),
                         }
                     }
-                } else if (phase - 2.0).abs() < dt {
+                } else if (phase - a).abs() < dt {
                     // walk -> run
                     if let animator::AnimatorState::State(state) = animated_model.animator.get_current_state() {
                         match animated_model.animator.transition(2) {
@@ -129,7 +131,7 @@ impl Scene {
                             Err(_) => println!("Incorrect transition"),
                         }
                     }
-                } else if (phase - 4.0).abs() < dt {
+                } else if (phase - (2.0 * a)).abs() < dt {
                     // run -> walk
                     if let animator::AnimatorState::State(state) = animated_model.animator.get_current_state() {
                         match animated_model.animator.transition(3) {
@@ -137,7 +139,7 @@ impl Scene {
                             Err(_) => println!("Incorrect transition"),
                         }
                     }
-                } else if (phase - 6.0).abs() < dt {
+                } else if (phase - (3.0 * a)).abs() < dt {
                     // walk -> look
                     if let animator::AnimatorState::State(state) = animated_model.animator.get_current_state() {
                         match animated_model.animator.transition(1) {
@@ -161,9 +163,9 @@ pub fn build_test_animation_blending() -> (Scene, Vec<AnimationGraph>) {
 
     let animation_graph = AnimationGraph {
         states: vec![
-            animator::State { clip_idx: 0, time_wrap: animator::TimeWrapMode::Repeat, boundary_mode: animator::BoundaryMode::Closed, speed: 1.0 },
-            animator::State { clip_idx: 1, time_wrap: animator::TimeWrapMode::Repeat, boundary_mode: animator::BoundaryMode::Closed, speed: 1.0 },
-            animator::State { clip_idx: 2, time_wrap: animator::TimeWrapMode::Repeat, boundary_mode: animator::BoundaryMode::Closed, speed: 1.0 },
+            animator::State { clip_idx: 0, time_wrap: animator::TimeWrapMode::Clamp, boundary_mode: animator::BoundaryMode::Closed, speed: 2.0 },
+            animator::State { clip_idx: 1, time_wrap: animator::TimeWrapMode::Repeat, boundary_mode: animator::BoundaryMode::Closed, speed: 2.0 },
+            animator::State { clip_idx: 2, time_wrap: animator::TimeWrapMode::PingPong, boundary_mode: animator::BoundaryMode::Closed, speed: 2.0 },
         ],
         transitions: vec![
             animator::Transition { blend_time: 0.5, to: 1 }, // look -> walk

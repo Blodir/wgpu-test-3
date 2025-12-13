@@ -1,8 +1,7 @@
-// TODO: this does nothing atm
 /// What happens when animation time leaves [0, duration)
 #[derive(Clone, Copy)]
 pub enum TimeWrapMode {
-    Clamp, Repeat// , PingPong TODO
+    Clamp, Repeat, PingPong
 }
 
 // TODO: this does nothing atm
@@ -82,6 +81,8 @@ pub struct AnimationTransitionSnapshot {
     pub from_time: f32,
     /// time in seconds since this transition started
     pub to_time: f32,
+    pub from_time_wrap: TimeWrapMode,
+    pub to_time_wrap: TimeWrapMode,
 }
 
 pub enum AnimationSnapshot {
@@ -137,11 +138,16 @@ impl Animator {
         }
         match &mut self.current_state {
             AnimatorState::State(animator_state_state) => {
-                animator_state_state.animation_time += dt;
+                let state = &animation_graphs[self.animation_graph].states[animator_state_state.state_idx as usize];
+                animator_state_state.animation_time += dt * state.speed;
             },
             AnimatorState::Transition(animator_transition_state) => {
-                animator_transition_state.from_time += dt;
-                animator_transition_state.to_time += dt;
+                let ags = &animation_graphs[self.animation_graph];
+                let state_1 = &ags.states[animator_transition_state.from as usize];
+                let transition = &ags.transitions[animator_transition_state.transition as usize];
+                let state_2 = &ags.states[transition.to as usize];
+                animator_transition_state.from_time += dt * state_1.speed;
+                animator_transition_state.to_time += dt * state_2.speed;
             },
         }
     }
@@ -171,6 +177,8 @@ impl Animator {
                         blend_time: transition.blend_time,
                         from_time: animator_transition_state.from_time,
                         to_time: animator_transition_state.to_time,
+                        from_time_wrap: from_state.time_wrap,
+                        to_time_wrap: to_state.time_wrap,
                     }
                 )
             },
