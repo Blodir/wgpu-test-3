@@ -12,7 +12,7 @@ use winit::{
 
 use crate::{
     renderer::render_snapshot::{RenderSnapshot, SnapshotHandoff},
-    scene_tree::Scene,
+    scene_tree::{build_test_animation_blending, Scene},
 };
 
 #[derive(Debug)]
@@ -30,13 +30,19 @@ pub fn spawn_sim(
     snap_handoff: Arc<SnapshotHandoff>,
 ) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
-        let mut scene = Scene::default();
+        let (mut scene, animation_graphs) = build_test_animation_blending();
         let mut next = Instant::now() + TICK;
+        let mut prev_tick = Instant::now();
         let mut shift_is_pressed = false;
         let mut mouse_btn_is_pressed = false;
         let sim_start_time = Instant::now();
         loop {
-            scene.global_time_sec = next.duration_since(sim_start_time).as_secs_f32();
+            let now = Instant::now();
+            let dt = (now - prev_tick).as_secs_f32();
+            prev_tick = now;
+
+            scene.global_time_sec = (now - sim_start_time).as_secs_f32();
+
             'a: while let Some(event) = inputs.pop() {
                 match event {
                     InputEvent::Exit => return (),
@@ -111,21 +117,21 @@ pub fn spawn_sim(
                     },
                 }
             }
-            let snap = RenderSnapshot::build(&scene);
+
+            scene.update(&animation_graphs, scene.root, dt);
+
+            let snap = RenderSnapshot::build(&scene, &animation_graphs);
             snap_handoff.publish(snap);
 
             next += TICK;
 
             // sleep most of the remaining time, then spin the last bit
-            let now = Instant::now();
-            if next > now {
-                let remain = next - now;
-                if remain > SPIN {
-                    thread::sleep(remain - SPIN);
-                }
-                while Instant::now() < next {
-                    std::hint::spin_loop();
-                }
+            if let Some(remain) = next.checked_duration_since(Instant::now()) {
+                if remain > SPIN { thread::sleep(remain - SPIN); }
+                while Instant::now() < next { std::hint::spin_loop(); }
+            } else {
+                // if we fell behind, resync the schedule
+                next = Instant::now() + TICK;
             }
         }
     })

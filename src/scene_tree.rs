@@ -2,7 +2,7 @@ use std::{collections::HashMap, time::Instant};
 
 use glam::{Mat4, Vec3};
 
-use crate::renderer::render_resources::{EnvironmentMapHandle, ModelHandle};
+use crate::{animator::{self, AnimationGraph, Animator}, renderer::render_resources::{EnvironmentMapHandle, ModelHandle}};
 use generational_arena::{Arena, Index};
 
 #[derive(Clone)]
@@ -54,8 +54,14 @@ impl Default for Camera {
     }
 }
 
+pub struct AnimatedModel {
+    pub model: ModelHandle,
+    pub animator: Animator,
+}
+
 pub enum RenderDataType {
     Model(ModelHandle),
+    AnimatedModel(AnimatedModel),
 }
 
 pub struct Node {
@@ -95,37 +101,97 @@ impl Default for Scene {
             global_time_sec: 0.0
         }
     }
-    /*
-    fn default() -> Self {
-        let mut nodes = Arena::new();
+}
 
-        let lantern_handle = ModelHandle("assets/local/Lantern/Lantern.json".to_string());
+impl Scene {
+    pub fn update(&mut self, animation_graphs: &Vec<AnimationGraph>, node: Index, dt: f32) {
+        let node = &mut self.nodes[node];
+        match &mut node.render_data {
+            RenderDataType::Model(model_handle) => (),
+            RenderDataType::AnimatedModel(animated_model) => {
+                // TODO remove this after testing
+                // automatically transition for fun
 
-        let root_handle = nodes.insert(Node {
-            parent: None,
-            children: vec![],
-            transform: Mat4::IDENTITY,
-            render_data: RenderDataType::Model(lantern_handle.clone()),
-        });
-        let child_handle = nodes.insert(Node {
-            parent: Some(root_handle),
-            children: vec![],
-            transform: Mat4::from_translation(Vec3::new(8.0, 0.0, 8.0)),
-            render_data: RenderDataType::Model(lantern_handle),
-        });
-        nodes
-            .get_mut(root_handle)
-            .unwrap()
-            .children
-            .push(child_handle);
+                let phase = self.global_time_sec % 8.0;
+                if (phase - 0.0).abs() < dt {
+                    // look -> walk
+                    if let animator::AnimatorState::State(state) = animated_model.animator.get_current_state() {
+                        match animated_model.animator.transition(0) {
+                            Ok(_) => (),
+                            Err(_) => println!("Incorrect transition"),
+                        }
+                    }
+                } else if (phase - 2.0).abs() < dt {
+                    // walk -> run
+                    if let animator::AnimatorState::State(state) = animated_model.animator.get_current_state() {
+                        match animated_model.animator.transition(2) {
+                            Ok(_) => (),
+                            Err(_) => println!("Incorrect transition"),
+                        }
+                    }
+                } else if (phase - 4.0).abs() < dt {
+                    // run -> walk
+                    if let animator::AnimatorState::State(state) = animated_model.animator.get_current_state() {
+                        match animated_model.animator.transition(3) {
+                            Ok(_) => (),
+                            Err(_) => println!("Incorrect transition"),
+                        }
+                    }
+                } else if (phase - 6.0).abs() < dt {
+                    // walk -> look
+                    if let animator::AnimatorState::State(state) = animated_model.animator.get_current_state() {
+                        match animated_model.animator.transition(1) {
+                            Ok(_) => (),
+                            Err(_) => println!("Incorrect transition"),
+                        }
+                    }
+                }
 
-        Self {
-            root: root_handle,
-            nodes,
-            sun: Sun::default(),
-            camera: Camera::default(),
-            environment: EnvironmentMapHandle("assets/kloofendal_overcast_puresky_8k".to_string()),
+                animated_model.animator.update(animation_graphs, dt);
+            },
+        }
+        for child_idx in node.children.clone() {
+            self.update(animation_graphs, child_idx, dt);
         }
     }
-    */
+}
+
+pub fn build_test_animation_blending() -> (Scene, Vec<AnimationGraph>) {
+    let mut nodes = Arena::new();
+
+    let animation_graph = AnimationGraph {
+        states: vec![
+            animator::State { clip_idx: 0, time_wrap: animator::TimeWrapMode::Repeat, boundary_mode: animator::BoundaryMode::Closed, speed: 1.0 },
+            animator::State { clip_idx: 1, time_wrap: animator::TimeWrapMode::Repeat, boundary_mode: animator::BoundaryMode::Closed, speed: 1.0 },
+            animator::State { clip_idx: 2, time_wrap: animator::TimeWrapMode::Repeat, boundary_mode: animator::BoundaryMode::Closed, speed: 1.0 },
+        ],
+        transitions: vec![
+            animator::Transition { blend_time: 0.5, to: 1 }, // look -> walk
+            animator::Transition { blend_time: 0.5, to: 0 }, // walk -> look
+            animator::Transition { blend_time: 0.5, to: 2 }, // walk -> run
+            animator::Transition { blend_time: 0.5, to: 1 }, // run -> walk
+        ],
+    };
+    let animation_graphs = vec![animation_graph];
+
+    let model_handle = ModelHandle("assets/local/Fox/Fox.json".to_string());
+    let render_data = RenderDataType::AnimatedModel(AnimatedModel { model: model_handle, animator: Animator::new(0, 0) });
+
+    let root_handle = nodes.insert(Node {
+        parent: None,
+        children: vec![],
+        transform: Mat4::IDENTITY,
+        render_data,
+    });
+
+    let scene = Scene {
+        root: root_handle,
+        nodes,
+        sun: Sun::default(),
+        camera: Camera::default(),
+        environment: EnvironmentMapHandle("assets/kloofendal_overcast_puresky_8k".to_string()),
+        global_time_sec: 0.0
+    };
+
+    (scene, animation_graphs)
 }

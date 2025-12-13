@@ -4,44 +4,38 @@ use arc_swap::{ArcSwap, Guard};
 use generational_arena::Index;
 use glam::Mat4;
 
-use crate::scene_tree::{Camera, RenderDataType, Scene, Sun};
+use crate::{animator::{AnimationGraph, AnimationSnapshot}, scene_tree::{Camera, RenderDataType, Scene, Sun}};
 
 use super::render_resources::{EnvironmentMapHandle, ModelHandle};
 
-pub fn accumulate_model_transforms(
+pub fn accumulate_model_instances(
     scene: &Scene,
+    animation_graphs: &Vec<AnimationGraph>,
     models: &mut HashMap<ModelHandle, HashMap<Index, ModelInstance>>,
     base_transform: &Mat4,
     node_handle: Index,
 ) {
     let node = scene.nodes.get(node_handle).unwrap();
-    let RenderDataType::Model(model_handle) = &node.render_data;
+    let (model_handle, maybe_animation_snapshot) = match &node.render_data {
+        RenderDataType::Model(model_handle) => (model_handle, None),
+        RenderDataType::AnimatedModel(animated_model) => (&animated_model.model, Some(animated_model.animator.build_snapshot(animation_graphs))),
+    };
     let v = models
         .entry(model_handle.clone())
         .or_insert_with(HashMap::new);
     let transform = node.transform * base_transform;
-    let animation = Some(AnimationInstance {
-        clip_idx: 1,
-        clip_time: scene.global_time_sec / 2f32,
-    });
     let inst = ModelInstance {
-        transform, animation
+        transform, animation: maybe_animation_snapshot
     };
     v.insert(node_handle, inst);
     for child in &node.children {
-        accumulate_model_transforms(scene, models, &transform, *child);
+        accumulate_model_instances(scene, animation_graphs, models, &transform, *child);
     }
-}
-
-pub struct AnimationInstance {
-    pub clip_idx: u32,
-    /// 0..1
-    pub clip_time: f32,
 }
 
 pub struct ModelInstance {
     pub transform: Mat4,
-    pub animation: Option<AnimationInstance>,
+    pub animation: Option<AnimationSnapshot>,
 }
 
 pub struct RenderSnapshot {
@@ -51,9 +45,9 @@ pub struct RenderSnapshot {
     pub sun: Option<Sun>,
 }
 impl RenderSnapshot {
-    pub fn build(scene: &Scene) -> Self {
+    pub fn build(scene: &Scene, animation_graphs: &Vec<AnimationGraph>) -> Self {
         let mut model_instances = HashMap::<ModelHandle, HashMap<Index, ModelInstance>>::new();
-        accumulate_model_transforms(scene, &mut model_instances, &Mat4::IDENTITY, scene.root);
+        accumulate_model_instances(scene, animation_graphs, &mut model_instances, &Mat4::IDENTITY, scene.root);
 
         // TODO dirty check
         let environment_map = scene.environment.clone();

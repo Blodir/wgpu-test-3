@@ -3,9 +3,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
 
-use super::render_resources::animation::AnimationClip;
+use super::render_resources::animation::{AnimationClip, Channel, Track};
 use super::render_resources::{BoneMat34, SkeletonHandle};
-use super::render_snapshot::accumulate_model_transforms;
 use super::render_snapshot::{self, SnapshotGuard};
 use super::{render_resources::ModelHandle, render_snapshot::SnapshotHandoff};
 use generational_arena::Index;
@@ -265,16 +264,49 @@ pub fn prepare_models<'a>(
                         .clone(),
                 );
                 let skeleton = render_resources.skeletons.get(&skeleton_handle).unwrap();
-                let anim_instance = curr_instance.animation.as_ref().unwrap();
-                let anim_handle = &model_data.animations[anim_instance.clip_idx as usize];
-                let anim_resource = render_resources.animations.get(anim_handle).unwrap();
-                let clip_time = &snaps.prev.model_instances
-                    .get(model_handle)
-                    .and_then(|nodes| nodes.get(node_idx))
-                    .and_then(|node| node.animation.as_ref())
-                    .map(|prev_anim| lerpf32(prev_anim.clip_time, anim_instance.clip_time, t))
-                    .unwrap_or(0f32);
-                calculate_joint_matrices(skeleton, anim_resource, *clip_time)
+                let anim_snapshot = curr_instance.animation.as_ref().unwrap();
+                let anim_data = match &anim_snapshot {
+                    crate::animator::AnimationSnapshot::AnimationStateSnapshot(animation_state_snapshot) => {
+                        let anim_handle = &model_data.animations[animation_state_snapshot.clip_idx as usize];
+                        let clip = render_resources.animations.get(anim_handle).unwrap();
+                        let clip_time = &snaps.prev.model_instances
+                            .get(model_handle)
+                            .and_then(|nodes| nodes.get(node_idx))
+                            .and_then(|node| node.animation.as_ref())
+                            .map(|prev_anim_snap| match prev_anim_snap {
+                                crate::animator::AnimationSnapshot::AnimationStateSnapshot(animation_state_snapshot) =>
+                                    animation_state_snapshot.animation_time,
+                                crate::animator::AnimationSnapshot::AnimationTransitionSnapshot(animation_transition_snapshot) =>
+                                    animation_transition_snapshot.to_time,
+                            })
+                            .map(|prev_time| lerpf32(prev_time, animation_state_snapshot.animation_time, t))
+                            .unwrap_or(0f32);
+                        AnimationData::Single(clip, *clip_time)
+                    },
+                    crate::animator::AnimationSnapshot::AnimationTransitionSnapshot(animation_transition_snapshot) => {
+                        let from_handle = &model_data.animations[animation_transition_snapshot.from_clip_idx as usize];
+                        let from_clip = render_resources.animations.get(from_handle).unwrap();
+                        let to_handle = &model_data.animations[animation_transition_snapshot.to_clip_idx as usize];
+                        let to_clip = render_resources.animations.get(to_handle).unwrap();
+                        let blend_time = animation_transition_snapshot.blend_time;
+
+                        let prev_times = &snaps.prev.model_instances
+                            .get(model_handle)
+                            .and_then(|nodes| nodes.get(node_idx))
+                            .and_then(|node| node.animation.as_ref())
+                            .map(|prev_anim_snap| match prev_anim_snap {
+                                crate::animator::AnimationSnapshot::AnimationStateSnapshot(animation_state_snapshot) =>
+                                    (animation_state_snapshot.animation_time, 0.0),
+                                crate::animator::AnimationSnapshot::AnimationTransitionSnapshot(animation_transition_snapshot) =>
+                                    (animation_transition_snapshot.from_time, animation_transition_snapshot.to_time)
+                            }).unwrap_or((0.0, 0.0));
+                        let from_time = lerpf32(prev_times.0, animation_transition_snapshot.from_time, t);
+                        let to_time = lerpf32(prev_times.1, animation_transition_snapshot.to_time, t);
+
+                        AnimationData::Blend(BlendAnimationData { from_clip, to_clip, from_time, to_time, blend_time })
+                    },
+                };
+                compute_joint_matrices(skeleton, anim_data)
             };
 
             joint_palette.extend_from_slice(&joint_matrices);
@@ -330,7 +362,79 @@ fn bin_search_anim_indices(times: &[f32], val: f32) -> (usize, usize) {
     }
 }
 
-fn calculate_joint_matrices(skeleton: &skeletonfile::Skeleton, animation: &AnimationClip, current_animation_time: f32) -> Vec<BoneMat34> {
+fn compute_keyframe_values<'a, T>(times: &Box<[f32]>, values: &'a Box<[T]>, t: f32) -> (&'a T, &'a T, f32) {
+    let (i0, i1) = bin_search_anim_indices(times, t);
+    let (t0, t1) = (times[i0], times[i1]);
+    let (v0, v1) = (&values[i0], &values[i1]);
+    let alpha = if i0 == i1 || (t1 - t0).abs() < f32::EPSILON {
+        0.0
+    } else {
+        (t - t0) / (t1 - t0) // normalized interpolation factor
+    };
+    (v0, v1, alpha)
+}
+
+fn interpolate_channel_value_vec3(track: &Track,channel: &Channel<Vec3>, t: f32) -> Vec3 {
+    let times = channel.times.as_ref().or(track.shared_times.as_ref()).unwrap();
+    let values = &channel.values;
+    let (v0, v1, alpha) = compute_keyframe_values(times, values, t);
+    match channel.interpolation {
+        super::render_resources::animationfile::Interpolation::Linear => v0.lerp(*v1, alpha),
+        super::render_resources::animationfile::Interpolation::Step => *v0,
+        super::render_resources::animationfile::Interpolation::CubicSpline => todo!(),
+    }
+}
+
+fn interpolate_channel_value_quat(track: &Track,channel: &Channel<Quat>, t: f32) -> Quat {
+    let times = channel.times.as_ref().or(track.shared_times.as_ref()).unwrap();
+    let values = &channel.values;
+    let (v0, v1, alpha) = compute_keyframe_values(times, values, t);
+    match channel.interpolation {
+        super::render_resources::animationfile::Interpolation::Linear => v0.lerp(*v1, alpha),
+        super::render_resources::animationfile::Interpolation::Step => *v0,
+        super::render_resources::animationfile::Interpolation::CubicSpline => todo!(),
+    }
+}
+
+/// SRT form
+fn compute_animated_pose(animation: &AnimationClip, skeleton: &skeletonfile::Skeleton, base_locals: &Vec<(Vec3, Quat, Vec3)>, animation_time: f32) -> Vec<Option<(Vec3, Quat, Vec3)>> {
+    let mut joints: Vec<Option<(Vec3, Quat, Vec3)>> = vec![None; skeleton.joints.len()];
+    for track in &animation.tracks {
+        let t = animation_time % animation.duration;
+        let translation = track.translation.as_ref().map(|channel| interpolate_channel_value_vec3(track, channel, t));
+        let rotation = track.rotation.as_ref().map(|channel| interpolate_channel_value_quat(track, channel, t));
+        let scale = track.scale.as_ref().map(|channel| interpolate_channel_value_vec3(track, channel, t));
+
+        match track.target {
+            super::render_resources::animationfile::Target::PrimitiveGroup(_) => todo!(),
+            super::render_resources::animationfile::Target::SkeletonJoint(idx) => {
+                let base = base_locals[idx as usize];
+                joints[idx as usize] = Some(
+                    (
+                        scale.unwrap_or(base.0),
+                        rotation.unwrap_or(base.1),
+                        translation.unwrap_or(base.2)
+                    )
+                );
+            },
+        }
+    }
+    joints
+}
+
+struct BlendAnimationData<'a> {
+    from_clip: &'a AnimationClip,
+    to_clip: &'a AnimationClip,
+    from_time: f32,
+    to_time: f32,
+    blend_time: f32,
+}
+
+enum AnimationData<'a> {
+    Single(&'a AnimationClip, f32),
+    Blend(BlendAnimationData<'a>)
+}
+fn compute_joint_matrices<'a>(skeleton: &skeletonfile::Skeleton, animation: AnimationData<'a>) -> Vec<BoneMat34> {
     let joint_count = skeleton.joints.len();
     if joint_count == 0 {
         return vec![];
@@ -360,79 +464,41 @@ fn calculate_joint_matrices(skeleton: &skeletonfile::Skeleton, animation: &Anima
         .collect();
 
     let mut joint_matrices: Vec<_> = skeleton.joints.iter().map(|joint| Mat4::from_cols_array_2d(&joint.trs)).collect();
-    for track in &animation.tracks {
-        let t = current_animation_time % animation.duration;
-        let translation = track.translation.as_ref().map(|channel| {
-            let times = channel.times.as_ref().or(track.shared_times.as_ref()).unwrap();
-            let values = &channel.values;
-            let (i0, i1) = bin_search_anim_indices(times, t);
-            let (t0, t1) = (times[i0], times[i1]);
-            let (v0, v1) = (values[i0], values[i1]);
-            let alpha = if i0 == i1 || (t1 - t0).abs() < f32::EPSILON {
-                0.0
-            } else {
-                (t - t0) / (t1 - t0) // normalized interpolation factor
-            };
-            match channel.interpolation {
-                super::render_resources::animationfile::Interpolation::Linear => v0.lerp(v1, alpha),
-                super::render_resources::animationfile::Interpolation::Step => v0,
-                super::render_resources::animationfile::Interpolation::CubicSpline => todo!(),
+    match animation {
+        AnimationData::Single(animation_clip, time) => {
+            let pose = compute_animated_pose(animation_clip, skeleton, &base_locals, time);
+            for (idx, maybe_joint) in pose.iter().enumerate() {
+                if let Some(joint) = maybe_joint {
+                    joint_matrices[idx] = Mat4::from_scale_rotation_translation(joint.0, joint.1, joint.2);
+                }
             }
-        });
-
-        let rotation = track.rotation.as_ref().map(|channel| {
-            let times = channel.times.as_ref().or(track.shared_times.as_ref()).unwrap();
-            let values = &channel.values;
-            let (i0, i1) = bin_search_anim_indices(times, t);
-            let (t0, t1) = (times[i0], times[i1]);
-            let (v0, v1) = (values[i0], values[i1]);
-            let alpha = if i0 == i1 || (t1 - t0).abs() < f32::EPSILON {
-                0.0
-            } else {
-                (t - t0) / (t1 - t0) // normalized interpolation factor
-            };
-            match channel.interpolation {
-                super::render_resources::animationfile::Interpolation::Linear => v0.slerp(v1, alpha),
-                super::render_resources::animationfile::Interpolation::Step => v0,
-                super::render_resources::animationfile::Interpolation::CubicSpline => todo!(),
+        },
+        AnimationData::Blend(BlendAnimationData { from_clip, to_clip, from_time, to_time, blend_time }) => {
+            let pose_1 = compute_animated_pose(from_clip, skeleton, &base_locals, from_time);
+            let pose_2 = compute_animated_pose(to_clip, skeleton, &base_locals, to_time);
+            let blend_t = (to_time / blend_time).min(1.0);
+            for idx in 0..skeleton.joints.len() {
+                let maybe_joint_1 = pose_1[idx];
+                let maybe_joint_2 = pose_2[idx];
+                if let Some(joint_1) = maybe_joint_1 {
+                    if let Some(joint_2) = maybe_joint_2 {
+                        let s = joint_1.0.lerp(joint_2.0, blend_t);
+                        let r = joint_1.1.slerp(joint_2.1, blend_t);
+                        let t = joint_1.2.lerp(joint_2.2, blend_t);
+                        joint_matrices[idx] = Mat4::from_scale_rotation_translation(s, r, t);
+                    } else {
+                        joint_matrices[idx] = Mat4::from_scale_rotation_translation(joint_1.0, joint_1.1, joint_1.2);
+                    }
+                } else if let Some(joint_2) = maybe_joint_2 {
+                    joint_matrices[idx] = Mat4::from_scale_rotation_translation(joint_2.0, joint_2.1, joint_2.2);
+                }
             }
-        });
-
-        let scale = track.scale.as_ref().map(|channel| {
-            let times = channel.times.as_ref().or(track.shared_times.as_ref()).unwrap();
-            let values = &channel.values;
-            let (i0, i1) = bin_search_anim_indices(times, t);
-            let (t0, t1) = (times[i0], times[i1]);
-            let (v0, v1) = (values[i0], values[i1]);
-            let alpha = if i0 == i1 || (t1 - t0).abs() < f32::EPSILON {
-                0.0
-            } else {
-                (t - t0) / (t1 - t0) // normalized interpolation factor
-            };
-            match channel.interpolation {
-                super::render_resources::animationfile::Interpolation::Linear => v0.lerp(v1, alpha),
-                super::render_resources::animationfile::Interpolation::Step => v0,
-                super::render_resources::animationfile::Interpolation::CubicSpline => todo!(),
-            }
-        });
-
-        match track.target {
-            super::render_resources::animationfile::Target::PrimitiveGroup(_) => todo!(),
-            super::render_resources::animationfile::Target::SkeletonJoint(idx) => {
-                let base = base_locals[idx as usize];
-                joint_matrices[idx as usize] = Mat4::from_scale_rotation_translation(
-                    scale.unwrap_or(base.0),
-                    rotation.unwrap_or(base.1),
-                    translation.unwrap_or(base.2)
-                );
-            },
-        }
+        },
     }
 
     while let Some((idx, parent_mat)) = stack.pop() {
         let joint = &skeleton.joints[idx];
-        let local = joint_matrices[idx]; // Mat4::from_cols_array_2d(&joint.trs);
-        let world = parent_mat * local;
+        let world = parent_mat * joint_matrices[idx];
         global_transforms[idx] = world;
 
         for child in &joint.children {

@@ -30,6 +30,7 @@ use crate::{
 
 pub mod renderer;
 pub mod scene_tree;
+pub mod animator;
 pub mod sim;
 
 pub fn align_to_256(n: usize) -> usize {
