@@ -210,27 +210,25 @@ impl MaterialBinding {
                     usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
                 });
 
-        let normals = &render_resources
+        let normals = render_resources
             .sampled_textures
-            .get(&TextureHandle(mat.normal_texture.source.clone()))
+            .get(&mat.normal_texture.as_ref().map(|n| TextureHandle(n.source.clone())).unwrap_or(RenderResources::get_normals_placeholder()))
             .unwrap();
-        let occlusion = &render_resources
+        let occlusion = render_resources
             .sampled_textures
-            .get(&TextureHandle(mat.occlusion_texture.source.clone()))
+            .get(&mat.occlusion_texture.as_ref().map(|n| TextureHandle(n.source.clone())).unwrap_or(RenderResources::get_occlusion_placeholder()))
             .unwrap();
-        let base_color = &render_resources
+        let base_color = render_resources
             .sampled_textures
-            .get(&TextureHandle(mat.base_color_texture.source.clone()))
+            .get(&mat.base_color_texture.as_ref().map(|n| TextureHandle(n.source.clone())).unwrap_or(RenderResources::get_base_color_placeholder()))
             .unwrap();
-        let emissive = &render_resources
+        let emissive = render_resources
             .sampled_textures
-            .get(&TextureHandle(mat.emissive_texture.source.clone()))
+            .get(&mat.emissive_texture.as_ref().map(|n| TextureHandle(n.source.clone())).unwrap_or(RenderResources::get_emissive_placeholder()))
             .unwrap();
-        let metallic_roughness = &render_resources
+        let metallic_roughness = render_resources
             .sampled_textures
-            .get(&TextureHandle(
-                mat.metallic_roughness_texture.source.clone(),
-            ))
+            .get(&mat.metallic_roughness_texture.as_ref().map(|n| TextureHandle(n.source.clone())).unwrap_or(RenderResources::get_metallic_roughness_placeholder()))
             .unwrap();
 
         let bind_group = wgpu_context

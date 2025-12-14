@@ -28,6 +28,7 @@ use crate::{
     scene_tree::{Node, RenderDataType, Scene},
 };
 
+pub mod resource_manager;
 pub mod renderer;
 pub mod scene_tree;
 pub mod animator;

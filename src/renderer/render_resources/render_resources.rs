@@ -920,9 +920,13 @@ impl RenderResources {
 
     pub fn load_material(
         &mut self,
-        mat: &materialfile::Material,
+        json_path: &str,
         wgpu_context: &WgpuContext,
     ) -> Result<MaterialHandle, Box<dyn std::error::Error>> {
+        let json_file = std::fs::File::open(json_path)?;
+        let json_reader = std::io::BufReader::new(json_file);
+        let mat: materialfile::Material = serde_json::from_reader(json_reader)?;
+
         let base_color_handle =
             &mat.base_color_texture.as_ref()
             .map(|s| self.load_sampled_texture(s, 1, wgpu_context))
@@ -944,7 +948,7 @@ impl RenderResources {
             .map(|s| self.load_sampled_texture(s, 1, wgpu_context))
             .unwrap_or(Ok(Self::get_metallic_roughness_placeholder()))?;
 
-        let binding = MaterialBinding::upload(mat, self, wgpu_context);
+        let binding = MaterialBinding::upload(&mat, self, wgpu_context);
         let handle = self.materials.insert(binding);
 
         Ok(handle)

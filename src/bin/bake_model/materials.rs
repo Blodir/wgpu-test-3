@@ -77,7 +77,7 @@ fn bake_placeholder_texture(
     data: gltf::image::Data,
     srgb: bool,
     tex_name: &str,
-) -> modelfile::SampledTexture {
+) -> materialfile::SampledTexture {
     let tex_output_path = format!("assets/shared/{}.placeholder.dds", tex_name);
 
     export_image_as_dds(
@@ -88,16 +88,16 @@ fn bake_placeholder_texture(
     )
     .expect(&format!("Failed to write texture {}", tex_output_path));
 
-    let sampler = modelfile::Sampler {
-        mag_filter: modelfile::FilterMode::Linear,
-        min_filter: modelfile::FilterMode::Linear,
-        mipmap_filter: modelfile::MipmapFilterMode::None,
-        wrap_u: modelfile::WrapMode::Repeat,
-        wrap_v: modelfile::WrapMode::Repeat,
-        wrap_w: modelfile::WrapMode::Repeat,
+    let sampler = materialfile::Sampler {
+        mag_filter: materialfile::FilterMode::Linear,
+        min_filter: materialfile::FilterMode::Linear,
+        mipmap_filter: materialfile::MipmapFilterMode::None,
+        wrap_u: materialfile::WrapMode::Repeat,
+        wrap_v: materialfile::WrapMode::Repeat,
+        wrap_w: materialfile::WrapMode::Repeat,
     };
 
-    modelfile::SampledTexture {
+    materialfile::SampledTexture {
         source: tex_output_path,
         sampler,
     }
@@ -110,7 +110,7 @@ fn bake_texture(
     alpha_mode: gltf::material::AlphaMode,
     model_name: &str,
     tex_name: &str,
-) -> modelfile::SampledTexture {
+) -> materialfile::SampledTexture {
     let data = &images[texture.source().index()];
     let tex_output_path = match texture.source().source() {
         gltf::image::Source::View { view, mime_type } => {
@@ -130,8 +130,8 @@ fn bake_texture(
         .mag_filter()
         .unwrap_or(gltf::texture::MagFilter::Linear)
     {
-        gltf::texture::MagFilter::Linear => modelfile::FilterMode::Linear,
-        gltf::texture::MagFilter::Nearest => modelfile::FilterMode::Nearest,
+        gltf::texture::MagFilter::Linear => materialfile::FilterMode::Linear,
+        gltf::texture::MagFilter::Nearest => materialfile::FilterMode::Nearest,
     };
 
     let min_filter = match gltf_sampler
@@ -140,45 +140,45 @@ fn bake_texture(
     {
         gltf::texture::MinFilter::Nearest
         | gltf::texture::MinFilter::NearestMipmapNearest
-        | gltf::texture::MinFilter::NearestMipmapLinear => modelfile::FilterMode::Nearest,
+        | gltf::texture::MinFilter::NearestMipmapLinear => materialfile::FilterMode::Nearest,
 
         gltf::texture::MinFilter::Linear
         | gltf::texture::MinFilter::LinearMipmapNearest
-        | gltf::texture::MinFilter::LinearMipmapLinear => modelfile::FilterMode::Linear,
+        | gltf::texture::MinFilter::LinearMipmapLinear => materialfile::FilterMode::Linear,
     };
 
     let mipmap_filter = match gltf_sampler.min_filter() {
         Some(
             gltf::texture::MinFilter::NearestMipmapNearest
             | gltf::texture::MinFilter::LinearMipmapNearest,
-        ) => modelfile::MipmapFilterMode::Nearest,
+        ) => materialfile::MipmapFilterMode::Nearest,
         Some(
             gltf::texture::MinFilter::NearestMipmapLinear
             | gltf::texture::MinFilter::LinearMipmapLinear,
-        ) => modelfile::MipmapFilterMode::Linear,
+        ) => materialfile::MipmapFilterMode::Linear,
         Some(gltf::texture::MinFilter::Nearest | gltf::texture::MinFilter::Linear) | None => {
-            modelfile::MipmapFilterMode::None
+            materialfile::MipmapFilterMode::None
         }
     };
 
     let wrap_u = match gltf_sampler.wrap_s() {
-        gltf::texture::WrappingMode::Repeat => modelfile::WrapMode::Repeat,
-        gltf::texture::WrappingMode::ClampToEdge => modelfile::WrapMode::ClampToEdge,
-        gltf::texture::WrappingMode::MirroredRepeat => modelfile::WrapMode::MirroredRepeat,
+        gltf::texture::WrappingMode::Repeat => materialfile::WrapMode::Repeat,
+        gltf::texture::WrappingMode::ClampToEdge => materialfile::WrapMode::ClampToEdge,
+        gltf::texture::WrappingMode::MirroredRepeat => materialfile::WrapMode::MirroredRepeat,
     };
 
     let wrap_v = match gltf_sampler.wrap_t() {
-        gltf::texture::WrappingMode::Repeat => modelfile::WrapMode::Repeat,
-        gltf::texture::WrappingMode::ClampToEdge => modelfile::WrapMode::ClampToEdge,
-        gltf::texture::WrappingMode::MirroredRepeat => modelfile::WrapMode::MirroredRepeat,
+        gltf::texture::WrappingMode::Repeat => materialfile::WrapMode::Repeat,
+        gltf::texture::WrappingMode::ClampToEdge => materialfile::WrapMode::ClampToEdge,
+        gltf::texture::WrappingMode::MirroredRepeat => materialfile::WrapMode::MirroredRepeat,
     };
 
     // gltf has no wrap_w
-    let wrap_w = modelfile::WrapMode::Repeat;
+    let wrap_w = materialfile::WrapMode::Repeat;
 
-    modelfile::SampledTexture {
+    materialfile::SampledTexture {
         source: tex_output_path,
-        sampler: modelfile::Sampler {
+        sampler: materialfile::Sampler {
             mag_filter,
             min_filter,
             mipmap_filter,
@@ -193,7 +193,7 @@ fn bake_base_color_tex(
     material: &gltf::Material,
     images: &Vec<gltf::image::Data>,
     model_name: &str,
-) -> Option<modelfile::SampledTexture> {
+) -> Option<materialfile::SampledTexture> {
     if let Some(tex_info) = material.pbr_metallic_roughness().base_color_texture() {
         Some(
             bake_texture(
@@ -224,7 +224,7 @@ fn bake_metallic_roughness_tex(
     material: &gltf::Material,
     images: &Vec<gltf::image::Data>,
     model_name: &str,
-) -> Option<modelfile::SampledTexture> {
+) -> Option<materialfile::SampledTexture> {
     if let Some(tex_info) = material
         .pbr_metallic_roughness()
         .metallic_roughness_texture()
@@ -258,7 +258,7 @@ fn bake_normals_tex(
     material: &gltf::Material,
     images: &Vec<gltf::image::Data>,
     model_name: &str,
-) -> Option<modelfile::SampledTexture> {
+) -> Option<materialfile::SampledTexture> {
     if let Some(tex_info) = material.normal_texture() {
         Some(
             bake_texture(
@@ -289,7 +289,7 @@ fn bake_occlusion_tex(
     material: &gltf::Material,
     images: &Vec<gltf::image::Data>,
     model_name: &str,
-) -> Option<modelfile::SampledTexture> {
+) -> Option<materialfile::SampledTexture> {
     if let Some(tex_info) = material.occlusion_texture() {
         Some(
             bake_texture(
@@ -320,7 +320,7 @@ fn bake_emissive_tex(
     material: &gltf::Material,
     images: &Vec<gltf::image::Data>,
     model_name: &str,
-) -> Option<modelfile::SampledTexture> {
+) -> Option<materialfile::SampledTexture> {
     if let Some(tex_info) = material.emissive_texture() {
         Some(
             bake_texture(
@@ -367,9 +367,9 @@ pub fn bake_material(
         normal_texture_scale: material.normal_texture().map(|n| n.scale()).unwrap_or(1f32),
         occlusion_strength: material.occlusion_texture().map(|o| o.strength()).unwrap_or(1f32),
         alpha_mode: match material.alpha_mode() {
-            gltf::material::AlphaMode::Blend => modelfile::AlphaMode::Blend,
-            gltf::material::AlphaMode::Mask => modelfile::AlphaMode::Mask,
-            gltf::material::AlphaMode::Opaque => modelfile::AlphaMode::Opaque,
+            gltf::material::AlphaMode::Blend => materialfile::AlphaMode::Blend,
+            gltf::material::AlphaMode::Mask => materialfile::AlphaMode::Mask,
+            gltf::material::AlphaMode::Opaque => materialfile::AlphaMode::Opaque,
         },
         alpha_cutoff: material.alpha_cutoff().unwrap_or(0.5f32),
         double_sided: material.double_sided(),

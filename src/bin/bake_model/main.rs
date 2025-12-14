@@ -208,9 +208,9 @@ fn bake(
 
     let mut material_paths: Vec<String> = vec![];
     for (idx, material) in gltf.materials().enumerate() {
-        let name = material.name().unwrap_or(model_name + idx.to_string());
+        let name = material.name().map(|n| n.to_string()).unwrap_or(model_name.to_string() + &idx.to_string());
         let json_path = format!("assets/local/{}/{}.material.json", model_name, name);
-        bake_material(&material, buffers, images, model_name, &json_path);
+        bake_material(&material, buffers, images, model_name, &json_path)?;
         material_paths.push(json_path);
     }
 
