@@ -605,7 +605,7 @@ impl RenderResources {
             &bytemuck::cast_slice(&[1u16, 1u16, 1u16, 1u16]).to_vec(),
             wgpu::ImageDataLayout {
                 offset: 0,
-                bytes_per_row: Some(1),
+                bytes_per_row: Some(2*4),
                 rows_per_image: Some(1),
             },
             extent,
@@ -615,7 +615,7 @@ impl RenderResources {
             &bytemuck::cast_slice(&[0x0000u16, 0x3800u16, 0x0000u16, 0x3C00u16]).to_vec(),
             wgpu::ImageDataLayout {
                 offset: 0,
-                bytes_per_row: Some(1),
+                bytes_per_row: Some(2*4),
                 rows_per_image: Some(1),
             },
             extent,
@@ -625,7 +625,7 @@ impl RenderResources {
             &bytemuck::cast_slice(&[0x0000u16, 0x0000u16, 0x3C00u16, 0x3C00u16]).to_vec(),
             wgpu::ImageDataLayout {
                 offset: 0,
-                bytes_per_row: Some(1),
+                bytes_per_row: Some(2*4),
                 rows_per_image: Some(1),
             },
             extent,
