@@ -3,7 +3,7 @@ use wgpu::{core::device, util::DeviceExt};
 use crate::{
     renderer::{
         pipelines::{
-            model::{instance::Instance, material::MaterialBinding, vertex::Vertex},
+            model::{instance::Instance, material_binding::MaterialBinding, vertex::Vertex},
             resources::depth_texture::DepthTexture,
         },
         render_resources::{

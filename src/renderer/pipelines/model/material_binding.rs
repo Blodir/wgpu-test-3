@@ -1,10 +1,6 @@
 use wgpu::util::DeviceExt as _;
 
-use crate::{
-    renderer::render_resources::modelfile,
-    renderer::render_resources::{RenderResources, TextureHandle},
-    renderer::wgpu_context::WgpuContext,
-};
+use crate::renderer::{render_resources::{materialfile, modelfile, RenderResources, TextureHandle}, wgpu_context::WgpuContext};
 
 pub struct MaterialBinding {
     pub bind_group: wgpu::BindGroup,
@@ -169,7 +165,7 @@ impl MaterialBinding {
     }
 
     pub fn upload(
-        mat: &modelfile::Material,
+        mat: &materialfile::Material,
         render_resources: &RenderResources,
         wgpu_context: &WgpuContext,
     ) -> Self {

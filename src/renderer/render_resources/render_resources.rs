@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use super::animation::AnimationClip;
 use super::animationfile;
 use super::dds;
+use super::materialfile;
 use super::modelfile;
 use super::png;
 use super::skeletonfile;
@@ -16,7 +17,7 @@ use glam::Vec4;
 use wgpu::{util::DeviceExt as _, SamplerDescriptor, TextureViewDescriptor};
 
 use crate::{
-    renderer::pipelines::model::{instance::Instance, material::MaterialBinding},
+    renderer::pipelines::model::{instance::Instance, material_binding::MaterialBinding},
     renderer::wgpu_context::{self, WgpuContext},
     scene_tree::{Camera, Sun},
 };
@@ -504,6 +505,179 @@ pub struct RenderResources {
     pub bones: BonesBinding,
 }
 impl RenderResources {
+    const NORMALS_PLACEHOLDER: &str = "NORMALS_PLACEHOLDER";
+    const OCCLUSION_PLACEHOLDER: &str = "OCCLUSION_PLACEHOLDER";
+    const BASE_COLOR_PLACEHOLDER: &str = "BASE_COLOR_PLACEHOLDER";
+    const EMISSIVE_PLACEHOLDER: &str = "EMISSIVE_PLACEHOLDER";
+    const METALLIC_ROUGHNESS_PLACEHOLDER: &str = "METALLIC_ROUGHNESS_PLACEHOLDER";
+
+    fn initialize_placeholder_textures(
+        &mut self,
+        wgpu_context: &WgpuContext,
+    ) {
+        let extent = wgpu::Extent3d {
+            width: 1,
+            height: 1,
+            depth_or_array_layers: 1,
+        };
+        let base_color_texture = wgpu_context.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Base color placeholder"),
+            size: extent,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba16Float,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let metallic_roughness_texture = wgpu_context.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Metallic-roughness placeholder"),
+            size: extent,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba16Float,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let normals_texture = wgpu_context.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Normals placeholder"),
+            size: extent,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba16Float,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let occlusion_texture = wgpu_context.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Occlusion placeholder"),
+            size: extent,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::R8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let emissive_texture = wgpu_context.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Emissive placeholder"),
+            size: extent,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::R8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let base_color_ict = wgpu::ImageCopyTexture {
+            texture: &base_color_texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d { x: 0, y: 0, z: 0, },
+            aspect: wgpu::TextureAspect::All,
+        };
+        let metallic_roughness_ict = wgpu::ImageCopyTexture {
+            texture: &metallic_roughness_texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d { x: 0, y: 0, z: 0, },
+            aspect: wgpu::TextureAspect::All,
+        };
+        let normals_ict = wgpu::ImageCopyTexture {
+            texture: &normals_texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d { x: 0, y: 0, z: 0, },
+            aspect: wgpu::TextureAspect::All,
+        };
+        let occlusion_ict = wgpu::ImageCopyTexture {
+            texture: &occlusion_texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d { x: 0, y: 0, z: 0, },
+            aspect: wgpu::TextureAspect::All,
+        };
+        let emissive_ict = wgpu::ImageCopyTexture {
+            texture: &emissive_texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d { x: 0, y: 0, z: 0, },
+            aspect: wgpu::TextureAspect::All,
+        };
+        wgpu_context.queue.write_texture(
+            base_color_ict,
+            &bytemuck::cast_slice(&[1u16, 1u16, 1u16, 1u16]).to_vec(),
+            wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(1),
+                rows_per_image: Some(1),
+            },
+            extent,
+        );
+        wgpu_context.queue.write_texture(
+            metallic_roughness_ict,
+            &bytemuck::cast_slice(&[0x0000u16, 0x3800u16, 0x0000u16, 0x3C00u16]).to_vec(),
+            wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(1),
+                rows_per_image: Some(1),
+            },
+            extent,
+        );
+        wgpu_context.queue.write_texture(
+            normals_ict,
+            &bytemuck::cast_slice(&[0x0000u16, 0x0000u16, 0x3C00u16, 0x3C00u16]).to_vec(),
+            wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(1),
+                rows_per_image: Some(1),
+            },
+            extent,
+        );
+        wgpu_context.queue.write_texture(
+            occlusion_ict,
+            &vec![u8::MAX],
+            wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(1),
+                rows_per_image: Some(1),
+            },
+            extent,
+        );
+        wgpu_context.queue.write_texture(
+            emissive_ict,
+            &vec![0u8],
+            wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(1),
+                rows_per_image: Some(1),
+            },
+            extent,
+        );
+        let base_color = SampledTexture {
+            view: base_color_texture.create_view(&TextureViewDescriptor::default()),
+            sampler: wgpu_context.device.create_sampler(&wgpu::SamplerDescriptor::default())
+        };
+        let metallic_roughness = SampledTexture {
+            view: metallic_roughness_texture.create_view(&TextureViewDescriptor::default()),
+            sampler: wgpu_context.device.create_sampler(&wgpu::SamplerDescriptor::default())
+        };
+        let normals = SampledTexture {
+            view: normals_texture.create_view(&TextureViewDescriptor::default()),
+            sampler: wgpu_context.device.create_sampler(&wgpu::SamplerDescriptor::default())
+        };
+        let occlusion = SampledTexture {
+            view: occlusion_texture.create_view(&TextureViewDescriptor::default()),
+            sampler: wgpu_context.device.create_sampler(&wgpu::SamplerDescriptor::default())
+        };
+        let emissive = SampledTexture {
+            view: emissive_texture.create_view(&TextureViewDescriptor::default()),
+            sampler: wgpu_context.device.create_sampler(&wgpu::SamplerDescriptor::default())
+        };
+
+        self.sampled_textures.insert(Self::get_base_color_placeholder(), base_color);
+        self.sampled_textures.insert(Self::get_metallic_roughness_placeholder(), metallic_roughness);
+        self.sampled_textures.insert(Self::get_normals_placeholder(), normals);
+        self.sampled_textures.insert(Self::get_occlusion_placeholder(), occlusion);
+        self.sampled_textures.insert(Self::get_emissive_placeholder(), emissive);
+    }
+
     pub fn new(wgpu_context: &WgpuContext) -> Self {
         let layouts = Layouts::new(wgpu_context);
         let camera = Camera::default();
@@ -514,7 +688,7 @@ impl RenderResources {
             &layouts.camera,
         );
         let bones = BonesBinding::new(&layouts.bones, &wgpu_context.device);
-        let this = RenderResources {
+        let mut this = RenderResources {
             layouts,
             models: HashMap::new(),
             skeletons: HashMap::new(),
@@ -526,6 +700,7 @@ impl RenderResources {
             lights: None,
             bones,
         };
+        this.initialize_placeholder_textures(wgpu_context);
         this
     }
 
@@ -692,7 +867,7 @@ impl RenderResources {
 
     pub fn load_sampled_texture(
         &mut self,
-        json: &modelfile::SampledTexture,
+        json: &materialfile::SampledTexture,
         array_layers: u32,
         wgpu_context: &WgpuContext,
     ) -> Result<TextureHandle, Box<dyn std::error::Error>> {
@@ -723,21 +898,51 @@ impl RenderResources {
         Ok(handle)
     }
 
+    pub fn get_base_color_placeholder() -> TextureHandle {
+        TextureHandle(Self::BASE_COLOR_PLACEHOLDER.to_string())
+    }
+
+    pub fn get_normals_placeholder() -> TextureHandle {
+        TextureHandle(Self::NORMALS_PLACEHOLDER.to_string())
+    }
+
+    pub fn get_emissive_placeholder() -> TextureHandle {
+        TextureHandle(Self::EMISSIVE_PLACEHOLDER.to_string())
+    }
+
+    pub fn get_occlusion_placeholder() -> TextureHandle {
+        TextureHandle(Self::OCCLUSION_PLACEHOLDER.to_string())
+    }
+
+    pub fn get_metallic_roughness_placeholder() -> TextureHandle {
+        TextureHandle(Self::METALLIC_ROUGHNESS_PLACEHOLDER.to_string())
+    }
+
     pub fn load_material(
         &mut self,
-        mat: &modelfile::Material,
+        mat: &materialfile::Material,
         wgpu_context: &WgpuContext,
     ) -> Result<MaterialHandle, Box<dyn std::error::Error>> {
         let base_color_handle =
-            self.load_sampled_texture(&mat.base_color_texture, 1, wgpu_context)?;
+            &mat.base_color_texture.as_ref()
+            .map(|s| self.load_sampled_texture(s, 1, wgpu_context))
+            .unwrap_or(Ok(Self::get_base_color_placeholder()))?;
         let normal_sampler_handle =
-            self.load_sampled_texture(&mat.normal_texture, 1, wgpu_context)?;
+            &mat.normal_texture.as_ref()
+            .map(|s| self.load_sampled_texture(s, 1, wgpu_context))
+            .unwrap_or(Ok(Self::get_normals_placeholder()))?;
         let emissive_sampler_handle =
-            self.load_sampled_texture(&mat.emissive_texture, 1, wgpu_context)?;
+            &mat.emissive_texture.as_ref()
+            .map(|s| self.load_sampled_texture(s, 1, wgpu_context))
+            .unwrap_or(Ok(Self::get_emissive_placeholder()))?;
         let occlusion_sampler_handle =
-            self.load_sampled_texture(&mat.occlusion_texture, 1, wgpu_context)?;
+            &mat.occlusion_texture.as_ref()
+            .map(|s| self.load_sampled_texture(s, 1, wgpu_context))
+            .unwrap_or(Ok(Self::get_occlusion_placeholder()))?;
         let metallic_roughness_sampler_handle =
-            self.load_sampled_texture(&mat.metallic_roughness_texture, 1, wgpu_context)?;
+            &mat.metallic_roughness_texture.as_ref()
+            .map(|s| self.load_sampled_texture(s, 1, wgpu_context))
+            .unwrap_or(Ok(Self::get_metallic_roughness_placeholder()))?;
 
         let binding = MaterialBinding::upload(mat, self, wgpu_context);
         let handle = self.materials.insert(binding);
@@ -895,7 +1100,7 @@ impl RenderResources {
 
         let materials = {
             let mut mats = vec![];
-            for mat in &model.materials {
+            for mat in &model.material_paths {
                 mats.push(self.load_material(mat, wgpu_context)?);
             }
             mats
