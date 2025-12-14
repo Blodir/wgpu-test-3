@@ -117,6 +117,9 @@ impl ModelPipeline {
         depth_texture_view: &wgpu::TextureView,
         render_resources: &RenderResources,
         model_handles: impl Iterator<Item = &'a ModelHandle>,
+        camera_bind_group: &wgpu::BindGroup,
+        lights_bind_group: &wgpu::BindGroup,
+        bones_bind_group: &wgpu::BindGroup,
     ) {
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Model Render Pass"),
@@ -141,11 +144,9 @@ impl ModelPipeline {
         });
 
         render_pass.set_pipeline(&self.render_pipeline);
-        render_pass.set_bind_group(0u32, &render_resources.camera.bind_group, &[]);
-        if let Some(lights) = render_resources.lights.as_ref() {
-            render_pass.set_bind_group(1, &lights.bind_group, &[]);
-        }
-        render_pass.set_bind_group(3, &render_resources.bones.bind_group, &[]);
+        render_pass.set_bind_group(0u32, camera_bind_group, &[]);
+        render_pass.set_bind_group(1, lights_bind_group, &[]);
+        render_pass.set_bind_group(3, bones_bind_group, &[]);
 
         for model_handle in model_handles {
             let model = render_resources.models.get(&model_handle).unwrap();

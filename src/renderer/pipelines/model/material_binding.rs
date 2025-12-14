@@ -1,4 +1,4 @@
-use wgpu::util::DeviceExt as _;
+use wgpu::{util::DeviceExt as _, BindGroupLayout};
 
 use crate::renderer::{render_resources::{materialfile, modelfile, RenderResources, TextureHandle}, wgpu_context::WgpuContext};
 
@@ -167,6 +167,7 @@ impl MaterialBinding {
     pub fn upload(
         mat: &materialfile::Material,
         render_resources: &RenderResources,
+        bind_group_layout: &BindGroupLayout,
         wgpu_context: &WgpuContext,
     ) -> Self {
         let base_color_factor =
@@ -234,7 +235,7 @@ impl MaterialBinding {
         let bind_group = wgpu_context
             .device
             .create_bind_group(&wgpu::BindGroupDescriptor {
-                layout: &render_resources.layouts.material,
+                layout: bind_group_layout,
                 entries: &[
                     wgpu::BindGroupEntry {
                         binding: 0,

@@ -1,7 +1,7 @@
 use crossbeam_queue::{ArrayQueue, SegQueue};
 use notify::{Config, RecommendedWatcher, Watcher};
 use pollster::FutureExt as _;
-use renderer::render_snapshot::SnapshotHandoff;
+use renderer::{render_snapshot::SnapshotHandoff, Layouts};
 use scene_tree::Sun;
 use sim::{spawn_sim, InputEvent};
 use std::{
@@ -109,16 +109,18 @@ impl<'surface> ApplicationHandler for App<'surface> {
         let wgpu_context = WgpuContext::new(window.clone()).block_on();
         let mut render_resources = RenderResources::new(&wgpu_context);
         // TODO proper render resources loading!!!
-        render_resources.load_lights(&wgpu_context, Sun::default(), EnvironmentMapHandle("assets/kloofendal_overcast_puresky_8k".to_string()));
+        let layouts = Layouts::new(&wgpu_context);
+        render_resources.preload_environment_map_textures(&wgpu_context, EnvironmentMapHandle("assets/kloofendal_overcast_puresky_8k".to_string()));
         render_resources
-            .load_model(
+            .preload_model(
                 ModelHandle("assets/local/Fox/Fox.json".to_string()),
                 &wgpu_context,
+                &layouts.material,
             )
             .unwrap();
         let renderer = Arc::new(
             Mutex::new(
-                Renderer::new(&wgpu_context, &render_resources, self.snap_handoff.clone())
+                Renderer::new(&wgpu_context, &render_resources, self.snap_handoff.clone(), layouts)
             )
         );
         self.render_context = Some(
@@ -138,7 +140,7 @@ impl<'surface> ApplicationHandler for App<'surface> {
             }
             WindowEvent::RedrawRequested => {
                 if let Some(ref mut render_context) = self.render_context {
-                    let renderer = render_context.renderer.lock().unwrap();
+                    let mut renderer = render_context.renderer.lock().unwrap();
                     match renderer.render(
                         &mut render_context.render_resources,
                         &render_context.wgpu_context,
@@ -153,7 +155,7 @@ impl<'surface> ApplicationHandler for App<'surface> {
                     let mut renderer = render_context.renderer.lock().unwrap();
                     let wgpu_context = &mut render_context.wgpu_context;
                     resize(physical_size, wgpu_context, &mut renderer);
-                    render_context.render_resources.camera.update(
+                    renderer.camera.update(
                         // TODO resize events should probably respect render loop interpolation
                         &self.snap_handoff.load().curr.camera,
                         &wgpu_context.queue,
@@ -170,7 +172,7 @@ impl<'surface> ApplicationHandler for App<'surface> {
                     let wgpu_context = &mut render_context.wgpu_context;
                     let new_size = wgpu_context.window.inner_size();
                     resize(new_size, wgpu_context, &mut renderer);
-                    render_context.render_resources.camera.update(
+                    renderer.camera.update(
                         &self.snap_handoff.load().curr.camera,
                         &wgpu_context.queue,
                         &wgpu_context.surface_config,

@@ -4,15 +4,19 @@ use std::f32;
 use std::sync::Arc;
 use std::time::Instant;
 
+use super::pipelines::model::material_binding::MaterialBinding;
 use super::render_resources::animation::{AnimationClip, Channel, Track};
-use super::render_resources::{BoneMat34, SkeletonHandle};
+use super::render_resources::{SkeletonHandle, TextureHandle};
 use super::render_snapshot::{self, SnapshotGuard};
+use super::wgpu_context;
 use super::{render_resources::ModelHandle, render_snapshot::SnapshotHandoff};
 use generational_arena::Index;
-use glam::{Mat4, Quat, Vec3, Vec4};
+use glam::{Mat3, Mat4, Quat, Vec3, Vec4};
+use wgpu::hal::vulkan::Texture;
+use wgpu::util::DeviceExt as _;
 
 use crate::animator::{self, AnimationTransitionSnapshot, TimeWrapMode};
-use crate::scene_tree::Camera;
+use crate::scene_tree::{self, Camera};
 use crate::{
     renderer::{
         pipelines::{
@@ -44,6 +48,476 @@ fn ease_in_out_sine(t: f32) -> f32 {
     0.5 - 0.5 * (std::f32::consts::PI * t).cos()
 }
 
+pub struct Layouts {
+    pub camera: wgpu::BindGroupLayout,
+    pub lights: wgpu::BindGroupLayout,
+    pub material: wgpu::BindGroupLayout,
+    pub bones: wgpu::BindGroupLayout,
+}
+impl Layouts {
+    pub fn new(wgpu_context: &WgpuContext) -> Self {
+        let camera = wgpu_context
+            .device
+            .create_bind_group_layout(&CameraBinding::desc());
+        let lights = wgpu_context
+            .device
+            .create_bind_group_layout(&LightsBinding::desc());
+        let material = wgpu_context
+            .device
+            .create_bind_group_layout(&MaterialBinding::desc());
+        let bones = wgpu_context
+            .device
+            .create_bind_group_layout(&BonesBinding::desc());
+        Self {
+            camera,
+            lights,
+            material,
+            bones
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct BoneMat34 {
+    pub mat: [[f32; 4]; 3],
+}
+impl Default for BoneMat34 {
+    fn default() -> Self {
+        Self {
+            mat: [
+                [1f32, 0f32, 0f32, 0f32],
+                [0f32, 1f32, 0f32, 0f32],
+                [0f32, 0f32, 1f32, 0f32],
+            ]
+        }
+    }
+}
+
+pub struct BonesBinding {
+    pub bind_group: wgpu::BindGroup,
+    buffer: wgpu::Buffer,
+}
+impl BonesBinding {
+    pub fn desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
+        wgpu::BindGroupLayoutDescriptor {
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ],
+            label: Some("Bones Bind Group Layout"),
+        }
+    }
+    pub fn new(layout: &wgpu::BindGroupLayout, device: &wgpu::Device) -> Self {
+        let data: Vec<BoneMat34> = vec![BoneMat34::default(); 1024];
+        // TODO allocate extra space
+        let storage_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Bones SSBO"),
+            contents: bytemuck::cast_slice(&data),
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+        });
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Bones Bind Group"),
+            layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: storage_buffer.as_entire_binding(),
+            }]
+        });
+        Self {
+            bind_group,
+            buffer: storage_buffer,
+        }
+    }
+    pub fn update(&mut self, data: Vec<BoneMat34>, queue: &wgpu::Queue) {
+        // TODO check if there's enough space?
+        queue.write_buffer(&self.buffer, 0, bytemuck::cast_slice(&data));
+    }
+}
+
+pub struct CameraMatrices {
+    pub view_proj: [[f32; 4]; 4],
+    pub position: [f32; 3],
+    pub inverse_view_proj_rot: [[f32; 4]; 4],
+}
+
+pub struct CameraBinding {
+    view_proj_buffer: wgpu::Buffer,
+    position_buffer: wgpu::Buffer,
+    inverse_view_proj_rot_buffer: wgpu::Buffer,
+    pub bind_group: wgpu::BindGroup,
+}
+impl CameraBinding {
+    pub fn new(
+        camera: &Camera,
+        device: &wgpu::Device,
+        surface_config: &wgpu::SurfaceConfiguration,
+        bind_group_layout: &wgpu::BindGroupLayout,
+    ) -> Self {
+        let matrices = CameraBinding::camera_to_matrices(camera, surface_config);
+        let view_proj = matrices.view_proj;
+        let position = matrices.position;
+        let inverse_view_proj_rot = matrices.inverse_view_proj_rot;
+        let view_proj_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("View Projection Buffer"),
+            contents: bytemuck::cast_slice(&view_proj),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+        let position_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Camera Position Buffer"),
+            contents: bytemuck::cast_slice(&position),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+        let inverse_view_proj_rot_buffer =
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Inverse View Projection Buffer"),
+                contents: bytemuck::cast_slice(&inverse_view_proj_rot),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            });
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: view_proj_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: position_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: inverse_view_proj_rot_buffer.as_entire_binding(),
+                },
+            ],
+            label: Some("Camera Bind Group"),
+        });
+
+        CameraBinding {
+            bind_group,
+            view_proj_buffer,
+            position_buffer,
+            inverse_view_proj_rot_buffer,
+        }
+    }
+
+    pub fn desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
+        wgpu::BindGroupLayoutDescriptor {
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ],
+            label: Some("Camera Bind Group Layout"),
+        }
+    }
+
+    fn camera_to_matrices(
+        cam: &Camera,
+        surface_config: &wgpu::SurfaceConfiguration,
+    ) -> CameraMatrices {
+        let rot = Quat::from_rotation_y((cam.rot_x).to_radians())
+            * Quat::from_rotation_x((cam.rot_y).to_radians());
+        let eye_rotated: Vec3 = rot * cam.eye;
+        let view = Mat4::look_at_rh(eye_rotated, cam.target, cam.up);
+
+        let aspect = surface_config.width as f32 / surface_config.height as f32;
+        // cam.fovy expected in radians (use cam.fovy.to_radians() if it’s degrees).
+        let proj = Mat4::perspective_rh(cam.fovy, aspect, cam.znear, cam.zfar);
+
+        let view_proj: Mat4 = wgpu_context::OPENGL_TO_WGPU_MATRIX * proj * view;
+
+        // Upper-left 3×3, inverted (no transpose here; cgmath code didn’t transpose either)
+        let m3 = Mat3::from_mat4(view_proj).inverse();
+
+        // Rebuild a 4×4 with zeroed last row/col (to match your cgmath layout exactly).
+        let inverse_view_proj_rot = Mat4::from_cols(
+            Vec4::new(m3.x_axis.x, m3.x_axis.y, m3.x_axis.z, 0.0),
+            Vec4::new(m3.y_axis.x, m3.y_axis.y, m3.y_axis.z, 0.0),
+            Vec4::new(m3.z_axis.x, m3.z_axis.y, m3.z_axis.z, 0.0),
+            Vec4::ZERO,
+        );
+
+        CameraMatrices {
+            view_proj: view_proj.to_cols_array_2d(),
+            position: eye_rotated.to_array(),
+            inverse_view_proj_rot: inverse_view_proj_rot.to_cols_array_2d(),
+        }
+    }
+
+    pub fn update(
+        &self,
+        camera: &Camera,
+        queue: &wgpu::Queue,
+        surface_config: &wgpu::SurfaceConfiguration,
+    ) {
+        let matrices = CameraBinding::camera_to_matrices(camera, surface_config);
+        queue.write_buffer(
+            &self.view_proj_buffer,
+            0,
+            bytemuck::cast_slice(&matrices.view_proj),
+        );
+        queue.write_buffer(
+            &self.position_buffer,
+            0,
+            bytemuck::cast_slice(&matrices.position),
+        );
+        queue.write_buffer(
+            &self.inverse_view_proj_rot_buffer,
+            0,
+            bytemuck::cast_slice(&matrices.inverse_view_proj_rot),
+        );
+    }
+}
+
+pub struct LightsBinding {
+    sun_direction_buffer: wgpu::Buffer,
+    sun_color_buffer: wgpu::Buffer,
+    pub bind_group: wgpu::BindGroup,
+}
+impl LightsBinding {
+    pub fn desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
+        wgpu::BindGroupLayoutDescriptor {
+            entries: &[
+                // sun dir
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                // sun color
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                // prefiltered
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::Cube,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+                // Diffuse irradiance
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::Cube,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 5,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+                // BRDF LUT
+                wgpu::BindGroupLayoutEntry {
+                    binding: 6,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 7,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+            label: Some("Lights Group Layout"),
+        }
+    }
+
+    pub fn new(
+        sun: &scene_tree::Sun,
+        wgpu_context: &WgpuContext,
+        render_resources: &RenderResources,
+        bind_group_layout: &wgpu::BindGroupLayout,
+    ) -> Self {
+        let direction_buffer = wgpu_context.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Sun Direction Buffer"),
+            contents: bytemuck::cast_slice(&sun.direction),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+        let color_buffer = wgpu_context.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Sun Color Buffer"),
+            contents: bytemuck::cast_slice(&sun.color),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+        let prefiltered = &render_resources.sampled_textures.get(&RenderResources::get_prefiltered_placeholder()).unwrap();
+        let di = &render_resources.sampled_textures.get(&RenderResources::get_di_placeholder()).unwrap();
+        let brdf = &render_resources.sampled_textures.get(&RenderResources::get_brdf_placeholder()).unwrap();
+        let bind_group = wgpu_context.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: direction_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: color_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(&prefiltered.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::Sampler(&prefiltered.sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: wgpu::BindingResource::TextureView(&di.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: wgpu::BindingResource::Sampler(&di.sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 6,
+                    resource: wgpu::BindingResource::TextureView(&brdf.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 7,
+                    resource: wgpu::BindingResource::Sampler(&brdf.sampler),
+                },
+            ],
+            label: Some("Lights Bind Group"),
+        });
+
+        Self {
+            sun_direction_buffer: direction_buffer,
+            sun_color_buffer: color_buffer,
+            bind_group,
+        }
+    }
+
+    pub fn update_sun(&self, sun: &scene_tree::Sun, queue: &wgpu::Queue) {
+        queue.write_buffer(
+            &self.sun_direction_buffer,
+            0,
+            bytemuck::cast_slice(&sun.direction),
+        );
+        queue.write_buffer(&self.sun_color_buffer, 0, bytemuck::cast_slice(&sun.color));
+    }
+
+    pub fn update_environment_map(
+        &mut self,
+        wgpu_context: &WgpuContext,
+        bind_group_layout: &wgpu::BindGroupLayout,
+        prefiltered_view: &wgpu::TextureView,
+        prefiltered_sampler: &wgpu::Sampler,
+        di_view: &wgpu::TextureView,
+        di_sampler: &wgpu::Sampler,
+        brdf_view: &wgpu::TextureView,
+        brdf_sampler: &wgpu::Sampler,
+    ) {
+        self.bind_group = wgpu_context.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: self.sun_direction_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: self.sun_color_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(&prefiltered_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::Sampler(&prefiltered_sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: wgpu::BindingResource::TextureView(&di_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: wgpu::BindingResource::Sampler(&di_sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 6,
+                    resource: wgpu::BindingResource::TextureView(&brdf_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 7,
+                    resource: wgpu::BindingResource::Sampler(&brdf_sampler),
+                },
+            ],
+            label: Some("Lights Bind Group"),
+        });
+    }
+}
+
 pub struct Renderer {
     skybox_output: SkyboxOutputTexture,
     depth_texture: DepthTexture,
@@ -52,13 +526,37 @@ pub struct Renderer {
     model_pipeline: ModelPipeline,
     post_pipeline: PostProcessingPipeline,
     snapshot_handoff: Arc<SnapshotHandoff>,
+    layouts: Layouts,
+    bones: BonesBinding,
+    pub camera: CameraBinding,
+    lights: LightsBinding,
 }
 impl Renderer {
     pub fn new(
         wgpu_context: &WgpuContext,
         render_resources: &RenderResources,
         snapshot_handoff: Arc<SnapshotHandoff>,
+        layouts: Layouts, // temporarily initializing layouts outside of renderer for preloading...
     ) -> Self {
+        let mut lights = LightsBinding::new(
+            &scene_tree::Sun::default(),
+            wgpu_context,
+            render_resources,
+            &layouts.lights,
+        );
+        // TODO: read environment map from initial scene
+        let prefiltered = render_resources.sampled_textures.get(&TextureHandle("assets/kloofendal_overcast_puresky_8k.prefiltered.dds".to_string())).unwrap();
+        let di = render_resources.sampled_textures.get(&TextureHandle("assets/kloofendal_overcast_puresky_8k.di.dds".to_string())).unwrap();
+        let brdf = render_resources.sampled_textures.get(&TextureHandle("assets/brdf_lut.png".to_string())).unwrap();
+        lights.update_environment_map(wgpu_context, &layouts.lights, &prefiltered.view, &prefiltered.sampler, &di.view, &di.sampler, &brdf.view, &brdf.sampler);
+
+        let camera = CameraBinding::new(
+            &Camera::default(),
+            &wgpu_context.device,
+            &wgpu_context.surface_config,
+            &layouts.camera,
+        );
+        let bones = BonesBinding::new(&layouts.bones, &wgpu_context.device);
         let skybox_output =
             SkyboxOutputTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
         let depth_texture = DepthTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
@@ -66,15 +564,15 @@ impl Renderer {
 
         let skybox_pipeline = SkyboxPipeline::new(
             &wgpu_context.device,
-            &render_resources.layouts.camera,
-            &render_resources.layouts.lights,
+            &layouts.camera,
+            &layouts.lights,
         );
         let model_pipeline = ModelPipeline::new(
             &wgpu_context.device,
             &wgpu_context.surface_config,
-            &render_resources.layouts.camera,
-            &render_resources.layouts.lights,
-            &render_resources.layouts.bones,
+            &layouts.camera,
+            &layouts.lights,
+            &layouts.bones,
         );
         let post_pipeline = PostProcessingPipeline::new(
             &wgpu_context.device,
@@ -90,11 +588,15 @@ impl Renderer {
             model_pipeline,
             post_pipeline,
             snapshot_handoff,
+            layouts,
+            bones,
+            camera,
+            lights,
         }
     }
 
     pub fn render(
-        &self,
+        &mut self,
         render_resources: &mut RenderResources,
         wgpu_context: &WgpuContext,
     ) -> Result<(), wgpu::SurfaceError> {
@@ -104,6 +606,7 @@ impl Renderer {
             .div_duration_f32(snaps.curr_timestamp - snaps.prev_timestamp);
         //let t = ease_smoothstep(t_raw); // or ease_smootherstep / ease_in_out_sine
         let models = prepare_models(
+            &mut self.bones,
             &snaps,
             t,
             render_resources,
@@ -111,9 +614,9 @@ impl Renderer {
             &wgpu_context.queue,
         );
         prepare_camera(
+            &mut self.camera,
             &snaps,
             t,
-            render_resources,
             &wgpu_context.queue,
             &wgpu_context.surface_config,
         );
@@ -126,14 +629,12 @@ impl Renderer {
                     label: Some("Render Encoder"),
                 });
 
-        if let Some(lights) = render_resources.lights.as_ref() {
-            self.skybox_pipeline.render(
-                &mut encoder,
-                &self.skybox_output.view,
-                &render_resources.camera.bind_group,
-                &lights.bind_group,
-            );
-        }
+        self.skybox_pipeline.render(
+            &mut encoder,
+            &self.skybox_output.view,
+            &self.camera.bind_group,
+            &self.lights.bind_group,
+        );
 
         self.model_pipeline.render(
             &mut encoder,
@@ -142,6 +643,9 @@ impl Renderer {
             &self.depth_texture.view,
             render_resources,
             models,
+            &self.camera.bind_group,
+            &self.lights.bind_group,
+            &self.bones.bind_group,
         );
 
         let output_surface_texture = wgpu_context.surface.get_current_texture()?;
@@ -189,9 +693,9 @@ fn lerp_wrap_unit(a: f32, b: f32, t: f32) -> f32 {
 }
 
 pub fn prepare_camera(
+    camera: &mut CameraBinding,
     snaps: &SnapshotGuard,
     t: f32,
-    render_resources: &mut crate::renderer::render_resources::RenderResources,
     queue: &wgpu::Queue,
     surface_config: &wgpu::SurfaceConfiguration,
 ) {
@@ -207,9 +711,7 @@ pub fn prepare_camera(
         rot_x: lerpf32(prev.rot_x, curr.rot_x, t),
         rot_y: lerpf32(prev.rot_y, curr.rot_y, t),
     };
-    render_resources
-        .camera
-        .update(&interpolated_camera, queue, surface_config);
+    camera.update(&interpolated_camera, queue, surface_config);
 }
 
 pub fn prepare_lights(
@@ -227,6 +729,7 @@ pub fn prepare_lights(
 }
 
 pub fn prepare_models<'a>(
+    bones: &mut BonesBinding,
     snaps: &'a SnapshotGuard,
     t: f32,
     render_resources: &mut crate::renderer::render_resources::RenderResources,
@@ -324,7 +827,7 @@ pub fn prepare_models<'a>(
             .update_instance_buffer(device, queue, &instance_data);
     }
 
-    render_resources.bones.update(joint_palette, queue);
+    bones.update(joint_palette, queue);
 
     // return model handles that should be rendered
     snaps.curr.model_instances.iter().map(|(handle, _)| handle)
