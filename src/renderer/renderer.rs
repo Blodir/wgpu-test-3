@@ -4,21 +4,21 @@ use std::f32;
 use std::sync::Arc;
 use std::time::Instant;
 
+use super::pipelines::model::instance::Instance;
 use super::pipelines::model::material_binding::MaterialBinding;
+use super::pipelines::model::pipeline::DrawContext;
 use super::render_resources::animation::{AnimationClip, Channel, Track};
-use super::render_resources::{SkeletonHandle, TextureHandle};
+use super::render_resources::{MaterialHandle, SkeletonHandle, TextureHandle};
 use super::render_snapshot::{self, SnapshotGuard};
 use super::wgpu_context;
 use super::{render_resources::ModelHandle, render_snapshot::SnapshotHandoff};
-use generational_arena::Index;
 use glam::{Mat3, Mat4, Quat, Vec3, Vec4};
-use wgpu::hal::vulkan::Texture;
 use wgpu::util::DeviceExt as _;
 
-use crate::animator::{self, AnimationTransitionSnapshot, TimeWrapMode};
+use crate::animator::{self, TimeWrapMode};
+use crate::renderer::pipelines::model::pipeline::{MaterialBatch, MeshBatch, ResolvedPrimitive};
 use crate::scene_tree::{self, Camera};
-use crate::{
-    renderer::{
+use crate::renderer::{
         pipelines::{
             model::pipeline::ModelPipeline,
             post_processing::PostProcessingPipeline,
@@ -30,23 +30,7 @@ use crate::{
         },
         render_resources::{RenderResources, skeletonfile},
         wgpu_context::WgpuContext,
-    },
-    scene_tree::{RenderDataType, Scene},
-};
-
-// Common easing curves on [0,1] -> [0,1]
-#[inline]
-fn ease_smoothstep(t: f32) -> f32 {
-    t * t * (3.0 - 2.0 * t)
-} // C2
-#[inline]
-fn ease_smootherstep(t: f32) -> f32 {
-    t * t * t * (t * (t * 6.0 - 15.0) + 10.0)
-} // C3
-#[inline]
-fn ease_in_out_sine(t: f32) -> f32 {
-    0.5 - 0.5 * (std::f32::consts::PI * t).cos()
-}
+    };
 
 pub struct Layouts {
     pub camera: wgpu::BindGroupLayout,
@@ -518,6 +502,37 @@ impl LightsBinding {
     }
 }
 
+pub struct Instances {
+    pub buffer: wgpu::Buffer,
+}
+impl Instances {
+    pub fn new(wgpu_context: &WgpuContext) -> Self {
+        let instance_buffer = wgpu_context
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Instance buffer"),
+                contents: bytemuck::cast_slice(&vec![Mat4::IDENTITY]),
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            });
+        Self {
+            buffer: instance_buffer,
+        }
+    }
+
+    pub fn update(&mut self, data: Vec<Instance>, queue: &wgpu::Queue, device: &wgpu::Device) {
+        let instance_bytes: &[u8] = bytemuck::cast_slice(&data);
+        if self.buffer.size() >= instance_bytes.len() as u64 {
+            queue.write_buffer(&self.buffer, 0, instance_bytes);
+        } else {
+            self.buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Instance buffer"),
+                contents: instance_bytes,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            });
+        }
+    }
+}
+
 pub struct Renderer {
     skybox_output: SkyboxOutputTexture,
     depth_texture: DepthTexture,
@@ -530,6 +545,7 @@ pub struct Renderer {
     bones: BonesBinding,
     pub camera: CameraBinding,
     lights: LightsBinding,
+    instances: Instances,
 }
 impl Renderer {
     pub fn new(
@@ -557,6 +573,8 @@ impl Renderer {
             &layouts.camera,
         );
         let bones = BonesBinding::new(&layouts.bones, &wgpu_context.device);
+        let instances = Instances::new(wgpu_context);
+
         let skybox_output =
             SkyboxOutputTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
         let depth_texture = DepthTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
@@ -580,6 +598,7 @@ impl Renderer {
             &skybox_output,
             &msaa_textures,
         );
+
         Self {
             skybox_output,
             depth_texture,
@@ -592,6 +611,7 @@ impl Renderer {
             bones,
             camera,
             lights,
+            instances,
         }
     }
 
@@ -605,14 +625,6 @@ impl Renderer {
         let t = (now - snaps.curr_timestamp)
             .div_duration_f32(snaps.curr_timestamp - snaps.prev_timestamp);
         //let t = ease_smoothstep(t_raw); // or ease_smootherstep / ease_in_out_sine
-        let models = prepare_models(
-            &mut self.bones,
-            &snaps,
-            t,
-            render_resources,
-            &wgpu_context.device,
-            &wgpu_context.queue,
-        );
         prepare_camera(
             &mut self.camera,
             &snaps,
@@ -636,13 +648,16 @@ impl Renderer {
             &self.lights.bind_group,
         );
 
+        let draw_context = resolve_model_draw(&mut self.bones, &mut self.instances, &snaps, t, render_resources, &wgpu_context.device, &wgpu_context.queue);
+
         self.model_pipeline.render(
+            draw_context,
+            render_resources,
+            &self.instances.buffer,
             &mut encoder,
             &self.msaa_textures.msaa_texture_view,
             &self.msaa_textures.resolve_texture_view,
             &self.depth_texture.view,
-            render_resources,
-            models,
             &self.camera.bind_group,
             &self.lights.bind_group,
             &self.bones.bind_group,
@@ -728,42 +743,60 @@ pub fn prepare_lights(
     */
 }
 
-pub fn prepare_models<'a>(
+struct UnresolvedPrimitive {
+    transforms: Vec<Mat4>,
+    palette_offset: u32,
+    index_start: u32,
+    index_count: u32,
+    base_vertex: i32,
+}
+
+pub fn resolve_model_draw(
     bones: &mut BonesBinding,
-    snaps: &'a SnapshotGuard,
+    instances: &mut Instances,
+    snaps: &SnapshotGuard,
     t: f32,
     render_resources: &mut crate::renderer::render_resources::RenderResources,
     device: &wgpu::Device,
     queue: &wgpu::Queue,
-) -> impl Iterator<Item = &'a ModelHandle> + 'a {
+) -> DrawContext {
+    // Joints are sorted per model-instance, and each primitive-instance refers to the base joint offset
+    // of the matching model-instance
     let mut joint_palette: Vec<BoneMat34> = vec![];
-    let mut palette_offset = 0u32;
 
+    // instances are sorted in draw-order
+    // material > model > primitive > primitive-instance
+    let mut instance_data = vec![];
+
+    let mut unresolved = HashMap::<MaterialHandle, HashMap<ModelHandle, Vec<UnresolvedPrimitive>>>::new();
+
+    // write joint_palette, since it's in model-order
+    // collect transforms and joint palette offsets so they can be written in draw-order
+    // into the instance buffer
     for (model_handle, model_instances) in &snaps.curr.model_instances {
-        let mut instance_data = vec![];
-
+        let model = render_resources.models.get(&model_handle).unwrap();
         for (node_idx, curr_instance) in model_instances {
-            if let Some(prev_transform) = &snaps
-                .prev
-                .model_instances
-                .get(model_handle)
-                .and_then(|nodes| nodes.get(node_idx))
-                .map(|node| node.transform)
-            {
-                let (s1, r1, t1) = prev_transform.to_scale_rotation_translation();
-                let (s2, r2, t2) = curr_instance.transform.to_scale_rotation_translation();
-                let s3 = s1.lerp(s2, t);
-                let r3 = r1.slerp(r2, t);
-                let t3 = t1.lerp(t2, t);
-                instance_data.push((Mat4::from_scale_rotation_translation(s3, r3, t3), palette_offset));
-            } else {
-                instance_data.push((curr_instance.transform.clone(), palette_offset));
-            }
+            let model_instance_world =
+                if let Some(prev_transform) = &snaps
+                    .prev
+                    .model_instances
+                    .get(model_handle)
+                    .and_then(|nodes| nodes.get(node_idx))
+                    .map(|node| node.transform)
+                {
+                    let (s1, r1, t1) = prev_transform.to_scale_rotation_translation();
+                    let (s2, r2, t2) = curr_instance.transform.to_scale_rotation_translation();
+                    let s3 = s1.lerp(s2, t);
+                    let r3 = r1.slerp(r2, t);
+                    let t3 = t1.lerp(t2, t);
+                    Mat4::from_scale_rotation_translation(s3, r3, t3)
+                } else {
+                    curr_instance.transform.clone()
+                };
 
             let joint_matrices = {
-                let model_data = render_resources.models.get(model_handle).unwrap();
                 let skeleton_handle = SkeletonHandle(
-                    model_data
+                    model
                         .json
                         .skeletonfile_path
                         .clone(),
@@ -772,7 +805,7 @@ pub fn prepare_models<'a>(
                 let anim_snapshot = curr_instance.animation.as_ref().unwrap();
                 let anim_data = match &anim_snapshot {
                     crate::animator::AnimationSnapshot::AnimationStateSnapshot(animation_state_snapshot) => {
-                        let anim_handle = &model_data.animations[animation_state_snapshot.clip_idx as usize];
+                        let anim_handle = &model.animations[animation_state_snapshot.clip_idx as usize];
                         let clip = render_resources.animations.get(anim_handle).unwrap();
                         let clip_time = &snaps.prev.model_instances
                             .get(model_handle)
@@ -789,9 +822,9 @@ pub fn prepare_models<'a>(
                         AnimationData::Single(SingleAnimationData { clip, time: *clip_time, time_wrap_mode: animation_state_snapshot.time_wrap })
                     },
                     crate::animator::AnimationSnapshot::AnimationTransitionSnapshot(animation_transition_snapshot) => {
-                        let from_handle = &model_data.animations[animation_transition_snapshot.from_clip_idx as usize];
+                        let from_handle = &model.animations[animation_transition_snapshot.from_clip_idx as usize];
                         let from_clip = render_resources.animations.get(from_handle).unwrap();
-                        let to_handle = &model_data.animations[animation_transition_snapshot.to_clip_idx as usize];
+                        let to_handle = &model.animations[animation_transition_snapshot.to_clip_idx as usize];
                         let to_clip = render_resources.animations.get(to_handle).unwrap();
                         let blend_time = animation_transition_snapshot.blend_time;
 
@@ -816,30 +849,81 @@ pub fn prepare_models<'a>(
                 };
                 compute_joint_matrices(skeleton, anim_data)
             };
-
+            let palette_offset = joint_palette.len() as u32;
             joint_palette.extend_from_slice(&joint_matrices);
-            palette_offset += joint_matrices.len() as u32;
+
+            // primitive-instances
+            for prim in &model.json.primitives {
+                let mat = &model.materials[prim.material as usize];
+                let mut transforms = vec![];
+                for prim_inst in &prim.instances {
+                    let prim_inst_m4 = Mat4::from_cols_array_2d(prim_inst);
+                    let prim_inst_world = prim_inst_m4 * model_instance_world;
+                    transforms.push(prim_inst_world);
+                }
+                let u = UnresolvedPrimitive {
+                    transforms,
+                    palette_offset,
+                    index_start: prim.index_byte_offset / 4,
+                    index_count: prim.index_byte_length / 4,
+                    base_vertex: prim.base_vertex as i32,
+                };
+                if let Some(um) = unresolved.get_mut(&mat) {
+                    if let Some(p) = um.get_mut(&model_handle) {
+                        p.push(u);
+                    } else {
+                        um.insert(model_handle.clone(), vec![u]);
+                    }
+                } else {
+                    unresolved.insert(mat.clone(), {
+                        let mut um = HashMap::new();
+                        um.insert(model_handle.clone(), vec![u]);
+                        um
+                    });
+                }
+            }
         }
-        render_resources
-            .models
-            .get_mut(&model_handle)
-            .unwrap()
-            .update_instance_buffer(device, queue, &instance_data);
+    }
+
+    let mut draws = vec![];
+    let mut mesh_batches = vec![];
+    let mut material_batches = vec![];
+
+    for (material, model_map) in unresolved {
+        let material_batch = MaterialBatch {
+            material: material.clone(),
+            mesh_range: mesh_batches.len()..mesh_batches.len()+model_map.len()
+        };
+        material_batches.push(material_batch);
+        for (model_handle, unresolved_prims) in model_map {
+            let mesh_batch = MeshBatch {
+                mesh: model_handle.clone(),
+                draw_range: draws.len()..draws.len()+unresolved_prims.len()
+            };
+            mesh_batches.push(mesh_batch);
+            for prim in unresolved_prims {
+                let resolved_prim = ResolvedPrimitive {
+                    index_start: prim.index_start,
+                    index_count: prim.index_count,
+                    base_vertex: prim.base_vertex,
+                    instance_base: instance_data.len() as u32,
+                    instance_count: prim.transforms.len() as u32,
+                };
+                draws.push(resolved_prim);
+                for transform in &prim.transforms {
+                    let instance = Instance::new(*transform, prim.palette_offset);
+                    instance_data.push(instance);
+                }
+            }
+        }
     }
 
     bones.update(joint_palette, queue);
+    instances.update(instance_data, queue, device);
 
-    // return model handles that should be rendered
-    snaps.curr.model_instances.iter().map(|(handle, _)| handle)
-}
-
-fn mat4_from_row_major(m: [[f32; 4]; 4]) -> Mat4 {
-    Mat4::from_cols(
-        Vec4::new(m[0][0], m[1][0], m[2][0], m[3][0]),
-        Vec4::new(m[0][1], m[1][1], m[2][1], m[3][1]),
-        Vec4::new(m[0][2], m[1][2], m[2][2], m[3][2]),
-        Vec4::new(m[0][3], m[1][3], m[2][3], m[3][3]),
-    )
+    DrawContext {
+        draws, material_batches, mesh_batches
+    }
 }
 
 fn mat4_to_bone_mat34(m: Mat4) -> BoneMat34 {

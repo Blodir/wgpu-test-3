@@ -64,57 +64,13 @@ impl MaterialPool {
     }
 }
 
-fn build_primitive_instances(
-    model: &modelfile::Model,
-    instance_data: &Vec<(Mat4, u32)>,
-) -> (Vec<Instance>, Vec<u32>) {
-    let mut instances: Vec<Instance> = vec![];
-    let mut instance_counts = vec![];
-    for prim in &model.primitives {
-        let mut inst_count = 0;
-        for instance in &prim.instances {
-            let inst_m4 = Mat4::from_cols_array_2d(instance);
-            for (transform, palette_offset) in instance_data {
-                let t = transform * inst_m4;
-                instances.push(Instance::new(t, *palette_offset));
-                inst_count += 1;
-            }
-        }
-        instance_counts.push(inst_count);
-    }
-    (instances, instance_counts)
-}
-
 pub struct ModelData {
     /// combined index and vertex buffer
     pub index_vertex_buffer: wgpu::Buffer,
-    pub instance_buffer: wgpu::Buffer,
-    pub primitive_instance_counts: Vec<u32>,
     pub json: modelfile::Model,
     pub materials: Vec<MaterialHandle>,
     pub animations: Vec<AnimationHandle>,
     pub skeleton: SkeletonHandle,
-}
-impl ModelData {
-    pub fn update_instance_buffer(
-        &mut self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        instance_data: &Vec<(Mat4, u32)>,
-    ) {
-        let (instances, instance_counts) = build_primitive_instances(&self.json, instance_data);
-        self.primitive_instance_counts = instance_counts;
-        let instance_bytes: &[u8] = bytemuck::cast_slice(&instances);
-        if self.instance_buffer.size() >= instance_bytes.len() as u64 {
-            queue.write_buffer(&self.instance_buffer, 0, instance_bytes);
-        } else {
-            self.instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Instance buffer"),
-                contents: instance_bytes,
-                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            });
-        }
-    }
 }
 
 pub struct SampledTexture {
@@ -782,16 +738,6 @@ impl RenderResources {
                     usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::INDEX,
                 });
 
-        let (instances, instance_counts) = build_primitive_instances(&model, &vec![(Mat4::IDENTITY, 0u32)]);
-        let instance_buffer =
-            wgpu_context
-                .device
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("Instance buffer"),
-                    contents: bytemuck::cast_slice(&instances),
-                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-                });
-
         let materials = {
             let mut mats = vec![];
             for mat in &model.material_paths {
@@ -818,8 +764,6 @@ impl RenderResources {
             ModelData {
                 json: model,
                 index_vertex_buffer,
-                instance_buffer,
-                primitive_instance_counts: instance_counts,
                 materials,
                 skeleton: skeleton_handle,
                 animations

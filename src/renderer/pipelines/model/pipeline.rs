@@ -7,12 +7,36 @@ use crate::{
             resources::depth_texture::DepthTexture,
         },
         render_resources::{
-            modelfile, ModelHandle, RenderResources, TextureHandle,
+            modelfile, MaterialHandle, ModelHandle, RenderResources, TextureHandle
         },
-        utils,
+        utils, Instances,
     },
     scene_tree::{RenderDataType, Scene},
 };
+
+pub struct ResolvedPrimitive {
+    pub index_start: u32,
+    pub index_count: u32,
+    pub instance_base: u32,
+    pub instance_count: u32,
+    pub base_vertex: i32,
+}
+
+pub struct MeshBatch {
+    pub mesh: ModelHandle,
+    pub draw_range: std::ops::Range<usize>,
+}
+
+pub struct MaterialBatch {
+    pub material: MaterialHandle,
+    pub mesh_range: std::ops::Range<usize>,
+}
+
+pub struct DrawContext {
+    pub draws: Vec<ResolvedPrimitive>,
+    pub material_batches: Vec<MaterialBatch>,
+    pub mesh_batches: Vec<MeshBatch>,
+}
 
 pub struct ModelPipeline {
     pub render_pipeline: wgpu::RenderPipeline,
@@ -111,16 +135,18 @@ impl ModelPipeline {
 
     pub fn render<'a>(
         &self,
+        draw_context: DrawContext,
+        render_resources: &RenderResources,
+        instance_buffer: &wgpu::Buffer,
         encoder: &mut wgpu::CommandEncoder,
         msaa_texture_view: &wgpu::TextureView,
         msaa_resolve_texture_view: &wgpu::TextureView,
         depth_texture_view: &wgpu::TextureView,
-        render_resources: &RenderResources,
-        model_handles: impl Iterator<Item = &'a ModelHandle>,
         camera_bind_group: &wgpu::BindGroup,
         lights_bind_group: &wgpu::BindGroup,
         bones_bind_group: &wgpu::BindGroup,
     ) {
+        // TODO can this descriptor be reused?
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Model Render Pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -148,47 +174,32 @@ impl ModelPipeline {
         render_pass.set_bind_group(1, lights_bind_group, &[]);
         render_pass.set_bind_group(3, bones_bind_group, &[]);
 
-        for model_handle in model_handles {
-            let model = render_resources.models.get(&model_handle).unwrap();
-            let prims = &model.json.primitives;
-
-            render_pass.set_vertex_buffer(0, model.instance_buffer.slice(..));
-            render_pass.set_index_buffer(
-                model
-                    .index_vertex_buffer
-                    .slice(0..model.json.vertex_buffer_start_offset as u64),
-                // we are currently forcing u32 in modelfile... maybe in the future should allow u16
-                wgpu::IndexFormat::Uint32,
+        for material_batch in &draw_context.material_batches {
+            let material = render_resources.materials.get(&material_batch.material).unwrap();
+            render_pass.set_bind_group(
+                2u32,
+                &material.bind_group,
+                &[],
             );
-            render_pass.set_vertex_buffer(
-                1u32,
-                model
-                    .index_vertex_buffer
-                    .slice(model.json.vertex_buffer_start_offset as u64..),
-            );
-
-            let mut instance_offset = 0u32;
-            let mut prim_idx = 0;
-            for prim in prims {
-                let mat_handle = &model.materials[prim.material as usize];
-                render_pass.set_bind_group(
-                    2u32,
-                    &render_resources
-                        .materials
-                        .get(&mat_handle)
-                        .unwrap()
-                        .bind_group,
-                    &[],
+            for mesh_batch in &draw_context.mesh_batches[material_batch.mesh_range.clone()] {
+                let model = render_resources.models.get(&mesh_batch.mesh).unwrap();
+                render_pass.set_index_buffer(
+                    model.index_vertex_buffer.slice(0..model.json.vertex_buffer_start_offset as u64),
+                    wgpu::IndexFormat::Uint32,
                 );
-                let index_start = prim.index_byte_offset / 4;
-                let index_count = prim.index_byte_length / 4;
-                render_pass.draw_indexed(
-                    index_start..index_start + index_count,
-                    prim.base_vertex as i32,
-                    instance_offset..instance_offset + model.primitive_instance_counts[prim_idx],
+                // apparently there's no performance benefit to not just taking the whole instace buffer slice
+                render_pass.set_vertex_buffer(0, instance_buffer.slice(..));
+                render_pass.set_vertex_buffer(
+                    1u32,
+                    model.index_vertex_buffer.slice(model.json.vertex_buffer_start_offset as u64..)
                 );
-                instance_offset += model.primitive_instance_counts[prim_idx];
-                prim_idx += 1;
+                for draw in &draw_context.draws[mesh_batch.draw_range.clone()] {
+                    render_pass.draw_indexed(
+                        draw.index_start..draw.index_start + draw.index_count,
+                        draw.base_vertex,
+                        draw.instance_base..draw.instance_base + draw.instance_count,
+                    );
+                }
             }
         }
     }
