@@ -2,47 +2,82 @@ use std::{collections::{HashMap, VecDeque}, ops::Range, sync::{Arc, Mutex}};
 
 use generational_arena::{Arena, Index};
 
-use crate::renderer::{pipelines::model::vertex::Vertex, render_resources::modelfile, wgpu_context::{self, WgpuContext}};
+use crate::renderer::{pipelines::model::vertex::Vertex, render_resources::{animationfile, materialfile, modelfile, skeletonfile}, wgpu_context::{self, WgpuContext}};
 
 #[derive(Debug, PartialEq, Eq)]
-enum ResourceKind {
+pub enum ResourceKind {
     Model,
+    Mesh,
     Material,
     Skeleton,
     AnimationClip,
+    Animation,
     Texture,
 }
 
-struct ModelHandle(Index);
-struct MeshHandle(Index);
-struct MaterialHandle(Index);
+pub trait ResourceTag {
+    const KIND: ResourceKind;
+}
 
-pub struct SkeletonHandle {
+pub struct Handle<T: ResourceTag> {
     idx: generational_arena::Index,
     manager: std::sync::Weak<ResourceManager>,
+    _marker: std::marker::PhantomData<T>,
 }
-impl Drop for SkeletonHandle {
-    fn drop(&mut self) {
-        if let Some(manager) = self.manager.upgrade() {
-            manager.dec_ref(self.idx, ResourceKind::Skeleton);
+impl<T: ResourceTag> Handle<T> {
+    pub fn new(idx: generational_arena::Index, resource_manager_arc: &std::sync::Arc<ResourceManager>) -> Self {
+        Self {
+            idx,
+            manager: Arc::downgrade(resource_manager_arc),
+            _marker: std::marker::PhantomData,
         }
     }
 }
-impl Clone for SkeletonHandle {
+
+impl<T: ResourceTag> Clone for Handle<T> {
     fn clone(&self) -> Self {
         if let Some(manager) = self.manager.upgrade() {
-            manager.inc_ref(self.idx, ResourceKind::Skeleton);
+            manager.inc_ref(self.idx, T::KIND);
         }
-
         Self {
             idx: self.idx,
             manager: self.manager.clone(),
+            _marker: std::marker::PhantomData,
         }
     }
 }
 
-struct AnimationClipHandle(Index);
-struct TextureHandle(Index);
+impl<T: ResourceTag> Drop for Handle<T> {
+    fn drop(&mut self) {
+        if let Some(manager) = self.manager.upgrade() {
+            manager.dec_ref(self.idx, T::KIND);
+        }
+    }
+}
+
+pub struct _Model;
+pub struct _Mesh;
+pub struct _Material;
+pub struct _Skeleton;
+pub struct _AnimationClip;
+pub struct _Animation;
+pub struct _Texture;
+
+impl ResourceTag for _Model { const KIND: ResourceKind = ResourceKind::Model; }
+impl ResourceTag for _Mesh { const KIND: ResourceKind = ResourceKind::Mesh; }
+impl ResourceTag for _Material { const KIND: ResourceKind = ResourceKind::Material; }
+impl ResourceTag for _Skeleton { const KIND: ResourceKind = ResourceKind::Skeleton; }
+impl ResourceTag for _AnimationClip { const KIND: ResourceKind = ResourceKind::AnimationClip; }
+impl ResourceTag for _Animation { const KIND: ResourceKind = ResourceKind::Animation; }
+impl ResourceTag for _Texture { const KIND: ResourceKind = ResourceKind::Texture; }
+
+pub type ModelHandle = Handle<_Model>;
+pub type MeshHandle = Handle<_Mesh>;
+pub type MaterialHandle = Handle<_Material>;
+pub type SkeletonHandle = Handle<_Skeleton>;
+pub type AnimationClipHandle = Handle<_AnimationClip>;
+pub type AnimationHandle = Handle<_Animation>;
+pub type TextureHandle = Handle<_Texture>;
 
 enum CpuState {
     Absent, Loading, Ready(Index)
@@ -60,17 +95,18 @@ struct Entry {
 }
 impl Entry {
     pub fn new(kind: ResourceKind) -> Self {
-        todo!()
+        Self {
+            kind,
+            ref_count: 0,
+            cpu_state: CpuState::Absent,
+            gpu_state: GpuState::Absent,
+        }
     }
 }
 
 struct ResourceRegistry {
     pub entries: Arena<Entry>,
     pub by_path: HashMap<String, Index>,
-}
-
-struct Mesh {
-    pub index_vertex_data: Vec<u8>,
 }
 
 struct SubMesh {
@@ -88,34 +124,94 @@ struct ModelCpuData {
     skeleton: SkeletonHandle,
 }
 
-struct ModelGpuData {
-    vertex_index_buffer: wgpu::Buffer,
+struct MeshCpuData {
+    pub index_vertex_data: Vec<u8>,
+}
+
+struct MaterialCpuData {
+    pub manifest: materialfile::Material,
+    pub normal_texture: Option<TextureHandle>,
+    pub occlusion_texture: Option<TextureHandle>,
+    pub emissive_texture: Option<TextureHandle>,
+    pub base_color_texture: Option<TextureHandle>,
+    pub metallic_roughness_texture: Option<TextureHandle>,
+}
+
+struct SkeletonCpuData {
+    manifest: skeletonfile::Skeleton,
+}
+
+struct AnimationClipCpuData {
+    manifest: animationfile::AnimationClip,
+    animation: AnimationHandle,
+}
+
+struct AnimationCpuData {
+    data: Vec<u8>,
+}
+
+struct TextureCpuData {
+    data: Vec<u8>,
 }
 
 struct CpuResources {
     pub models: Mutex<Arena<ModelCpuData>>,
+    pub meshes: Mutex<Arena<MeshCpuData>>,
+    pub materials: Mutex<Arena<MaterialCpuData>>,
+    pub skeletons: Mutex<Arena<SkeletonCpuData>>,
+    pub animation_clips: Mutex<Arena<AnimationClipCpuData>>,
+    pub animations: Mutex<Arena<AnimationCpuData>>,
+    pub textures: Mutex<Arena<TextureCpuData>>,
+}
+
+struct MeshGpuData {
+    pub buffer: wgpu::Buffer,
+}
+
+struct TextureGpuData {
+    pub texture: wgpu::Texture,
+    pub texture_view: wgpu::TextureView,
 }
 
 struct GpuResources {
-    pub models: Mutex<Arena<ModelGpuData>>,
+    pub meshes: Mutex<Arena<MeshGpuData>>,
+    pub textures: Mutex<Arena<TextureGpuData>>,
 }
 
 enum IoRequest {
     LoadModel { id: Index, path: String },
-    // etc.
+    LoadMesh { id: Index, path: String },
+    LoadMaterial { id: Index, path: String },
+    LoadSkeleton { id: Index, path: String },
+    LoadAnimationClip { id: Index, path: String },
+    LoadAnimation { id: Index, path: String },
+    LoadTexture { id: Index, path: String },
 }
 
 enum IoResponse {
     ModelLoaded { id: Index, model: modelfile::Model },
+    MeshLoaded { id: Index, data: Vec<u8> },
+    MaterialLoaded { id: Index, material: materialfile::Material },
+    SkeletonLoaded { id: Index, skeleton: skeletonfile::Skeleton },
+    AnimationClipLoaded { id: Index, clip: animationfile::AnimationClip },
+    AnimationLoaded { id: Index, data: Vec<u8> },
+    TextureLoaded { id: Index, data: Vec<u8> },
     Error { path: String, message: String },
-    // etc.
 }
 
-fn load_model_from_disk(path: &str) -> Result<modelfile::Model, Box<dyn std::error::Error>> {
+fn load_json<T>(path: &str) -> Result<T, Box<dyn std::error::Error>>
+where
+    T: serde::de::DeserializeOwned,
+{
     let json_file = std::fs::File::open(path)?;
     let json_reader = std::io::BufReader::new(json_file);
-    let model: modelfile::Model = serde_json::from_reader(json_reader)?;
+    let model: T = serde_json::from_reader(json_reader)?;
     Ok(model)
+}
+
+fn load_bin(path: &str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let bytes = std::fs::read(path)?;
+    Ok(bytes)
 }
 
 fn io_worker_loop(
@@ -124,8 +220,38 @@ fn io_worker_loop(
 ) {
     while let Ok(req) = rx.recv() {
         let result = match req {
-            IoRequest::LoadModel { id, path } => load_model_from_disk(&path)
-                .map_or_else(|e| IoResponse::Error { path: path.clone(), message: e.to_string() }, |model| IoResponse::ModelLoaded { id, model }),
+            IoRequest::LoadModel { id, path } => load_json::<modelfile::Model>(&path)
+                .map_or_else(
+                    |e| IoResponse::Error { path: path.clone(), message: e.to_string() },
+                    |model| IoResponse::ModelLoaded { id, model },
+                ),
+            IoRequest::LoadMesh { id, path } => load_bin(&path)
+                .map_or_else(
+                    |e| IoResponse::Error { path: path.clone(), message: e.to_string() },
+                    |data| IoResponse::MeshLoaded { id, data },
+                ),
+            IoRequest::LoadMaterial { id, path } => load_json::<materialfile::Material>(&path)
+                .map_or_else(
+                    |e| IoResponse::Error { path: path.clone(), message: e.to_string() },
+                    |material| IoResponse::MaterialLoaded { id, material },
+                ),
+            IoRequest::LoadSkeleton { id, path } => load_json::<skeletonfile::Skeleton>(&path)
+                .map_or_else(
+                    |e| IoResponse::Error { path: path.clone(), message: e.to_string() },
+                    |skeleton| IoResponse::SkeletonLoaded { id, skeleton },
+                ),
+            IoRequest::LoadAnimationClip { id, path } => load_json::<animationfile::AnimationClip>(&path)
+                .map_or_else(
+                    |e| IoResponse::Error { path: path.clone(), message: e.to_string() },
+                    |clip| IoResponse::AnimationClipLoaded { id, clip },
+                ),
+            IoRequest::LoadAnimation { id, path } => load_bin(&path)
+                .map_or_else(
+                    |e| IoResponse::Error { path: path.clone(), message: e.to_string() },
+                    |data| IoResponse::AnimationLoaded { id, data },
+                ),
+            // TODO This should use png/ddsfile load func
+            IoRequest::LoadTexture { id, path } => todo!()
         };
 
         // ignore send errors on shutdown
@@ -157,7 +283,6 @@ impl IoManager {
             req_tx, res_rx, workers
         }
     }
-
 }
 
 pub struct ResourceManager {
@@ -261,6 +386,7 @@ impl ResourceManager {
                         todo!();
                     }
                 },
+                ResourceKind::Mesh => todo!(),
                 ResourceKind::Material => todo!(),
                 ResourceKind::Skeleton => todo!(),
                 ResourceKind::AnimationClip => todo!(),
@@ -316,7 +442,7 @@ impl ResourceManager {
         if let Some(&idx) = reg.by_path.get(path) {
             let entry = reg.entries.get_mut(idx).unwrap();
             entry.ref_count += 1;
-            return SkeletonHandle { idx, manager: Arc::downgrade(self) };
+            return SkeletonHandle::new(idx, self);
         }
 
         let idx = reg.entries.insert(
@@ -331,7 +457,7 @@ impl ResourceManager {
 
         self.make_io_request(IoRequest::LoadModel { id: idx, path: path.to_string() });
 
-        SkeletonHandle { idx, manager: Arc::downgrade(self) }
+        SkeletonHandle::new(idx, self)
     }
 
     pub fn request_animation_clip(
