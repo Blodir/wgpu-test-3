@@ -11,8 +11,7 @@ use winit::{
 };
 
 use crate::{
-    renderer::render_snapshot::{RenderSnapshot, SnapshotHandoff},
-    scene_tree::{build_test_animation_blending, Scene},
+    renderer::render_snapshot::{RenderSnapshot, SnapshotHandoff}, resource_manager::resource_manager::ResourceManager, scene_tree::{build_test_animation_blending, Scene}
 };
 
 #[derive(Debug)]
@@ -28,6 +27,7 @@ const SPIN: Duration = Duration::from_micros(200);
 pub fn spawn_sim(
     inputs: Arc<SegQueue<InputEvent>>,
     snap_handoff: Arc<SnapshotHandoff>,
+    resource_manager: Arc<ResourceManager>,
 ) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
         let (mut scene, animation_graphs) = build_test_animation_blending();

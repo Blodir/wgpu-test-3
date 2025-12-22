@@ -2,6 +2,7 @@ use crossbeam_queue::{ArrayQueue, SegQueue};
 use notify::{Config, RecommendedWatcher, Watcher};
 use pollster::FutureExt as _;
 use renderer::{render_snapshot::SnapshotHandoff, Layouts};
+use resource_manager::resource_manager::ResourceManager;
 use scene_tree::Sun;
 use sim::{spawn_sim, InputEvent};
 use std::{
@@ -60,14 +61,16 @@ struct App<'surface> {
     render_context: Option<RenderContext<'surface>>,
     snap_handoff: Arc<SnapshotHandoff>,
     sim_inputs: Arc<SegQueue<InputEvent>>,
+    resource_manager: Arc<ResourceManager>,
 }
 
 impl App<'_> {
-    pub fn new(sim_inputs: Arc<SegQueue<InputEvent>>, snap_handoff: Arc<SnapshotHandoff>) -> Self {
+    pub fn new(sim_inputs: Arc<SegQueue<InputEvent>>, snap_handoff: Arc<SnapshotHandoff>, resource_manager: Arc<ResourceManager>) -> Self {
         Self {
             render_context: None,
             snap_handoff,
             sim_inputs,
+            resource_manager,
         }
     }
 
@@ -139,8 +142,10 @@ impl<'surface> ApplicationHandler for App<'surface> {
                 event_loop.exit();
             }
             WindowEvent::RedrawRequested => {
+                self.resource_manager.process_io_responses();
                 if let Some(ref mut render_context) = self.render_context {
                     let mut renderer = render_context.renderer.lock().unwrap();
+                    self.resource_manager.process_upload_queue(&render_context.wgpu_context);
                     match renderer.render(
                         &mut render_context.render_resources,
                         &render_context.wgpu_context,
@@ -206,13 +211,15 @@ impl<'surface> ApplicationHandler for App<'surface> {
 }
 
 pub fn run() {
+    let resource_manager = Arc::new(ResourceManager::new());
     let snap_handoff = Arc::new(SnapshotHandoff::new());
     let sim_inputs = Arc::new(SegQueue::<InputEvent>::new());
-    let sim_handle = spawn_sim(sim_inputs.clone(), snap_handoff.clone());
+    let sim_handle = spawn_sim(sim_inputs.clone(), snap_handoff.clone(), resource_manager.clone());
 
     let app = Arc::new(Mutex::new(App::new(
         sim_inputs.clone(),
         snap_handoff.clone(),
+        resource_manager.clone(),
     )));
     let event_loop = EventLoop::new().unwrap();
     event_loop.set_control_flow(ControlFlow::Poll);

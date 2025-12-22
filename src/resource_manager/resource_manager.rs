@@ -1,8 +1,11 @@
-use std::{collections::{HashMap, VecDeque}, ops::Range, sync::{Arc, Mutex}};
+use std::{collections::{HashMap, VecDeque}, fs::File, io::Read as _, ops::Range, sync::{Arc, Mutex}};
 
+use ddsfile::{Caps2, Dds};
 use generational_arena::{Arena, Index};
+use glam::{Quat, Vec3};
+use wgpu::util::{BufferInitDescriptor, DeviceExt};
 
-use crate::renderer::{pipelines::model::vertex::Vertex, render_resources::{animationfile, materialfile, modelfile, skeletonfile}, wgpu_context::{self, WgpuContext}};
+use crate::renderer::{pipelines::model::vertex::Vertex, render_resources::{animation, animationfile, dds, materialfile, modelfile, skeletonfile}, wgpu_context::{self, WgpuContext}};
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum ResourceKind {
@@ -108,6 +111,14 @@ struct ResourceRegistry {
     pub entries: Arena<Entry>,
     pub by_path: HashMap<String, Index>,
 }
+impl ResourceRegistry {
+    pub fn new() -> Self {
+        Self {
+            entries: Arena::new(),
+            by_path: HashMap::new(),
+        }
+    }
+}
 
 struct SubMesh {
     pub instances: Vec<[[f32; 4]; 4]>,
@@ -146,13 +157,9 @@ struct AnimationClipCpuData {
     animation: AnimationHandle,
 }
 
-struct AnimationCpuData {
-    data: Vec<u8>,
-}
+type AnimationCpuData = animation::AnimationClip;
 
-struct TextureCpuData {
-    data: Vec<u8>,
-}
+type TextureCpuData = TextureLoadData;
 
 struct CpuResources {
     pub models: Mutex<Arena<ModelCpuData>>,
@@ -162,6 +169,19 @@ struct CpuResources {
     pub animation_clips: Mutex<Arena<AnimationClipCpuData>>,
     pub animations: Mutex<Arena<AnimationCpuData>>,
     pub textures: Mutex<Arena<TextureCpuData>>,
+}
+impl CpuResources {
+    pub fn new() -> Self {
+        Self {
+            models: Mutex::new(Arena::new()),
+            meshes: Mutex::new(Arena::new()),
+            materials: Mutex::new(Arena::new()),
+            skeletons: Mutex::new(Arena::new()),
+            animation_clips: Mutex::new(Arena::new()),
+            animations: Mutex::new(Arena::new()),
+            textures: Mutex::new(Arena::new()),
+        }
+    }
 }
 
 struct MeshGpuData {
@@ -177,6 +197,23 @@ struct GpuResources {
     pub meshes: Mutex<Arena<MeshGpuData>>,
     pub textures: Mutex<Arena<TextureGpuData>>,
 }
+impl GpuResources {
+    pub fn new() -> Self {
+        Self {
+            meshes: Mutex::new(Arena::new()),
+            textures: Mutex::new(Arena::new()),
+        }
+    }
+}
+
+struct TextureLoadData {
+    data: Vec<u8>,
+    base_width: u32,
+    base_height: u32,
+    mips: u32,
+    layers: u32,
+    format: wgpu::TextureFormat,
+}
 
 enum IoRequest {
     LoadModel { id: Index, path: String },
@@ -184,8 +221,8 @@ enum IoRequest {
     LoadMaterial { id: Index, path: String },
     LoadSkeleton { id: Index, path: String },
     LoadAnimationClip { id: Index, path: String },
-    LoadAnimation { id: Index, path: String },
-    LoadTexture { id: Index, path: String },
+    LoadAnimation { id: Index, path: String, header: animationfile::AnimationClip },
+    LoadTexture { id: Index, path: String, srgb: bool },
 }
 
 enum IoResponse {
@@ -194,8 +231,8 @@ enum IoResponse {
     MaterialLoaded { id: Index, material: materialfile::Material },
     SkeletonLoaded { id: Index, skeleton: skeletonfile::Skeleton },
     AnimationClipLoaded { id: Index, clip: animationfile::AnimationClip },
-    AnimationLoaded { id: Index, data: Vec<u8> },
-    TextureLoaded { id: Index, data: Vec<u8> },
+    AnimationLoaded { id: Index, parsed_clip: animation::AnimationClip },
+    TextureLoaded { id: Index, data: TextureLoadData },
     Error { path: String, message: String },
 }
 
@@ -212,6 +249,179 @@ where
 fn load_bin(path: &str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     let bytes = std::fs::read(path)?;
     Ok(bytes)
+}
+
+fn load_dds(bytes: &mut [u8]) -> TextureLoadData {
+    let dds = Dds::read(&mut &bytes[..]).unwrap();
+
+    let format = dds::dds_format_to_wgpu(
+        dds.get_dxgi_format()
+            .expect("Dds doesn't have a DXGI format."),
+    );
+    let is_cubemap = dds
+        .header
+        .caps2
+        .contains(Caps2::CUBEMAP);
+    let base_width = dds.get_width();
+    let base_height = dds.get_height();
+    let mips = dds.get_num_mipmap_levels();
+    let layers = if is_cubemap { 6 } else { dds.get_num_array_layers() };
+
+    TextureLoadData {
+        data: dds.data,
+        base_width,
+        base_height,
+        mips,
+        layers,
+        format,
+    }
+}
+
+fn load_png(bytes: &mut [u8], srgb: bool) -> TextureLoadData {
+    let img: image::DynamicImage = image::load_from_memory(&bytes).unwrap();
+    let dimensions = image::GenericImageView::dimensions(&img);
+    let (remapped, format): (Vec<u8>, wgpu::TextureFormat) = match (&img, srgb) {
+        (image::DynamicImage::ImageRgb32F(_), false) => (
+            bytemuck::cast_slice(&img.to_rgba32f().into_raw()).to_vec(),
+            wgpu::TextureFormat::Rgba32Float,
+        ),
+        (image::DynamicImage::ImageRgba32F(_), false) => (
+            bytemuck::cast_slice(&img.to_rgba32f().into_raw()).to_vec(),
+            wgpu::TextureFormat::Rgba32Float,
+        ),
+        (_, true) => (
+            bytemuck::cast_slice(&img.to_rgba8().into_raw()).to_vec(),
+            wgpu::TextureFormat::Rgba8UnormSrgb,
+        ),
+        (_, false) => (
+            bytemuck::cast_slice(&img.to_rgba8().into_raw()).to_vec(),
+            wgpu::TextureFormat::Rgba8Unorm,
+        ),
+    };
+    let base_width = dimensions.0;
+    let base_height = dimensions.1;
+    let mips = 1;
+    let layers = 1;
+
+    TextureLoadData {
+        data: remapped,
+        base_width,
+        base_height,
+        mips,
+        layers,
+        format,
+    }
+}
+
+fn load_texture(path: &str, srgb: bool) -> Result<TextureLoadData, Box<dyn std::error::Error>> {
+    let mut file = File::open(path).unwrap();
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes).unwrap();
+
+    if bytes.starts_with(b"DDS ") {
+        Ok(load_dds(&mut bytes))
+    } else if bytes.starts_with(&[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A]) {
+        Ok(load_png(&mut bytes, srgb))
+    } else {
+        Err("invalid texture format".into())
+    }
+}
+
+pub fn load_animation(
+    path: &str,
+    header: animationfile::AnimationClip,
+) -> Result<animation::AnimationClip, Box<dyn std::error::Error>> {
+    let bytes = std::fs::read(path)?;
+
+    let read_f32_ref = |r: &animationfile::BinRef| -> Box<[f32]> {
+        let count = r.count as usize;
+        let mut output = vec![0f32; count];
+        let stride = 4;
+
+        for i in 0..count {
+            let idx = r.offset as usize + i * stride;
+            output[i] = bytemuck::cast::<[u8; 4], f32>(bytes[idx..idx + 4].try_into().unwrap());
+        }
+
+        output.into_boxed_slice()
+    };
+    let read_vec3_ref = |r: &animationfile::BinRef| -> Box<[Vec3]> {
+        let count = r.count as usize;
+        let mut output = vec![];
+        let stride = 12;
+
+        for i in 0..count {
+            let idx = r.offset as usize + i * stride;
+            output.push(
+                Vec3::from_array([
+                    bytemuck::cast::<[u8; 4], f32>(bytes[idx..idx + 4].try_into().unwrap()),
+                    bytemuck::cast::<[u8; 4], f32>(bytes[idx + 4..idx + 8].try_into().unwrap()),
+                    bytemuck::cast::<[u8; 4], f32>(bytes[idx + 8..idx + 12].try_into().unwrap()),
+                ])
+            );
+        }
+
+        output.into_boxed_slice()
+    };
+    let read_quat_ref = |r: &animationfile::BinRef| -> Box<[Quat]> {
+        let count = r.count as usize;
+        let mut output = vec![];
+        let stride = 16;
+
+        for i in 0..count {
+            let idx = r.offset as usize + i * stride;
+            output.push(
+                Quat::from_array([
+                    bytemuck::cast::<[u8; 4], f32>(bytes[idx..idx + 4].try_into().unwrap()),
+                    bytemuck::cast::<[u8; 4], f32>(bytes[idx + 4..idx + 8].try_into().unwrap()),
+                    bytemuck::cast::<[u8; 4], f32>(bytes[idx + 8..idx + 12].try_into().unwrap()),
+                    bytemuck::cast::<[u8; 4], f32>(bytes[idx + 12..idx + 16].try_into().unwrap()),
+                ])
+            );
+        }
+
+        output.into_boxed_slice()
+    };
+
+    let duration = header.duration;
+    let primitive_groups = header.primitive_groups;
+    let tracks: Vec<animation::Track> = header.tracks.iter().map(|track| {
+        let target = track.target;
+        let shared_times = track.shared_times.as_ref().map(read_f32_ref);
+        let translation = track.translation.as_ref().map(|s| {
+            let interpolation = s.interpolation;
+            let times = s.times.as_ref().map(read_f32_ref);
+            let values = read_vec3_ref(&s.values);
+            animation::Channel::<Vec3> {
+                interpolation, times, values
+            }
+        });
+        let rotation = track.rotation.as_ref().map(|s| {
+            let interpolation = s.interpolation;
+            let times = s.times.as_ref().map(read_f32_ref);
+            let values = read_quat_ref(&s.values);
+            animation::Channel::<Quat> {
+                interpolation, times, values
+            }
+        });
+        let scale = track.scale.as_ref().map(|s| {
+            let interpolation = s.interpolation;
+            let times = s.times.as_ref().map(read_f32_ref);
+            let values = read_vec3_ref(&s.values);
+            animation::Channel::<Vec3> {
+                interpolation, times, values
+            }
+        });
+        animation::Track {
+            target, shared_times, translation, rotation, scale
+        }
+    }).collect();
+
+    Ok(animation::AnimationClip {
+        duration,
+        tracks,
+        primitive_groups,
+    })
 }
 
 fn io_worker_loop(
@@ -245,13 +455,16 @@ fn io_worker_loop(
                     |e| IoResponse::Error { path: path.clone(), message: e.to_string() },
                     |clip| IoResponse::AnimationClipLoaded { id, clip },
                 ),
-            IoRequest::LoadAnimation { id, path } => load_bin(&path)
+            IoRequest::LoadAnimation { id, path, header } => load_animation(&path, header)
                 .map_or_else(
                     |e| IoResponse::Error { path: path.clone(), message: e.to_string() },
-                    |data| IoResponse::AnimationLoaded { id, data },
+                    |data| IoResponse::AnimationLoaded { id, parsed_clip: data },
                 ),
-            // TODO This should use png/ddsfile load func
-            IoRequest::LoadTexture { id, path } => todo!()
+            IoRequest::LoadTexture { id, path, srgb } => load_texture(&path, srgb)
+                .map_or_else(
+                    |e| IoResponse::Error { path: path.clone(), message: e.to_string() },
+                    |data| IoResponse::TextureLoaded { id, data },
+                ),
         };
 
         // ignore send errors on shutdown
@@ -294,8 +507,13 @@ pub struct ResourceManager {
 }
 impl ResourceManager {
     pub fn new() -> Self {
-        // start io thread
-        todo!()
+        Self {
+            registry: Mutex::new(ResourceRegistry::new()),
+            gpu: GpuResources::new(),
+            cpu: CpuResources::new(),
+            io: IoManager::new(),
+            upload_queue: Mutex::new(VecDeque::new()),
+        }
     }
 
     fn inc_ref(&self, idx: Index, kind: ResourceKind) {
@@ -322,7 +540,7 @@ impl ResourceManager {
             .expect("refcount underflow");
     }
 
-    fn process_io_responses(
+    pub fn process_io_responses(
         self: &std::sync::Arc<Self>,
     ) {
         let mut reg = self.registry.lock().unwrap();
@@ -358,6 +576,52 @@ impl ResourceManager {
                     entry.gpu_state = GpuState::Queued;
                     self.upload_queue.lock().unwrap().push_back(id);
                 },
+                IoResponse::MeshLoaded { id, data } => {
+                    let entry = reg.entries.get_mut(id).unwrap();
+                    let cpu_data = MeshCpuData { index_vertex_data: data };
+                    let cpu_idx = self.cpu.meshes.lock().unwrap().insert(cpu_data);
+                    entry.cpu_state = CpuState::Ready(cpu_idx);
+                    entry.gpu_state = GpuState::Queued;
+                    self.upload_queue.lock().unwrap().push_back(id);
+                },
+                IoResponse::MaterialLoaded { id, material } => {
+                    let entry = reg.entries.get_mut(id).unwrap();
+                    let normal_texture = material.normal_texture.as_ref().map(|t| self.request_texture(&t.source, false));
+                    let occlusion_texture = material.normal_texture.as_ref().map(|t| self.request_texture(&t.source, false));
+                    let emissive_texture = material.normal_texture.as_ref().map(|t| self.request_texture(&t.source, true));
+                    let base_color_texture = material.normal_texture.as_ref().map(|t| self.request_texture(&t.source, true));
+                    let metallic_roughness_texture = material.normal_texture.as_ref().map(|t| self.request_texture(&t.source, true));
+                    let cpu_data = MaterialCpuData { manifest: material, normal_texture, occlusion_texture, emissive_texture, base_color_texture, metallic_roughness_texture };
+                    let cpu_idx = self.cpu.materials.lock().unwrap().insert(cpu_data);
+                    entry.cpu_state = CpuState::Ready(cpu_idx);
+                },
+                IoResponse::SkeletonLoaded { id, skeleton } => {
+                    let entry = reg.entries.get_mut(id).unwrap();
+                    let cpu_data = SkeletonCpuData { manifest: skeleton };
+                    let cpu_idx = self.cpu.skeletons.lock().unwrap().insert(cpu_data);
+                    entry.cpu_state = CpuState::Ready(cpu_idx);
+                },
+                IoResponse::AnimationClipLoaded { id, clip } => {
+                    let entry = reg.entries.get_mut(id).unwrap();
+                    let animation = self.request_animation(&clip.binary_path, &clip);
+                    let cpu_data = AnimationClipCpuData { manifest: clip, animation };
+                    let cpu_idx = self.cpu.animation_clips.lock().unwrap().insert(cpu_data);
+                    entry.cpu_state = CpuState::Ready(cpu_idx);
+                },
+                IoResponse::AnimationLoaded { id, parsed_clip } => {
+                    let entry = reg.entries.get_mut(id).unwrap();
+                    let cpu_data: AnimationCpuData = parsed_clip;
+                    let cpu_idx = self.cpu.animations.lock().unwrap().insert(cpu_data);
+                    entry.cpu_state = CpuState::Ready(cpu_idx);
+                },
+                IoResponse::TextureLoaded { id, data } => {
+                    let entry = reg.entries.get_mut(id).unwrap();
+                    let cpu_data: TextureCpuData = data;
+                    let cpu_idx = self.cpu.textures.lock().unwrap().insert(cpu_data);
+                    entry.cpu_state = CpuState::Ready(cpu_idx);
+                    entry.gpu_state = GpuState::Queued;
+                    self.upload_queue.lock().unwrap().push_back(id);
+                },
                 IoResponse::Error { path, message } => {
                     println!("IO Error: path: {}, message: {}", path, message);
                 },
@@ -365,7 +629,7 @@ impl ResourceManager {
         }
     }
 
-    fn process_upload_queue(
+    pub fn process_upload_queue(
         self: &std::sync::Arc<Self>,
         wgpu_context: &WgpuContext,
     ) {
@@ -379,24 +643,60 @@ impl ResourceManager {
             }
 
             match entry.kind {
-                ResourceKind::Model => {
-                    if let CpuState::Ready(c) = entry.cpu_state {
-                        let m = self.cpu.models.lock().unwrap().get(c).unwrap();
-                        // probs remove this, model shouldnt have gpu data
-                        todo!();
+                ResourceKind::Mesh => {
+                    if let CpuState::Ready(cpu_idx) = entry.cpu_state {
+                        let mut meshes_cpu = self.cpu.meshes.lock().unwrap();
+                        let buffer = {
+                            let mesh_cpu = meshes_cpu.get(cpu_idx).unwrap();
+                            wgpu_context.device.create_buffer_init(&BufferInitDescriptor {
+                                label: Some("Index/vertex buffer"),
+                                contents: bytemuck::cast_slice(&mesh_cpu.index_vertex_data),
+                                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::INDEX,
+                            })
+                        };
+                        let mesh_gpu = MeshGpuData { buffer };
+                        let mut meshes_gpu = self.gpu.meshes.lock().unwrap();
+                        let gpu_idx = meshes_gpu.insert(mesh_gpu);
+                        entry.gpu_state = GpuState::Ready(gpu_idx);
+                        entry.cpu_state = CpuState::Absent;
+                        meshes_cpu.remove(cpu_idx);
+                    } else {
+                        println!("Warning: no cpu data for mesh in upload queue");
                     }
                 },
-                ResourceKind::Mesh => todo!(),
-                ResourceKind::Material => todo!(),
-                ResourceKind::Skeleton => todo!(),
-                ResourceKind::AnimationClip => todo!(),
-                ResourceKind::Texture => todo!(),
+                ResourceKind::Texture => {
+                    if let CpuState::Ready(cpu_idx) = entry.cpu_state {
+                        let mut textures_cpu = self.cpu.textures.lock().unwrap();
+                        let texture_cpu = textures_cpu.get(cpu_idx).unwrap();
+                        // TODO move this function away from dds module, also it should probs just take the cpudata directly
+                        let texture = dds::upload_texture(
+                            &texture_cpu.data,
+                            texture_cpu.base_width,
+                            texture_cpu.base_height,
+                            texture_cpu.mips,
+                            texture_cpu.layers,
+                            texture_cpu.format,
+                            &wgpu_context.device,
+                            &wgpu_context.queue
+                        );
+                        let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+                        let texture_gpu = TextureGpuData { texture, texture_view };
+                        let mut textures_gpu = self.gpu.textures.lock().unwrap();
+                        let gpu_idx = textures_gpu.insert(texture_gpu);
+                        entry.gpu_state = GpuState::Ready(gpu_idx);
+                        entry.cpu_state = CpuState::Absent;
+                        textures_cpu.remove(cpu_idx);
+                    } else {
+                        println!("Warning: no cpu data for texture in upload queue");
+                    }
+                }
+                _ => println!("Warning: tried to upload an unsupported resource!"),
             }
         }
         todo!();
     }
 
-    fn run_gc(
+    pub fn run_gc(
         self: &std::sync::Arc<Self>,
     ) {
         // for each entry with ref count 0
@@ -416,22 +716,78 @@ impl ResourceManager {
         self: &std::sync::Arc<Self>,
         path: &str,
     ) -> ModelHandle {
-        // make io request
-        todo!()
+        let mut reg = self.registry.lock().unwrap();
+        if let Some(&idx) = reg.by_path.get(path) {
+            let entry = reg.entries.get_mut(idx).unwrap();
+            entry.ref_count += 1;
+            return ModelHandle::new(idx, self);
+        }
+
+        let idx = reg.entries.insert(
+            Entry {
+                kind: ResourceKind::Model,
+                ref_count: 1u32,
+                cpu_state: CpuState::Loading,
+                gpu_state: GpuState::Absent,
+            }
+        );
+        reg.by_path.insert(path.to_string(), idx);
+
+        self.make_io_request(IoRequest::LoadModel { id: idx, path: path.to_string() });
+
+        ModelHandle::new(idx, self)
     }
 
     pub fn request_mesh(
         self: &std::sync::Arc<Self>,
         path: &str,
     ) -> MeshHandle {
-        todo!()
+        let mut reg = self.registry.lock().unwrap();
+        if let Some(&idx) = reg.by_path.get(path) {
+            let entry = reg.entries.get_mut(idx).unwrap();
+            entry.ref_count += 1;
+            return MeshHandle::new(idx, self);
+        }
+
+        let idx = reg.entries.insert(
+            Entry {
+                kind: ResourceKind::Mesh,
+                ref_count: 1u32,
+                cpu_state: CpuState::Loading,
+                gpu_state: GpuState::Absent,
+            }
+        );
+        reg.by_path.insert(path.to_string(), idx);
+
+        self.make_io_request(IoRequest::LoadMesh { id: idx, path: path.to_string() });
+
+        MeshHandle::new(idx, self)
     }
 
     pub fn request_material(
         self: &std::sync::Arc<Self>,
         path: &str,
     ) -> MaterialHandle {
-        todo!()
+        let mut reg = self.registry.lock().unwrap();
+        if let Some(&idx) = reg.by_path.get(path) {
+            let entry = reg.entries.get_mut(idx).unwrap();
+            entry.ref_count += 1;
+            return MaterialHandle::new(idx, self);
+        }
+
+        let idx = reg.entries.insert(
+            Entry {
+                kind: ResourceKind::Material,
+                ref_count: 1u32,
+                cpu_state: CpuState::Loading,
+                gpu_state: GpuState::Absent,
+            }
+        );
+        reg.by_path.insert(path.to_string(), idx);
+
+        self.make_io_request(IoRequest::LoadMaterial { id: idx, path: path.to_string() });
+
+        MaterialHandle::new(idx, self)
     }
 
     pub fn request_skeleton(
@@ -448,7 +804,7 @@ impl ResourceManager {
         let idx = reg.entries.insert(
             Entry {
                 kind: ResourceKind::Skeleton,
-                ref_count: 0u32,
+                ref_count: 1u32,
                 cpu_state: CpuState::Loading,
                 gpu_state: GpuState::Absent,
             }
@@ -464,12 +820,80 @@ impl ResourceManager {
         self: &std::sync::Arc<Self>,
         path: &str,
     ) -> AnimationClipHandle {
-        todo!()
+        let mut reg = self.registry.lock().unwrap();
+        if let Some(&idx) = reg.by_path.get(path) {
+            let entry = reg.entries.get_mut(idx).unwrap();
+            entry.ref_count += 1;
+            return AnimationClipHandle::new(idx, self);
+        }
+
+        let idx = reg.entries.insert(
+            Entry {
+                kind: ResourceKind::AnimationClip,
+                ref_count: 1u32,
+                cpu_state: CpuState::Loading,
+                gpu_state: GpuState::Absent,
+            }
+        );
+        reg.by_path.insert(path.to_string(), idx);
+
+        self.make_io_request(IoRequest::LoadAnimationClip { id: idx, path: path.to_string() });
+
+        AnimationClipHandle::new(idx, self)
     }
+
+    fn request_animation(
+        self: &std::sync::Arc<Self>,
+        path: &str,
+        header: &animationfile::AnimationClip,
+    ) -> AnimationHandle {
+        let mut reg = self.registry.lock().unwrap();
+        if let Some(&idx) = reg.by_path.get(path) {
+            let entry = reg.entries.get_mut(idx).unwrap();
+            entry.ref_count += 1;
+            return AnimationHandle::new(idx, self);
+        }
+
+        let idx = reg.entries.insert(
+            Entry {
+                kind: ResourceKind::Animation,
+                ref_count: 1u32,
+                cpu_state: CpuState::Loading,
+                gpu_state: GpuState::Absent,
+            }
+        );
+        reg.by_path.insert(path.to_string(), idx);
+
+        // TODO cloning header sounds pretty bad
+        self.make_io_request(IoRequest::LoadAnimation { id: idx, path: path.to_string(), header: header.clone() });
+
+        AnimationHandle::new(idx, self)
+    }
+
     pub fn request_texture(
         self: &std::sync::Arc<Self>,
         path: &str,
+        srgb: bool,
     ) -> TextureHandle {
-        todo!()
+        let mut reg = self.registry.lock().unwrap();
+        if let Some(&idx) = reg.by_path.get(path) {
+            let entry = reg.entries.get_mut(idx).unwrap();
+            entry.ref_count += 1;
+            return TextureHandle::new(idx, self);
+        }
+
+        let idx = reg.entries.insert(
+            Entry {
+                kind: ResourceKind::Texture,
+                ref_count: 1u32,
+                cpu_state: CpuState::Loading,
+                gpu_state: GpuState::Absent,
+            }
+        );
+        reg.by_path.insert(path.to_string(), idx);
+
+        self.make_io_request(IoRequest::LoadTexture { id: idx, path: path.to_string(), srgb });
+
+        TextureHandle::new(idx, self)
     }
 }

@@ -8,6 +8,7 @@ use super::modelfile;
 use super::png;
 use super::skeletonfile;
 use super::skeletonfile::Skeleton;
+use ddsfile::Caps2;
 use generational_arena::Index;
 use glam::Mat3;
 use glam::Mat4;
@@ -465,7 +466,7 @@ impl RenderResources {
     pub fn load_dds_texture(
         &mut self,
         handle: TextureHandle,
-        array_layers: u32,
+        array_layers: u32, // TODO this is no longer necessary... looks like num array layers is working correctly, it's supposed to be 1 for cubemap
         wgpu_context: &WgpuContext,
     ) {
         let dds = dds::load_dds_raw(&handle.0);
@@ -473,12 +474,16 @@ impl RenderResources {
             dds.get_dxgi_format()
                 .expect("Dds doesn't have a DXGI format."),
         );
+        let is_cubemap = dds
+            .header
+            .caps2
+            .contains(Caps2::CUBEMAP);
         let tex = dds::upload_texture(
             &dds.data,
             dds.get_width(),
             dds.get_height(),
             dds.get_num_mipmap_levels(),
-            array_layers, // TODO this can't be read from dds? Bug in ddsfile?
+            if is_cubemap { 6 } else { dds.get_num_array_layers() },
             format,
             &wgpu_context.device,
             &wgpu_context.queue,

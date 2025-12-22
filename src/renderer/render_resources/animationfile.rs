@@ -20,7 +20,7 @@ impl From<gltf::animation::Interpolation> for Interpolation {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct AnimationClip {
     pub duration: f32,
     pub tracks: Vec<Track>,
@@ -28,7 +28,7 @@ pub struct AnimationClip {
     pub binary_path: String,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Track {
     pub target: Target,
 
@@ -40,20 +40,20 @@ pub struct Track {
     pub scale: Option<Sampler3>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct BinRef {
     pub offset: u32,
     pub count: u32,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Sampler3 {
     pub times: Option<BinRef>, // None -> use Track.shared_times
     pub values: BinRef,
     pub interpolation: Interpolation,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SamplerQuat {
     pub times: Option<BinRef>,
     pub values: BinRef,
