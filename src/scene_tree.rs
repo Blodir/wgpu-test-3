@@ -1,8 +1,9 @@
-use std::{collections::HashMap, time::Instant};
+use std::{collections::HashMap, sync::Arc, time::Instant};
 
 use glam::{Mat4, Vec3};
+use wgpu::hal::vulkan::Texture;
 
-use crate::{animator::{self, AnimationGraph, Animator}, renderer::render_resources::{EnvironmentMapHandle, ModelHandle}};
+use crate::{animator::{self, AnimationGraph, Animator}, resource_manager::resource_manager::{ModelHandle, ResourceManager, TextureHandle}};
 use generational_arena::{Arena, Index};
 
 #[derive(Clone)]
@@ -64,6 +65,23 @@ pub enum RenderDataType {
     AnimatedModel(AnimatedModel),
 }
 
+pub struct Environment {
+    pub sun: Sun,
+    pub prefiltered: TextureHandle,
+    pub di: TextureHandle,
+    pub brdf: TextureHandle,
+}
+impl Environment {
+    pub fn init(resource_manager: &Arc<ResourceManager>) -> Self {
+        Self {
+            sun: Sun::default(),
+            prefiltered: resource_manager.request_texture("assets/kloofendal_overcast_puresky_8k.prefiltered.dds", true),
+            di: resource_manager.request_texture("assets/kloofendal_overcast_puresky_8k.di.dds", true),
+            brdf: resource_manager.request_texture("assets/brdf_lut.png", false),
+        }
+    }
+}
+
 pub struct Node {
     pub parent: Option<Index>,
     pub children: Vec<Index>,
@@ -74,35 +92,10 @@ pub struct Node {
 pub struct Scene {
     pub root: Index,
     pub nodes: Arena<Node>,
-    pub sun: Sun,
     pub camera: Camera,
-    pub environment: EnvironmentMapHandle,
+    pub environment: Environment,
     pub global_time_sec: f32,
 }
-impl Default for Scene {
-    fn default() -> Self {
-        let mut nodes = Arena::new();
-
-        let model_handle = ModelHandle("assets/local/Fox/Fox.json".to_string());
-
-        let root_handle = nodes.insert(Node {
-            parent: None,
-            children: vec![],
-            transform: Mat4::IDENTITY,
-            render_data: RenderDataType::Model(model_handle.clone()),
-        });
-
-        Self {
-            root: root_handle,
-            nodes,
-            sun: Sun::default(),
-            camera: Camera::default(),
-            environment: EnvironmentMapHandle("assets/kloofendal_overcast_puresky_8k".to_string()),
-            global_time_sec: 0.0
-        }
-    }
-}
-
 impl Scene {
     pub fn update(&mut self, animation_graphs: &Vec<AnimationGraph>, node: Index, dt: f32) {
         let node = &mut self.nodes[node];
@@ -158,7 +151,7 @@ impl Scene {
     }
 }
 
-pub fn build_test_animation_blending() -> (Scene, Vec<AnimationGraph>) {
+pub fn build_test_animation_blending(resource_manager: &Arc<ResourceManager>) -> (Scene, Vec<AnimationGraph>) {
     let mut nodes = Arena::new();
 
     let animation_graph = AnimationGraph {
@@ -176,7 +169,7 @@ pub fn build_test_animation_blending() -> (Scene, Vec<AnimationGraph>) {
     };
     let animation_graphs = vec![animation_graph];
 
-    let model_handle = ModelHandle("assets/local/Fox/Fox.json".to_string());
+    let model_handle = resource_manager.request_model("assets/local/Fox/Fox.json");
     let render_data = RenderDataType::AnimatedModel(AnimatedModel { model: model_handle, animator: Animator::new(0, 0) });
 
     let root_handle = nodes.insert(Node {
@@ -186,12 +179,18 @@ pub fn build_test_animation_blending() -> (Scene, Vec<AnimationGraph>) {
         render_data,
     });
 
+    let environment = Environment {
+        sun: Sun::default(),
+        prefiltered: resource_manager.request_texture("assets/kloofendal_overcast_puresky_8k.prefiltered.dds", true),
+        di: resource_manager.request_texture("assets/kloofendal_overcast_puresky_8k.di.dds", true),
+        brdf: resource_manager.request_texture("assets/brdf_lut.png", false),
+    };
+
     let scene = Scene {
         root: root_handle,
         nodes,
-        sun: Sun::default(),
+        environment,
         camera: Camera::default(),
-        environment: EnvironmentMapHandle("assets/kloofendal_overcast_puresky_8k".to_string()),
         global_time_sec: 0.0
     };
 

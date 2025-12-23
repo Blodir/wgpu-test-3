@@ -30,7 +30,7 @@ pub fn spawn_sim(
     resource_manager: Arc<ResourceManager>,
 ) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
-        let (mut scene, animation_graphs) = build_test_animation_blending();
+        let (mut scene, animation_graphs) = build_test_animation_blending(&resource_manager);
         let mut next = Instant::now() + TICK;
         let mut prev_tick = Instant::now();
         let mut shift_is_pressed = false;

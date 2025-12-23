@@ -5,9 +5,9 @@ use generational_arena::{Arena, Index};
 use glam::{Quat, Vec3};
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 
-use crate::renderer::{pipelines::model::vertex::Vertex, render_resources::{animation, animationfile, dds, materialfile, modelfile, skeletonfile}, wgpu_context::{self, WgpuContext}};
+use crate::renderer::{pipelines::model::{material_binding::MaterialBinding, vertex::Vertex}, render_resources::{animation, animationfile, dds, materialfile, modelfile, skeletonfile}, wgpu_context::{self, WgpuContext}, Layouts};
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum ResourceKind {
     Model,
     Mesh,
@@ -22,6 +22,14 @@ pub trait ResourceTag {
     const KIND: ResourceKind;
 }
 
+/// Non-owning reference to a registry entry, the entry is not guaranteed to be present
+#[derive(Copy, Clone, Eq, PartialEq, Hash)]
+pub struct HandleId<T: ResourceTag> {
+    idx: generational_arena::Index,
+    _marker: std::marker::PhantomData<T>,
+}
+
+/// Owned/refcounted reference to a registry entry
 pub struct Handle<T: ResourceTag> {
     idx: generational_arena::Index,
     manager: std::sync::Weak<ResourceManager>,
@@ -32,6 +40,12 @@ impl<T: ResourceTag> Handle<T> {
         Self {
             idx,
             manager: Arc::downgrade(resource_manager_arc),
+            _marker: std::marker::PhantomData,
+        }
+    }
+    pub fn id(&self) -> HandleId<T> {
+        HandleId {
+            idx: self.idx,
             _marker: std::marker::PhantomData,
         }
     }
@@ -58,12 +72,19 @@ impl<T: ResourceTag> Drop for Handle<T> {
     }
 }
 
+#[derive(Copy, Clone, Eq, PartialEq, Hash)]
 pub struct _Model;
+#[derive(Copy, Clone, Eq, PartialEq, Hash)]
 pub struct _Mesh;
+#[derive(Copy, Clone, Eq, PartialEq, Hash)]
 pub struct _Material;
+#[derive(Copy, Clone, Eq, PartialEq, Hash)]
 pub struct _Skeleton;
+#[derive(Copy, Clone, Eq, PartialEq, Hash)]
 pub struct _AnimationClip;
+#[derive(Copy, Clone, Eq, PartialEq, Hash)]
 pub struct _Animation;
+#[derive(Copy, Clone, Eq, PartialEq, Hash)]
 pub struct _Texture;
 
 impl ResourceTag for _Model { const KIND: ResourceKind = ResourceKind::Model; }
@@ -82,19 +103,27 @@ pub type AnimationClipHandle = Handle<_AnimationClip>;
 pub type AnimationHandle = Handle<_Animation>;
 pub type TextureHandle = Handle<_Texture>;
 
-enum CpuState {
+pub type ModelId = HandleId<_Model>;
+pub type MeshId = HandleId<_Mesh>;
+pub type MaterialId = HandleId<_Material>;
+pub type SkeletonId = HandleId<_Skeleton>;
+pub type AnimationClipId = HandleId<_AnimationClip>;
+pub type AnimationId = HandleId<_Animation>;
+pub type TextureId = HandleId<_Texture>;
+
+pub enum CpuState {
     Absent, Loading, Ready(Index)
 }
 
-enum GpuState {
+pub enum GpuState {
     Absent, Queued, Uploading(Index), Ready(Index)
 }
 
 struct Entry {
-    kind: ResourceKind,
+    pub kind: ResourceKind,
     ref_count: u32,
-    cpu_state: CpuState,
-    gpu_state: GpuState,
+    pub cpu_state: CpuState,
+    pub gpu_state: GpuState,
 }
 impl Entry {
     pub fn new(kind: ResourceKind) -> Self {
@@ -108,8 +137,8 @@ impl Entry {
 }
 
 struct ResourceRegistry {
-    pub entries: Arena<Entry>,
-    pub by_path: HashMap<String, Index>,
+    entries: Arena<Entry>,
+    by_path: HashMap<String, Index>,
 }
 impl ResourceRegistry {
     pub fn new() -> Self {
@@ -117,6 +146,14 @@ impl ResourceRegistry {
             entries: Arena::new(),
             by_path: HashMap::new(),
         }
+    }
+
+    pub fn get<T: ResourceTag>(&self, handle: &Handle<T>) -> &Entry {
+        self.entries.get(handle.idx).unwrap()
+    }
+
+    pub fn get_id<T: ResourceTag>(&self, id: &HandleId<T>) -> Option<&Entry> {
+        self.entries.get(id.idx)
     }
 }
 
@@ -128,11 +165,11 @@ struct SubMesh {
 }
 
 struct ModelCpuData {
-    manifest: modelfile::Model,
-    mesh: MeshHandle,
-    submeshes: Vec<SubMesh>,
-    animations: Vec<AnimationClipHandle>,
-    skeleton: SkeletonHandle,
+    pub manifest: modelfile::Model,
+    pub mesh: MeshHandle,
+    pub submeshes: Vec<SubMesh>,
+    pub animations: Vec<AnimationClipHandle>,
+    pub skeleton: SkeletonHandle,
 }
 
 struct MeshCpuData {
@@ -149,12 +186,12 @@ struct MaterialCpuData {
 }
 
 struct SkeletonCpuData {
-    manifest: skeletonfile::Skeleton,
+    pub manifest: skeletonfile::Skeleton,
 }
 
 struct AnimationClipCpuData {
-    manifest: animationfile::AnimationClip,
-    animation: AnimationHandle,
+    pub manifest: animationfile::AnimationClip,
+    pub animation: AnimationHandle,
 }
 
 type AnimationCpuData = animation::AnimationClip;
@@ -193,15 +230,297 @@ struct TextureGpuData {
     pub texture_view: wgpu::TextureView,
 }
 
+/// indices to GpuResources textures arena
+pub struct PlaceholderTextureIds {
+    normals: Index,
+    base_color: Index,
+    occlusion: Index,
+    emissive: Index,
+    metallic_roughness: Index,
+    prefiltered: Index,
+    di: Index,
+    brdf: Index,
+}
+
 struct GpuResources {
     pub meshes: Mutex<Arena<MeshGpuData>>,
+    pub materials: Mutex<Arena<MaterialBinding>>,
     pub textures: Mutex<Arena<TextureGpuData>>,
 }
 impl GpuResources {
     pub fn new() -> Self {
+        let meshes = Mutex::new(Arena::new());
+        let materials = Mutex::new(Arena::new());
+        let textures = Mutex::new(Arena::new());
+
         Self {
-            meshes: Mutex::new(Arena::new()),
-            textures: Mutex::new(Arena::new()),
+            meshes,
+            materials,
+            textures,
+        }
+    }
+
+    pub fn initialize_placeholders(&self, wgpu_context: &WgpuContext) -> PlaceholderTextureIds {
+        let mut textures = self.textures.lock().unwrap();
+        let extent = wgpu::Extent3d {
+            width: 1,
+            height: 1,
+            depth_or_array_layers: 1,
+        };
+        let base_color_texture = wgpu_context.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Base color placeholder"),
+            size: extent,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba16Float,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let metallic_roughness_texture = wgpu_context.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Metallic-roughness placeholder"),
+            size: extent,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba16Float,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let normals_texture = wgpu_context.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Normals placeholder"),
+            size: extent,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba16Float,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let occlusion_texture = wgpu_context.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Occlusion placeholder"),
+            size: extent,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::R8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let emissive_texture = wgpu_context.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Emissive placeholder"),
+            size: extent,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::R8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let prefiltered_texture = wgpu_context.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Prefiltered placeholder"),
+            size: wgpu::Extent3d {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: 6,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba16Float,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let di_texture = wgpu_context.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("DI placeholder"),
+            size: wgpu::Extent3d {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: 6,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba16Float,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let brdf_texture = wgpu_context.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("BRDF placeholder"),
+            size: extent,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba16Float,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let base_color_ict = wgpu::ImageCopyTexture {
+            texture: &base_color_texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d { x: 0, y: 0, z: 0, },
+            aspect: wgpu::TextureAspect::All,
+        };
+        let metallic_roughness_ict = wgpu::ImageCopyTexture {
+            texture: &metallic_roughness_texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d { x: 0, y: 0, z: 0, },
+            aspect: wgpu::TextureAspect::All,
+        };
+        let normals_ict = wgpu::ImageCopyTexture {
+            texture: &normals_texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d { x: 0, y: 0, z: 0, },
+            aspect: wgpu::TextureAspect::All,
+        };
+        let occlusion_ict = wgpu::ImageCopyTexture {
+            texture: &occlusion_texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d { x: 0, y: 0, z: 0, },
+            aspect: wgpu::TextureAspect::All,
+        };
+        let emissive_ict = wgpu::ImageCopyTexture {
+            texture: &emissive_texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d { x: 0, y: 0, z: 0, },
+            aspect: wgpu::TextureAspect::All,
+        };
+        let prefiltered_ict = wgpu::ImageCopyTexture {
+            texture: &prefiltered_texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d { x: 0, y: 0, z: 0, },
+            aspect: wgpu::TextureAspect::All,
+        };
+        let di_ict = wgpu::ImageCopyTexture {
+            texture: &di_texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d { x: 0, y: 0, z: 0, },
+            aspect: wgpu::TextureAspect::All,
+        };
+        let brdf_ict = wgpu::ImageCopyTexture {
+            texture: &brdf_texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d { x: 0, y: 0, z: 0, },
+            aspect: wgpu::TextureAspect::All,
+        };
+        wgpu_context.queue.write_texture(
+            base_color_ict,
+            &bytemuck::cast_slice(&[1u16, 1u16, 1u16, 1u16]).to_vec(),
+            wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(2*4),
+                rows_per_image: Some(1),
+            },
+            extent,
+        );
+        wgpu_context.queue.write_texture(
+            metallic_roughness_ict,
+            &bytemuck::cast_slice(&[0x0000u16, 0x3800u16, 0x0000u16, 0x3C00u16]).to_vec(),
+            wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(2*4),
+                rows_per_image: Some(1),
+            },
+            extent,
+        );
+        wgpu_context.queue.write_texture(
+            normals_ict,
+            &bytemuck::cast_slice(&[0x0000u16, 0x0000u16, 0x3C00u16, 0x3C00u16]).to_vec(),
+            wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(2*4),
+                rows_per_image: Some(1),
+            },
+            extent,
+        );
+        wgpu_context.queue.write_texture(
+            occlusion_ict,
+            &vec![u8::MAX],
+            wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(1),
+                rows_per_image: Some(1),
+            },
+            extent,
+        );
+        wgpu_context.queue.write_texture(
+            emissive_ict,
+            &vec![0u8],
+            wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(1),
+                rows_per_image: Some(1),
+            },
+            extent,
+        );
+
+        // One RGBA16F black texel
+        let rgba16f_texel: [u16; 4] = [0x0000, 0x0000, 0x0000, 0x0000];
+        // 6 faces
+        let rgba16f_cube = [rgba16f_texel; 6];
+        wgpu_context.queue.write_texture(
+            prefiltered_ict,
+            &bytemuck::cast_slice(&rgba16f_cube),
+            wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(8),
+                rows_per_image: Some(1),
+            },
+            wgpu::Extent3d {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: 6,
+            },
+        );
+        wgpu_context.queue.write_texture(
+            di_ict,
+            &bytemuck::cast_slice(&rgba16f_cube),
+            wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(8),
+                rows_per_image: Some(1),
+            },
+            extent,
+        );
+        wgpu_context.queue.write_texture(
+            brdf_ict,
+            &bytemuck::cast_slice(&[0x39E1u16, 0x2404u16, 0x0000u16, 0x3C00u16]).to_vec(),
+            wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(8),
+                rows_per_image: Some(1),
+            },
+            extent,
+        );
+
+        let normals_view = normals_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let base_color_view = base_color_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let occlusion_view = occlusion_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let emissive_view = emissive_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let metallic_roughness_view = metallic_roughness_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let prefiltered_view = prefiltered_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let di_view = di_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let brdf_view = brdf_texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+        let normals = textures.insert(TextureGpuData { texture: normals_texture, texture_view: normals_view });
+        let base_color = textures.insert(TextureGpuData { texture: base_color_texture, texture_view: base_color_view });
+        let occlusion = textures.insert(TextureGpuData { texture: occlusion_texture, texture_view: occlusion_view });
+        let emissive = textures.insert(TextureGpuData { texture: emissive_texture, texture_view: emissive_view });
+        let metallic_roughness = textures.insert(TextureGpuData { texture: metallic_roughness_texture, texture_view: metallic_roughness_view });
+        let prefiltered = textures.insert(TextureGpuData { texture: prefiltered_texture, texture_view: prefiltered_view });
+        let di = textures.insert(TextureGpuData { texture: di_texture, texture_view: di_view });
+        let brdf = textures.insert(TextureGpuData { texture: brdf_texture, texture_view: brdf_view });
+
+
+        PlaceholderTextureIds {
+            normals,
+            base_color,
+            occlusion,
+            emissive,
+            metallic_roughness,
+            prefiltered,
+            di,
+            brdf,
         }
     }
 }
@@ -499,9 +818,9 @@ impl IoManager {
 }
 
 pub struct ResourceManager {
-    registry: Mutex<ResourceRegistry>,
-    gpu: GpuResources,
-    cpu: CpuResources,
+    pub registry: Mutex<ResourceRegistry>,
+    pub gpu: GpuResources,
+    pub cpu: CpuResources,
     io: IoManager,
     upload_queue: Mutex<VecDeque<Index>>,
 }
@@ -594,6 +913,8 @@ impl ResourceManager {
                     let cpu_data = MaterialCpuData { manifest: material, normal_texture, occlusion_texture, emissive_texture, base_color_texture, metallic_roughness_texture };
                     let cpu_idx = self.cpu.materials.lock().unwrap().insert(cpu_data);
                     entry.cpu_state = CpuState::Ready(cpu_idx);
+                    entry.gpu_state = GpuState::Queued;
+                    self.upload_queue.lock().unwrap().push_back(id);
                 },
                 IoResponse::SkeletonLoaded { id, skeleton } => {
                     let entry = reg.entries.get_mut(id).unwrap();
@@ -632,68 +953,169 @@ impl ResourceManager {
     pub fn process_upload_queue(
         self: &std::sync::Arc<Self>,
         wgpu_context: &WgpuContext,
+        layouts: &Layouts,
+        placeholders: &PlaceholderTextureIds,
     ) {
         let mut reg = self.registry.lock().unwrap();
         let mut upload_queue = self.upload_queue.lock().unwrap();
-        while let Some(id) = upload_queue.pop_front() {
-            let entry = reg.entries.get_mut(id).unwrap();
+        let mut meshes_cpu = self.cpu.meshes.lock().unwrap();
+        let mut textures_cpu = self.cpu.textures.lock().unwrap();
+        let mut materials_cpu = self.cpu.materials.lock().unwrap();
+        let mut textures_gpu = self.gpu.textures.lock().unwrap();
+        let mut materials_gpu = self.gpu.materials.lock().unwrap();
+        let mut queue_next_frame: Vec<Index> = vec![];
+        'upload_queue: while let Some(id) = upload_queue.pop_front() {
+            let (entry_kind, entry_cpu_idx) = {
+                let entry = reg.entries.get(id).unwrap();
 
-            if entry.ref_count == 0 {
-                continue; // cancelled
-            }
+                if entry.ref_count == 0 {
+                    continue 'upload_queue; // cancelled
+                }
 
-            match entry.kind {
+                let entry_kind = entry.kind;
+                let entry_cpu_idx = if let CpuState::Ready(cpu_idx) = entry.cpu_state {
+                    cpu_idx
+                } else {
+                    println!("Warning: no cpu data for entry in upload queue");
+                    continue 'upload_queue;
+                };
+                (entry_kind, entry_cpu_idx)
+            };
+
+            match entry_kind {
                 ResourceKind::Mesh => {
-                    if let CpuState::Ready(cpu_idx) = entry.cpu_state {
-                        let mut meshes_cpu = self.cpu.meshes.lock().unwrap();
-                        let buffer = {
-                            let mesh_cpu = meshes_cpu.get(cpu_idx).unwrap();
-                            wgpu_context.device.create_buffer_init(&BufferInitDescriptor {
-                                label: Some("Index/vertex buffer"),
-                                contents: bytemuck::cast_slice(&mesh_cpu.index_vertex_data),
-                                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::INDEX,
-                            })
-                        };
-                        let mesh_gpu = MeshGpuData { buffer };
-                        let mut meshes_gpu = self.gpu.meshes.lock().unwrap();
-                        let gpu_idx = meshes_gpu.insert(mesh_gpu);
-                        entry.gpu_state = GpuState::Ready(gpu_idx);
-                        entry.cpu_state = CpuState::Absent;
-                        meshes_cpu.remove(cpu_idx);
-                    } else {
-                        println!("Warning: no cpu data for mesh in upload queue");
-                    }
+                    let buffer = {
+                        let mesh_cpu = meshes_cpu.get(entry_cpu_idx).unwrap();
+                        wgpu_context.device.create_buffer_init(&BufferInitDescriptor {
+                            label: Some("Index/vertex buffer"),
+                            contents: bytemuck::cast_slice(&mesh_cpu.index_vertex_data),
+                            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::INDEX,
+                        })
+                    };
+                    let mesh_gpu = MeshGpuData { buffer };
+                    let mut meshes_gpu = self.gpu.meshes.lock().unwrap();
+                    let gpu_idx = meshes_gpu.insert(mesh_gpu);
+                    let entry = reg.entries.get_mut(id).unwrap();
+                    entry.gpu_state = GpuState::Ready(gpu_idx);
+                    entry.cpu_state = CpuState::Absent;
+                    meshes_cpu.remove(entry_cpu_idx);
                 },
                 ResourceKind::Texture => {
-                    if let CpuState::Ready(cpu_idx) = entry.cpu_state {
-                        let mut textures_cpu = self.cpu.textures.lock().unwrap();
-                        let texture_cpu = textures_cpu.get(cpu_idx).unwrap();
-                        // TODO move this function away from dds module, also it should probs just take the cpudata directly
-                        let texture = dds::upload_texture(
-                            &texture_cpu.data,
-                            texture_cpu.base_width,
-                            texture_cpu.base_height,
-                            texture_cpu.mips,
-                            texture_cpu.layers,
-                            texture_cpu.format,
-                            &wgpu_context.device,
-                            &wgpu_context.queue
-                        );
-                        let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-                        let texture_gpu = TextureGpuData { texture, texture_view };
-                        let mut textures_gpu = self.gpu.textures.lock().unwrap();
-                        let gpu_idx = textures_gpu.insert(texture_gpu);
-                        entry.gpu_state = GpuState::Ready(gpu_idx);
-                        entry.cpu_state = CpuState::Absent;
-                        textures_cpu.remove(cpu_idx);
-                    } else {
-                        println!("Warning: no cpu data for texture in upload queue");
-                    }
-                }
+                    let texture_cpu = textures_cpu.get(entry_cpu_idx).unwrap();
+                    // TODO move this function away from dds module, also it should probs just take the cpudata directly
+                    let texture = dds::upload_texture(
+                        &texture_cpu.data,
+                        texture_cpu.base_width,
+                        texture_cpu.base_height,
+                        texture_cpu.mips,
+                        texture_cpu.layers,
+                        texture_cpu.format,
+                        &wgpu_context.device,
+                        &wgpu_context.queue
+                    );
+                    let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+                    let texture_gpu = TextureGpuData { texture, texture_view };
+                    let mut textures_gpu = self.gpu.textures.lock().unwrap();
+                    let gpu_idx = textures_gpu.insert(texture_gpu);
+                    let entry = reg.entries.get_mut(id).unwrap();
+                    entry.gpu_state = GpuState::Ready(gpu_idx);
+                    entry.cpu_state = CpuState::Absent;
+                    textures_cpu.remove(entry_cpu_idx);
+                },
+                ResourceKind::Material => {
+                    let material_cpu = materials_cpu.get(entry_cpu_idx).unwrap();
+                    // check if textures uploaded to gpu, re-schedule if not
+                    let base_color_gpu_idx = {
+                        if let Some(handle) = material_cpu.base_color_texture.as_ref() {
+                            match reg.get(handle).gpu_state {
+                                GpuState::Ready(gpu_idx) => {
+                                    Some(gpu_idx)
+                                },
+                                _ => {
+                                    queue_next_frame.push(id);
+                                    continue 'upload_queue;
+                                }
+                            }
+                        } else {
+                            None
+                        }
+                    };
+                    let emissive_gpu_idx = {
+                        if let Some(handle) = material_cpu.emissive_texture.as_ref() {
+                            match reg.get(handle).gpu_state {
+                                GpuState::Ready(gpu_idx) => {
+                                    Some(gpu_idx)
+                                },
+                                _ => {
+                                    queue_next_frame.push(id);
+                                    continue 'upload_queue;
+                                }
+                            }
+                        } else {
+                            None
+                        }
+                    };
+                    let metallic_roughness_gpu_idx = {
+                        if let Some(handle) = material_cpu.metallic_roughness_texture.as_ref() {
+                            match reg.get(handle).gpu_state {
+                                GpuState::Ready(gpu_idx) => {
+                                    Some(gpu_idx)
+                                },
+                                _ => {
+                                    queue_next_frame.push(id);
+                                    continue 'upload_queue;
+                                }
+                            }
+                        } else {
+                            None
+                        }
+                    };
+                    let normal_gpu_idx = {
+                        if let Some(handle) = material_cpu.normal_texture.as_ref() {
+                            match reg.get(handle).gpu_state {
+                                GpuState::Ready(gpu_idx) => {
+                                    Some(gpu_idx)
+                                },
+                                _ => {
+                                    queue_next_frame.push(id);
+                                    continue 'upload_queue;
+                                }
+                            }
+                        } else {
+                            None
+                        }
+                    };
+                    let occlusion_gpu_idx = {
+                        if let Some(handle) = material_cpu.occlusion_texture.as_ref() {
+                            match reg.get(handle).gpu_state {
+                                GpuState::Ready(gpu_idx) => {
+                                    Some(gpu_idx)
+                                },
+                                _ => {
+                                    queue_next_frame.push(id);
+                                    continue 'upload_queue;
+                                }
+                            }
+                        } else {
+                            None
+                        }
+                    };
+                    let base_color_view = &textures_gpu.get(base_color_gpu_idx.unwrap_or(placeholders.base_color)).unwrap().texture_view;
+                    let emissive_view = &textures_gpu.get(emissive_gpu_idx.unwrap_or(placeholders.emissive)).unwrap().texture_view;
+                    let metallic_roughness_view = &textures_gpu.get(metallic_roughness_gpu_idx.unwrap_or(placeholders.metallic_roughness)).unwrap().texture_view;
+                    let normal_view = &textures_gpu.get(normal_gpu_idx.unwrap_or(placeholders.normals)).unwrap().texture_view;
+                    let occlusion_view = &textures_gpu.get(occlusion_gpu_idx.unwrap_or(placeholders.occlusion)).unwrap().texture_view;
+                    let material_binding = MaterialBinding::upload(&material_cpu.manifest, base_color_view, emissive_view, metallic_roughness_view, normal_view, occlusion_view, &layouts.material, wgpu_context);
+                    let gpu_idx = materials_gpu.insert(material_binding);
+                    let entry = reg.entries.get_mut(id).unwrap();
+                    entry.gpu_state = GpuState::Ready(gpu_idx);
+                    entry.cpu_state = CpuState::Absent;
+                    materials_cpu.remove(entry_cpu_idx);
+                },
                 _ => println!("Warning: tried to upload an unsupported resource!"),
             }
         }
-        todo!();
+        upload_queue.extend(queue_next_frame);
     }
 
     pub fn run_gc(

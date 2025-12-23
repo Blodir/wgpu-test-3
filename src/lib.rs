@@ -1,7 +1,7 @@
 use crossbeam_queue::{ArrayQueue, SegQueue};
 use notify::{Config, RecommendedWatcher, Watcher};
 use pollster::FutureExt as _;
-use renderer::{render_snapshot::SnapshotHandoff, Layouts};
+use renderer::{render_snapshot::{RenderSnapshot, SnapshotHandoff}, Layouts};
 use resource_manager::resource_manager::ResourceManager;
 use scene_tree::Sun;
 use sim::{spawn_sim, InputEvent};
@@ -22,7 +22,6 @@ use winit::{
 
 use crate::{
     renderer::{
-        render_resources::{EnvironmentMapHandle, ModelHandle, RenderResources},
         wgpu_context::WgpuContext,
         Renderer,
     },
@@ -54,7 +53,6 @@ struct RenderContext<'surface> {
     renderer: Arc<Mutex<Renderer>>,
     window: Arc<Window>,
     wgpu_context: WgpuContext<'surface>,
-    render_resources: RenderResources,
 }
 
 struct App<'surface> {
@@ -110,27 +108,18 @@ impl<'surface> ApplicationHandler for App<'surface> {
                 .unwrap(),
         );
         let wgpu_context = WgpuContext::new(window.clone()).block_on();
-        let mut render_resources = RenderResources::new(&wgpu_context);
         // TODO proper render resources loading!!!
         let layouts = Layouts::new(&wgpu_context);
-        render_resources.preload_environment_map_textures(&wgpu_context, EnvironmentMapHandle("assets/kloofendal_overcast_puresky_8k".to_string()));
-        render_resources
-            .preload_model(
-                ModelHandle("assets/local/Fox/Fox.json".to_string()),
-                &wgpu_context,
-                &layouts.material,
-            )
-            .unwrap();
+        let placeholders = self.resource_manager.gpu.initialize_placeholders(&wgpu_context);
         let renderer = Arc::new(
             Mutex::new(
-                Renderer::new(&wgpu_context, &render_resources, self.snap_handoff.clone(), layouts)
+                Renderer::new(&wgpu_context, self.snap_handoff.clone(), layouts, placeholders)
             )
         );
         self.render_context = Some(
             RenderContext {
                 window,
                 renderer,
-                render_resources,
                 wgpu_context,
             }
         );
@@ -145,10 +134,10 @@ impl<'surface> ApplicationHandler for App<'surface> {
                 self.resource_manager.process_io_responses();
                 if let Some(ref mut render_context) = self.render_context {
                     let mut renderer = render_context.renderer.lock().unwrap();
-                    self.resource_manager.process_upload_queue(&render_context.wgpu_context);
+                    self.resource_manager.process_upload_queue(&render_context.wgpu_context, &renderer.layouts, &renderer.placeholders);
                     match renderer.render(
-                        &mut render_context.render_resources,
                         &render_context.wgpu_context,
+                        &self.resource_manager,
                     ) {
                         Ok(_) => {}
                         Err(e) => eprintln!("render error: {:?}", e),
@@ -212,7 +201,8 @@ impl<'surface> ApplicationHandler for App<'surface> {
 
 pub fn run() {
     let resource_manager = Arc::new(ResourceManager::new());
-    let snap_handoff = Arc::new(SnapshotHandoff::new());
+    let initial_snap = RenderSnapshot::init(&resource_manager);
+    let snap_handoff = Arc::new(SnapshotHandoff::new(initial_snap));
     let sim_inputs = Arc::new(SegQueue::<InputEvent>::new());
     let sim_handle = spawn_sim(sim_inputs.clone(), snap_handoff.clone(), resource_manager.clone());
 

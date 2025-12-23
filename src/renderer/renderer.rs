@@ -1,6 +1,7 @@
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::f32;
+use std::ops::Range;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -8,15 +9,15 @@ use super::pipelines::model::instance::Instance;
 use super::pipelines::model::material_binding::MaterialBinding;
 use super::pipelines::model::pipeline::DrawContext;
 use super::render_resources::animation::{AnimationClip, Channel, Track};
-use super::render_resources::{MaterialHandle, SkeletonHandle, TextureHandle};
 use super::render_snapshot::{self, SnapshotGuard};
 use super::wgpu_context;
-use super::{render_resources::ModelHandle, render_snapshot::SnapshotHandoff};
+use super::render_snapshot::SnapshotHandoff;
 use glam::{Mat3, Mat4, Quat, Vec3, Vec4};
 use wgpu::util::DeviceExt as _;
 
 use crate::animator::{self, TimeWrapMode};
-use crate::renderer::pipelines::model::pipeline::{MaterialBatch, MeshBatch, ResolvedPrimitive};
+use crate::renderer::pipelines::model::pipeline::{MaterialBatch, MeshBatch, ResolvedSubmesh};
+use crate::resource_manager::resource_manager::{self, MaterialId, MeshId, ModelId, PlaceholderTextureIds, ResourceManager};
 use crate::scene_tree::{self, Camera};
 use crate::renderer::{
         pipelines::{
@@ -28,7 +29,7 @@ use crate::renderer::{
             },
             skybox::SkyboxPipeline,
         },
-        render_resources::{RenderResources, skeletonfile},
+        render_resources::skeletonfile,
         wgpu_context::WgpuContext,
     };
 
@@ -379,7 +380,6 @@ impl LightsBinding {
     pub fn new(
         sun: &scene_tree::Sun,
         wgpu_context: &WgpuContext,
-        render_resources: &RenderResources,
         bind_group_layout: &wgpu::BindGroupLayout,
     ) -> Self {
         let direction_buffer = wgpu_context.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -541,7 +541,8 @@ pub struct Renderer {
     model_pipeline: ModelPipeline,
     post_pipeline: PostProcessingPipeline,
     snapshot_handoff: Arc<SnapshotHandoff>,
-    layouts: Layouts,
+    pub layouts: Layouts,
+    pub placeholders: PlaceholderTextureIds,
     bones: BonesBinding,
     pub camera: CameraBinding,
     lights: LightsBinding,
@@ -550,14 +551,13 @@ pub struct Renderer {
 impl Renderer {
     pub fn new(
         wgpu_context: &WgpuContext,
-        render_resources: &RenderResources,
         snapshot_handoff: Arc<SnapshotHandoff>,
         layouts: Layouts, // temporarily initializing layouts outside of renderer for preloading...
+        placeholders: PlaceholderTextureIds,
     ) -> Self {
         let mut lights = LightsBinding::new(
             &scene_tree::Sun::default(),
             wgpu_context,
-            render_resources,
             &layouts.lights,
         );
         // TODO: read environment map from initial scene
@@ -612,13 +612,14 @@ impl Renderer {
             camera,
             lights,
             instances,
+            placeholders,
         }
     }
 
     pub fn render(
         &mut self,
-        render_resources: &mut RenderResources,
         wgpu_context: &WgpuContext,
+        resource_manager: &Arc<ResourceManager>,
     ) -> Result<(), wgpu::SurfaceError> {
         let snaps = self.snapshot_handoff.load();
         let now = Instant::now();
@@ -648,11 +649,10 @@ impl Renderer {
             &self.lights.bind_group,
         );
 
-        let draw_context = resolve_model_draw(&mut self.bones, &mut self.instances, &snaps, t, render_resources, &wgpu_context.device, &wgpu_context.queue);
+        let draw_context = resolve_model_draw(&mut self.bones, &mut self.instances, &snaps, t, resource_manager, &wgpu_context.device, &wgpu_context.queue);
 
         self.model_pipeline.render(
             draw_context,
-            render_resources,
             &self.instances.buffer,
             &mut encoder,
             &self.msaa_textures.msaa_texture_view,
@@ -661,6 +661,7 @@ impl Renderer {
             &self.camera.bind_group,
             &self.lights.bind_group,
             &self.bones.bind_group,
+            resource_manager,
         );
 
         let output_surface_texture = wgpu_context.surface.get_current_texture()?;
@@ -731,7 +732,6 @@ pub fn prepare_camera(
 
 pub fn prepare_lights(
     snap: &render_snapshot::RenderSnapshot,
-    render_resources: &mut crate::renderer::render_resources::RenderResources,
     queue: &wgpu::Queue,
 ) {
     // TODO
@@ -743,11 +743,10 @@ pub fn prepare_lights(
     */
 }
 
-struct UnresolvedPrimitive {
+struct UnresolvedSubmesh {
     transforms: Vec<Mat4>,
     palette_offset: u32,
-    index_start: u32,
-    index_count: u32,
+    index_range: Range<u32>,
     base_vertex: i32,
 }
 
@@ -756,32 +755,43 @@ pub fn resolve_model_draw(
     instances: &mut Instances,
     snaps: &SnapshotGuard,
     t: f32,
-    render_resources: &mut crate::renderer::render_resources::RenderResources,
+    resource_manager: &Arc<ResourceManager>,
     device: &wgpu::Device,
     queue: &wgpu::Queue,
 ) -> DrawContext {
-    // Joints are sorted per model-instance, and each primitive-instance refers to the base joint offset
+    // Joints are sorted per model-instance, and each submesh-instance refers to the base joint offset
     // of the matching model-instance
     let mut joint_palette: Vec<BoneMat34> = vec![];
 
     // instances are sorted in draw-order
-    // material > model > primitive > primitive-instance
+    // material > model > submesh > submesh-instance
     let mut instance_data = vec![];
 
-    let mut unresolved = HashMap::<MaterialHandle, HashMap<ModelHandle, Vec<UnresolvedPrimitive>>>::new();
+    let mut unresolved = HashMap::<MaterialId, HashMap<ModelId, (Vec<UnresolvedSubmesh>, MeshId, u32)>>::new();
 
     // write joint_palette, since it's in model-order
     // collect transforms and joint palette offsets so they can be written in draw-order
     // into the instance buffer
-    for (model_handle, model_instances) in &snaps.curr.model_instances {
-        let model = render_resources.models.get(&model_handle).unwrap();
+    let reg = resource_manager.registry.lock().unwrap();
+    let models = resource_manager.cpu.models.lock().unwrap();
+    let skeletons = resource_manager.cpu.skeletons.lock().unwrap();
+    let anim_clips = resource_manager.cpu.animation_clips.lock().unwrap();
+    let anims = resource_manager.cpu.animations.lock().unwrap();
+    'model_loop: for (model_id, model_instances) in &snaps.curr.model_instances {
+        let model_entry = match reg.get_id(model_id) {
+            Some(m) => m,
+            None => continue 'model_loop,
+        };
+        let model_cpu_idx = match model_entry.cpu_state {
+            resource_manager::CpuState::Ready(index) => index,
+            _ => continue 'model_loop,
+        };
+        let model = models.get(model_cpu_idx).unwrap();
+        let prev_instances = &snaps.prev.model_instances.get(model_id);
         for (node_idx, curr_instance) in model_instances {
+            let prev_instance = prev_instances.and_then(|nodes| nodes.get(node_idx));
             let model_instance_world =
-                if let Some(prev_transform) = &snaps
-                    .prev
-                    .model_instances
-                    .get(model_handle)
-                    .and_then(|nodes| nodes.get(node_idx))
+                if let Some(prev_transform) = prev_instance
                     .map(|node| node.transform)
                 {
                     let (s1, r1, t1) = prev_transform.to_scale_rotation_translation();
@@ -795,21 +805,34 @@ pub fn resolve_model_draw(
                 };
 
             let joint_matrices = {
-                let skeleton_handle = SkeletonHandle(
-                    model
-                        .json
-                        .skeletonfile_path
-                        .clone(),
-                );
-                let skeleton = render_resources.skeletons.get(&skeleton_handle).unwrap();
+                let skeleton_entry = reg.get(&model.skeleton);
+                let skeleton_cpu_idx = match skeleton_entry.cpu_state {
+                    resource_manager::CpuState::Ready(index) => index,
+                    _ => continue 'model_loop,
+                };
+                let skeleton = skeletons.get(skeleton_cpu_idx).unwrap();
                 let anim_snapshot = curr_instance.animation.as_ref().unwrap();
                 let anim_data = match &anim_snapshot {
                     crate::animator::AnimationSnapshot::AnimationStateSnapshot(animation_state_snapshot) => {
-                        let anim_handle = &model.animations[animation_state_snapshot.clip_idx as usize];
-                        let clip = render_resources.animations.get(anim_handle).unwrap();
-                        let clip_time = &snaps.prev.model_instances
-                            .get(model_handle)
-                            .and_then(|nodes| nodes.get(node_idx))
+                        let anim_clip = {
+                            let anim_clip_handle = &model.animations[animation_state_snapshot.clip_idx as usize];
+                            let anim_clip_entry = reg.get(anim_clip_handle);
+                            let anim_clip_idx = match anim_clip_entry.cpu_state {
+                                resource_manager::CpuState::Ready(idx) => idx,
+                                _ => continue 'model_loop,
+                            };
+                            anim_clips.get(anim_clip_idx).unwrap()
+                        };
+                        let anim = {
+                            let anim_handle = &anim_clip.animation;
+                            let anim_entry = reg.get(anim_handle);
+                            let anim_idx = match anim_entry.cpu_state {
+                                resource_manager::CpuState::Ready(idx) => idx,
+                                _ => continue 'model_loop,
+                            };
+                            anims.get(anim_idx).unwrap()
+                        };
+                        let clip_time = prev_instance
                             .and_then(|node| node.animation.as_ref())
                             .map(|prev_anim_snap| match prev_anim_snap {
                                 crate::animator::AnimationSnapshot::AnimationStateSnapshot(animation_state_snapshot) =>
@@ -819,17 +842,49 @@ pub fn resolve_model_draw(
                             })
                             .map(|prev_time| lerpf32(prev_time, animation_state_snapshot.animation_time, t))
                             .unwrap_or(0f32);
-                        AnimationData::Single(SingleAnimationData { clip, time: *clip_time, time_wrap_mode: animation_state_snapshot.time_wrap })
+                        AnimationData::Single(SingleAnimationData { clip: anim, time: clip_time, time_wrap_mode: animation_state_snapshot.time_wrap })
                     },
                     crate::animator::AnimationSnapshot::AnimationTransitionSnapshot(animation_transition_snapshot) => {
-                        let from_handle = &model.animations[animation_transition_snapshot.from_clip_idx as usize];
-                        let from_clip = render_resources.animations.get(from_handle).unwrap();
-                        let to_handle = &model.animations[animation_transition_snapshot.to_clip_idx as usize];
-                        let to_clip = render_resources.animations.get(to_handle).unwrap();
+                        let from_clip = {
+                            let anim_clip_handle = &model.animations[animation_transition_snapshot.from_clip_idx as usize];
+                            let anim_clip_entry = reg.get(&anim_clip_handle);
+                            let anim_clip_idx = match anim_clip_entry.cpu_state {
+                                resource_manager::CpuState::Ready(idx) => idx,
+                                _ => continue 'model_loop,
+                            };
+                            anim_clips.get(anim_clip_idx).unwrap()
+                        };
+                        let to_clip = {
+                            let anim_clip_handle = &model.animations[animation_transition_snapshot.to_clip_idx as usize];
+                            let anim_clip_entry = reg.get(&anim_clip_handle);
+                            let anim_clip_idx = match anim_clip_entry.cpu_state {
+                                resource_manager::CpuState::Ready(idx) => idx,
+                                _ => continue 'model_loop,
+                            };
+                            anim_clips.get(anim_clip_idx).unwrap()
+                        };
+                        let from_anim = {
+                            let anim_handle = &from_clip.animation;
+                            let anim_entry = reg.get(anim_handle);
+                            let anim_idx = match anim_entry.cpu_state {
+                                resource_manager::CpuState::Ready(idx) => idx,
+                                _ => continue 'model_loop,
+                            };
+                            anims.get(anim_idx).unwrap()
+                        };
+                        let to_anim = {
+                            let anim_handle = &to_clip.animation;
+                            let anim_entry = reg.get(anim_handle);
+                            let anim_idx = match anim_entry.cpu_state {
+                                resource_manager::CpuState::Ready(idx) => idx,
+                                _ => continue 'model_loop,
+                            };
+                            anims.get(anim_idx).unwrap()
+                        };
                         let blend_time = animation_transition_snapshot.blend_time;
 
                         let prev_times = &snaps.prev.model_instances
-                            .get(model_handle)
+                            .get(model_id)
                             .and_then(|nodes| nodes.get(node_idx))
                             .and_then(|node| node.animation.as_ref())
                             .map(|prev_anim_snap| match prev_anim_snap {
@@ -844,40 +899,39 @@ pub fn resolve_model_draw(
                         let from_time_wrap_mode = animation_transition_snapshot.from_time_wrap;
                         let to_time_wrap_mode = animation_transition_snapshot.to_time_wrap;
 
-                        AnimationData::Blend(BlendAnimationData { from_clip, to_clip, from_time, to_time, blend_time, to_time_wrap_mode, from_time_wrap_mode })
+                        AnimationData::Blend(BlendAnimationData { from_clip: from_anim, to_clip: to_anim, from_time, to_time, blend_time, to_time_wrap_mode, from_time_wrap_mode })
                     },
                 };
-                compute_joint_matrices(skeleton, anim_data)
+                compute_joint_matrices(&skeleton.manifest, anim_data)
             };
             let palette_offset = joint_palette.len() as u32;
             joint_palette.extend_from_slice(&joint_matrices);
 
-            // primitive-instances
-            for prim in &model.json.primitives {
-                let mat = &model.materials[prim.material as usize];
+            // submesh-instances
+            for submesh in &model.submeshes {
+                let mat_id = submesh.material.id();
                 let mut transforms = vec![];
-                for prim_inst in &prim.instances {
-                    let prim_inst_m4 = Mat4::from_cols_array_2d(prim_inst);
-                    let prim_inst_world = prim_inst_m4 * model_instance_world;
-                    transforms.push(prim_inst_world);
+                for sub_inst in &submesh.instances {
+                    let sub_inst_m4 = Mat4::from_cols_array_2d(sub_inst);
+                    let sub_inst_world = sub_inst_m4 * model_instance_world;
+                    transforms.push(sub_inst_world);
                 }
-                let u = UnresolvedPrimitive {
+                let u = UnresolvedSubmesh {
                     transforms,
                     palette_offset,
-                    index_start: prim.index_byte_offset / 4,
-                    index_count: prim.index_byte_length / 4,
-                    base_vertex: prim.base_vertex as i32,
+                    index_range: submesh.index_range.clone(),
+                    base_vertex: submesh.base_vertex as i32,
                 };
-                if let Some(um) = unresolved.get_mut(&mat) {
-                    if let Some(p) = um.get_mut(&model_handle) {
+                if let Some(um) = unresolved.get_mut(&mat_id) {
+                    if let Some((p, _, _)) = um.get_mut(&model_id) {
                         p.push(u);
                     } else {
-                        um.insert(model_handle.clone(), vec![u]);
+                        um.insert(model_id.clone(), (vec![u], model.mesh.id(), model.manifest.vertex_buffer_start_offset));
                     }
                 } else {
-                    unresolved.insert(mat.clone(), {
+                    unresolved.insert(mat_id.clone(), {
                         let mut um = HashMap::new();
-                        um.insert(model_handle.clone(), vec![u]);
+                        um.insert(model_id.clone(), (vec![u], model.mesh.id(), model.manifest.vertex_buffer_start_offset));
                         um
                     });
                 }
@@ -895,23 +949,22 @@ pub fn resolve_model_draw(
             mesh_range: mesh_batches.len()..mesh_batches.len()+model_map.len()
         };
         material_batches.push(material_batch);
-        for (model_handle, unresolved_prims) in model_map {
+        for (model_id, (unresolved_submeshes, mesh_id, vertex_buffer_start_offset)) in model_map {
             let mesh_batch = MeshBatch {
-                mesh: model_handle.clone(),
-                draw_range: draws.len()..draws.len()+unresolved_prims.len()
+                mesh: mesh_id,
+                draw_range: draws.len()..draws.len()+unresolved_submeshes.len(),
+                vertex_buffer_start_offset: vertex_buffer_start_offset as u64,
             };
             mesh_batches.push(mesh_batch);
-            for prim in unresolved_prims {
-                let resolved_prim = ResolvedPrimitive {
-                    index_start: prim.index_start,
-                    index_count: prim.index_count,
-                    base_vertex: prim.base_vertex,
-                    instance_base: instance_data.len() as u32,
-                    instance_count: prim.transforms.len() as u32,
+            for sub in unresolved_submeshes {
+                let resolved_submesh = ResolvedSubmesh {
+                    index_range: sub.index_range,
+                    base_vertex: sub.base_vertex,
+                    instance_range: instance_data.len() as u32..sub.transforms.len() as u32,
                 };
-                draws.push(resolved_prim);
-                for transform in &prim.transforms {
-                    let instance = Instance::new(*transform, prim.palette_offset);
+                draws.push(resolved_submesh);
+                for transform in &sub.transforms {
+                    let instance = Instance::new(*transform, sub.palette_offset);
                     instance_data.push(instance);
                 }
             }

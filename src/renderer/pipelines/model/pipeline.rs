@@ -1,3 +1,5 @@
+use std::{ops::Range, sync::Arc};
+
 use wgpu::{core::device, util::DeviceExt};
 
 use crate::{
@@ -6,34 +8,30 @@ use crate::{
             model::{instance::Instance, material_binding::MaterialBinding, vertex::Vertex},
             resources::depth_texture::DepthTexture,
         },
-        render_resources::{
-            modelfile, MaterialHandle, ModelHandle, RenderResources, TextureHandle
-        },
+        render_resources::modelfile,
         utils, Instances,
-    },
-    scene_tree::{RenderDataType, Scene},
+    }, resource_manager::resource_manager::{self, MaterialHandle, MaterialId, MeshHandle, MeshId, ModelHandle, ResourceManager}, scene_tree::{RenderDataType, Scene}
 };
 
-pub struct ResolvedPrimitive {
-    pub index_start: u32,
-    pub index_count: u32,
-    pub instance_base: u32,
-    pub instance_count: u32,
+pub struct ResolvedSubmesh {
+    pub index_range: Range<u32>,
+    pub instance_range: Range<u32>,
     pub base_vertex: i32,
 }
 
 pub struct MeshBatch {
-    pub mesh: ModelHandle,
+    pub mesh: MeshId,
+    pub vertex_buffer_start_offset: u64,
     pub draw_range: std::ops::Range<usize>,
 }
 
 pub struct MaterialBatch {
-    pub material: MaterialHandle,
+    pub material: MaterialId,
     pub mesh_range: std::ops::Range<usize>,
 }
 
 pub struct DrawContext {
-    pub draws: Vec<ResolvedPrimitive>,
+    pub draws: Vec<ResolvedSubmesh>,
     pub material_batches: Vec<MaterialBatch>,
     pub mesh_batches: Vec<MeshBatch>,
 }
@@ -136,7 +134,6 @@ impl ModelPipeline {
     pub fn render<'a>(
         &self,
         draw_context: DrawContext,
-        render_resources: &RenderResources,
         instance_buffer: &wgpu::Buffer,
         encoder: &mut wgpu::CommandEncoder,
         msaa_texture_view: &wgpu::TextureView,
@@ -145,7 +142,12 @@ impl ModelPipeline {
         camera_bind_group: &wgpu::BindGroup,
         lights_bind_group: &wgpu::BindGroup,
         bones_bind_group: &wgpu::BindGroup,
+        resource_manager: &Arc<ResourceManager>
     ) {
+        let reg = resource_manager.registry.lock().unwrap();
+        let gpu_materials = resource_manager.gpu.materials.lock().unwrap();
+        let gpu_meshes = resource_manager.gpu.meshes.lock().unwrap();
+
         // TODO can this descriptor be reused?
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Model Render Pass"),
@@ -174,30 +176,44 @@ impl ModelPipeline {
         render_pass.set_bind_group(1, lights_bind_group, &[]);
         render_pass.set_bind_group(3, bones_bind_group, &[]);
 
-        for material_batch in &draw_context.material_batches {
-            let material = render_resources.materials.get(&material_batch.material).unwrap();
+        'mat_loop: for material_batch in &draw_context.material_batches {
+            let mat_entry = match reg.get_id(&material_batch.material) {
+                Some(e) => e,
+                None => continue 'mat_loop,
+            };
+            let material = match mat_entry.gpu_state {
+                resource_manager::GpuState::Ready(index) => gpu_materials.get(index).unwrap(),
+                _ => continue 'mat_loop,
+            };
             render_pass.set_bind_group(
                 2u32,
                 &material.bind_group,
                 &[],
             );
-            for mesh_batch in &draw_context.mesh_batches[material_batch.mesh_range.clone()] {
-                let model = render_resources.models.get(&mesh_batch.mesh).unwrap();
+            'mesh_loop: for mesh_batch in &draw_context.mesh_batches[material_batch.mesh_range.clone()] {
+                let mesh_entry = match reg.get_id(&mesh_batch.mesh) {
+                    Some(e) => e,
+                    None => continue 'mesh_loop,
+                };
+                let mesh = match mesh_entry.gpu_state {
+                    resource_manager::GpuState::Ready(index) => gpu_meshes.get(index).unwrap(),
+                    _ => continue 'mat_loop,
+                };
                 render_pass.set_index_buffer(
-                    model.index_vertex_buffer.slice(0..model.json.vertex_buffer_start_offset as u64),
+                    mesh.buffer.slice(0..mesh_batch.vertex_buffer_start_offset),
                     wgpu::IndexFormat::Uint32,
                 );
                 // apparently there's no performance benefit to not just taking the whole instace buffer slice
                 render_pass.set_vertex_buffer(0, instance_buffer.slice(..));
                 render_pass.set_vertex_buffer(
                     1u32,
-                    model.index_vertex_buffer.slice(model.json.vertex_buffer_start_offset as u64..)
+                    mesh.buffer.slice(mesh_batch.vertex_buffer_start_offset..)
                 );
                 for draw in &draw_context.draws[mesh_batch.draw_range.clone()] {
                     render_pass.draw_indexed(
-                        draw.index_start..draw.index_start + draw.index_count,
+                        draw.index_range.clone(),
                         draw.base_vertex,
-                        draw.instance_base..draw.instance_base + draw.instance_count,
+                        draw.instance_range.clone(),
                     );
                 }
             }

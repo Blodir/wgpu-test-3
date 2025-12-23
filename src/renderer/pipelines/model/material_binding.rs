@@ -1,6 +1,6 @@
 use wgpu::{util::DeviceExt as _, BindGroupLayout};
 
-use crate::renderer::{render_resources::{materialfile, modelfile, RenderResources, TextureHandle}, wgpu_context::WgpuContext};
+use crate::renderer::{render_resources::{materialfile, modelfile}, wgpu_context::WgpuContext};
 
 pub struct MaterialBinding {
     pub bind_group: wgpu::BindGroup,
@@ -166,7 +166,11 @@ impl MaterialBinding {
 
     pub fn upload(
         mat: &materialfile::Material,
-        render_resources: &RenderResources,
+        base_color_view: &wgpu::TextureView,
+        emissive_view: &wgpu::TextureView,
+        metallic_roughness_view: &wgpu::TextureView,
+        normal_view: &wgpu::TextureView,
+        occlusion_view: &wgpu::TextureView,
         bind_group_layout: &BindGroupLayout,
         wgpu_context: &WgpuContext,
     ) -> Self {
@@ -211,27 +215,6 @@ impl MaterialBinding {
                     usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
                 });
 
-        let normals = render_resources
-            .sampled_textures
-            .get(&mat.normal_texture.as_ref().map(|n| TextureHandle(n.source.clone())).unwrap_or(RenderResources::get_normals_placeholder()))
-            .unwrap();
-        let occlusion = render_resources
-            .sampled_textures
-            .get(&mat.occlusion_texture.as_ref().map(|n| TextureHandle(n.source.clone())).unwrap_or(RenderResources::get_occlusion_placeholder()))
-            .unwrap();
-        let base_color = render_resources
-            .sampled_textures
-            .get(&mat.base_color_texture.as_ref().map(|n| TextureHandle(n.source.clone())).unwrap_or(RenderResources::get_base_color_placeholder()))
-            .unwrap();
-        let emissive = render_resources
-            .sampled_textures
-            .get(&mat.emissive_texture.as_ref().map(|n| TextureHandle(n.source.clone())).unwrap_or(RenderResources::get_emissive_placeholder()))
-            .unwrap();
-        let metallic_roughness = render_resources
-            .sampled_textures
-            .get(&mat.metallic_roughness_texture.as_ref().map(|n| TextureHandle(n.source.clone())).unwrap_or(RenderResources::get_metallic_roughness_placeholder()))
-            .unwrap();
-
         let bind_group = wgpu_context
             .device
             .create_bind_group(&wgpu::BindGroupDescriptor {
@@ -255,7 +238,7 @@ impl MaterialBinding {
                     },
                     wgpu::BindGroupEntry {
                         binding: 4,
-                        resource: wgpu::BindingResource::TextureView(&normals.view),
+                        resource: wgpu::BindingResource::TextureView(&normal_view),
                     },
                     wgpu::BindGroupEntry {
                         binding: 5,
@@ -263,7 +246,7 @@ impl MaterialBinding {
                     },
                     wgpu::BindGroupEntry {
                         binding: 6,
-                        resource: wgpu::BindingResource::TextureView(&occlusion.view),
+                        resource: wgpu::BindingResource::TextureView(&occlusion_view),
                     },
                     wgpu::BindGroupEntry {
                         binding: 7,
@@ -271,7 +254,7 @@ impl MaterialBinding {
                     },
                     wgpu::BindGroupEntry {
                         binding: 8,
-                        resource: wgpu::BindingResource::TextureView(&emissive.view),
+                        resource: wgpu::BindingResource::TextureView(&emissive_view),
                     },
                     wgpu::BindGroupEntry {
                         binding: 9,
@@ -279,7 +262,7 @@ impl MaterialBinding {
                     },
                     wgpu::BindGroupEntry {
                         binding: 10,
-                        resource: wgpu::BindingResource::TextureView(&base_color.view),
+                        resource: wgpu::BindingResource::TextureView(&base_color_view),
                     },
                     wgpu::BindGroupEntry {
                         binding: 11,
@@ -287,7 +270,7 @@ impl MaterialBinding {
                     },
                     wgpu::BindGroupEntry {
                         binding: 12,
-                        resource: wgpu::BindingResource::TextureView(&metallic_roughness.view),
+                        resource: wgpu::BindingResource::TextureView(&metallic_roughness_view),
                     },
                     wgpu::BindGroupEntry {
                         binding: 13,

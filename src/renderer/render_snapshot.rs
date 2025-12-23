@@ -4,14 +4,12 @@ use arc_swap::{ArcSwap, Guard};
 use generational_arena::Index;
 use glam::Mat4;
 
-use crate::{animator::{AnimationGraph, AnimationSnapshot}, scene_tree::{Camera, RenderDataType, Scene, Sun}};
-
-use super::render_resources::{EnvironmentMapHandle, ModelHandle};
+use crate::{animator::{AnimationGraph, AnimationSnapshot}, resource_manager::resource_manager::{ModelHandle, ModelId, ResourceManager, TextureId}, scene_tree::{Camera, Environment, RenderDataType, Scene, Sun}};
 
 pub fn accumulate_model_instances(
     scene: &Scene,
     animation_graphs: &Vec<AnimationGraph>,
-    models: &mut HashMap<ModelHandle, HashMap<Index, ModelInstance>>,
+    models: &mut HashMap<ModelId, HashMap<Index, ModelInstance>>,
     base_transform: &Mat4,
     node_handle: Index,
 ) {
@@ -21,7 +19,7 @@ pub fn accumulate_model_instances(
         RenderDataType::AnimatedModel(animated_model) => (&animated_model.model, Some(animated_model.animator.build_snapshot(animation_graphs))),
     };
     let v = models
-        .entry(model_handle.clone())
+        .entry(model_handle.id())
         .or_insert_with(HashMap::new);
     let transform = node.transform * base_transform;
     let inst = ModelInstance {
@@ -38,38 +36,47 @@ pub struct ModelInstance {
     pub animation: Option<AnimationSnapshot>,
 }
 
-pub struct RenderSnapshot {
-    pub model_instances: HashMap<ModelHandle, HashMap<Index, ModelInstance>>,
-    pub environment_map: EnvironmentMapHandle,
-    pub camera: Camera,
-    pub sun: Option<Sun>,
+pub struct EnvironmentSnapshot {
+    pub sun: Sun,
+    pub prefiltered: TextureId,
+    pub di: TextureId,
+    pub brdf: TextureId,
 }
-impl RenderSnapshot {
-    pub fn build(scene: &Scene, animation_graphs: &Vec<AnimationGraph>) -> Self {
-        let mut model_instances = HashMap::<ModelHandle, HashMap<Index, ModelInstance>>::new();
-        accumulate_model_instances(scene, animation_graphs, &mut model_instances, &Mat4::IDENTITY, scene.root);
-
-        // TODO dirty check
-        let environment_map = scene.environment.clone();
-        let camera = scene.camera.clone();
-        let sun = Some(scene.sun.clone());
+impl EnvironmentSnapshot {
+    pub fn from(environment: &Environment) -> Self {
         Self {
-            model_instances,
-            environment_map,
-            camera,
-            sun,
+            sun: environment.sun.clone(),
+            prefiltered: environment.prefiltered.id(),
+            di: environment.di.id(),
+            brdf: environment.brdf.id(),
         }
     }
 }
-impl Default for RenderSnapshot {
-    fn default() -> Self {
+
+pub struct RenderSnapshot {
+    pub model_instances: HashMap<ModelId, HashMap<Index, ModelInstance>>,
+    pub environment: EnvironmentSnapshot,
+    pub camera: Camera,
+}
+impl RenderSnapshot {
+    pub fn build(scene: &Scene, animation_graphs: &Vec<AnimationGraph>) -> Self {
+        let mut model_instances = HashMap::<ModelId, HashMap<Index, ModelInstance>>::new();
+        accumulate_model_instances(scene, animation_graphs, &mut model_instances, &Mat4::IDENTITY, scene.root);
+
+        let environment = EnvironmentSnapshot::from(&scene.environment);
+        let camera = scene.camera.clone();
+        Self {
+            model_instances,
+            environment,
+            camera,
+        }
+    }
+
+    pub fn init(resource_manager: &Arc<ResourceManager>) -> Self {
         Self {
             model_instances: HashMap::new(),
-            environment_map: EnvironmentMapHandle(
-                "assets/kloofendal_overcast_puresky_8k".to_string(),
-            ),
+            environment: EnvironmentSnapshot::from(&Environment::init(resource_manager)),
             camera: Camera::default(),
-            sun: None,
         }
     }
 }
@@ -90,8 +97,8 @@ pub struct SnapshotHandoff {
 }
 
 impl SnapshotHandoff {
-    pub fn new() -> Self {
-        let init = Arc::new(RenderSnapshot::default());
+    pub fn new(init: RenderSnapshot) -> Self {
+        let init = Arc::new(init);
         let pair = SnapshotPair {
             prev: init.clone(),
             prev_timestamp: Instant::now(),
