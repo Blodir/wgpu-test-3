@@ -327,6 +327,36 @@ pub fn upload_texture(
 
                     current_offset += mip_size;
                 }
+                wgpu::TextureFormat::Rgba8UnormSrgb | wgpu::TextureFormat::Rgba8Unorm => {
+                    let bytes_per_pixel = 4;
+                    let row_size = width as usize * bytes_per_pixel; // unaligned row in bytes
+                    let padded_row_size = align_to_256(row_size);
+                    let mip_size = row_size * height as usize;
+
+                    let mip_data = &data[current_offset..current_offset + mip_size];
+
+                    // Pad each row to 256-byte alignment
+                    let mut padded_data = vec![0u8; padded_row_size * height as usize];
+                    for row in 0..height as usize {
+                        let src_start = row * row_size;
+                        let dst_start = row * padded_row_size;
+                        padded_data[dst_start..dst_start + row_size]
+                            .copy_from_slice(&mip_data[src_start..src_start + row_size]);
+                    }
+
+                    queue.write_texture(
+                        image_copy_texture,
+                        &padded_data,
+                        wgpu::ImageDataLayout {
+                            offset: 0,
+                            bytes_per_row: Some(padded_row_size as u32),
+                            rows_per_image: Some(height),
+                        },
+                        extent,
+                    );
+
+                    current_offset += mip_size;
+                }
                 wgpu::TextureFormat::Rgba32Float => {
                     // 4 channels * 32-bit float
                     let bytes_per_pixel = std::mem::size_of::<f32>() * 4; // 16

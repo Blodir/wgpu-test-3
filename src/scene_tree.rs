@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::Arc, time::Instant};
 use glam::{Mat4, Vec3};
 use wgpu::hal::vulkan::Texture;
 
-use crate::{animator::{self, AnimationGraph, Animator}, resource_manager::resource_manager::{ModelHandle, ResourceManager, TextureHandle}};
+use crate::{animator::{self, AnimationGraph, Animator}, resource_manager::resource_manager::{ModelHandle, PlaceholderTextureIds, ResourceManager, TextureHandle}};
 use generational_arena::{Arena, Index};
 
 #[derive(Clone)]
@@ -97,8 +97,17 @@ pub struct Scene {
     pub global_time_sec: f32,
 }
 impl Scene {
-    pub fn update(&mut self, animation_graphs: &Vec<AnimationGraph>, node: Index, dt: f32) {
+    pub fn update(&mut self, resource_manager: &Arc<ResourceManager>, animation_graphs: &Vec<AnimationGraph>, node: Index, dt: f32) {
         let node = &mut self.nodes[node];
+        // TODO remove this after testing
+        if (self.global_time_sec % 16.0).abs() < dt {
+            self.environment.prefiltered = resource_manager.request_texture("assets/kloofendal_overcast_puresky_8k.prefiltered.dds", true);
+            self.environment.di = resource_manager.request_texture("assets/kloofendal_overcast_puresky_8k.di.dds", true);
+        }
+        if (self.global_time_sec % 16.0 - 8.0).abs() < dt {
+            self.environment.prefiltered = resource_manager.request_texture("assets/steinbach_field_4k.prefiltered.dds", true);
+            self.environment.di = resource_manager.request_texture("assets/steinbach_field_4k.di.dds", true);
+        }
         match &mut node.render_data {
             RenderDataType::Model(model_handle) => (),
             RenderDataType::AnimatedModel(animated_model) => {
@@ -146,7 +155,7 @@ impl Scene {
             },
         }
         for child_idx in node.children.clone() {
-            self.update(animation_graphs, child_idx, dt);
+            self.update(resource_manager, animation_graphs, child_idx, dt);
         }
     }
 }
@@ -156,9 +165,9 @@ pub fn build_test_animation_blending(resource_manager: &Arc<ResourceManager>) ->
 
     let animation_graph = AnimationGraph {
         states: vec![
-            animator::State { clip_idx: 0, time_wrap: animator::TimeWrapMode::Clamp, boundary_mode: animator::BoundaryMode::Closed, speed: 2.0 },
-            animator::State { clip_idx: 1, time_wrap: animator::TimeWrapMode::Repeat, boundary_mode: animator::BoundaryMode::Closed, speed: 2.0 },
-            animator::State { clip_idx: 2, time_wrap: animator::TimeWrapMode::PingPong, boundary_mode: animator::BoundaryMode::Closed, speed: 2.0 },
+            animator::State { clip_idx: 0, time_wrap: animator::TimeWrapMode::Repeat, boundary_mode: animator::BoundaryMode::Closed, speed: 1.0 },
+            animator::State { clip_idx: 1, time_wrap: animator::TimeWrapMode::Repeat, boundary_mode: animator::BoundaryMode::Closed, speed: 1.0 },
+            animator::State { clip_idx: 2, time_wrap: animator::TimeWrapMode::Repeat, boundary_mode: animator::BoundaryMode::Closed, speed: 1.0 },
         ],
         transitions: vec![
             animator::Transition { blend_time: 0.5, to: 1 }, // look -> walk

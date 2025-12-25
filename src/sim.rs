@@ -118,7 +118,7 @@ pub fn spawn_sim(
                 }
             }
 
-            scene.update(&animation_graphs, scene.root, dt);
+            scene.update(&resource_manager, &animation_graphs, scene.root, dt);
 
             let snap = RenderSnapshot::build(&scene, &animation_graphs);
             snap_handoff.publish(snap);

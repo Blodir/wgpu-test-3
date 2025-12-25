@@ -30,6 +30,7 @@ pub struct HandleId<T: ResourceTag> {
 }
 
 /// Owned/refcounted reference to a registry entry
+#[derive(Debug)]
 pub struct Handle<T: ResourceTag> {
     idx: generational_arena::Index,
     manager: std::sync::Weak<ResourceManager>,
@@ -84,7 +85,7 @@ pub struct _Skeleton;
 pub struct _AnimationClip;
 #[derive(Copy, Clone, Eq, PartialEq, Hash)]
 pub struct _Animation;
-#[derive(Copy, Clone, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
 pub struct _Texture;
 
 impl ResourceTag for _Model { const KIND: ResourceKind = ResourceKind::Model; }
@@ -897,8 +898,6 @@ impl ResourceManager {
                     let entry = reg.entries.get_mut(id).unwrap();
                     let cpu_idx = self.cpu.models.lock().unwrap().insert(cpu_data);
                     entry.cpu_state = CpuState::Ready(cpu_idx);
-                    entry.gpu_state = GpuState::Queued;
-                    self.upload_queue.lock().unwrap().push_back(id);
                 },
                 IoResponse::MeshLoaded { id, data } => {
                     let cpu_data = MeshCpuData { index_vertex_data: data };
@@ -911,10 +910,10 @@ impl ResourceManager {
                 },
                 IoResponse::MaterialLoaded { id, material } => {
                     let normal_texture = material.normal_texture.as_ref().map(|t| self.request_texture(&t.source, false));
-                    let occlusion_texture = material.normal_texture.as_ref().map(|t| self.request_texture(&t.source, false));
-                    let emissive_texture = material.normal_texture.as_ref().map(|t| self.request_texture(&t.source, true));
-                    let base_color_texture = material.normal_texture.as_ref().map(|t| self.request_texture(&t.source, true));
-                    let metallic_roughness_texture = material.normal_texture.as_ref().map(|t| self.request_texture(&t.source, true));
+                    let occlusion_texture = material.occlusion_texture.as_ref().map(|t| self.request_texture(&t.source, false));
+                    let emissive_texture = material.emissive_texture.as_ref().map(|t| self.request_texture(&t.source, true));
+                    let base_color_texture = material.base_color_texture.as_ref().map(|t| self.request_texture(&t.source, true));
+                    let metallic_roughness_texture = material.metallic_roughness_texture.as_ref().map(|t| self.request_texture(&t.source, true));
                     let cpu_data = MaterialCpuData { manifest: material, normal_texture, occlusion_texture, emissive_texture, base_color_texture, metallic_roughness_texture };
                     let cpu_idx = self.cpu.materials.lock().unwrap().insert(cpu_data);
                     let mut reg = self.registry.lock().unwrap();
@@ -971,7 +970,6 @@ impl ResourceManager {
         let mut upload_queue = self.upload_queue.lock().unwrap();
         let mut meshes_cpu = self.cpu.meshes.lock().unwrap();
         let mut textures_cpu = self.cpu.textures.lock().unwrap();
-        let mut materials_cpu = self.cpu.materials.lock().unwrap();
         let mut textures_gpu = self.gpu.textures.lock().unwrap();
         let mut materials_gpu = self.gpu.materials.lock().unwrap();
         let mut queue_next_frame: Vec<Index> = vec![];
@@ -1044,99 +1042,105 @@ impl ResourceManager {
                     textures_cpu.remove(entry_cpu_idx);
                 },
                 ResourceKind::Material => {
-                    let material_cpu = materials_cpu.get(entry_cpu_idx).unwrap();
-                    // check if textures uploaded to gpu, re-schedule if not
-                    let base_color_gpu_idx = {
-                        if let Some(handle) = material_cpu.base_color_texture.as_ref() {
-                            let reg = self.registry.lock().unwrap();
-                            match reg.get(handle).gpu_state {
-                                GpuState::Ready(gpu_idx) => {
-                                    Some(gpu_idx)
-                                },
-                                _ => {
-                                    queue_next_frame.push(id);
-                                    continue 'upload_queue;
+                    let material_binding = {
+                        let mut materials_cpu = self.cpu.materials.lock().unwrap();
+                        let material_cpu = materials_cpu.get(entry_cpu_idx).unwrap();
+                        // check if textures uploaded to gpu, re-schedule if not
+                        let base_color_gpu_idx = {
+                            if let Some(handle) = material_cpu.base_color_texture.as_ref() {
+                                let reg = self.registry.lock().unwrap();
+                                match reg.get(handle).gpu_state {
+                                    GpuState::Ready(gpu_idx) => {
+                                        Some(gpu_idx)
+                                    },
+                                    _ => {
+                                        queue_next_frame.push(id);
+                                        continue 'upload_queue;
+                                    }
                                 }
+                            } else {
+                                None
                             }
-                        } else {
-                            None
-                        }
-                    };
-                    let emissive_gpu_idx = {
-                        if let Some(handle) = material_cpu.emissive_texture.as_ref() {
-                            let reg = self.registry.lock().unwrap();
-                            match reg.get(handle).gpu_state {
-                                GpuState::Ready(gpu_idx) => {
-                                    Some(gpu_idx)
-                                },
-                                _ => {
-                                    queue_next_frame.push(id);
-                                    continue 'upload_queue;
+                        };
+                        let emissive_gpu_idx = {
+                            if let Some(handle) = material_cpu.emissive_texture.as_ref() {
+                                let reg = self.registry.lock().unwrap();
+                                match reg.get(handle).gpu_state {
+                                    GpuState::Ready(gpu_idx) => {
+                                        Some(gpu_idx)
+                                    },
+                                    _ => {
+                                        queue_next_frame.push(id);
+                                        continue 'upload_queue;
+                                    }
                                 }
+                            } else {
+                                None
                             }
-                        } else {
-                            None
-                        }
-                    };
-                    let metallic_roughness_gpu_idx = {
-                        if let Some(handle) = material_cpu.metallic_roughness_texture.as_ref() {
-                            let reg = self.registry.lock().unwrap();
-                            match reg.get(handle).gpu_state {
-                                GpuState::Ready(gpu_idx) => {
-                                    Some(gpu_idx)
-                                },
-                                _ => {
-                                    queue_next_frame.push(id);
-                                    continue 'upload_queue;
+                        };
+                        let metallic_roughness_gpu_idx = {
+                            if let Some(handle) = material_cpu.metallic_roughness_texture.as_ref() {
+                                let reg = self.registry.lock().unwrap();
+                                match reg.get(handle).gpu_state {
+                                    GpuState::Ready(gpu_idx) => {
+                                        Some(gpu_idx)
+                                    },
+                                    _ => {
+                                        queue_next_frame.push(id);
+                                        continue 'upload_queue;
+                                    }
                                 }
+                            } else {
+                                None
                             }
-                        } else {
-                            None
-                        }
-                    };
-                    let normal_gpu_idx = {
-                        if let Some(handle) = material_cpu.normal_texture.as_ref() {
-                            let reg = self.registry.lock().unwrap();
-                            match reg.get(handle).gpu_state {
-                                GpuState::Ready(gpu_idx) => {
-                                    Some(gpu_idx)
-                                },
-                                _ => {
-                                    queue_next_frame.push(id);
-                                    continue 'upload_queue;
+                        };
+                        let normal_gpu_idx = {
+                            if let Some(handle) = material_cpu.normal_texture.as_ref() {
+                                let reg = self.registry.lock().unwrap();
+                                match reg.get(handle).gpu_state {
+                                    GpuState::Ready(gpu_idx) => {
+                                        Some(gpu_idx)
+                                    },
+                                    _ => {
+                                        queue_next_frame.push(id);
+                                        continue 'upload_queue;
+                                    }
                                 }
+                            } else {
+                                None
                             }
-                        } else {
-                            None
-                        }
-                    };
-                    let occlusion_gpu_idx = {
-                        if let Some(handle) = material_cpu.occlusion_texture.as_ref() {
-                            let reg = self.registry.lock().unwrap();
-                            match reg.get(handle).gpu_state {
-                                GpuState::Ready(gpu_idx) => {
-                                    Some(gpu_idx)
-                                },
-                                _ => {
-                                    queue_next_frame.push(id);
-                                    continue 'upload_queue;
+                        };
+                        let occlusion_gpu_idx = {
+                            if let Some(handle) = material_cpu.occlusion_texture.as_ref() {
+                                let reg = self.registry.lock().unwrap();
+                                match reg.get(handle).gpu_state {
+                                    GpuState::Ready(gpu_idx) => {
+                                        Some(gpu_idx)
+                                    },
+                                    _ => {
+                                        queue_next_frame.push(id);
+                                        continue 'upload_queue;
+                                    }
                                 }
+                            } else {
+                                None
                             }
-                        } else {
-                            None
-                        }
+                        };
+                        let base_color_view = &textures_gpu.get(base_color_gpu_idx.unwrap_or(placeholders.base_color)).unwrap().texture_view;
+                        let emissive_view = &textures_gpu.get(emissive_gpu_idx.unwrap_or(placeholders.emissive)).unwrap().texture_view;
+                        let metallic_roughness_view = &textures_gpu.get(metallic_roughness_gpu_idx.unwrap_or(placeholders.metallic_roughness)).unwrap().texture_view;
+                        let normal_view = &textures_gpu.get(normal_gpu_idx.unwrap_or(placeholders.normals)).unwrap().texture_view;
+                        let occlusion_view = &textures_gpu.get(occlusion_gpu_idx.unwrap_or(placeholders.occlusion)).unwrap().texture_view;
+                        MaterialBinding::upload(&material_cpu.manifest, base_color_view, emissive_view, metallic_roughness_view, normal_view, occlusion_view, &layouts.material, wgpu_context, sampler_cache)
                     };
-                    let base_color_view = &textures_gpu.get(base_color_gpu_idx.unwrap_or(placeholders.base_color)).unwrap().texture_view;
-                    let emissive_view = &textures_gpu.get(emissive_gpu_idx.unwrap_or(placeholders.emissive)).unwrap().texture_view;
-                    let metallic_roughness_view = &textures_gpu.get(metallic_roughness_gpu_idx.unwrap_or(placeholders.metallic_roughness)).unwrap().texture_view;
-                    let normal_view = &textures_gpu.get(normal_gpu_idx.unwrap_or(placeholders.normals)).unwrap().texture_view;
-                    let occlusion_view = &textures_gpu.get(occlusion_gpu_idx.unwrap_or(placeholders.occlusion)).unwrap().texture_view;
-                    let material_binding = MaterialBinding::upload(&material_cpu.manifest, base_color_view, emissive_view, metallic_roughness_view, normal_view, occlusion_view, &layouts.material, wgpu_context, sampler_cache);
                     let gpu_idx = materials_gpu.insert(material_binding);
-                    let mut reg = self.registry.lock().unwrap();
-                    let entry = reg.entries.get_mut(id).unwrap();
-                    entry.gpu_state = GpuState::Ready(gpu_idx);
-                    entry.cpu_state = CpuState::Absent;
+                    {
+                        let mut reg = self.registry.lock().unwrap();
+                        let entry = reg.entries.get_mut(id).unwrap();
+                        entry.gpu_state = GpuState::Ready(gpu_idx);
+                        entry.cpu_state = CpuState::Absent;
+                    }
+                    let mut materials_cpu = self.cpu.materials.lock().unwrap();
                     materials_cpu.remove(entry_cpu_idx);
                 },
                 _ => println!("Warning: tried to upload an unsupported resource!"),
@@ -1217,7 +1221,6 @@ impl ResourceManager {
         self: &std::sync::Arc<Self>,
         path: &str,
     ) -> MaterialHandle {
-        println!("req mat");
         let mut reg = self.registry.lock().unwrap();
         if let Some(&idx) = reg.by_path.get(path) {
             let entry = reg.entries.get_mut(idx).unwrap();

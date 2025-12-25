@@ -14,12 +14,13 @@ use super::render_snapshot::{self, SnapshotGuard};
 use super::sampler_cache::SamplerCache;
 use super::wgpu_context;
 use super::render_snapshot::SnapshotHandoff;
+use generational_arena::Index;
 use glam::{Mat3, Mat4, Quat, Vec3, Vec4};
 use wgpu::util::DeviceExt as _;
 
 use crate::animator::{self, TimeWrapMode};
 use crate::renderer::pipelines::model::pipeline::{MaterialBatch, MeshBatch, ResolvedSubmesh};
-use crate::resource_manager::resource_manager::{self, GpuState, MaterialId, MeshId, ModelId, PlaceholderTextureIds, ResourceManager};
+use crate::resource_manager::resource_manager::{self, GpuState, MaterialId, MeshId, ModelId, PlaceholderTextureIds, ResourceManager, TextureId};
 use crate::scene_tree::{self, Camera};
 use crate::renderer::{
         pipelines::{
@@ -295,6 +296,9 @@ impl CameraBinding {
 pub struct LightsBinding {
     sun_direction_buffer: wgpu::Buffer,
     sun_color_buffer: wgpu::Buffer,
+    curr_prefiltered_gpu_id: Index,
+    curr_di_gpu_id: Index,
+    curr_brdf_gpu_id: Index,
     pub bind_group: wgpu::BindGroup,
 }
 impl LightsBinding {
@@ -443,6 +447,9 @@ impl LightsBinding {
             sun_direction_buffer: direction_buffer,
             sun_color_buffer: color_buffer,
             bind_group,
+            curr_prefiltered_gpu_id: placeholders.prefiltered,
+            curr_di_gpu_id: placeholders.di,
+            curr_brdf_gpu_id: placeholders.brdf,
         }
     }
 
@@ -744,12 +751,13 @@ pub fn prepare_lights(
     bind_group_layout: &wgpu::BindGroupLayout,
 ) {
     lights_binding.update_sun(&snaps.curr.environment.sun, &wgpu_context.queue);
-    if snaps.curr.environment.prefiltered != snaps.prev.environment.prefiltered {
-        // if one of env maps has changed, we must rebuild the bindgroup entirely
-        let e = &snaps.curr.environment;
-        let reg = resource_manager.registry.lock().unwrap();
-        if let (Some(p_entry), Some(d_entry), Some(b_entry)) = (reg.get_id(&e.prefiltered), reg.get_id(&e.di), reg.get_id(&e.brdf)) {
-            if let (GpuState::Ready(p_gpu_idx), GpuState::Ready(d_gpu_idx), GpuState::Ready(b_gpu_idx)) = (&p_entry.gpu_state, &d_entry.gpu_state, &b_entry.gpu_state) {
+
+    let e = &snaps.curr.environment;
+    let reg = resource_manager.registry.lock().unwrap();
+    if let (Some(p_entry), Some(d_entry), Some(b_entry)) = (reg.get_id(&e.prefiltered), reg.get_id(&e.di), reg.get_id(&e.brdf)) {
+        if let (GpuState::Ready(p_gpu_idx), GpuState::Ready(d_gpu_idx), GpuState::Ready(b_gpu_idx)) = (&p_entry.gpu_state, &d_entry.gpu_state, &b_entry.gpu_state) {
+            // if one of env maps has changed, we must rebuild the bindgroup entirely
+            if *p_gpu_idx != lights_binding.curr_prefiltered_gpu_id || *d_gpu_idx != lights_binding.curr_prefiltered_gpu_id || *b_gpu_idx != lights_binding.curr_brdf_gpu_id {
                 let gpu_textures = resource_manager.gpu.textures.lock().unwrap();
                 let (prefiltered, di, brdf) = (gpu_textures.get(*p_gpu_idx).unwrap(), gpu_textures.get(*d_gpu_idx).unwrap(), gpu_textures.get(*b_gpu_idx).unwrap());
                 let default_sampler = sampler_cache.get(&materialfile::Sampler::default(), wgpu_context);
@@ -759,10 +767,13 @@ pub fn prepare_lights(
                     &di.texture_view, &default_sampler,
                     &brdf.texture_view, &default_sampler
                 );
+                lights_binding.curr_prefiltered_gpu_id = *p_gpu_idx;
+                lights_binding.curr_di_gpu_id = *d_gpu_idx;
+                lights_binding.curr_brdf_gpu_id = *b_gpu_idx;
             }
-        } else {
-            println!("Warning: stale handle id when updating environment map");
         }
+    } else {
+        println!("Warning: stale handle id when updating environment map");
     }
 }
 
