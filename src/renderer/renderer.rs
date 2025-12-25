@@ -9,7 +9,9 @@ use super::pipelines::model::instance::Instance;
 use super::pipelines::model::material_binding::MaterialBinding;
 use super::pipelines::model::pipeline::DrawContext;
 use super::render_resources::animation::{AnimationClip, Channel, Track};
+use super::render_resources::materialfile;
 use super::render_snapshot::{self, SnapshotGuard};
+use super::sampler_cache::SamplerCache;
 use super::wgpu_context;
 use super::render_snapshot::SnapshotHandoff;
 use glam::{Mat3, Mat4, Quat, Vec3, Vec4};
@@ -17,7 +19,7 @@ use wgpu::util::DeviceExt as _;
 
 use crate::animator::{self, TimeWrapMode};
 use crate::renderer::pipelines::model::pipeline::{MaterialBatch, MeshBatch, ResolvedSubmesh};
-use crate::resource_manager::resource_manager::{self, MaterialId, MeshId, ModelId, PlaceholderTextureIds, ResourceManager};
+use crate::resource_manager::resource_manager::{self, GpuState, MaterialId, MeshId, ModelId, PlaceholderTextureIds, ResourceManager};
 use crate::scene_tree::{self, Camera};
 use crate::renderer::{
         pipelines::{
@@ -378,10 +380,13 @@ impl LightsBinding {
     }
 
     pub fn new(
-        sun: &scene_tree::Sun,
+        resource_manager: &Arc<ResourceManager>,
+        sampler_cache: &mut SamplerCache,
+        placeholders: &PlaceholderTextureIds,
         wgpu_context: &WgpuContext,
         bind_group_layout: &wgpu::BindGroupLayout,
     ) -> Self {
+        let sun = scene_tree::Sun::default();
         let direction_buffer = wgpu_context.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Sun Direction Buffer"),
             contents: bytemuck::cast_slice(&sun.direction),
@@ -392,9 +397,9 @@ impl LightsBinding {
             contents: bytemuck::cast_slice(&sun.color),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
-        let prefiltered = &render_resources.sampled_textures.get(&RenderResources::get_prefiltered_placeholder()).unwrap();
-        let di = &render_resources.sampled_textures.get(&RenderResources::get_di_placeholder()).unwrap();
-        let brdf = &render_resources.sampled_textures.get(&RenderResources::get_brdf_placeholder()).unwrap();
+        let textures = resource_manager.gpu.textures.lock().unwrap();
+        let (prefiltered, di, brdf) = (textures.get(placeholders.prefiltered).unwrap(), textures.get(placeholders.di).unwrap(), textures.get(placeholders.brdf).unwrap());
+        let default_sampler = sampler_cache.get(&materialfile::Sampler::default(), wgpu_context);
         let bind_group = wgpu_context.device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: bind_group_layout,
             entries: &[
@@ -408,27 +413,27 @@ impl LightsBinding {
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: wgpu::BindingResource::TextureView(&prefiltered.view),
+                    resource: wgpu::BindingResource::TextureView(&prefiltered.texture_view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 3,
-                    resource: wgpu::BindingResource::Sampler(&prefiltered.sampler),
+                    resource: wgpu::BindingResource::Sampler(&default_sampler),
                 },
                 wgpu::BindGroupEntry {
                     binding: 4,
-                    resource: wgpu::BindingResource::TextureView(&di.view),
+                    resource: wgpu::BindingResource::TextureView(&di.texture_view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 5,
-                    resource: wgpu::BindingResource::Sampler(&di.sampler),
+                    resource: wgpu::BindingResource::Sampler(&default_sampler),
                 },
                 wgpu::BindGroupEntry {
                     binding: 6,
-                    resource: wgpu::BindingResource::TextureView(&brdf.view),
+                    resource: wgpu::BindingResource::TextureView(&brdf.texture_view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 7,
-                    resource: wgpu::BindingResource::Sampler(&brdf.sampler),
+                    resource: wgpu::BindingResource::Sampler(&default_sampler),
                 },
             ],
             label: Some("Lights Bind Group"),
@@ -554,17 +559,16 @@ impl Renderer {
         snapshot_handoff: Arc<SnapshotHandoff>,
         layouts: Layouts, // temporarily initializing layouts outside of renderer for preloading...
         placeholders: PlaceholderTextureIds,
+        resource_manager: &Arc<ResourceManager>,
+        sampler_cache: &mut SamplerCache,
     ) -> Self {
-        let mut lights = LightsBinding::new(
-            &scene_tree::Sun::default(),
+        let lights = LightsBinding::new(
+            resource_manager,
+            sampler_cache,
+            &placeholders,
             wgpu_context,
             &layouts.lights,
         );
-        // TODO: read environment map from initial scene
-        let prefiltered = render_resources.sampled_textures.get(&TextureHandle("assets/kloofendal_overcast_puresky_8k.prefiltered.dds".to_string())).unwrap();
-        let di = render_resources.sampled_textures.get(&TextureHandle("assets/kloofendal_overcast_puresky_8k.di.dds".to_string())).unwrap();
-        let brdf = render_resources.sampled_textures.get(&TextureHandle("assets/brdf_lut.png".to_string())).unwrap();
-        lights.update_environment_map(wgpu_context, &layouts.lights, &prefiltered.view, &prefiltered.sampler, &di.view, &di.sampler, &brdf.view, &brdf.sampler);
 
         let camera = CameraBinding::new(
             &Camera::default(),
@@ -620,6 +624,7 @@ impl Renderer {
         &mut self,
         wgpu_context: &WgpuContext,
         resource_manager: &Arc<ResourceManager>,
+        sampler_cache: &mut SamplerCache,
     ) -> Result<(), wgpu::SurfaceError> {
         let snaps = self.snapshot_handoff.load();
         let now = Instant::now();
@@ -633,7 +638,7 @@ impl Renderer {
             &wgpu_context.queue,
             &wgpu_context.surface_config,
         );
-        prepare_lights(&snaps.curr, render_resources, &wgpu_context.queue);
+        prepare_lights(&snaps, &mut self.lights, resource_manager, sampler_cache, wgpu_context, &self.layouts.lights);
 
         let mut encoder =
             wgpu_context
@@ -731,16 +736,34 @@ pub fn prepare_camera(
 }
 
 pub fn prepare_lights(
-    snap: &render_snapshot::RenderSnapshot,
-    queue: &wgpu::Queue,
+    snaps: &SnapshotGuard,
+    lights_binding: &mut LightsBinding,
+    resource_manager: &ResourceManager,
+    sampler_cache: &mut SamplerCache,
+    wgpu_context: &WgpuContext,
+    bind_group_layout: &wgpu::BindGroupLayout,
 ) {
-    // TODO
-    /*
-    if let Some(sun) = &snap.sun {
-        render_resources.lights.update_sun(sun, queue);
+    lights_binding.update_sun(&snaps.curr.environment.sun, &wgpu_context.queue);
+    if snaps.curr.environment.prefiltered != snaps.prev.environment.prefiltered {
+        // if one of env maps has changed, we must rebuild the bindgroup entirely
+        let e = &snaps.curr.environment;
+        let reg = resource_manager.registry.lock().unwrap();
+        if let (Some(p_entry), Some(d_entry), Some(b_entry)) = (reg.get_id(&e.prefiltered), reg.get_id(&e.di), reg.get_id(&e.brdf)) {
+            if let (GpuState::Ready(p_gpu_idx), GpuState::Ready(d_gpu_idx), GpuState::Ready(b_gpu_idx)) = (&p_entry.gpu_state, &d_entry.gpu_state, &b_entry.gpu_state) {
+                let gpu_textures = resource_manager.gpu.textures.lock().unwrap();
+                let (prefiltered, di, brdf) = (gpu_textures.get(*p_gpu_idx).unwrap(), gpu_textures.get(*d_gpu_idx).unwrap(), gpu_textures.get(*b_gpu_idx).unwrap());
+                let default_sampler = sampler_cache.get(&materialfile::Sampler::default(), wgpu_context);
+                lights_binding.update_environment_map(
+                    wgpu_context, bind_group_layout,
+                    &prefiltered.texture_view, &default_sampler,
+                    &di.texture_view, &default_sampler,
+                    &brdf.texture_view, &default_sampler
+                );
+            }
+        } else {
+            println!("Warning: stale handle id when updating environment map");
+        }
     }
-    render_resources.lights.update_environment_map(&snap.environment_map, queue);
-    */
 }
 
 struct UnresolvedSubmesh {

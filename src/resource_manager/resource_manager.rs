@@ -5,7 +5,7 @@ use generational_arena::{Arena, Index};
 use glam::{Quat, Vec3};
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 
-use crate::renderer::{pipelines::model::{material_binding::MaterialBinding, vertex::Vertex}, render_resources::{animation, animationfile, dds, materialfile, modelfile, skeletonfile}, wgpu_context::{self, WgpuContext}, Layouts};
+use crate::renderer::{pipelines::model::{material_binding::MaterialBinding, vertex::Vertex}, render_resources::{animation, animationfile, dds, materialfile, modelfile, skeletonfile}, sampler_cache::SamplerCache, wgpu_context::{self, WgpuContext}, Layouts};
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum ResourceKind {
@@ -119,7 +119,7 @@ pub enum GpuState {
     Absent, Queued, Uploading(Index), Ready(Index)
 }
 
-struct Entry {
+pub struct Entry {
     pub kind: ResourceKind,
     ref_count: u32,
     pub cpu_state: CpuState,
@@ -136,7 +136,7 @@ impl Entry {
     }
 }
 
-struct ResourceRegistry {
+pub struct ResourceRegistry {
     entries: Arena<Entry>,
     by_path: HashMap<String, Index>,
 }
@@ -157,14 +157,14 @@ impl ResourceRegistry {
     }
 }
 
-struct SubMesh {
+pub struct SubMesh {
     pub instances: Vec<[[f32; 4]; 4]>,
     pub index_range: Range<u32>,
     pub base_vertex: u32,
     pub material: MaterialHandle,
 }
 
-struct ModelCpuData {
+pub struct ModelCpuData {
     pub manifest: modelfile::Model,
     pub mesh: MeshHandle,
     pub submeshes: Vec<SubMesh>,
@@ -172,11 +172,11 @@ struct ModelCpuData {
     pub skeleton: SkeletonHandle,
 }
 
-struct MeshCpuData {
+pub struct MeshCpuData {
     pub index_vertex_data: Vec<u8>,
 }
 
-struct MaterialCpuData {
+pub struct MaterialCpuData {
     pub manifest: materialfile::Material,
     pub normal_texture: Option<TextureHandle>,
     pub occlusion_texture: Option<TextureHandle>,
@@ -185,11 +185,11 @@ struct MaterialCpuData {
     pub metallic_roughness_texture: Option<TextureHandle>,
 }
 
-struct SkeletonCpuData {
+pub struct SkeletonCpuData {
     pub manifest: skeletonfile::Skeleton,
 }
 
-struct AnimationClipCpuData {
+pub struct AnimationClipCpuData {
     pub manifest: animationfile::AnimationClip,
     pub animation: AnimationHandle,
 }
@@ -198,7 +198,7 @@ type AnimationCpuData = animation::AnimationClip;
 
 type TextureCpuData = TextureLoadData;
 
-struct CpuResources {
+pub struct CpuResources {
     pub models: Mutex<Arena<ModelCpuData>>,
     pub meshes: Mutex<Arena<MeshCpuData>>,
     pub materials: Mutex<Arena<MaterialCpuData>>,
@@ -221,28 +221,28 @@ impl CpuResources {
     }
 }
 
-struct MeshGpuData {
+pub struct MeshGpuData {
     pub buffer: wgpu::Buffer,
 }
 
-struct TextureGpuData {
+pub struct TextureGpuData {
     pub texture: wgpu::Texture,
     pub texture_view: wgpu::TextureView,
 }
 
 /// indices to GpuResources textures arena
 pub struct PlaceholderTextureIds {
-    normals: Index,
-    base_color: Index,
-    occlusion: Index,
-    emissive: Index,
-    metallic_roughness: Index,
-    prefiltered: Index,
-    di: Index,
-    brdf: Index,
+    pub normals: Index,
+    pub base_color: Index,
+    pub occlusion: Index,
+    pub emissive: Index,
+    pub metallic_roughness: Index,
+    pub prefiltered: Index,
+    pub di: Index,
+    pub brdf: Index,
 }
 
-struct GpuResources {
+pub struct GpuResources {
     pub meshes: Mutex<Arena<MeshGpuData>>,
     pub materials: Mutex<Arena<MaterialBinding>>,
     pub textures: Mutex<Arena<TextureGpuData>>,
@@ -498,10 +498,15 @@ impl GpuResources {
         let occlusion_view = occlusion_texture.create_view(&wgpu::TextureViewDescriptor::default());
         let emissive_view = emissive_texture.create_view(&wgpu::TextureViewDescriptor::default());
         let metallic_roughness_view = metallic_roughness_texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let prefiltered_view = prefiltered_texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let di_view = di_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let prefiltered_view = prefiltered_texture.create_view(&wgpu::TextureViewDescriptor {
+            dimension: Some(wgpu::TextureViewDimension::Cube),
+            ..Default::default()
+        });
+        let di_view = di_texture.create_view(&wgpu::TextureViewDescriptor {
+            dimension: Some(wgpu::TextureViewDimension::Cube),
+            ..Default::default()
+        });
         let brdf_view = brdf_texture.create_view(&wgpu::TextureViewDescriptor::default());
-
         let normals = textures.insert(TextureGpuData { texture: normals_texture, texture_view: normals_view });
         let base_color = textures.insert(TextureGpuData { texture: base_color_texture, texture_view: base_color_view });
         let occlusion = textures.insert(TextureGpuData { texture: occlusion_texture, texture_view: occlusion_view });
@@ -525,7 +530,7 @@ impl GpuResources {
     }
 }
 
-struct TextureLoadData {
+pub struct TextureLoadData {
     data: Vec<u8>,
     base_width: u32,
     base_height: u32,
@@ -862,7 +867,6 @@ impl ResourceManager {
     pub fn process_io_responses(
         self: &std::sync::Arc<Self>,
     ) {
-        let mut reg = self.registry.lock().unwrap();
         while !self.io.res_rx.is_empty() {
             let res = match self.io.res_rx.recv() {
                 Ok(r) => r,
@@ -873,7 +877,6 @@ impl ResourceManager {
             };
             match res {
                 IoResponse::ModelLoaded { id, model } => {
-                    let entry = reg.entries.get_mut(id).unwrap();
                     let cpu_data = ModelCpuData {
                         mesh: ResourceManager::request_mesh(self, &model.buffer_path),
                         submeshes: model.primitives.iter().map(|prim| {
@@ -890,21 +893,23 @@ impl ResourceManager {
                         skeleton: ResourceManager::request_skeleton(self, &model.skeletonfile_path),
                         manifest: model,
                     };
+                    let mut reg = self.registry.lock().unwrap();
+                    let entry = reg.entries.get_mut(id).unwrap();
                     let cpu_idx = self.cpu.models.lock().unwrap().insert(cpu_data);
                     entry.cpu_state = CpuState::Ready(cpu_idx);
                     entry.gpu_state = GpuState::Queued;
                     self.upload_queue.lock().unwrap().push_back(id);
                 },
                 IoResponse::MeshLoaded { id, data } => {
-                    let entry = reg.entries.get_mut(id).unwrap();
                     let cpu_data = MeshCpuData { index_vertex_data: data };
                     let cpu_idx = self.cpu.meshes.lock().unwrap().insert(cpu_data);
+                    let mut reg = self.registry.lock().unwrap();
+                    let entry = reg.entries.get_mut(id).unwrap();
                     entry.cpu_state = CpuState::Ready(cpu_idx);
                     entry.gpu_state = GpuState::Queued;
                     self.upload_queue.lock().unwrap().push_back(id);
                 },
                 IoResponse::MaterialLoaded { id, material } => {
-                    let entry = reg.entries.get_mut(id).unwrap();
                     let normal_texture = material.normal_texture.as_ref().map(|t| self.request_texture(&t.source, false));
                     let occlusion_texture = material.normal_texture.as_ref().map(|t| self.request_texture(&t.source, false));
                     let emissive_texture = material.normal_texture.as_ref().map(|t| self.request_texture(&t.source, true));
@@ -912,33 +917,39 @@ impl ResourceManager {
                     let metallic_roughness_texture = material.normal_texture.as_ref().map(|t| self.request_texture(&t.source, true));
                     let cpu_data = MaterialCpuData { manifest: material, normal_texture, occlusion_texture, emissive_texture, base_color_texture, metallic_roughness_texture };
                     let cpu_idx = self.cpu.materials.lock().unwrap().insert(cpu_data);
+                    let mut reg = self.registry.lock().unwrap();
+                    let entry = reg.entries.get_mut(id).unwrap();
                     entry.cpu_state = CpuState::Ready(cpu_idx);
                     entry.gpu_state = GpuState::Queued;
                     self.upload_queue.lock().unwrap().push_back(id);
                 },
                 IoResponse::SkeletonLoaded { id, skeleton } => {
-                    let entry = reg.entries.get_mut(id).unwrap();
                     let cpu_data = SkeletonCpuData { manifest: skeleton };
                     let cpu_idx = self.cpu.skeletons.lock().unwrap().insert(cpu_data);
+                    let mut reg = self.registry.lock().unwrap();
+                    let entry = reg.entries.get_mut(id).unwrap();
                     entry.cpu_state = CpuState::Ready(cpu_idx);
                 },
                 IoResponse::AnimationClipLoaded { id, clip } => {
-                    let entry = reg.entries.get_mut(id).unwrap();
                     let animation = self.request_animation(&clip.binary_path, &clip);
                     let cpu_data = AnimationClipCpuData { manifest: clip, animation };
                     let cpu_idx = self.cpu.animation_clips.lock().unwrap().insert(cpu_data);
+                    let mut reg = self.registry.lock().unwrap();
+                    let entry = reg.entries.get_mut(id).unwrap();
                     entry.cpu_state = CpuState::Ready(cpu_idx);
                 },
                 IoResponse::AnimationLoaded { id, parsed_clip } => {
-                    let entry = reg.entries.get_mut(id).unwrap();
                     let cpu_data: AnimationCpuData = parsed_clip;
                     let cpu_idx = self.cpu.animations.lock().unwrap().insert(cpu_data);
+                    let mut reg = self.registry.lock().unwrap();
+                    let entry = reg.entries.get_mut(id).unwrap();
                     entry.cpu_state = CpuState::Ready(cpu_idx);
                 },
                 IoResponse::TextureLoaded { id, data } => {
-                    let entry = reg.entries.get_mut(id).unwrap();
                     let cpu_data: TextureCpuData = data;
                     let cpu_idx = self.cpu.textures.lock().unwrap().insert(cpu_data);
+                    let mut reg = self.registry.lock().unwrap();
+                    let entry = reg.entries.get_mut(id).unwrap();
                     entry.cpu_state = CpuState::Ready(cpu_idx);
                     entry.gpu_state = GpuState::Queued;
                     self.upload_queue.lock().unwrap().push_back(id);
@@ -955,8 +966,8 @@ impl ResourceManager {
         wgpu_context: &WgpuContext,
         layouts: &Layouts,
         placeholders: &PlaceholderTextureIds,
+        sampler_cache: &mut SamplerCache,
     ) {
-        let mut reg = self.registry.lock().unwrap();
         let mut upload_queue = self.upload_queue.lock().unwrap();
         let mut meshes_cpu = self.cpu.meshes.lock().unwrap();
         let mut textures_cpu = self.cpu.textures.lock().unwrap();
@@ -966,6 +977,7 @@ impl ResourceManager {
         let mut queue_next_frame: Vec<Index> = vec![];
         'upload_queue: while let Some(id) = upload_queue.pop_front() {
             let (entry_kind, entry_cpu_idx) = {
+                let mut reg = self.registry.lock().unwrap();
                 let entry = reg.entries.get(id).unwrap();
 
                 if entry.ref_count == 0 {
@@ -995,6 +1007,7 @@ impl ResourceManager {
                     let mesh_gpu = MeshGpuData { buffer };
                     let mut meshes_gpu = self.gpu.meshes.lock().unwrap();
                     let gpu_idx = meshes_gpu.insert(mesh_gpu);
+                    let mut reg = self.registry.lock().unwrap();
                     let entry = reg.entries.get_mut(id).unwrap();
                     entry.gpu_state = GpuState::Ready(gpu_idx);
                     entry.cpu_state = CpuState::Absent;
@@ -1013,10 +1026,18 @@ impl ResourceManager {
                         &wgpu_context.device,
                         &wgpu_context.queue
                     );
-                    let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+                    // TODO probably should have a is_cubemap flag?
+                    let texture_view = if texture_cpu.layers == 6 {
+                        texture.create_view(&wgpu::TextureViewDescriptor {
+                            dimension: Some(wgpu::TextureViewDimension::Cube),
+                            ..Default::default()
+                        })
+                    } else {
+                        texture.create_view(&wgpu::TextureViewDescriptor::default())
+                    };
                     let texture_gpu = TextureGpuData { texture, texture_view };
-                    let mut textures_gpu = self.gpu.textures.lock().unwrap();
                     let gpu_idx = textures_gpu.insert(texture_gpu);
+                    let mut reg = self.registry.lock().unwrap();
                     let entry = reg.entries.get_mut(id).unwrap();
                     entry.gpu_state = GpuState::Ready(gpu_idx);
                     entry.cpu_state = CpuState::Absent;
@@ -1027,6 +1048,7 @@ impl ResourceManager {
                     // check if textures uploaded to gpu, re-schedule if not
                     let base_color_gpu_idx = {
                         if let Some(handle) = material_cpu.base_color_texture.as_ref() {
+                            let reg = self.registry.lock().unwrap();
                             match reg.get(handle).gpu_state {
                                 GpuState::Ready(gpu_idx) => {
                                     Some(gpu_idx)
@@ -1042,6 +1064,7 @@ impl ResourceManager {
                     };
                     let emissive_gpu_idx = {
                         if let Some(handle) = material_cpu.emissive_texture.as_ref() {
+                            let reg = self.registry.lock().unwrap();
                             match reg.get(handle).gpu_state {
                                 GpuState::Ready(gpu_idx) => {
                                     Some(gpu_idx)
@@ -1057,6 +1080,7 @@ impl ResourceManager {
                     };
                     let metallic_roughness_gpu_idx = {
                         if let Some(handle) = material_cpu.metallic_roughness_texture.as_ref() {
+                            let reg = self.registry.lock().unwrap();
                             match reg.get(handle).gpu_state {
                                 GpuState::Ready(gpu_idx) => {
                                     Some(gpu_idx)
@@ -1072,6 +1096,7 @@ impl ResourceManager {
                     };
                     let normal_gpu_idx = {
                         if let Some(handle) = material_cpu.normal_texture.as_ref() {
+                            let reg = self.registry.lock().unwrap();
                             match reg.get(handle).gpu_state {
                                 GpuState::Ready(gpu_idx) => {
                                     Some(gpu_idx)
@@ -1087,6 +1112,7 @@ impl ResourceManager {
                     };
                     let occlusion_gpu_idx = {
                         if let Some(handle) = material_cpu.occlusion_texture.as_ref() {
+                            let reg = self.registry.lock().unwrap();
                             match reg.get(handle).gpu_state {
                                 GpuState::Ready(gpu_idx) => {
                                     Some(gpu_idx)
@@ -1105,8 +1131,9 @@ impl ResourceManager {
                     let metallic_roughness_view = &textures_gpu.get(metallic_roughness_gpu_idx.unwrap_or(placeholders.metallic_roughness)).unwrap().texture_view;
                     let normal_view = &textures_gpu.get(normal_gpu_idx.unwrap_or(placeholders.normals)).unwrap().texture_view;
                     let occlusion_view = &textures_gpu.get(occlusion_gpu_idx.unwrap_or(placeholders.occlusion)).unwrap().texture_view;
-                    let material_binding = MaterialBinding::upload(&material_cpu.manifest, base_color_view, emissive_view, metallic_roughness_view, normal_view, occlusion_view, &layouts.material, wgpu_context);
+                    let material_binding = MaterialBinding::upload(&material_cpu.manifest, base_color_view, emissive_view, metallic_roughness_view, normal_view, occlusion_view, &layouts.material, wgpu_context, sampler_cache);
                     let gpu_idx = materials_gpu.insert(material_binding);
+                    let mut reg = self.registry.lock().unwrap();
                     let entry = reg.entries.get_mut(id).unwrap();
                     entry.gpu_state = GpuState::Ready(gpu_idx);
                     entry.cpu_state = CpuState::Absent;
@@ -1190,6 +1217,7 @@ impl ResourceManager {
         self: &std::sync::Arc<Self>,
         path: &str,
     ) -> MaterialHandle {
+        println!("req mat");
         let mut reg = self.registry.lock().unwrap();
         if let Some(&idx) = reg.by_path.get(path) {
             let entry = reg.entries.get_mut(idx).unwrap();
@@ -1233,7 +1261,7 @@ impl ResourceManager {
         );
         reg.by_path.insert(path.to_string(), idx);
 
-        self.make_io_request(IoRequest::LoadModel { id: idx, path: path.to_string() });
+        self.make_io_request(IoRequest::LoadSkeleton { id: idx, path: path.to_string() });
 
         SkeletonHandle::new(idx, self)
     }

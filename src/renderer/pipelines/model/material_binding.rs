@@ -1,6 +1,6 @@
 use wgpu::{util::DeviceExt as _, BindGroupLayout};
 
-use crate::renderer::{render_resources::{materialfile, modelfile}, wgpu_context::WgpuContext};
+use crate::renderer::{render_resources::{materialfile, modelfile}, sampler_cache::{self, SamplerCache}, wgpu_context::WgpuContext};
 
 pub struct MaterialBinding {
     pub bind_group: wgpu::BindGroup,
@@ -173,6 +173,7 @@ impl MaterialBinding {
         occlusion_view: &wgpu::TextureView,
         bind_group_layout: &BindGroupLayout,
         wgpu_context: &WgpuContext,
+        sampler_cache: &mut SamplerCache,
     ) -> Self {
         let base_color_factor =
             wgpu_context
@@ -215,6 +216,11 @@ impl MaterialBinding {
                     usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
                 });
 
+        let normal_sampler = sampler_cache.get(&mat.normal_texture.as_ref().map(|t| &t.sampler).unwrap_or(&materialfile::Sampler::default()), wgpu_context);
+        let occlusion_sampler = sampler_cache.get(&mat.occlusion_texture.as_ref().map(|t| &t.sampler).unwrap_or(&materialfile::Sampler::default()), wgpu_context);
+        let emissive_sampler = sampler_cache.get(&mat.emissive_texture.as_ref().map(|t| &t.sampler).unwrap_or(&materialfile::Sampler::default()), wgpu_context);
+        let base_color_sampler = sampler_cache.get(&mat.base_color_texture.as_ref().map(|t| &t.sampler).unwrap_or(&materialfile::Sampler::default()), wgpu_context);
+        let metallic_roughness_sampler = sampler_cache.get(&mat.metallic_roughness_texture.as_ref().map(|t| &t.sampler).unwrap_or(&materialfile::Sampler::default()), wgpu_context);
         let bind_group = wgpu_context
             .device
             .create_bind_group(&wgpu::BindGroupDescriptor {
@@ -242,7 +248,7 @@ impl MaterialBinding {
                     },
                     wgpu::BindGroupEntry {
                         binding: 5,
-                        resource: wgpu::BindingResource::Sampler(&normals.sampler),
+                        resource: wgpu::BindingResource::Sampler(&normal_sampler),
                     },
                     wgpu::BindGroupEntry {
                         binding: 6,
@@ -250,7 +256,7 @@ impl MaterialBinding {
                     },
                     wgpu::BindGroupEntry {
                         binding: 7,
-                        resource: wgpu::BindingResource::Sampler(&occlusion.sampler),
+                        resource: wgpu::BindingResource::Sampler(&occlusion_sampler),
                     },
                     wgpu::BindGroupEntry {
                         binding: 8,
@@ -258,7 +264,7 @@ impl MaterialBinding {
                     },
                     wgpu::BindGroupEntry {
                         binding: 9,
-                        resource: wgpu::BindingResource::Sampler(&emissive.sampler),
+                        resource: wgpu::BindingResource::Sampler(&emissive_sampler),
                     },
                     wgpu::BindGroupEntry {
                         binding: 10,
@@ -266,7 +272,7 @@ impl MaterialBinding {
                     },
                     wgpu::BindGroupEntry {
                         binding: 11,
-                        resource: wgpu::BindingResource::Sampler(&base_color.sampler),
+                        resource: wgpu::BindingResource::Sampler(&base_color_sampler),
                     },
                     wgpu::BindGroupEntry {
                         binding: 12,
@@ -274,7 +280,7 @@ impl MaterialBinding {
                     },
                     wgpu::BindGroupEntry {
                         binding: 13,
-                        resource: wgpu::BindingResource::Sampler(&metallic_roughness.sampler),
+                        resource: wgpu::BindingResource::Sampler(&metallic_roughness_sampler),
                     },
                     wgpu::BindGroupEntry {
                         binding: 14,

@@ -1,26 +1,26 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub enum FilterMode {
     Nearest,
     Linear,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub enum MipmapFilterMode {
     Nearest,
     Linear,
     None,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub enum WrapMode {
     Repeat,
     ClampToEdge,
     MirroredRepeat,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Hash, PartialEq, Eq, Clone)]
 pub struct Sampler {
     pub mag_filter: FilterMode,
     pub min_filter: FilterMode,
@@ -28,6 +28,18 @@ pub struct Sampler {
     pub wrap_u: WrapMode,
     pub wrap_v: WrapMode,
     pub wrap_w: WrapMode,
+}
+impl Default for Sampler {
+    fn default() -> Self {
+        Self {
+            mag_filter: FilterMode::Linear,
+            min_filter: FilterMode::Linear,
+            mipmap_filter: MipmapFilterMode::Nearest,
+            wrap_u: WrapMode::ClampToEdge,
+            wrap_v: WrapMode::ClampToEdge,
+            wrap_w: WrapMode::ClampToEdge,
+        }
+    }
 }
 impl Sampler {
     pub fn to_wgpu_descriptor<'a, 'b>(
