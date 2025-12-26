@@ -5,11 +5,9 @@ use std::ops::Range;
 use std::sync::Arc;
 use std::time::Instant;
 
-use super::pipelines::model::instance::Instance;
-use super::pipelines::model::material_binding::MaterialBinding;
-use super::pipelines::model::pipeline::DrawContext;
-use super::render_resources::animation::{AnimationClip, Channel, Track};
-use super::render_resources::materialfile;
+use super::pipelines::pbr_material::MaterialBinding;
+use super::pipelines::skinned_pbr::instance::Instance;
+use super::pipelines::skinned_pbr::pipeline::DrawContext;
 use super::render_snapshot::{self, SnapshotGuard};
 use super::sampler_cache::SamplerCache;
 use super::wgpu_context;
@@ -19,12 +17,16 @@ use glam::{Mat3, Mat4, Quat, Vec3, Vec4};
 use wgpu::util::DeviceExt as _;
 
 use crate::animator::{self, TimeWrapMode};
-use crate::renderer::pipelines::model::pipeline::{MaterialBatch, MeshBatch, ResolvedSubmesh};
-use crate::resource_manager::resource_manager::{self, GpuState, MaterialId, MeshId, ModelId, PlaceholderTextureIds, ResourceManager, TextureId};
+use crate::renderer::pipelines::skinned_pbr::pipeline::{MaterialBatch, MeshBatch, ResolvedSubmesh};
+use crate::resource_manager::animation::{AnimationClip, Channel, Track};
+use crate::resource_manager::file_formats::{animationfile, materialfile, skeletonfile};
+use crate::resource_manager::gpu_resources::PlaceholderTextureIds;
+use crate::resource_manager::registry::{CpuState, GpuState, MaterialId, MeshId, ModelId};
+use crate::resource_manager::resource_manager::{self, ResourceManager};
 use crate::scene_tree::{self, Camera};
 use crate::renderer::{
         pipelines::{
-            model::pipeline::ModelPipeline,
+            skinned_pbr::pipeline::ModelPipeline,
             post_processing::PostProcessingPipeline,
             resources::{
                 depth_texture::DepthTexture, msaa_textures::MSAATextures,
@@ -32,7 +34,6 @@ use crate::renderer::{
             },
             skybox::SkyboxPipeline,
         },
-        render_resources::skeletonfile,
         wgpu_context::WgpuContext,
     };
 
@@ -817,7 +818,7 @@ pub fn resolve_model_draw(
             None => continue 'model_loop,
         };
         let model_cpu_idx = match model_entry.cpu_state {
-            resource_manager::CpuState::Ready(index) => index,
+            CpuState::Ready(index) => index,
             _ => continue 'model_loop,
         };
         let model = models.get(model_cpu_idx).unwrap();
@@ -841,7 +842,7 @@ pub fn resolve_model_draw(
             let joint_matrices = {
                 let skeleton_entry = reg.get(&model.skeleton);
                 let skeleton_cpu_idx = match skeleton_entry.cpu_state {
-                    resource_manager::CpuState::Ready(index) => index,
+                    CpuState::Ready(index) => index,
                     _ => continue 'model_loop,
                 };
                 let skeleton = skeletons.get(skeleton_cpu_idx).unwrap();
@@ -852,7 +853,7 @@ pub fn resolve_model_draw(
                             let anim_clip_handle = &model.animations[animation_state_snapshot.clip_idx as usize];
                             let anim_clip_entry = reg.get(anim_clip_handle);
                             let anim_clip_idx = match anim_clip_entry.cpu_state {
-                                resource_manager::CpuState::Ready(idx) => idx,
+                                CpuState::Ready(idx) => idx,
                                 _ => continue 'model_loop,
                             };
                             anim_clips.get(anim_clip_idx).unwrap()
@@ -861,7 +862,7 @@ pub fn resolve_model_draw(
                             let anim_handle = &anim_clip.animation;
                             let anim_entry = reg.get(anim_handle);
                             let anim_idx = match anim_entry.cpu_state {
-                                resource_manager::CpuState::Ready(idx) => idx,
+                                CpuState::Ready(idx) => idx,
                                 _ => continue 'model_loop,
                             };
                             anims.get(anim_idx).unwrap()
@@ -883,7 +884,7 @@ pub fn resolve_model_draw(
                             let anim_clip_handle = &model.animations[animation_transition_snapshot.from_clip_idx as usize];
                             let anim_clip_entry = reg.get(&anim_clip_handle);
                             let anim_clip_idx = match anim_clip_entry.cpu_state {
-                                resource_manager::CpuState::Ready(idx) => idx,
+                                CpuState::Ready(idx) => idx,
                                 _ => continue 'model_loop,
                             };
                             anim_clips.get(anim_clip_idx).unwrap()
@@ -892,7 +893,7 @@ pub fn resolve_model_draw(
                             let anim_clip_handle = &model.animations[animation_transition_snapshot.to_clip_idx as usize];
                             let anim_clip_entry = reg.get(&anim_clip_handle);
                             let anim_clip_idx = match anim_clip_entry.cpu_state {
-                                resource_manager::CpuState::Ready(idx) => idx,
+                                CpuState::Ready(idx) => idx,
                                 _ => continue 'model_loop,
                             };
                             anim_clips.get(anim_clip_idx).unwrap()
@@ -901,7 +902,7 @@ pub fn resolve_model_draw(
                             let anim_handle = &from_clip.animation;
                             let anim_entry = reg.get(anim_handle);
                             let anim_idx = match anim_entry.cpu_state {
-                                resource_manager::CpuState::Ready(idx) => idx,
+                                CpuState::Ready(idx) => idx,
                                 _ => continue 'model_loop,
                             };
                             anims.get(anim_idx).unwrap()
@@ -910,7 +911,7 @@ pub fn resolve_model_draw(
                             let anim_handle = &to_clip.animation;
                             let anim_entry = reg.get(anim_handle);
                             let anim_idx = match anim_entry.cpu_state {
-                                resource_manager::CpuState::Ready(idx) => idx,
+                                CpuState::Ready(idx) => idx,
                                 _ => continue 'model_loop,
                             };
                             anims.get(anim_idx).unwrap()
@@ -1058,9 +1059,9 @@ fn interpolate_channel_value_vec3(track: &Track,channel: &Channel<Vec3>, t: f32)
     let values = &channel.values;
     let (v0, v1, alpha) = compute_keyframe_values(times, values, t);
     match channel.interpolation {
-        super::render_resources::animationfile::Interpolation::Linear => v0.lerp(*v1, alpha),
-        super::render_resources::animationfile::Interpolation::Step => *v0,
-        super::render_resources::animationfile::Interpolation::CubicSpline => todo!(),
+        animationfile::Interpolation::Linear => v0.lerp(*v1, alpha),
+        animationfile::Interpolation::Step => *v0,
+        animationfile::Interpolation::CubicSpline => todo!(),
     }
 }
 
@@ -1069,9 +1070,9 @@ fn interpolate_channel_value_quat(track: &Track,channel: &Channel<Quat>, t: f32)
     let values = &channel.values;
     let (v0, v1, alpha) = compute_keyframe_values(times, values, t);
     match channel.interpolation {
-        super::render_resources::animationfile::Interpolation::Linear => v0.lerp(*v1, alpha),
-        super::render_resources::animationfile::Interpolation::Step => *v0,
-        super::render_resources::animationfile::Interpolation::CubicSpline => todo!(),
+        animationfile::Interpolation::Linear => v0.lerp(*v1, alpha),
+        animationfile::Interpolation::Step => *v0,
+        animationfile::Interpolation::CubicSpline => todo!(),
     }
 }
 
@@ -1097,8 +1098,8 @@ fn compute_animated_pose(animation: &AnimationClip, skeleton: &skeletonfile::Ske
         let scale = track.scale.as_ref().map(|channel| interpolate_channel_value_vec3(track, channel, t));
 
         match track.target {
-            super::render_resources::animationfile::Target::PrimitiveGroup(_) => todo!(),
-            super::render_resources::animationfile::Target::SkeletonJoint(idx) => {
+            animationfile::Target::PrimitiveGroup(_) => todo!(),
+            animationfile::Target::SkeletonJoint(idx) => {
                 let base = base_locals[idx as usize];
                 joints[idx as usize] = Some(
                     (

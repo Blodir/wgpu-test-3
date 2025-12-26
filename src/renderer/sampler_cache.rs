@@ -1,6 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
-use super::{render_resources::materialfile, wgpu_context::WgpuContext};
+use super::wgpu_context::WgpuContext;
+use crate::resource_manager::file_formats::materialfile;
 
 pub struct SamplerCache {
     pub cache: HashMap<materialfile::Sampler, Arc<wgpu::Sampler>>,

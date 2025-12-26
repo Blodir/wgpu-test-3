@@ -2,6 +2,7 @@ use block_compression::BC6HSettings;
 use ddsfile::{Caps2, Dds, DxgiFormat, NewDxgiParams};
 use image::ImageReader;
 use pollster::FutureExt as _;
+use wgpu_test_3::resource_manager::file_formats::dds::create_dds;
 use std::path::{Path, PathBuf};
 use std::{env, fs::File};
 use wgpu::{Extent3d, ImageDataLayout, TextureAspect};
@@ -95,7 +96,7 @@ fn write_texture_to_file(
 ) {
     let buffer = copy_texture_to_buffer(&texture, device, queue);
 
-    let dds = wgpu_test_3::renderer::render_resources::dds::create_dds(
+    let dds = create_dds(
         buffer,
         &DxgiFormat::BC6H_UF16,
         texture.width(),

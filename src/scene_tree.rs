@@ -1,9 +1,8 @@
-use std::{collections::HashMap, sync::Arc, time::Instant};
+use std::sync::Arc;
 
 use glam::{Mat4, Vec3};
-use wgpu::hal::vulkan::Texture;
 
-use crate::{animator::{self, AnimationGraph, Animator}, resource_manager::resource_manager::{ModelHandle, PlaceholderTextureIds, ResourceManager, TextureHandle}};
+use crate::{animator::{self, AnimationGraph, Animator}, resource_manager::{registry::{ModelHandle, TextureHandle}, resource_manager::ResourceManager}};
 use generational_arena::{Arena, Index};
 
 #[derive(Clone)]

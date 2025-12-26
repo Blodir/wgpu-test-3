@@ -1,7 +1,7 @@
 use std::{collections::HashMap, fs::File, io::Write as _, path::Path};
 
 use gltf::{Accessor, Document};
-use wgpu_test_3::renderer::render_resources::animationfile::{self, BinRef, Sampler3, SamplerQuat, Target, Track};
+use wgpu_test_3::resource_manager::file_formats::animationfile::{self, BinRef, Sampler3, SamplerQuat, Target, Track};
 
 use crate::{gltf_utils::{read3f32, read4f32}, utils::ensure_parent_dir_exists};
 

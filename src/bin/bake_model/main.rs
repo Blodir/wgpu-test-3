@@ -3,7 +3,6 @@ use glam::Mat4;
 use gltf::Document;
 use materials::bake_material;
 use std::fs;
-use std::path::Path;
 use std::{collections::HashMap, env, fs::File, io::Write};
 use tangents::generate_tangents_for_mesh;
 use gltf_utils::{
@@ -13,9 +12,8 @@ use gltf_utils::{
     read_occlusion_texcoord_buffer, read_position_buffer, read_tangents_buffer, read_weights_buffer,
     JointsBuffer,
 };
-use wgpu_test_3::renderer::pipelines::model::vertex::Vertex;
-use wgpu_test_3::renderer::render_resources::dds::{create_dds, gltf_img_to_dxgi_format};
-use wgpu_test_3::renderer::render_resources::modelfile;
+use wgpu_test_3::renderer::pipelines::skinned_pbr::vertex::Vertex;
+use wgpu_test_3::resource_manager::file_formats::modelfile;
 
 mod tangents;
 mod normals;
@@ -25,7 +23,6 @@ mod utils;
 mod animations;
 mod materials;
 use skeletons::bake_skeletonfile;
-use utils::ensure_parent_dir_exists;
 use normals::generate_flat_normals_for_mesh;
 
 fn bake(

@@ -5,12 +5,10 @@ use wgpu::{core::device, util::DeviceExt};
 use crate::{
     renderer::{
         pipelines::{
-            model::{instance::Instance, material_binding::MaterialBinding, vertex::Vertex},
-            resources::depth_texture::DepthTexture,
+            pbr_material::MaterialBinding, resources::depth_texture::DepthTexture, skinned_pbr::{instance::Instance, vertex::Vertex}
         },
-        render_resources::modelfile,
         utils, Instances,
-    }, resource_manager::resource_manager::{self, MaterialHandle, MaterialId, MeshHandle, MeshId, ModelHandle, ResourceManager}, scene_tree::{RenderDataType, Scene}
+    }, resource_manager::{registry::{GpuState, MaterialId, MeshId}, resource_manager::{self, ResourceManager}}, scene_tree::{RenderDataType, Scene}
 };
 
 pub struct ResolvedSubmesh {
@@ -182,7 +180,7 @@ impl ModelPipeline {
                 None => continue 'mat_loop,
             };
             let material = match mat_entry.gpu_state {
-                resource_manager::GpuState::Ready(index) => gpu_materials.get(index).unwrap(),
+                GpuState::Ready(index) => gpu_materials.get(index).unwrap(),
                 _ => continue 'mat_loop,
             };
             render_pass.set_bind_group(
@@ -196,7 +194,7 @@ impl ModelPipeline {
                     None => continue 'mesh_loop,
                 };
                 let mesh = match mesh_entry.gpu_state {
-                    resource_manager::GpuState::Ready(index) => gpu_meshes.get(index).unwrap(),
+                    GpuState::Ready(index) => gpu_meshes.get(index).unwrap(),
                     _ => continue 'mat_loop,
                 };
                 render_pass.set_index_buffer(

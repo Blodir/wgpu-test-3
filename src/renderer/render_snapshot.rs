@@ -4,7 +4,7 @@ use arc_swap::{ArcSwap, Guard};
 use generational_arena::Index;
 use glam::Mat4;
 
-use crate::{animator::{AnimationGraph, AnimationSnapshot}, resource_manager::resource_manager::{ModelHandle, ModelId, ResourceManager, TextureId}, scene_tree::{Camera, Environment, RenderDataType, Scene, Sun}};
+use crate::{animator::{AnimationGraph, AnimationSnapshot}, resource_manager::{registry::{ModelId, TextureId}, resource_manager::ResourceManager}, scene_tree::{Camera, Environment, RenderDataType, Scene, Sun}};
 
 pub fn accumulate_model_instances(
     scene: &Scene,
