@@ -10,6 +10,7 @@ use super::pipelines::skinned_pbr::instance::Instance;
 use super::pipelines::skinned_pbr::pipeline::DrawContext;
 use super::render_snapshot::{self, SnapshotGuard};
 use super::sampler_cache::SamplerCache;
+use super::shader_cache::ShaderCache;
 use super::wgpu_context;
 use super::render_snapshot::SnapshotHandoff;
 use generational_arena::Index;
@@ -43,6 +44,7 @@ pub struct Layouts {
     pub lights: wgpu::BindGroupLayout,
     pub material: wgpu::BindGroupLayout,
     pub bones: wgpu::BindGroupLayout,
+    pub pbr_material: wgpu::BindGroupLayout,
 }
 impl Layouts {
     pub fn new(wgpu_context: &WgpuContext) -> Self {
@@ -58,11 +60,16 @@ impl Layouts {
         let bones = wgpu_context
             .device
             .create_bind_group_layout(&BonesBinding::desc());
+        let pbr_material = wgpu_context
+            .device
+            .create_bind_group_layout(&MaterialBinding::desc());
+
         Self {
             camera,
             lights,
             material,
-            bones
+            bones,
+            pbr_material,
         }
     }
 }
@@ -558,6 +565,7 @@ pub struct Renderer {
     pub layouts: Layouts,
     pub placeholders: PlaceholderTextureIds,
     sampler_cache: SamplerCache,
+    shader_cache: ShaderCache,
     bones: BonesBinding,
     pub camera: CameraBinding,
     lights: LightsBinding,
@@ -572,6 +580,7 @@ impl Renderer {
         resource_manager: &Arc<ResourceManager>,
     ) -> Self {
         let mut sampler_cache = SamplerCache::new();
+        let mut shader_cache = ShaderCache::new();
         let lights = LightsBinding::new(
             resource_manager,
             &mut sampler_cache,
@@ -595,20 +604,22 @@ impl Renderer {
         let msaa_textures = MSAATextures::new(&wgpu_context.device, &wgpu_context.surface_config);
 
         let skybox_pipeline = SkyboxPipeline::new(
-            &wgpu_context.device,
+            &wgpu_context,
+            &mut shader_cache,
             &layouts.camera,
             &layouts.lights,
         );
         let model_pipeline = ModelPipeline::new(
-            &wgpu_context.device,
-            &wgpu_context.surface_config,
+            &wgpu_context,
+            &mut shader_cache,
+            &layouts.pbr_material,
             &layouts.camera,
             &layouts.lights,
             &layouts.bones,
         );
         let post_pipeline = PostProcessingPipeline::new(
-            &wgpu_context.device,
-            &wgpu_context.surface_config,
+            &wgpu_context,
+            &mut shader_cache,
             &skybox_output,
             &msaa_textures,
         );
@@ -628,6 +639,7 @@ impl Renderer {
             instances,
             placeholders,
             sampler_cache,
+            shader_cache,
         }
     }
 

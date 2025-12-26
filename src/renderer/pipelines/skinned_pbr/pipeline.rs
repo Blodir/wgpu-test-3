@@ -6,8 +6,7 @@ use crate::{
     renderer::{
         pipelines::{
             pbr_material::MaterialBinding, resources::depth_texture::DepthTexture, skinned_pbr::{instance::Instance, vertex::Vertex}
-        },
-        utils, Instances,
+        }, shader_cache::ShaderCache, utils, wgpu_context::{self, WgpuContext}, Instances
     }, resource_manager::{registry::{GpuState, MaterialId, MeshId}, resource_manager::{self, ResourceManager}}, scene_tree::{RenderDataType, Scene}
 };
 
@@ -36,21 +35,20 @@ pub struct DrawContext {
 
 pub struct ModelPipeline {
     pub render_pipeline: wgpu::RenderPipeline,
-    pub material_bind_group_layout: wgpu::BindGroupLayout,
 }
 
 impl ModelPipeline {
     pub fn new(
-        device: &wgpu::Device,
-        surface_config: &wgpu::SurfaceConfiguration,
+        wgpu_context: &WgpuContext,
+        shader_cache: &mut ShaderCache,
+        material_bind_group_layout: &wgpu::BindGroupLayout,
         camera_bind_group_layout: &wgpu::BindGroupLayout,
         lights_bind_group_layout: &wgpu::BindGroupLayout,
         bones_bind_group_layout: &wgpu::BindGroupLayout,
     ) -> Self {
-        let material_bind_group_layout = device.create_bind_group_layout(&MaterialBinding::desc());
         let render_pipeline = Self::build_pipeline(
-            device,
-            surface_config,
+            wgpu_context,
+            shader_cache,
             camera_bind_group_layout,
             lights_bind_group_layout,
             &material_bind_group_layout,
@@ -59,13 +57,12 @@ impl ModelPipeline {
 
         Self {
             render_pipeline,
-            material_bind_group_layout,
         }
     }
 
     pub fn build_pipeline(
-        device: &wgpu::Device,
-        surface_config: &wgpu::SurfaceConfiguration,
+        wgpu_context: &WgpuContext,
+        shader_cache: &mut ShaderCache,
         camera_bind_group_layout: &wgpu::BindGroupLayout,
         lights_bind_group_layout: &wgpu::BindGroupLayout,
         material_bind_group_layout: &wgpu::BindGroupLayout,
@@ -79,14 +76,13 @@ impl ModelPipeline {
             bones_bind_group_layout,
         ];
         let render_pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            wgpu_context.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Model Pipeline Layout"),
                 bind_group_layouts,
                 push_constant_ranges: &[],
             });
-        let shader_module =
-            utils::create_shader_module(device, "src/renderer/pipelines/shaders/pbr.wgsl");
-        device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        let shader_module = shader_cache.get("src/renderer/pipelines/shaders/pbr.wgsl".to_string(), wgpu_context);
+        wgpu_context.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Model Pipeline"),
             layout: Some(&render_pipeline_layout),
             vertex: wgpu::VertexState {
@@ -98,7 +94,7 @@ impl ModelPipeline {
                 module: &shader_module,
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: surface_config.format,
+                    format: wgpu_context.surface_config.format,
                     blend: Some(wgpu::BlendState::REPLACE),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],

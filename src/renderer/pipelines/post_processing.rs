@@ -1,8 +1,7 @@
 use wgpu::util::DeviceExt;
 
 use crate::renderer::{
-    pipelines::resources::{msaa_textures::MSAATextures, skybox_output::SkyboxOutputTexture},
-    utils,
+    pipelines::resources::{msaa_textures::MSAATextures, skybox_output::SkyboxOutputTexture}, shader_cache::ShaderCache, utils, wgpu_context::{self, WgpuContext}
 };
 
 const INDICES: &[u16] = &[0, 2, 1, 3, 2, 0];
@@ -95,25 +94,22 @@ pub struct PostProcessingPipeline {
 }
 impl PostProcessingPipeline {
     pub fn new(
-        device: &wgpu::Device,
-        surface_config: &wgpu::SurfaceConfiguration,
+        wgpu_context: &WgpuContext,
+        shader_cache: &mut ShaderCache,
         skybox_texture: &SkyboxOutputTexture,
         msaa_textures: &MSAATextures,
     ) -> Self {
         let inputs_bind_group_layout =
-            device.create_bind_group_layout(&PostProcessingInputs::desc());
+            wgpu_context.device.create_bind_group_layout(&PostProcessingInputs::desc());
         let bind_group_layouts = &[&inputs_bind_group_layout];
         let render_pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            wgpu_context.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Post Processing Pipeline Layout"),
                 bind_group_layouts,
                 push_constant_ranges: &[],
             });
-        let shader_module = utils::create_shader_module(
-            device,
-            "src/renderer/pipelines/shaders/post_processing.wgsl",
-        );
-        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        let shader_module = shader_cache.get("src/renderer/pipelines/shaders/post_processing.wgsl".to_string(), wgpu_context);
+        let render_pipeline = wgpu_context.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Post Processing Render Pipeline"),
             layout: Some(&render_pipeline_layout),
             vertex: wgpu::VertexState {
@@ -125,7 +121,7 @@ impl PostProcessingPipeline {
                 module: &shader_module,
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: surface_config.format,
+                    format: wgpu_context.surface_config.format,
                     blend: None,
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -142,14 +138,14 @@ impl PostProcessingPipeline {
             multiview: None,
         });
 
-        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        let index_buffer = wgpu_context.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Index Buffer"),
             contents: bytemuck::cast_slice(INDICES),
             usage: wgpu::BufferUsages::INDEX,
         });
 
         let inputs_binding = PostProcessingInputs::upload(
-            device,
+            &wgpu_context.device,
             &inputs_bind_group_layout,
             skybox_texture,
             msaa_textures,
