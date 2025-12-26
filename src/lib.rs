@@ -1,7 +1,7 @@
 use crossbeam_queue::{ArrayQueue, SegQueue};
 use notify::{Config, RecommendedWatcher, Watcher};
 use pollster::FutureExt as _;
-use renderer::{render_snapshot::{RenderSnapshot, SnapshotHandoff}, sampler_cache::SamplerCache, Layouts};
+use renderer::{render_snapshot::{RenderSnapshot, SnapshotHandoff}, Layouts};
 use resource_manager::resource_manager::ResourceManager;
 use scene_tree::Sun;
 use sim::{spawn_sim, InputEvent};
@@ -51,7 +51,6 @@ pub fn strip_extension(path: &str) -> String {
 
 struct RenderContext<'surface> {
     renderer: Arc<Mutex<Renderer>>,
-    sampler_cache: SamplerCache,
     window: Arc<Window>,
     wgpu_context: WgpuContext<'surface>,
 }
@@ -112,10 +111,9 @@ impl<'surface> ApplicationHandler for App<'surface> {
         // TODO proper render resources loading!!!
         let layouts = Layouts::new(&wgpu_context);
         let placeholders = self.resource_manager.gpu.initialize_placeholders(&wgpu_context);
-        let mut sampler_cache = SamplerCache::new();
         let renderer = Arc::new(
             Mutex::new(
-                Renderer::new(&wgpu_context, self.snap_handoff.clone(), layouts, placeholders, &self.resource_manager, &mut sampler_cache)
+                Renderer::new(&wgpu_context, self.snap_handoff.clone(), layouts, placeholders, &self.resource_manager)
             )
         );
         self.render_context = Some(
@@ -123,7 +121,6 @@ impl<'surface> ApplicationHandler for App<'surface> {
                 window,
                 renderer,
                 wgpu_context,
-                sampler_cache,
             }
         );
     }
@@ -137,11 +134,10 @@ impl<'surface> ApplicationHandler for App<'surface> {
                 self.resource_manager.process_io_responses();
                 if let Some(ref mut render_context) = self.render_context {
                     let mut renderer = render_context.renderer.lock().unwrap();
-                    self.resource_manager.process_upload_queue(&render_context.wgpu_context, &renderer.layouts, &renderer.placeholders, &mut render_context.sampler_cache);
+                    self.resource_manager.process_upload_queue(&mut renderer, &render_context.wgpu_context);
                     match renderer.render(
                         &render_context.wgpu_context,
                         &self.resource_manager,
-                        &mut render_context.sampler_cache,
                     ) {
                         Ok(_) => {}
                         Err(e) => eprintln!("render error: {:?}", e),

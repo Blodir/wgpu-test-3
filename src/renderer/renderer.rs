@@ -19,6 +19,7 @@ use wgpu::util::DeviceExt as _;
 use crate::animator::{self, TimeWrapMode};
 use crate::renderer::pipelines::skinned_pbr::pipeline::{MaterialBatch, MeshBatch, ResolvedSubmesh};
 use crate::resource_manager::animation::{AnimationClip, Channel, Track};
+use crate::resource_manager::cpu_resources::CpuResources;
 use crate::resource_manager::file_formats::{animationfile, materialfile, skeletonfile};
 use crate::resource_manager::gpu_resources::PlaceholderTextureIds;
 use crate::resource_manager::registry::{CpuState, GpuState, MaterialId, MeshId, ModelId};
@@ -556,6 +557,7 @@ pub struct Renderer {
     snapshot_handoff: Arc<SnapshotHandoff>,
     pub layouts: Layouts,
     pub placeholders: PlaceholderTextureIds,
+    sampler_cache: SamplerCache,
     bones: BonesBinding,
     pub camera: CameraBinding,
     lights: LightsBinding,
@@ -568,11 +570,11 @@ impl Renderer {
         layouts: Layouts, // temporarily initializing layouts outside of renderer for preloading...
         placeholders: PlaceholderTextureIds,
         resource_manager: &Arc<ResourceManager>,
-        sampler_cache: &mut SamplerCache,
     ) -> Self {
+        let mut sampler_cache = SamplerCache::new();
         let lights = LightsBinding::new(
             resource_manager,
-            sampler_cache,
+            &mut sampler_cache,
             &placeholders,
             wgpu_context,
             &layouts.lights,
@@ -625,6 +627,7 @@ impl Renderer {
             lights,
             instances,
             placeholders,
+            sampler_cache,
         }
     }
 
@@ -632,7 +635,6 @@ impl Renderer {
         &mut self,
         wgpu_context: &WgpuContext,
         resource_manager: &Arc<ResourceManager>,
-        sampler_cache: &mut SamplerCache,
     ) -> Result<(), wgpu::SurfaceError> {
         let snaps = self.snapshot_handoff.load();
         let now = Instant::now();
@@ -646,7 +648,7 @@ impl Renderer {
             &wgpu_context.queue,
             &wgpu_context.surface_config,
         );
-        prepare_lights(&snaps, &mut self.lights, resource_manager, sampler_cache, wgpu_context, &self.layouts.lights);
+        prepare_lights(&snaps, &mut self.lights, resource_manager, &mut self.sampler_cache, wgpu_context, &self.layouts.lights);
 
         let mut encoder =
             wgpu_context
@@ -700,6 +702,96 @@ impl Renderer {
             &self.skybox_output,
             &self.msaa_textures,
         );
+    }
+
+    pub fn upload_material(&mut self, entry_cpu_idx: Index, resource_manager: &Arc<ResourceManager>, wgpu_context: &WgpuContext) -> Result<MaterialBinding, ()> {
+        let mut materials_cpu = resource_manager.cpu.materials.lock().unwrap();
+        let material_cpu = materials_cpu.get(entry_cpu_idx).unwrap();
+        // check if textures uploaded to gpu, re-schedule if not
+        let base_color_gpu_idx = {
+            if let Some(handle) = material_cpu.base_color_texture.as_ref() {
+                let reg = resource_manager.registry.lock().unwrap();
+                match reg.get(handle).gpu_state {
+                    GpuState::Ready(gpu_idx) => {
+                        Some(gpu_idx)
+                    },
+                    _ => {
+                        return Err(());
+                    }
+                }
+            } else {
+                None
+            }
+        };
+        let emissive_gpu_idx = {
+            if let Some(handle) = material_cpu.emissive_texture.as_ref() {
+                let reg = resource_manager.registry.lock().unwrap();
+                match reg.get(handle).gpu_state {
+                    GpuState::Ready(gpu_idx) => {
+                        Some(gpu_idx)
+                    },
+                    _ => {
+                        return Err(());
+                    }
+                }
+            } else {
+                None
+            }
+        };
+        let metallic_roughness_gpu_idx = {
+            if let Some(handle) = material_cpu.metallic_roughness_texture.as_ref() {
+                let reg = resource_manager.registry.lock().unwrap();
+                match reg.get(handle).gpu_state {
+                    GpuState::Ready(gpu_idx) => {
+                        Some(gpu_idx)
+                    },
+                    _ => {
+                        return Err(());
+                    }
+                }
+            } else {
+                None
+            }
+        };
+        let normal_gpu_idx = {
+            if let Some(handle) = material_cpu.normal_texture.as_ref() {
+                let reg = resource_manager.registry.lock().unwrap();
+                match reg.get(handle).gpu_state {
+                    GpuState::Ready(gpu_idx) => {
+                        Some(gpu_idx)
+                    },
+                    _ => {
+                        return Err(());
+                    }
+                }
+            } else {
+                None
+            }
+        };
+        let occlusion_gpu_idx = {
+            if let Some(handle) = material_cpu.occlusion_texture.as_ref() {
+                let reg = resource_manager.registry.lock().unwrap();
+                match reg.get(handle).gpu_state {
+                    GpuState::Ready(gpu_idx) => {
+                        Some(gpu_idx)
+                    },
+                    _ => {
+                        return Err(());
+                    }
+                }
+            } else {
+                None
+            }
+        };
+        let mut textures_gpu = resource_manager.gpu.textures.lock().unwrap();
+        let base_color_view = &textures_gpu.get(base_color_gpu_idx.unwrap_or(self.placeholders.base_color)).unwrap().texture_view;
+        let emissive_view = &textures_gpu.get(emissive_gpu_idx.unwrap_or(self.placeholders.emissive)).unwrap().texture_view;
+        let metallic_roughness_view = &textures_gpu.get(metallic_roughness_gpu_idx.unwrap_or(self.placeholders.metallic_roughness)).unwrap().texture_view;
+        let normal_view = &textures_gpu.get(normal_gpu_idx.unwrap_or(self.placeholders.normals)).unwrap().texture_view;
+        let occlusion_view = &textures_gpu.get(occlusion_gpu_idx.unwrap_or(self.placeholders.occlusion)).unwrap().texture_view;
+        Ok(
+            MaterialBinding::upload(&material_cpu.manifest, base_color_view, emissive_view, metallic_roughness_view, normal_view, occlusion_view, &self.layouts.material, wgpu_context, &mut self.sampler_cache)
+        )
     }
 }
 

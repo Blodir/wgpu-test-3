@@ -3,7 +3,7 @@ use std::{collections::VecDeque, sync::Mutex};
 use generational_arena::Index;
 use wgpu::util::{BufferInitDescriptor, DeviceExt as _};
 
-use crate::renderer::{pipelines::pbr_material::MaterialBinding, sampler_cache::SamplerCache, wgpu_context::WgpuContext, Layouts};
+use crate::renderer::{pipelines::pbr_material::MaterialBinding, sampler_cache::SamplerCache, wgpu_context::WgpuContext, Layouts, Renderer};
 
 use super::{cpu_resources::{AnimationClipCpuData, AnimationCpuData, CpuResources, MaterialCpuData, MeshCpuData, ModelCpuData, SkeletonCpuData, SubMesh, TextureCpuData}, file_formats::{animationfile, dds}, gpu_resources::{GpuResources, MeshGpuData, PlaceholderTextureIds, TextureGpuData}, io_manager::{IoManager, IoRequest, IoResponse}, registry::{AnimationClipHandle, AnimationHandle, CpuState, Entry, GpuState, MaterialHandle, MeshHandle, ModelHandle, ResourceKind, ResourceRegistry, SkeletonHandle, TextureHandle}, texture::upload_texture};
 
@@ -146,15 +146,12 @@ impl ResourceManager {
 
     pub fn process_upload_queue(
         self: &std::sync::Arc<Self>,
+        renderer: &mut Renderer,
         wgpu_context: &WgpuContext,
-        layouts: &Layouts,
-        placeholders: &PlaceholderTextureIds,
-        sampler_cache: &mut SamplerCache,
     ) {
         let mut upload_queue = self.upload_queue.lock().unwrap();
         let mut meshes_cpu = self.cpu.meshes.lock().unwrap();
         let mut textures_cpu = self.cpu.textures.lock().unwrap();
-        let mut textures_gpu = self.gpu.textures.lock().unwrap();
         let mut materials_gpu = self.gpu.materials.lock().unwrap();
         let mut queue_next_frame: Vec<Index> = vec![];
         'upload_queue: while let Some(id) = upload_queue.pop_front() {
@@ -212,6 +209,7 @@ impl ResourceManager {
                         texture.create_view(&wgpu::TextureViewDescriptor::default())
                     };
                     let texture_gpu = TextureGpuData { texture, texture_view };
+                    let mut textures_gpu = self.gpu.textures.lock().unwrap();
                     let gpu_idx = textures_gpu.insert(texture_gpu);
                     let mut reg = self.registry.lock().unwrap();
                     let entry = reg.entries.get_mut(id).unwrap();
@@ -220,96 +218,12 @@ impl ResourceManager {
                     textures_cpu.remove(entry_cpu_idx);
                 },
                 ResourceKind::Material => {
-                    let material_binding = {
-                        let mut materials_cpu = self.cpu.materials.lock().unwrap();
-                        let material_cpu = materials_cpu.get(entry_cpu_idx).unwrap();
-                        // check if textures uploaded to gpu, re-schedule if not
-                        let base_color_gpu_idx = {
-                            if let Some(handle) = material_cpu.base_color_texture.as_ref() {
-                                let reg = self.registry.lock().unwrap();
-                                match reg.get(handle).gpu_state {
-                                    GpuState::Ready(gpu_idx) => {
-                                        Some(gpu_idx)
-                                    },
-                                    _ => {
-                                        queue_next_frame.push(id);
-                                        continue 'upload_queue;
-                                    }
-                                }
-                            } else {
-                                None
-                            }
-                        };
-                        let emissive_gpu_idx = {
-                            if let Some(handle) = material_cpu.emissive_texture.as_ref() {
-                                let reg = self.registry.lock().unwrap();
-                                match reg.get(handle).gpu_state {
-                                    GpuState::Ready(gpu_idx) => {
-                                        Some(gpu_idx)
-                                    },
-                                    _ => {
-                                        queue_next_frame.push(id);
-                                        continue 'upload_queue;
-                                    }
-                                }
-                            } else {
-                                None
-                            }
-                        };
-                        let metallic_roughness_gpu_idx = {
-                            if let Some(handle) = material_cpu.metallic_roughness_texture.as_ref() {
-                                let reg = self.registry.lock().unwrap();
-                                match reg.get(handle).gpu_state {
-                                    GpuState::Ready(gpu_idx) => {
-                                        Some(gpu_idx)
-                                    },
-                                    _ => {
-                                        queue_next_frame.push(id);
-                                        continue 'upload_queue;
-                                    }
-                                }
-                            } else {
-                                None
-                            }
-                        };
-                        let normal_gpu_idx = {
-                            if let Some(handle) = material_cpu.normal_texture.as_ref() {
-                                let reg = self.registry.lock().unwrap();
-                                match reg.get(handle).gpu_state {
-                                    GpuState::Ready(gpu_idx) => {
-                                        Some(gpu_idx)
-                                    },
-                                    _ => {
-                                        queue_next_frame.push(id);
-                                        continue 'upload_queue;
-                                    }
-                                }
-                            } else {
-                                None
-                            }
-                        };
-                        let occlusion_gpu_idx = {
-                            if let Some(handle) = material_cpu.occlusion_texture.as_ref() {
-                                let reg = self.registry.lock().unwrap();
-                                match reg.get(handle).gpu_state {
-                                    GpuState::Ready(gpu_idx) => {
-                                        Some(gpu_idx)
-                                    },
-                                    _ => {
-                                        queue_next_frame.push(id);
-                                        continue 'upload_queue;
-                                    }
-                                }
-                            } else {
-                                None
-                            }
-                        };
-                        let base_color_view = &textures_gpu.get(base_color_gpu_idx.unwrap_or(placeholders.base_color)).unwrap().texture_view;
-                        let emissive_view = &textures_gpu.get(emissive_gpu_idx.unwrap_or(placeholders.emissive)).unwrap().texture_view;
-                        let metallic_roughness_view = &textures_gpu.get(metallic_roughness_gpu_idx.unwrap_or(placeholders.metallic_roughness)).unwrap().texture_view;
-                        let normal_view = &textures_gpu.get(normal_gpu_idx.unwrap_or(placeholders.normals)).unwrap().texture_view;
-                        let occlusion_view = &textures_gpu.get(occlusion_gpu_idx.unwrap_or(placeholders.occlusion)).unwrap().texture_view;
-                        MaterialBinding::upload(&material_cpu.manifest, base_color_view, emissive_view, metallic_roughness_view, normal_view, occlusion_view, &layouts.material, wgpu_context, sampler_cache)
+                    let material_binding = match renderer.upload_material(entry_cpu_idx, self, wgpu_context) {
+                        Ok(mat) => mat,
+                        Err(_) => {
+                            queue_next_frame.push(id);
+                            continue 'upload_queue;
+                        }
                     };
                     let gpu_idx = materials_gpu.insert(material_binding);
                     {
