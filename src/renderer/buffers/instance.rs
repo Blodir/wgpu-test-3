@@ -1,4 +1,7 @@
 use glam::{Mat3, Mat4};
+use wgpu::util::DeviceExt as _;
+
+use crate::renderer::wgpu_context::WgpuContext;
 
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
@@ -87,6 +90,37 @@ impl Instance {
             m4: mat4.to_cols_array_2d(),
             itr: itr.to_cols_array_2d(),
             palette_offset
+        }
+    }
+}
+
+pub struct Instances {
+    pub buffer: wgpu::Buffer,
+}
+impl Instances {
+    pub fn new(wgpu_context: &WgpuContext) -> Self {
+        let instance_buffer = wgpu_context
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Instance buffer"),
+                contents: bytemuck::cast_slice(&vec![Mat4::IDENTITY]),
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            });
+        Self {
+            buffer: instance_buffer,
+        }
+    }
+
+    pub fn update(&mut self, data: Vec<Instance>, queue: &wgpu::Queue, device: &wgpu::Device) {
+        let instance_bytes: &[u8] = bytemuck::cast_slice(&data);
+        if self.buffer.size() >= instance_bytes.len() as u64 {
+            queue.write_buffer(&self.buffer, 0, instance_bytes);
+        } else {
+            self.buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Instance buffer"),
+                contents: instance_bytes,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            });
         }
     }
 }

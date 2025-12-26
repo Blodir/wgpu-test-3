@@ -2,13 +2,7 @@ use std::{ops::Range, sync::Arc};
 
 use wgpu::{core::device, util::DeviceExt};
 
-use crate::{
-    renderer::{
-        pipelines::{
-            pbr_material::MaterialBinding, resources::depth_texture::DepthTexture, skinned_pbr::{instance::Instance, vertex::Vertex}
-        }, shader_cache::ShaderCache, utils, wgpu_context::{self, WgpuContext}, Instances
-    }, resource_manager::{registry::{GpuState, MaterialId, MeshId}, resource_manager::{self, ResourceManager}}, scene_tree::{RenderDataType, Scene}
-};
+use crate::{renderer::{attachments::depth::DepthTexture, buffers::{instance::Instance, vertex::Vertex}, shader_cache::ShaderCache, wgpu_context::WgpuContext}, resource_manager::{registry::{GpuState, MaterialId, MeshId}, resource_manager::ResourceManager}};
 
 pub struct ResolvedSubmesh {
     pub index_range: Range<u32>,
@@ -81,7 +75,7 @@ impl ModelPipeline {
                 bind_group_layouts,
                 push_constant_ranges: &[],
             });
-        let shader_module = shader_cache.get("src/renderer/pipelines/shaders/pbr.wgsl".to_string(), wgpu_context);
+        let shader_module = shader_cache.get("src/renderer/shaders/pbr.wgsl".to_string(), wgpu_context);
         wgpu_context.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Model Pipeline"),
             layout: Some(&render_pipeline_layout),

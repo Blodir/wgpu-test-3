@@ -2,7 +2,7 @@ use std::sync::Mutex;
 
 use generational_arena::{Arena, Index};
 
-use crate::renderer::{pipelines::pbr_material::MaterialBinding, wgpu_context::WgpuContext};
+use crate::renderer::{bindgroups::material::MaterialBinding, wgpu_context::WgpuContext};
 
 pub struct MeshGpuData {
     pub buffer: wgpu::Buffer,

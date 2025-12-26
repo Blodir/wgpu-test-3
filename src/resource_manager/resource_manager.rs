@@ -3,9 +3,9 @@ use std::{collections::VecDeque, sync::Mutex};
 use generational_arena::Index;
 use wgpu::util::{BufferInitDescriptor, DeviceExt as _};
 
-use crate::renderer::{pipelines::pbr_material::MaterialBinding, sampler_cache::SamplerCache, wgpu_context::WgpuContext, Layouts, Renderer};
+use crate::renderer::{wgpu_context::WgpuContext, Renderer};
 
-use super::{cpu_resources::{AnimationClipCpuData, AnimationCpuData, CpuResources, MaterialCpuData, MeshCpuData, ModelCpuData, SkeletonCpuData, SubMesh, TextureCpuData}, file_formats::{animationfile, dds}, gpu_resources::{GpuResources, MeshGpuData, PlaceholderTextureIds, TextureGpuData}, io_manager::{IoManager, IoRequest, IoResponse}, registry::{AnimationClipHandle, AnimationHandle, CpuState, Entry, GpuState, MaterialHandle, MeshHandle, ModelHandle, ResourceKind, ResourceRegistry, SkeletonHandle, TextureHandle}, texture::upload_texture};
+use super::{cpu_resources::{AnimationClipCpuData, AnimationCpuData, CpuResources, MaterialCpuData, MeshCpuData, ModelCpuData, SkeletonCpuData, SubMesh, TextureCpuData}, file_formats::{animationfile, dds}, gpu_resources::{GpuResources, MeshGpuData, TextureGpuData}, io_manager::{IoManager, IoRequest, IoResponse}, registry::{AnimationClipHandle, AnimationHandle, CpuState, Entry, GpuState, MaterialHandle, MeshHandle, ModelHandle, ResourceKind, ResourceRegistry, SkeletonHandle, TextureHandle}, texture::upload_texture};
 
 pub struct ResourceManager {
     pub registry: Mutex<ResourceRegistry>,

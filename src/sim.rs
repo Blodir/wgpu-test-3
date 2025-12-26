@@ -11,7 +11,7 @@ use winit::{
 };
 
 use crate::{
-    renderer::render_snapshot::{RenderSnapshot, SnapshotHandoff}, resource_manager::resource_manager::ResourceManager, scene_tree::{build_test_animation_blending, Scene}
+    render_snapshot::{RenderSnapshot, SnapshotHandoff}, resource_manager::resource_manager::ResourceManager, scene_tree::{build_test_animation_blending, Scene}
 };
 
 #[derive(Debug)]
