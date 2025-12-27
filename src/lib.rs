@@ -1,7 +1,7 @@
 use crossbeam_queue::SegQueue;
 use render_snapshot::{RenderSnapshot, SnapshotHandoff};
 use resource_manager::resource_manager::ResourceManager;
-use sim::{spawn_sim, InputEvent};
+use sim::sim::{spawn_sim, InputEvent};
 use std::sync::{Arc, Mutex};
 use winit::{
     application::ApplicationHandler,
@@ -12,8 +12,6 @@ use winit::{
 pub mod render_snapshot;
 pub mod resource_manager;
 pub mod renderer;
-pub mod scene_tree;
-pub mod animator;
 pub mod sim;
 pub mod app;
 

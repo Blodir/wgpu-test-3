@@ -4,7 +4,7 @@ use crossbeam_queue::SegQueue;
 use pollster::FutureExt as _;
 use winit::{application::ApplicationHandler, dpi::PhysicalSize, event::{DeviceEvent, WindowEvent}, event_loop::ActiveEventLoop, window::{Window, WindowId}};
 
-use crate::{render_snapshot::SnapshotHandoff, renderer::{wgpu_context::WgpuContext, Renderer}, resource_manager::resource_manager::ResourceManager, sim::InputEvent};
+use crate::{render_snapshot::SnapshotHandoff, renderer::{wgpu_context::WgpuContext, Renderer}, resource_manager::resource_manager::ResourceManager, sim::sim::InputEvent};
 
 fn resize(
     physical_size: PhysicalSize<u32>,

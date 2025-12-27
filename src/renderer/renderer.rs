@@ -25,7 +25,7 @@ use crate::render_snapshot::SnapshotHandoff;
 use crate::resource_manager::gpu_resources::PlaceholderTextureIds;
 use crate::resource_manager::registry::GpuState;
 use crate::resource_manager::resource_manager::ResourceManager;
-use crate::scene_tree::Camera;
+use crate::sim::scene_tree::Camera;
 
 pub struct Layouts {
     pub camera: wgpu::BindGroupLayout,

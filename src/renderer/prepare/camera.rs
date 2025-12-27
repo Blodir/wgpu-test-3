@@ -1,4 +1,4 @@
-use crate::{render_snapshot::SnapshotGuard, renderer::{bindgroups::camera::CameraBinding, utils::lerpf32}, scene_tree::Camera};
+use crate::{render_snapshot::SnapshotGuard, renderer::{bindgroups::camera::CameraBinding, utils::lerpf32}, sim::scene_tree::Camera};
 
 pub fn prepare_camera(
     camera: &mut CameraBinding,

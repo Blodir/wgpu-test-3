@@ -1,7 +1,7 @@
 use glam::{Mat3, Mat4, Quat, Vec3, Vec4};
 use wgpu::util::DeviceExt as _;
 
-use crate::{render_snapshot::SnapshotGuard, renderer::wgpu_context, scene_tree::Camera};
+use crate::{renderer::wgpu_context, sim::scene_tree::Camera};
 
 pub struct CameraMatrices {
     pub view_proj: [[f32; 4]; 4],

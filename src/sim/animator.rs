@@ -1,3 +1,5 @@
+use crate::render_snapshot::{AnimationSnapshot, AnimationStateSnapshot, AnimationTransitionSnapshot};
+
 /// What happens when animation time leaves [0, duration)
 #[derive(Clone, Copy)]
 pub enum TimeWrapMode {
@@ -63,31 +65,6 @@ pub enum AnimatorState {
 
 pub enum AnimatorError {
     AttemptedTransitionWhilePreviousTransitionStillPlaying
-}
-
-pub struct AnimationStateSnapshot {
-    pub clip_idx: u8,
-    pub time_wrap: TimeWrapMode,
-    pub boundary_mode: BoundaryMode,
-    /// time in seconds since the transition into this state started
-    pub animation_time: f32,
-}
-
-pub struct AnimationTransitionSnapshot {
-    pub from_clip_idx: u8,
-    pub to_clip_idx: u8,
-    pub blend_time: f32,
-    /// time in seconds since the transition to the previous state started
-    pub from_time: f32,
-    /// time in seconds since this transition started
-    pub to_time: f32,
-    pub from_time_wrap: TimeWrapMode,
-    pub to_time_wrap: TimeWrapMode,
-}
-
-pub enum AnimationSnapshot {
-    AnimationStateSnapshot(AnimationStateSnapshot),
-    AnimationTransitionSnapshot(AnimationTransitionSnapshot),
 }
 
 pub struct Animator {

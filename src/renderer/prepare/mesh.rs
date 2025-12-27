@@ -2,7 +2,7 @@ use std::{cmp::Ordering, collections::HashMap, ops::Range, sync::Arc};
 
 use glam::{Mat4, Quat, Vec3};
 
-use crate::{animator::{self, TimeWrapMode}, render_snapshot::SnapshotGuard, renderer::{bindgroups::bones::{BoneMat34, BonesBinding}, buffers::instance::{Instance, Instances}, pipelines::skinned::{DrawContext, MaterialBatch, MeshBatch, ResolvedSubmesh}, utils::lerpf32}, resource_manager::{animation::{AnimationClip, Channel, Track}, file_formats::{animationfile, skeletonfile}, registry::{CpuState, MaterialId, MeshId, ModelId}, resource_manager::ResourceManager}};
+use crate::{render_snapshot::{AnimationSnapshot, SnapshotGuard}, renderer::{bindgroups::bones::{BoneMat34, BonesBinding}, buffers::instance::{Instance, Instances}, pipelines::skinned::{DrawContext, MaterialBatch, MeshBatch, ResolvedSubmesh}, utils::lerpf32}, resource_manager::{animation::{AnimationClip, Channel, Track}, file_formats::{animationfile, skeletonfile}, registry::{CpuState, MaterialId, MeshId, ModelId}, resource_manager::ResourceManager}, sim::animator};
 
 struct UnresolvedSubmesh {
     transforms: Vec<Mat4>,
@@ -74,7 +74,7 @@ pub fn resolve_skinned_draw(
                 let skeleton = skeletons.get(skeleton_cpu_idx).unwrap();
                 let anim_snapshot = curr_instance.animation.as_ref().unwrap();
                 let anim_data = match &anim_snapshot {
-                    crate::animator::AnimationSnapshot::AnimationStateSnapshot(animation_state_snapshot) => {
+                    AnimationSnapshot::AnimationStateSnapshot(animation_state_snapshot) => {
                         let anim_clip = {
                             let anim_clip_handle = &model.animations[animation_state_snapshot.clip_idx as usize];
                             let anim_clip_entry = reg.get(anim_clip_handle);
@@ -96,16 +96,16 @@ pub fn resolve_skinned_draw(
                         let clip_time = prev_instance
                             .and_then(|node| node.animation.as_ref())
                             .map(|prev_anim_snap| match prev_anim_snap {
-                                crate::animator::AnimationSnapshot::AnimationStateSnapshot(animation_state_snapshot) =>
+                                AnimationSnapshot::AnimationStateSnapshot(animation_state_snapshot) =>
                                     animation_state_snapshot.animation_time,
-                                crate::animator::AnimationSnapshot::AnimationTransitionSnapshot(animation_transition_snapshot) =>
+                                AnimationSnapshot::AnimationTransitionSnapshot(animation_transition_snapshot) =>
                                     animation_transition_snapshot.to_time,
                             })
                             .map(|prev_time| lerpf32(prev_time, animation_state_snapshot.animation_time, t))
                             .unwrap_or(0f32);
                         AnimationData::Single(SingleAnimationData { clip: anim, time: clip_time, time_wrap_mode: animation_state_snapshot.time_wrap })
                     },
-                    crate::animator::AnimationSnapshot::AnimationTransitionSnapshot(animation_transition_snapshot) => {
+                    AnimationSnapshot::AnimationTransitionSnapshot(animation_transition_snapshot) => {
                         let from_clip = {
                             let anim_clip_handle = &model.animations[animation_transition_snapshot.from_clip_idx as usize];
                             let anim_clip_entry = reg.get(&anim_clip_handle);
@@ -149,9 +149,9 @@ pub fn resolve_skinned_draw(
                             .and_then(|nodes| nodes.get(node_idx))
                             .and_then(|node| node.animation.as_ref())
                             .map(|prev_anim_snap| match prev_anim_snap {
-                                crate::animator::AnimationSnapshot::AnimationStateSnapshot(animation_state_snapshot) =>
+                                AnimationSnapshot::AnimationStateSnapshot(animation_state_snapshot) =>
                                     (animation_state_snapshot.animation_time, 0.0),
-                                crate::animator::AnimationSnapshot::AnimationTransitionSnapshot(animation_transition_snapshot) =>
+                                AnimationSnapshot::AnimationTransitionSnapshot(animation_transition_snapshot) =>
                                     (animation_transition_snapshot.from_time, animation_transition_snapshot.to_time)
                             }).unwrap_or((0.0, 0.0));
                         let from_time = lerpf32(prev_times.0, animation_transition_snapshot.from_time, t);
@@ -343,7 +343,7 @@ fn compute_animated_pose(animation: &AnimationClip, skeleton: &skeletonfile::Ske
 struct SingleAnimationData<'a> {
     clip: &'a AnimationClip,
     time: f32,
-    time_wrap_mode: TimeWrapMode,
+    time_wrap_mode: animator::TimeWrapMode,
 }
 
 struct BlendAnimationData<'a> {
@@ -352,8 +352,8 @@ struct BlendAnimationData<'a> {
     from_time: f32,
     to_time: f32,
     blend_time: f32,
-    to_time_wrap_mode: TimeWrapMode,
-    from_time_wrap_mode: TimeWrapMode,
+    to_time_wrap_mode: animator::TimeWrapMode,
+    from_time_wrap_mode: animator::TimeWrapMode,
 }
 
 enum AnimationData<'a> {

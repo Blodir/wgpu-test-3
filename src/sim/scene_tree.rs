@@ -2,8 +2,10 @@ use std::sync::Arc;
 
 use glam::{Mat4, Vec3};
 
-use crate::{animator::{self, AnimationGraph, Animator}, resource_manager::{registry::{ModelHandle, TextureHandle}, resource_manager::ResourceManager}};
+use crate::resource_manager::{registry::{ModelHandle, TextureHandle}, resource_manager::ResourceManager};
 use generational_arena::{Arena, Index};
+
+use super::animator::{self, AnimationGraph, Animator};
 
 #[derive(Clone)]
 pub struct Sun {

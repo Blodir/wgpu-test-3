@@ -4,7 +4,7 @@ use arc_swap::{ArcSwap, Guard};
 use generational_arena::Index;
 use glam::Mat4;
 
-use crate::{animator::{AnimationGraph, AnimationSnapshot}, resource_manager::{registry::{ModelId, TextureId}, resource_manager::ResourceManager}, scene_tree::{Camera, Environment, RenderDataType, Scene, Sun}};
+use crate::{resource_manager::{registry::{ModelId, TextureId}, resource_manager::ResourceManager}, sim::{animator::{AnimationGraph, BoundaryMode, TimeWrapMode}, scene_tree::{Camera, Environment, RenderDataType, Scene, Sun}}};
 
 pub fn accumulate_model_instances(
     scene: &Scene,
@@ -30,6 +30,32 @@ pub fn accumulate_model_instances(
         accumulate_model_instances(scene, animation_graphs, models, &transform, *child);
     }
 }
+
+pub struct AnimationStateSnapshot {
+    pub clip_idx: u8,
+    pub time_wrap: TimeWrapMode,
+    pub boundary_mode: BoundaryMode,
+    /// time in seconds since the transition into this state started
+    pub animation_time: f32,
+}
+
+pub struct AnimationTransitionSnapshot {
+    pub from_clip_idx: u8,
+    pub to_clip_idx: u8,
+    pub blend_time: f32,
+    /// time in seconds since the transition to the previous state started
+    pub from_time: f32,
+    /// time in seconds since this transition started
+    pub to_time: f32,
+    pub from_time_wrap: TimeWrapMode,
+    pub to_time_wrap: TimeWrapMode,
+}
+
+pub enum AnimationSnapshot {
+    AnimationStateSnapshot(AnimationStateSnapshot),
+    AnimationTransitionSnapshot(AnimationTransitionSnapshot),
+}
+
 
 pub struct ModelInstance {
     pub transform: Mat4,

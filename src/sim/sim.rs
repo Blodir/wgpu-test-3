@@ -11,8 +11,10 @@ use winit::{
 };
 
 use crate::{
-    render_snapshot::{RenderSnapshot, SnapshotHandoff}, resource_manager::resource_manager::ResourceManager, scene_tree::{build_test_animation_blending, Scene}
+    render_snapshot::{RenderSnapshot, SnapshotHandoff}, resource_manager::resource_manager::ResourceManager
 };
+
+use super::scene_tree::build_test_animation_blending;
 
 #[derive(Debug)]
 pub enum InputEvent {
