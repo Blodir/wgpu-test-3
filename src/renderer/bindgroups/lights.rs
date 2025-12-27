@@ -3,7 +3,7 @@ use std::sync::Arc;
 use generational_arena::Index;
 use wgpu::util::DeviceExt as _;
 
-use crate::{renderer::{sampler_cache::SamplerCache, wgpu_context::WgpuContext}, resource_manager::{file_formats::materialfile, gpu_resources::PlaceholderTextureIds, resource_manager::ResourceManager}, scene_tree};
+use crate::{render_snapshot::SnapshotGuard, renderer::{sampler_cache::SamplerCache, wgpu_context::WgpuContext}, resource_manager::{file_formats::materialfile, gpu_resources::PlaceholderTextureIds, registry::GpuState, resource_manager::ResourceManager}, scene_tree};
 
 pub struct LightsBinding {
     pub sun_direction_buffer: wgpu::Buffer,

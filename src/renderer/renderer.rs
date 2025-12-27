@@ -6,27 +6,26 @@ use super::attachments::depth::DepthTexture;
 use super::attachments::msaa::MSAATextures;
 use super::attachments::skybox::SkyboxOutputTexture;
 use super::bindgroups::bones::BonesBinding;
-use super::bindgroups::camera::{prepare_camera, CameraBinding};
+use super::bindgroups::camera::CameraBinding;
 use super::bindgroups::lights::LightsBinding;
 use super::bindgroups::material::MaterialBinding;
 use super::buffers::instance::Instances;
 use super::pipelines::post_processing::PostProcessingPipeline;
 use super::pipelines::skinned::ModelPipeline;
 use super::pipelines::skybox::SkyboxPipeline;
-use super::resolve_skinned::resolve_skinned_draw;
+use super::prepare::camera::prepare_camera;
+use super::prepare::lights::prepare_lights;
+use super::prepare::mesh::resolve_skinned_draw;
 use super::sampler_cache::SamplerCache;
 use super::shader_cache::ShaderCache;
-use super::wgpu_context::{self, WgpuContext};
+use super::wgpu_context::WgpuContext;
 use generational_arena::Index;
-use glam::{Mat3, Mat4, Quat, Vec3, Vec4};
-use wgpu::util::DeviceExt as _;
 
-use crate::render_snapshot::{SnapshotGuard, SnapshotHandoff};
-use crate::resource_manager::file_formats::materialfile;
+use crate::render_snapshot::SnapshotHandoff;
 use crate::resource_manager::gpu_resources::PlaceholderTextureIds;
 use crate::resource_manager::registry::GpuState;
 use crate::resource_manager::resource_manager::ResourceManager;
-use crate::scene_tree::{self, Camera};
+use crate::scene_tree::Camera;
 
 pub struct Layouts {
     pub camera: wgpu::BindGroupLayout,
@@ -313,44 +312,5 @@ impl Renderer {
         Ok(
             MaterialBinding::upload(&material_cpu.manifest, base_color_view, emissive_view, metallic_roughness_view, normal_view, occlusion_view, &self.layouts.material, wgpu_context, &mut self.sampler_cache)
         )
-    }
-}
-
-pub fn lerpf32(a: f32, b: f32, t: f32) -> f32 {
-    a + (b - a) * t
-}
-
-pub fn prepare_lights(
-    snaps: &SnapshotGuard,
-    lights_binding: &mut LightsBinding,
-    resource_manager: &ResourceManager,
-    sampler_cache: &mut SamplerCache,
-    wgpu_context: &WgpuContext,
-    bind_group_layout: &wgpu::BindGroupLayout,
-) {
-    lights_binding.update_sun(&snaps.curr.environment.sun, &wgpu_context.queue);
-
-    let e = &snaps.curr.environment;
-    let reg = resource_manager.registry.lock().unwrap();
-    if let (Some(p_entry), Some(d_entry), Some(b_entry)) = (reg.get_id(&e.prefiltered), reg.get_id(&e.di), reg.get_id(&e.brdf)) {
-        if let (GpuState::Ready(p_gpu_idx), GpuState::Ready(d_gpu_idx), GpuState::Ready(b_gpu_idx)) = (&p_entry.gpu_state, &d_entry.gpu_state, &b_entry.gpu_state) {
-            // if one of env maps has changed, we must rebuild the bindgroup entirely
-            if *p_gpu_idx != lights_binding.curr_prefiltered_gpu_id || *d_gpu_idx != lights_binding.curr_prefiltered_gpu_id || *b_gpu_idx != lights_binding.curr_brdf_gpu_id {
-                let gpu_textures = resource_manager.gpu.textures.lock().unwrap();
-                let (prefiltered, di, brdf) = (gpu_textures.get(*p_gpu_idx).unwrap(), gpu_textures.get(*d_gpu_idx).unwrap(), gpu_textures.get(*b_gpu_idx).unwrap());
-                let default_sampler = sampler_cache.get(&materialfile::Sampler::default(), wgpu_context);
-                lights_binding.update_environment_map(
-                    wgpu_context, bind_group_layout,
-                    &prefiltered.texture_view, &default_sampler,
-                    &di.texture_view, &default_sampler,
-                    &brdf.texture_view, &default_sampler
-                );
-                lights_binding.curr_prefiltered_gpu_id = *p_gpu_idx;
-                lights_binding.curr_di_gpu_id = *d_gpu_idx;
-                lights_binding.curr_brdf_gpu_id = *b_gpu_idx;
-            }
-        }
-    } else {
-        println!("Warning: stale handle id when updating environment map");
     }
 }

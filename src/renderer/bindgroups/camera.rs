@@ -1,7 +1,7 @@
 use glam::{Mat3, Mat4, Quat, Vec3, Vec4};
 use wgpu::util::DeviceExt as _;
 
-use crate::{render_snapshot::SnapshotGuard, renderer::{lerpf32, wgpu_context}, scene_tree::Camera};
+use crate::{render_snapshot::SnapshotGuard, renderer::wgpu_context, scene_tree::Camera};
 
 pub struct CameraMatrices {
     pub view_proj: [[f32; 4]; 4],
@@ -163,26 +163,4 @@ impl CameraBinding {
             bytemuck::cast_slice(&matrices.inverse_view_proj_rot),
         );
     }
-}
-
-pub fn prepare_camera(
-    camera: &mut CameraBinding,
-    snaps: &SnapshotGuard,
-    t: f32,
-    queue: &wgpu::Queue,
-    surface_config: &wgpu::SurfaceConfiguration,
-) {
-    let prev = &snaps.prev.camera;
-    let curr = &snaps.curr.camera;
-    let interpolated_camera = Camera {
-        eye: prev.eye.lerp(curr.eye, t),
-        target: prev.target.lerp(curr.target, t),
-        up: prev.up.lerp(curr.up, t),
-        fovy: lerpf32(prev.fovy, curr.fovy, t),
-        znear: lerpf32(prev.znear, curr.znear, t),
-        zfar: lerpf32(prev.zfar, curr.zfar, t),
-        rot_x: lerpf32(prev.rot_x, curr.rot_x, t),
-        rot_y: lerpf32(prev.rot_y, curr.rot_y, t),
-    };
-    camera.update(&interpolated_camera, queue, surface_config);
 }

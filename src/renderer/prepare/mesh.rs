@@ -2,9 +2,7 @@ use std::{cmp::Ordering, collections::HashMap, ops::Range, sync::Arc};
 
 use glam::{Mat4, Quat, Vec3};
 
-use crate::{animator::{self, TimeWrapMode}, render_snapshot::SnapshotGuard, resource_manager::{animation::{AnimationClip, Channel, Track}, file_formats::{animationfile, skeletonfile}, registry::{CpuState, MaterialId, MeshId, ModelId}, resource_manager::ResourceManager}};
-
-use super::{bindgroups::bones::{BoneMat34, BonesBinding}, buffers::instance::{Instance, Instances}, lerpf32, pipelines::skinned::{DrawContext, MaterialBatch, MeshBatch, ResolvedSubmesh}};
+use crate::{animator::{self, TimeWrapMode}, render_snapshot::SnapshotGuard, renderer::{bindgroups::bones::{BoneMat34, BonesBinding}, buffers::instance::{Instance, Instances}, pipelines::skinned::{DrawContext, MaterialBatch, MeshBatch, ResolvedSubmesh}, utils::lerpf32}, resource_manager::{animation::{AnimationClip, Channel, Track}, file_formats::{animationfile, skeletonfile}, registry::{CpuState, MaterialId, MeshId, ModelId}, resource_manager::ResourceManager}};
 
 struct UnresolvedSubmesh {
     transforms: Vec<Mat4>,

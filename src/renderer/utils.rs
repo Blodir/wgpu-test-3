@@ -40,3 +40,6 @@ pub fn create_shader_module(device: &wgpu::Device, path: &str) -> wgpu::ShaderMo
     })
 }
 
+pub fn lerpf32(a: f32, b: f32, t: f32) -> f32 {
+    a + (b - a) * t
+}
