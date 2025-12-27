@@ -92,12 +92,8 @@ impl<'surface> ApplicationHandler for App<'surface> {
                     let mut renderer = render_context.renderer.lock().unwrap();
                     let wgpu_context = &mut render_context.wgpu_context;
                     resize(physical_size, wgpu_context, &mut renderer);
-                    renderer.camera.update(
-                        // TODO resize events should probably respect render loop interpolation
-                        &self.snap_handoff.load().curr.camera,
-                        &wgpu_context.queue,
-                        &wgpu_context.surface_config,
-                    );
+                    let aspect = wgpu_context.surface_config.width as f32 / wgpu_context.surface_config.height as f32;
+                    self.sim_inputs.push(InputEvent::AspectChange(aspect));
                 }
             }
             WindowEvent::ScaleFactorChanged {
@@ -109,11 +105,8 @@ impl<'surface> ApplicationHandler for App<'surface> {
                     let wgpu_context = &mut render_context.wgpu_context;
                     let new_size = wgpu_context.window.inner_size();
                     resize(new_size, wgpu_context, &mut renderer);
-                    renderer.camera.update(
-                        &self.snap_handoff.load().curr.camera,
-                        &wgpu_context.queue,
-                        &wgpu_context.surface_config,
-                    );
+                    let aspect = wgpu_context.surface_config.width as f32 / wgpu_context.surface_config.height as f32;
+                    self.sim_inputs.push(InputEvent::AspectChange(aspect));
                 }
             }
             WindowEvent::MouseWheel { .. }

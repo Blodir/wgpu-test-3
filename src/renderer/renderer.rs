@@ -21,11 +21,10 @@ use super::shader_cache::ShaderCache;
 use super::wgpu_context::WgpuContext;
 use generational_arena::Index;
 
-use crate::render_snapshot::SnapshotHandoff;
+use crate::render_snapshot::{CameraSnapshot, SnapshotHandoff};
 use crate::resource_manager::gpu_resources::PlaceholderTextureIds;
 use crate::resource_manager::registry::GpuState;
 use crate::resource_manager::resource_manager::ResourceManager;
-use crate::sim::scene_tree::Camera;
 
 pub struct Layouts {
     pub camera: wgpu::BindGroupLayout,
@@ -98,7 +97,7 @@ impl Renderer {
         );
 
         let camera = CameraBinding::new(
-            &Camera::default(),
+            &CameraSnapshot::default(),
             &wgpu_context.device,
             &wgpu_context.surface_config,
             &layouts.camera,

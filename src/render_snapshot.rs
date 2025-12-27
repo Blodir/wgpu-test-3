@@ -2,9 +2,9 @@ use std::{collections::HashMap, sync::Arc, time::Instant};
 
 use arc_swap::{ArcSwap, Guard};
 use generational_arena::Index;
-use glam::Mat4;
+use glam::{Mat4, Quat, Vec3};
 
-use crate::{resource_manager::{registry::{ModelId, TextureId}, resource_manager::ResourceManager}, sim::{animator::{AnimationGraph, BoundaryMode, TimeWrapMode}, scene_tree::{Camera, Environment, RenderDataType, Scene, Sun}}};
+use crate::{resource_manager::{registry::{ModelId, TextureId}, resource_manager::ResourceManager}, sim::{animator::{AnimationGraph, BoundaryMode, TimeWrapMode}, camera::Camera, scene_tree::{Environment, RenderDataType, Scene, Sun}}};
 
 pub fn accumulate_model_instances(
     scene: &Scene,
@@ -28,6 +28,25 @@ pub fn accumulate_model_instances(
     v.insert(node_handle, inst);
     for child in &node.children {
         accumulate_model_instances(scene, animation_graphs, models, &transform, *child);
+    }
+}
+
+pub struct CameraSnapshot {
+    pub position: Vec3,
+    pub rotation: Quat,
+    pub fovy: f32,
+    pub znear: f32,
+    pub zfar: f32,
+}
+impl Default for CameraSnapshot {
+    fn default() -> Self {
+        Self {
+            position: Vec3::ZERO,
+            rotation: Quat::IDENTITY,
+            fovy: 45.0f32,
+            znear: 0.1f32,
+            zfar: 100.0f32,
+        }
     }
 }
 
@@ -56,7 +75,6 @@ pub enum AnimationSnapshot {
     AnimationTransitionSnapshot(AnimationTransitionSnapshot),
 }
 
-
 pub struct ModelInstance {
     pub transform: Mat4,
     pub animation: Option<AnimationSnapshot>,
@@ -82,7 +100,7 @@ impl EnvironmentSnapshot {
 pub struct RenderSnapshot {
     pub model_instances: HashMap<ModelId, HashMap<Index, ModelInstance>>,
     pub environment: EnvironmentSnapshot,
-    pub camera: Camera,
+    pub camera: CameraSnapshot,
 }
 impl RenderSnapshot {
     pub fn build(scene: &Scene, animation_graphs: &Vec<AnimationGraph>) -> Self {
@@ -90,7 +108,7 @@ impl RenderSnapshot {
         accumulate_model_instances(scene, animation_graphs, &mut model_instances, &Mat4::IDENTITY, scene.root);
 
         let environment = EnvironmentSnapshot::from(&scene.environment);
-        let camera = scene.camera.clone();
+        let camera = scene.camera.build_snapshot();
         Self {
             model_instances,
             environment,
@@ -102,7 +120,7 @@ impl RenderSnapshot {
         Self {
             model_instances: HashMap::new(),
             environment: EnvironmentSnapshot::from(&Environment::init(resource_manager)),
-            camera: Camera::default(),
+            camera: Camera::default().build_snapshot(),
         }
     }
 }

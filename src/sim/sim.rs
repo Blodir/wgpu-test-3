@@ -20,6 +20,7 @@ use super::scene_tree::build_test_animation_blending;
 pub enum InputEvent {
     DeviceEvent(winit::event::DeviceEvent),
     WindowEvent(winit::event::WindowEvent),
+    AspectChange(f32),
     Exit,
 }
 
@@ -48,6 +49,7 @@ pub fn spawn_sim(
             'a: while let Some(event) = inputs.pop() {
                 match event {
                     InputEvent::Exit => return (),
+                    InputEvent::AspectChange(aspect) => scene.camera.aspect = aspect,
                     InputEvent::DeviceEvent(event) => match event {
                         DeviceEvent::MouseMotion { delta: (x, y) } => {
                             if !mouse_btn_is_pressed {

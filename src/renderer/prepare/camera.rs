@@ -1,4 +1,4 @@
-use crate::{render_snapshot::SnapshotGuard, renderer::{bindgroups::camera::CameraBinding, utils::lerpf32}, sim::scene_tree::Camera};
+use crate::{render_snapshot::{CameraSnapshot, SnapshotGuard}, renderer::{bindgroups::camera::CameraBinding, utils::lerpf32}};
 
 pub fn prepare_camera(
     camera: &mut CameraBinding,
@@ -9,15 +9,12 @@ pub fn prepare_camera(
 ) {
     let prev = &snaps.prev.camera;
     let curr = &snaps.curr.camera;
-    let interpolated_camera = Camera {
-        eye: prev.eye.lerp(curr.eye, t),
-        target: prev.target.lerp(curr.target, t),
-        up: prev.up.lerp(curr.up, t),
+    let interpolated_camera = CameraSnapshot {
+        position: prev.position.lerp(curr.position, t),
+        rotation: prev.rotation.slerp(curr.rotation, t),
         fovy: lerpf32(prev.fovy, curr.fovy, t),
         znear: lerpf32(prev.znear, curr.znear, t),
         zfar: lerpf32(prev.zfar, curr.zfar, t),
-        rot_x: lerpf32(prev.rot_x, curr.rot_x, t),
-        rot_y: lerpf32(prev.rot_y, curr.rot_y, t),
     };
     camera.update(&interpolated_camera, queue, surface_config);
 }

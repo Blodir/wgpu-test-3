@@ -1,7 +1,7 @@
 use glam::{Mat3, Mat4, Quat, Vec3, Vec4};
 use wgpu::util::DeviceExt as _;
 
-use crate::{renderer::wgpu_context, sim::scene_tree::Camera};
+use crate::{render_snapshot::CameraSnapshot, renderer::wgpu_context};
 
 pub struct CameraMatrices {
     pub view_proj: [[f32; 4]; 4],
@@ -17,7 +17,7 @@ pub struct CameraBinding {
 }
 impl CameraBinding {
     pub fn new(
-        camera: &Camera,
+        camera: &CameraSnapshot,
         device: &wgpu::Device,
         surface_config: &wgpu::SurfaceConfiguration,
         bind_group_layout: &wgpu::BindGroupLayout,
@@ -108,24 +108,19 @@ impl CameraBinding {
     }
 
     fn camera_to_matrices(
-        cam: &Camera,
+        cam: &CameraSnapshot,
         surface_config: &wgpu::SurfaceConfiguration,
     ) -> CameraMatrices {
-        let rot = Quat::from_rotation_y((cam.rot_x).to_radians())
-            * Quat::from_rotation_x((cam.rot_y).to_radians());
-        let eye_rotated: Vec3 = rot * cam.eye;
-        let view = Mat4::look_at_rh(eye_rotated, cam.target, cam.up);
-
-        let aspect = surface_config.width as f32 / surface_config.height as f32;
-        // cam.fovy expected in radians (use cam.fovy.to_radians() if it’s degrees).
+        let rot_inv = cam.rotation.conjugate();
+        let view = Mat4::from_rotation_translation(rot_inv, -(rot_inv * cam.position));
+        let aspect = if surface_config.height > 0 {
+            surface_config.width as f32 / surface_config.height as f32
+        } else {
+            16.0 / 9.0
+        };
         let proj = Mat4::perspective_rh(cam.fovy, aspect, cam.znear, cam.zfar);
-
         let view_proj: Mat4 = wgpu_context::OPENGL_TO_WGPU_MATRIX * proj * view;
-
-        // Upper-left 3×3, inverted (no transpose here; cgmath code didn’t transpose either)
         let m3 = Mat3::from_mat4(view_proj).inverse();
-
-        // Rebuild a 4×4 with zeroed last row/col (to match your cgmath layout exactly).
         let inverse_view_proj_rot = Mat4::from_cols(
             Vec4::new(m3.x_axis.x, m3.x_axis.y, m3.x_axis.z, 0.0),
             Vec4::new(m3.y_axis.x, m3.y_axis.y, m3.y_axis.z, 0.0),
@@ -135,14 +130,14 @@ impl CameraBinding {
 
         CameraMatrices {
             view_proj: view_proj.to_cols_array_2d(),
-            position: eye_rotated.to_array(),
+            position: cam.position.to_array(),
             inverse_view_proj_rot: inverse_view_proj_rot.to_cols_array_2d(),
         }
     }
 
     pub fn update(
         &self,
-        camera: &Camera,
+        camera: &CameraSnapshot,
         queue: &wgpu::Queue,
         surface_config: &wgpu::SurfaceConfiguration,
     ) {
