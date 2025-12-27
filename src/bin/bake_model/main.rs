@@ -1,3 +1,4 @@
+use aabb::{calculate_aabb, fold_aabb};
 use animations::bake_animation;
 use glam::Mat4;
 use gltf::Document;
@@ -15,6 +16,7 @@ use gltf_utils::{
 };
 use wgpu_test_3::resource_manager::file_formats::modelfile;
 
+mod aabb;
 mod tangents;
 mod normals;
 mod gltf_utils;
@@ -75,6 +77,7 @@ fn bake(
         accumulate_primitive_instances(&node, &Mat4::IDENTITY, &mut primitive_instances_map);
     }
     let skins: Vec<_> = gltf.skins().collect();
+    let mut aabbs = vec![];
 
     let mut output_primitives = vec![];
     let mut output_vertex_buffers = vec![];
@@ -146,6 +149,7 @@ fn bake(
         };
         let weights_buffer = read_weights_buffer(&primitive, buffers);
         let joints_buffer = read_joints_buffer(&primitive, buffers);
+        aabbs.push(calculate_aabb(&pos_buffer));
         for i in 0..pos_buffer.len() {
             let vert = Vertex {
                 position: pos_buffer[i],
@@ -211,6 +215,7 @@ fn bake(
         material_paths.push(json_path);
     }
 
+    let aabb = fold_aabb(&aabbs);
     let model = modelfile::Model {
         buffer_path: binary_path.to_string(),
         skeletonfile_path: skeletonfile_path.to_string(),
@@ -220,11 +225,7 @@ fn bake(
         primitives: output_primitives,
         material_paths,
         animations,
-        // TODO bounding box
-        aabb: modelfile::Aabb {
-            min: [0f32, 0f32, 0f32],
-            max: [0f32, 0f32, 0f32],
-        },
+        aabb,
     };
 
     fs::create_dir_all(directory_path)?;
