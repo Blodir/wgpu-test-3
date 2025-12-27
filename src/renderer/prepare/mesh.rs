@@ -221,7 +221,7 @@ pub fn resolve_skinned_draw(
                 let resolved_submesh = ResolvedSubmesh {
                     index_range: sub.index_range,
                     base_vertex: sub.base_vertex,
-                    instance_range: instance_data.len() as u32..sub.transforms.len() as u32,
+                    instance_range: instance_data.len() as u32..instance_data.len() as u32 + sub.transforms.len() as u32,
                 };
                 draws.push(resolved_submesh);
                 for transform in &sub.transforms {

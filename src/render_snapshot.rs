@@ -4,7 +4,7 @@ use arc_swap::{ArcSwap, Guard};
 use generational_arena::Index;
 use glam::{Mat4, Quat, Vec3};
 
-use crate::{resource_manager::{registry::{ModelId, TextureId}, resource_manager::ResourceManager}, sim::{animator::{AnimationGraph, BoundaryMode, TimeWrapMode}, camera::Camera, scene_tree::{Environment, RenderDataType, Scene, Sun}}};
+use crate::{resource_manager::{registry::{ModelId, TextureId}, resource_manager::ResourceManager}, sim::{animator::{AnimationGraph, BoundaryMode, TimeWrapMode}, camera::{frustum_intersects_aabb_world, Camera, Frustum}, scene_tree::{Environment, RenderDataType, Scene, Sun}}};
 
 pub fn accumulate_model_instances(
     scene: &Scene,
@@ -12,22 +12,40 @@ pub fn accumulate_model_instances(
     models: &mut HashMap<ModelId, HashMap<Index, ModelInstance>>,
     base_transform: &Mat4,
     node_handle: Index,
+    frustum: &Frustum,
+    resource_manager: &Arc<ResourceManager>,
 ) {
     let node = scene.nodes.get(node_handle).unwrap();
+    let transform = node.transform * base_transform;
     let (model_handle, maybe_animation_snapshot) = match &node.render_data {
+        RenderDataType::None => {
+            for child in &node.children {
+                accumulate_model_instances(scene, animation_graphs, models, &transform, *child, frustum, resource_manager);
+            }
+            return;
+        },
         RenderDataType::Model(model_handle) => (model_handle, None),
         RenderDataType::AnimatedModel(animated_model) => (&animated_model.model, Some(animated_model.animator.build_snapshot(animation_graphs))),
     };
     let v = models
         .entry(model_handle.id())
         .or_insert_with(HashMap::new);
-    let transform = node.transform * base_transform;
-    let inst = ModelInstance {
-        transform, animation: maybe_animation_snapshot
-    };
-    v.insert(node_handle, inst);
+
+    match resource_manager.registry.lock().unwrap().get(model_handle).cpu_state {
+        crate::resource_manager::registry::CpuState::Ready(index) => {
+            if let Some(model) = resource_manager.cpu.models.lock().unwrap().get(index) {
+                if frustum_intersects_aabb_world(frustum, &model.manifest.aabb, &transform) {
+                    let inst = ModelInstance {
+                        transform, animation: maybe_animation_snapshot
+                    };
+                    v.insert(node_handle, inst);
+                }
+            }
+        },
+        _ => (),
+    }
     for child in &node.children {
-        accumulate_model_instances(scene, animation_graphs, models, &transform, *child);
+        accumulate_model_instances(scene, animation_graphs, models, &transform, *child, frustum, resource_manager);
     }
 }
 
@@ -103,9 +121,10 @@ pub struct RenderSnapshot {
     pub camera: CameraSnapshot,
 }
 impl RenderSnapshot {
-    pub fn build(scene: &Scene, animation_graphs: &Vec<AnimationGraph>) -> Self {
+    pub fn build(scene: &Scene, resource_manager: &Arc<ResourceManager>, animation_graphs: &Vec<AnimationGraph>) -> Self {
         let mut model_instances = HashMap::<ModelId, HashMap<Index, ModelInstance>>::new();
-        accumulate_model_instances(scene, animation_graphs, &mut model_instances, &Mat4::IDENTITY, scene.root);
+        let frustum = scene.camera.build_frustum();
+        accumulate_model_instances(scene, animation_graphs, &mut model_instances, &Mat4::IDENTITY, scene.root, &frustum, resource_manager);
 
         let environment = EnvironmentSnapshot::from(&scene.environment);
         let camera = scene.camera.build_snapshot();

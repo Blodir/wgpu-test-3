@@ -29,6 +29,7 @@ pub struct AnimatedModel {
 pub enum RenderDataType {
     Model(ModelHandle),
     AnimatedModel(AnimatedModel),
+    None,
 }
 
 pub struct Environment {
@@ -75,6 +76,7 @@ impl Scene {
             self.environment.di = resource_manager.request_texture("assets/steinbach_field_4k.di.dds", true);
         }
         match &mut node.render_data {
+            RenderDataType::None => (),
             RenderDataType::Model(model_handle) => (),
             RenderDataType::AnimatedModel(animated_model) => {
                 // TODO remove this after testing
@@ -145,13 +147,28 @@ pub fn build_test_animation_blending(resource_manager: &Arc<ResourceManager>) ->
     let animation_graphs = vec![animation_graph];
 
     let model_handle = resource_manager.request_model("assets/local/Fox/Fox.json");
-    let render_data = RenderDataType::AnimatedModel(AnimatedModel { model: model_handle, animator: Animator::new(0, 0) });
+
+    let mut children = vec![];
+    for i in 0..6 {
+        for j in 0..6 {
+            let spacing = 200.0;
+            let transform = Mat4::from_translation(Vec3::new(i as f32 * spacing, 0.0, j as f32 * spacing));
+            let render_data = RenderDataType::AnimatedModel(AnimatedModel { model: model_handle.clone(), animator: Animator::new(0, 0) });
+            let child = nodes.insert(Node {
+                parent: None,
+                children: vec![],
+                transform,
+                render_data,
+            });
+            children.push(child);
+        }
+    }
 
     let root_handle = nodes.insert(Node {
         parent: None,
-        children: vec![],
+        children,
         transform: Mat4::IDENTITY,
-        render_data,
+        render_data: RenderDataType::None,
     });
 
     let environment = Environment {
