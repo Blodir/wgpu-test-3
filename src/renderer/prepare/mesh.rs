@@ -13,6 +13,7 @@ struct UnresolvedSubmesh {
 
 pub fn resolve_skinned_draw(
     bones: &mut BonesBinding,
+    bones_layout: &wgpu::BindGroupLayout,
     instances: &mut Instances,
     snaps: &SnapshotGuard,
     t: f32,
@@ -232,7 +233,7 @@ pub fn resolve_skinned_draw(
         }
     }
 
-    bones.update(joint_palette, queue);
+    bones.update(joint_palette, bones_layout, device, queue);
     instances.update(instance_data, queue, device);
 
     DrawContext {

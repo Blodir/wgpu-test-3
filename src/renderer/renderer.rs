@@ -183,7 +183,7 @@ impl Renderer {
             &self.lights.bind_group,
         );
 
-        let draw_context = resolve_skinned_draw(&mut self.bones, &mut self.instances, &snaps, t, resource_manager, &wgpu_context.device, &wgpu_context.queue);
+        let draw_context = resolve_skinned_draw(&mut self.bones, &self.layouts.bones, &mut self.instances, &snaps, t, resource_manager, &wgpu_context.device, &wgpu_context.queue);
 
         self.model_pipeline.render(
             draw_context,

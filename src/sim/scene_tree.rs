@@ -149,10 +149,13 @@ pub fn build_test_animation_blending(resource_manager: &Arc<ResourceManager>) ->
     let model_handle = resource_manager.request_model("assets/local/Fox/Fox.json");
 
     let mut children = vec![];
-    for i in 0..6 {
-        for j in 0..6 {
+    let grid_size = 50;
+    for i in 0..grid_size {
+        for j in 0..grid_size {
             let spacing = 200.0;
-            let transform = Mat4::from_translation(Vec3::new(i as f32 * spacing, 0.0, j as f32 * spacing));
+            let x = i as f32 * spacing - ((grid_size as f32 * spacing) / 2.0);
+            let z = j as f32 * spacing - ((grid_size as f32 * spacing) / 2.0);
+            let transform = Mat4::from_translation(Vec3::new(x, 0.0, z));
             let render_data = RenderDataType::AnimatedModel(AnimatedModel { model: model_handle.clone(), animator: Animator::new(0, 0) });
             let child = nodes.insert(Node {
                 parent: None,
