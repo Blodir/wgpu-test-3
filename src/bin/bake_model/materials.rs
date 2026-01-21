@@ -1,6 +1,6 @@
 use std::{fs::File, path::Path};
 
-use wgpu_test_3::resource_manager::file_formats::{dds::{create_dds, gltf_img_to_dxgi_format}, materialfile};
+use wgpu_test_3::resource_system::file_formats::{dds::{create_dds, gltf_img_to_dxgi_format}, materialfile};
 
 use crate::utils::ensure_parent_dir_exists;
 

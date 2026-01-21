@@ -3,14 +3,14 @@ use std::sync::Arc;
 use generational_arena::Index;
 use wgpu::util::DeviceExt as _;
 
-use crate::{renderer::{sampler_cache::SamplerCache, wgpu_context::WgpuContext}, resource_manager::{file_formats::materialfile, gpu_resources::PlaceholderTextureIds, resource_manager::ResourceManager}, sim::scene_tree};
+use crate::{renderer::{sampler_cache::SamplerCache, wgpu_context::WgpuContext}, resource_system::{file_formats::materialfile, render_resources::{self, PlaceholderTextureIds, RenderResources, TextureRenderId}, resource_manager::ResourceManager}, sim::scene_tree};
 
 pub struct LightsBinding {
     pub sun_direction_buffer: wgpu::Buffer,
     pub sun_color_buffer: wgpu::Buffer,
-    pub curr_prefiltered_gpu_id: Index,
-    pub curr_di_gpu_id: Index,
-    pub curr_brdf_gpu_id: Index,
+    pub curr_prefiltered_render_id: TextureRenderId,
+    pub curr_di_render_id: TextureRenderId,
+    pub curr_brdf_render_id: TextureRenderId,
     pub bind_group: wgpu::BindGroup,
 }
 impl LightsBinding {
@@ -96,7 +96,7 @@ impl LightsBinding {
     }
 
     pub fn new(
-        resource_manager: &Arc<ResourceManager>,
+        render_resources: &RenderResources,
         sampler_cache: &mut SamplerCache,
         placeholders: &PlaceholderTextureIds,
         wgpu_context: &WgpuContext,
@@ -113,8 +113,8 @@ impl LightsBinding {
             contents: bytemuck::cast_slice(&sun.color),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
-        let textures = resource_manager.gpu.textures.lock().unwrap();
-        let (prefiltered, di, brdf) = (textures.get(placeholders.prefiltered).unwrap(), textures.get(placeholders.di).unwrap(), textures.get(placeholders.brdf).unwrap());
+        let textures = &render_resources.textures;
+        let (prefiltered, di, brdf) = (textures.get(placeholders.prefiltered.into()).unwrap(), textures.get(placeholders.di.into()).unwrap(), textures.get(placeholders.brdf.into()).unwrap());
         let default_sampler = sampler_cache.get(&materialfile::Sampler::default(), wgpu_context);
         let bind_group = wgpu_context.device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: bind_group_layout,
@@ -159,9 +159,9 @@ impl LightsBinding {
             sun_direction_buffer: direction_buffer,
             sun_color_buffer: color_buffer,
             bind_group,
-            curr_prefiltered_gpu_id: placeholders.prefiltered,
-            curr_di_gpu_id: placeholders.di,
-            curr_brdf_gpu_id: placeholders.brdf,
+            curr_prefiltered_render_id: placeholders.prefiltered,
+            curr_di_render_id: placeholders.di,
+            curr_brdf_render_id: placeholders.brdf,
         }
     }
 

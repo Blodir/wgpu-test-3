@@ -1,11 +1,14 @@
-use std::sync::Arc;
+use std::{cell::RefCell, rc::Rc, sync::Arc};
 
 use glam::{Mat4, Vec3};
 
-use crate::resource_manager::{registry::{ModelHandle, TextureHandle}, resource_manager::ResourceManager};
+use crate::resource_system::{registry::{ModelHandle, RegistryExt as _, ResourceRegistry, TextureHandle}, resource_manager::ResourceManager};
 use generational_arena::{Arena, Index};
 
 use super::{animator::{self, AnimationGraph, Animator}, camera::Camera};
+
+#[derive(Hash, Eq, PartialEq, Clone, Copy)]
+pub struct SceneNodeId(Index);
 
 #[derive(Clone)]
 pub struct Sun {
@@ -39,12 +42,12 @@ pub struct Environment {
     pub brdf: TextureHandle,
 }
 impl Environment {
-    pub fn init(resource_manager: &Arc<ResourceManager>) -> Self {
+    pub fn init(resource_registry: &Rc<RefCell<ResourceRegistry>>) -> Self {
         Self {
             sun: Sun::default(),
-            prefiltered: resource_manager.request_texture("assets/kloofendal_overcast_puresky_8k.prefiltered.dds", true),
-            di: resource_manager.request_texture("assets/kloofendal_overcast_puresky_8k.di.dds", true),
-            brdf: resource_manager.request_texture("assets/brdf_lut.png", false),
+            prefiltered: resource_registry.request_texture("assets/kloofendal_overcast_puresky_8k.prefiltered.dds", true),
+            di: resource_registry.request_texture("assets/kloofendal_overcast_puresky_8k.di.dds", true),
+            brdf: resource_registry.request_texture("assets/brdf_lut.png", false),
         }
     }
 }
@@ -64,16 +67,16 @@ pub struct Scene {
     pub global_time_sec: f32,
 }
 impl Scene {
-    pub fn update(&mut self, resource_manager: &Arc<ResourceManager>, animation_graphs: &Vec<AnimationGraph>, node: Index, dt: f32) {
+    pub fn update(&mut self, resource_registry: &Rc<RefCell<ResourceRegistry>>, animation_graphs: &Vec<AnimationGraph>, node: Index, dt: f32) {
         let node = &mut self.nodes[node];
         // TODO remove this after testing
         if (self.global_time_sec % 16.0).abs() < dt {
-            self.environment.prefiltered = resource_manager.request_texture("assets/kloofendal_overcast_puresky_8k.prefiltered.dds", true);
-            self.environment.di = resource_manager.request_texture("assets/kloofendal_overcast_puresky_8k.di.dds", true);
+            self.environment.prefiltered = resource_registry.request_texture("assets/kloofendal_overcast_puresky_8k.prefiltered.dds", true);
+            self.environment.di = resource_registry.request_texture("assets/kloofendal_overcast_puresky_8k.di.dds", true);
         }
         if (self.global_time_sec % 16.0 - 8.0).abs() < dt {
-            self.environment.prefiltered = resource_manager.request_texture("assets/steinbach_field_4k.prefiltered.dds", true);
-            self.environment.di = resource_manager.request_texture("assets/steinbach_field_4k.di.dds", true);
+            self.environment.prefiltered = resource_registry.request_texture("assets/steinbach_field_4k.prefiltered.dds", true);
+            self.environment.di = resource_registry.request_texture("assets/steinbach_field_4k.di.dds", true);
         }
         match &mut node.render_data {
             RenderDataType::None => (),
@@ -123,12 +126,12 @@ impl Scene {
             },
         }
         for child_idx in node.children.clone() {
-            self.update(resource_manager, animation_graphs, child_idx, dt);
+            self.update(resource_registry, animation_graphs, child_idx, dt);
         }
     }
 }
 
-pub fn build_test_animation_blending(resource_manager: &Arc<ResourceManager>) -> (Scene, Vec<AnimationGraph>) {
+pub fn build_test_animation_blending(resource_registry: &Rc<RefCell<ResourceRegistry>>) -> (Scene, Vec<AnimationGraph>) {
     let mut nodes = Arena::new();
 
     let animation_graph = AnimationGraph {
@@ -146,10 +149,10 @@ pub fn build_test_animation_blending(resource_manager: &Arc<ResourceManager>) ->
     };
     let animation_graphs = vec![animation_graph];
 
-    let model_handle = resource_manager.request_model("assets/local/Fox/Fox.json");
+    let model_handle = resource_registry.request_model("assets/local/Fox/Fox.json");
 
     let mut children = vec![];
-    let grid_size = 50;
+    let grid_size = 10;
     for i in 0..grid_size {
         for j in 0..grid_size {
             let spacing = 200.0;
@@ -176,9 +179,9 @@ pub fn build_test_animation_blending(resource_manager: &Arc<ResourceManager>) ->
 
     let environment = Environment {
         sun: Sun::default(),
-        prefiltered: resource_manager.request_texture("assets/kloofendal_overcast_puresky_8k.prefiltered.dds", true),
-        di: resource_manager.request_texture("assets/kloofendal_overcast_puresky_8k.di.dds", true),
-        brdf: resource_manager.request_texture("assets/brdf_lut.png", false),
+        prefiltered: resource_registry.request_texture("assets/kloofendal_overcast_puresky_8k.prefiltered.dds", true),
+        di: resource_registry.request_texture("assets/kloofendal_overcast_puresky_8k.di.dds", true),
+        brdf: resource_registry.request_texture("assets/brdf_lut.png", false),
     };
 
     let scene = Scene {

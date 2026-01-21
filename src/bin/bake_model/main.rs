@@ -14,7 +14,7 @@ use gltf_utils::{
     read_occlusion_texcoord_buffer, read_position_buffer, read_tangents_buffer, read_weights_buffer,
     JointsBuffer,
 };
-use wgpu_test_3::resource_manager::file_formats::modelfile;
+use wgpu_test_3::resource_system::file_formats::modelfile;
 
 mod aabb;
 mod tangents;

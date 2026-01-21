@@ -1,30 +1,10 @@
-use std::{ops::Range, sync::Arc};
+use std::ops::Range;
 
-use wgpu::{core::device, util::DeviceExt};
+use crate::{render_snapshot::SkinnedMeshDrawSnapshot, renderer::{attachments::depth::DepthTexture, buffers::{instance::Instance, vertex::Vertex}, shader_cache::ShaderCache, wgpu_context::WgpuContext}, resource_system::{registry::{MaterialId, MeshId, RenderState}, render_resources::{self, MaterialRenderId, MeshRenderId, RenderResources}, resource_manager::ResourceManager}};
 
-use crate::{renderer::{attachments::depth::DepthTexture, buffers::{instance::Instance, vertex::Vertex}, shader_cache::ShaderCache, wgpu_context::WgpuContext}, resource_manager::{registry::{GpuState, MaterialId, MeshId}, resource_manager::ResourceManager}};
-
-pub struct ResolvedSubmesh {
-    pub index_range: Range<u32>,
-    pub instance_range: Range<u32>,
-    pub base_vertex: i32,
-}
-
-pub struct MeshBatch {
-    pub mesh: MeshId,
-    pub vertex_buffer_start_offset: u64,
-    pub draw_range: std::ops::Range<usize>,
-}
-
-pub struct MaterialBatch {
-    pub material: MaterialId,
-    pub mesh_range: std::ops::Range<usize>,
-}
-
-pub struct DrawContext {
-    pub draws: Vec<ResolvedSubmesh>,
-    pub material_batches: Vec<MaterialBatch>,
-    pub mesh_batches: Vec<MeshBatch>,
+pub struct DrawContext<'a> {
+    pub snap: &'a SkinnedMeshDrawSnapshot,
+    pub instance_ranges: Vec<Range<u32>>,
 }
 
 pub struct ModelPipeline {
@@ -130,11 +110,10 @@ impl ModelPipeline {
         camera_bind_group: &wgpu::BindGroup,
         lights_bind_group: &wgpu::BindGroup,
         bones_bind_group: &wgpu::BindGroup,
-        resource_manager: &Arc<ResourceManager>
+        render_resources: &RenderResources
     ) {
-        let reg = resource_manager.registry.lock().unwrap();
-        let gpu_materials = resource_manager.gpu.materials.lock().unwrap();
-        let gpu_meshes = resource_manager.gpu.meshes.lock().unwrap();
+        let gpu_materials = &render_resources.materials;
+        let gpu_meshes = &render_resources.meshes;
 
         // TODO can this descriptor be reused?
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -164,29 +143,15 @@ impl ModelPipeline {
         render_pass.set_bind_group(1, lights_bind_group, &[]);
         render_pass.set_bind_group(3, bones_bind_group, &[]);
 
-        'mat_loop: for material_batch in &draw_context.material_batches {
-            let mat_entry = match reg.get_id(&material_batch.material) {
-                Some(e) => e,
-                None => continue 'mat_loop,
-            };
-            let material = match mat_entry.gpu_state {
-                GpuState::Ready(index) => gpu_materials.get(index).unwrap(),
-                _ => continue 'mat_loop,
-            };
+        for material_batch in &draw_context.snap.material_batches {
+            let material = gpu_materials.get(material_batch.material.into()).unwrap();
             render_pass.set_bind_group(
                 2u32,
                 &material.bind_group,
                 &[],
             );
-            'mesh_loop: for mesh_batch in &draw_context.mesh_batches[material_batch.mesh_range.clone()] {
-                let mesh_entry = match reg.get_id(&mesh_batch.mesh) {
-                    Some(e) => e,
-                    None => continue 'mesh_loop,
-                };
-                let mesh = match mesh_entry.gpu_state {
-                    GpuState::Ready(index) => gpu_meshes.get(index).unwrap(),
-                    _ => continue 'mat_loop,
-                };
+            for mesh_batch in &draw_context.snap.mesh_batches[material_batch.mesh_range.clone()] {
+                let mesh = gpu_meshes.get(mesh_batch.mesh.into()).unwrap();
                 render_pass.set_index_buffer(
                     mesh.buffer.slice(0..mesh_batch.vertex_buffer_start_offset),
                     wgpu::IndexFormat::Uint32,
@@ -197,11 +162,12 @@ impl ModelPipeline {
                     1u32,
                     mesh.buffer.slice(mesh_batch.vertex_buffer_start_offset..)
                 );
-                for draw in &draw_context.draws[mesh_batch.draw_range.clone()] {
+                for draw_idx in mesh_batch.draw_range.clone() {
+                    let draw = &draw_context.snap.draws[draw_idx];
                     render_pass.draw_indexed(
                         draw.index_range.clone(),
                         draw.base_vertex,
-                        draw.instance_range.clone(),
+                        draw_context.instance_ranges[draw_idx].clone(),
                     );
                 }
             }

@@ -11,7 +11,7 @@ pub struct Primitive {
     pub material: u32,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Aabb {
     pub min: [f32; 3],
     pub max: [f32; 3],

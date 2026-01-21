@@ -1,29 +1,28 @@
 use std::{fs::File, io::Read as _};
 
 use ddsfile::{Caps2, Dds};
-use generational_arena::Index;
 use glam::{Quat, Vec3};
 
-use super::{animation, file_formats::{animationfile, dds, materialfile, modelfile, skeletonfile}, texture::TextureLoadData};
+use super::{animation, file_formats::{animationfile, dds, materialfile, modelfile, skeletonfile}, registry::{AnimationClipId, AnimationId, HandleId, MaterialId, MeshId, ModelId, SkeletonId, TextureId}, texture::TextureLoadData};
 
 pub enum IoRequest {
-    LoadModel { id: Index, path: String },
-    LoadMesh { id: Index, path: String },
-    LoadMaterial { id: Index, path: String },
-    LoadSkeleton { id: Index, path: String },
-    LoadAnimationClip { id: Index, path: String },
-    LoadAnimation { id: Index, path: String, header: animationfile::AnimationClip },
-    LoadTexture { id: Index, path: String, srgb: bool },
+    LoadModel { id: ModelId, path: String },
+    LoadMesh { id: MeshId, path: String },
+    LoadMaterial { id: MaterialId, path: String },
+    LoadSkeleton { id: SkeletonId, path: String },
+    LoadAnimationClip { id: AnimationClipId, path: String },
+    LoadAnimation { id: AnimationId, path: String, header: animationfile::AnimationClip },
+    LoadTexture { id: TextureId, path: String, srgb: bool },
 }
 
 pub enum IoResponse {
-    ModelLoaded { id: Index, model: modelfile::Model },
-    MeshLoaded { id: Index, data: Vec<u8> },
-    MaterialLoaded { id: Index, material: materialfile::Material },
-    SkeletonLoaded { id: Index, skeleton: skeletonfile::Skeleton },
-    AnimationClipLoaded { id: Index, clip: animationfile::AnimationClip },
-    AnimationLoaded { id: Index, parsed_clip: animation::AnimationClip },
-    TextureLoaded { id: Index, data: TextureLoadData },
+    ModelLoaded { id: ModelId, model: modelfile::Model },
+    MeshLoaded { id: MeshId, data: Vec<u8> },
+    MaterialLoaded { id: MaterialId, material: materialfile::Material },
+    SkeletonLoaded { id: SkeletonId, skeleton: skeletonfile::Skeleton },
+    AnimationClipLoaded { id: AnimationClipId, clip: animationfile::AnimationClip },
+    AnimationLoaded { id: AnimationId, parsed_clip: animation::AnimationClip },
+    TextureLoaded { id: TextureId, data: TextureLoadData },
     Error { path: String, message: String },
 }
 

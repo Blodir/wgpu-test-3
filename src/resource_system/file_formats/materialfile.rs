@@ -88,20 +88,20 @@ impl WrapMode {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SampledTexture {
     pub source: String,
     pub sampler: Sampler,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum AlphaMode {
     Opaque,
     Mask,
     Blend,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Material {
     pub base_color_factor: [f32; 4],
     pub metallic_factor: f32,

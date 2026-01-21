@@ -4,7 +4,7 @@ use crossbeam_queue::SegQueue;
 use pollster::FutureExt as _;
 use winit::{application::ApplicationHandler, dpi::PhysicalSize, event::{DeviceEvent, WindowEvent}, event_loop::ActiveEventLoop, window::{Window, WindowId}};
 
-use crate::{render_snapshot::SnapshotHandoff, renderer::{wgpu_context::WgpuContext, Renderer}, resource_manager::resource_manager::ResourceManager, sim::sim::InputEvent};
+use crate::{render_snapshot::SnapshotHandoff, renderer::{wgpu_context::WgpuContext, Renderer}, resource_system::{render_resources::RenderResources, resource_manager::ResourceManager}, sim::sim::InputEvent};
 
 fn resize(
     physical_size: PhysicalSize<u32>,
@@ -23,6 +23,7 @@ fn resize(
 
 struct RenderContext<'surface> {
     renderer: Arc<Mutex<Renderer>>,
+    render_resources: RenderResources,
     window: Arc<Window>,
     wgpu_context: WgpuContext<'surface>,
 }
@@ -31,11 +32,11 @@ pub struct App<'surface> {
     render_context: Option<RenderContext<'surface>>,
     snap_handoff: Arc<SnapshotHandoff>,
     sim_inputs: Arc<SegQueue<InputEvent>>,
-    resource_manager: Arc<ResourceManager>,
+    resource_manager: ResourceManager,
 }
 
 impl App<'_> {
-    pub fn new(sim_inputs: Arc<SegQueue<InputEvent>>, snap_handoff: Arc<SnapshotHandoff>, resource_manager: Arc<ResourceManager>) -> Self {
+    pub fn new(sim_inputs: Arc<SegQueue<InputEvent>>, snap_handoff: Arc<SnapshotHandoff>, resource_manager: ResourceManager) -> Self {
         Self {
             render_context: None,
             snap_handoff,
@@ -53,16 +54,18 @@ impl<'surface> ApplicationHandler for App<'surface> {
                 .unwrap(),
         );
         let wgpu_context = WgpuContext::new(window.clone()).block_on();
-        let placeholders = self.resource_manager.gpu.initialize_placeholders(&wgpu_context);
+        let mut render_resources = RenderResources::new();
+        let placeholders = render_resources.initialize_placeholders(&wgpu_context);
         let renderer = Arc::new(
             Mutex::new(
-                Renderer::new(&wgpu_context, self.snap_handoff.clone(), placeholders, &self.resource_manager)
+                Renderer::new(&wgpu_context, self.snap_handoff.clone(), placeholders, &render_resources)
             )
         );
         self.render_context = Some(
             RenderContext {
                 window,
                 renderer,
+                render_resources,
                 wgpu_context,
             }
         );
@@ -74,13 +77,15 @@ impl<'surface> ApplicationHandler for App<'surface> {
                 event_loop.exit();
             }
             WindowEvent::RedrawRequested => {
-                self.resource_manager.process_io_responses();
                 if let Some(ref mut render_context) = self.render_context {
+                    self.resource_manager.process_io_responses(&mut render_context.render_resources, &render_context.wgpu_context);
                     let mut renderer = render_context.renderer.lock().unwrap();
-                    self.resource_manager.process_upload_queue(&mut renderer, &render_context.wgpu_context);
+                    self.resource_manager.process_game_responses(&mut renderer, &mut render_context.render_resources, &render_context.wgpu_context);
+                    self.resource_manager.process_reg_requests();
+                    // self.resource_manager.process_upload_queue(&mut renderer, &mut render_context.render_resources, &render_context.wgpu_context);
                     match renderer.render(
                         &render_context.wgpu_context,
-                        &self.resource_manager,
+                        &render_context.render_resources,
                     ) {
                         Ok(_) => {}
                         Err(e) => eprintln!("render error: {:?}", e),

@@ -1,6 +1,6 @@
 use crossbeam_queue::SegQueue;
 use render_snapshot::{RenderSnapshot, SnapshotHandoff};
-use resource_manager::resource_manager::ResourceManager;
+use resource_system::resource_manager::ResourceManager;
 use sim::sim::{spawn_sim, InputEvent};
 use std::sync::{Arc, Mutex};
 use winit::{
@@ -10,22 +10,26 @@ use winit::{
 };
 
 pub mod render_snapshot;
-pub mod resource_manager;
+pub mod resource_system;
 pub mod renderer;
 pub mod sim;
 pub mod app;
 
 pub fn run() {
-    let resource_manager = Arc::new(ResourceManager::new());
-    let initial_snap = RenderSnapshot::init(&resource_manager);
+    let (game_req_tx, game_req_rx) = crossbeam::channel::unbounded();
+    let (game_res_tx, game_res_rx) = crossbeam::channel::unbounded();
+    let (registry_req_tx, registry_req_rx) = crossbeam::channel::unbounded();
+    let (registry_res_tx, registry_res_rx) = crossbeam::channel::unbounded();
+    let resource_manager = ResourceManager::new(registry_req_rx, registry_res_tx, game_res_rx, game_req_tx);
+    let initial_snap = RenderSnapshot::init();
     let snap_handoff = Arc::new(SnapshotHandoff::new(initial_snap));
     let sim_inputs = Arc::new(SegQueue::<InputEvent>::new());
-    let sim_handle = spawn_sim(sim_inputs.clone(), snap_handoff.clone(), resource_manager.clone());
+    let sim_handle = spawn_sim(sim_inputs.clone(), snap_handoff.clone(), registry_req_tx, registry_res_rx, game_req_rx, game_res_tx);
 
     let app = Arc::new(Mutex::new(app::App::new(
         sim_inputs.clone(),
         snap_handoff.clone(),
-        resource_manager.clone(),
+        resource_manager,
     )));
     let event_loop = EventLoop::new().unwrap();
     event_loop.set_control_flow(ControlFlow::Poll);

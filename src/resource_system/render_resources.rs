@@ -1,8 +1,66 @@
-use std::sync::Mutex;
+use std::ops::Range;
 
 use generational_arena::{Arena, Index};
 
 use crate::renderer::{bindgroups::material::MaterialBinding, wgpu_context::WgpuContext};
+
+use super::{animation::AnimationClip, file_formats::{animationfile, skeletonfile::Skeleton}};
+
+#[derive(Hash, Eq, PartialEq, Clone, Copy)]
+pub struct ModelRenderId(pub Index);
+impl Into<Index> for ModelRenderId {
+    fn into(self) -> Index {
+        self.0
+    }
+}
+
+#[derive(Hash, Eq, PartialEq, Clone, Copy)]
+pub struct SkeletonRenderId(pub Index);
+impl Into<Index> for SkeletonRenderId {
+    fn into(self) -> Index {
+        self.0
+    }
+}
+
+#[derive(Hash, Eq, PartialEq, Clone, Copy)]
+pub struct AnimationClipRenderId(pub Index);
+impl Into<Index> for AnimationClipRenderId {
+    fn into(self) -> Index {
+        self.0
+    }
+}
+
+#[derive(Hash, Eq, PartialEq, Clone, Copy)]
+pub struct AnimationRenderId(pub Index);
+impl Into<Index> for AnimationRenderId {
+    fn into(self) -> Index {
+        self.0
+    }
+}
+
+#[derive(Hash, Eq, PartialEq, Clone, Copy)]
+pub struct MeshRenderId(pub Index);
+impl Into<Index> for MeshRenderId {
+    fn into(self) -> Index {
+        self.0
+    }
+}
+
+#[derive(Hash, Eq, PartialEq, Clone, Copy)]
+pub struct MaterialRenderId(pub Index);
+impl Into<Index> for MaterialRenderId {
+    fn into(self) -> Index {
+        self.0
+    }
+}
+
+#[derive(Hash, Eq, PartialEq, Clone, Copy)]
+pub struct TextureRenderId(pub Index);
+impl Into<Index> for TextureRenderId {
+    fn into(self) -> Index {
+        self.0
+    }
+}
 
 pub struct MeshGpuData {
     pub buffer: wgpu::Buffer,
@@ -15,36 +73,67 @@ pub struct TextureGpuData {
 
 /// indices to GpuResources textures arena
 pub struct PlaceholderTextureIds {
-    pub normals: Index,
-    pub base_color: Index,
-    pub occlusion: Index,
-    pub emissive: Index,
-    pub metallic_roughness: Index,
-    pub prefiltered: Index,
-    pub di: Index,
-    pub brdf: Index,
+    pub normals: TextureRenderId,
+    pub base_color: TextureRenderId,
+    pub occlusion: TextureRenderId,
+    pub emissive: TextureRenderId,
+    pub metallic_roughness: TextureRenderId,
+    pub prefiltered: TextureRenderId,
+    pub di: TextureRenderId,
+    pub brdf: TextureRenderId,
 }
 
-pub struct GpuResources {
-    pub meshes: Mutex<Arena<MeshGpuData>>,
-    pub materials: Mutex<Arena<MaterialBinding>>,
-    pub textures: Mutex<Arena<TextureGpuData>>,
+pub struct SubMesh {
+    pub instances: Vec<[[f32; 4]; 4]>,
+    pub index_range: Range<u32>,
+    pub base_vertex: u32,
+    pub material: MaterialRenderId,
 }
-impl GpuResources {
+
+pub struct ModelRenderData {
+    pub vertex_buffer_start_offset: u32,
+    pub mesh: MeshRenderId,
+    pub submeshes: Vec<SubMesh>,
+    pub skeleton: SkeletonRenderId,
+    pub anim_clips: Vec<AnimationClipRenderId>,
+}
+
+pub struct AnimationClipRenderData {
+    pub manifest: animationfile::AnimationClip,
+    pub animation: AnimationRenderId,
+}
+
+pub struct RenderResources {
+    pub models: Arena<ModelRenderData>,
+    pub skeletons: Arena<Skeleton>,
+    pub animation_clips: Arena<AnimationClipRenderData>,
+    pub animations: Arena<AnimationClip>,
+    pub meshes: Arena<MeshGpuData>,
+    pub materials: Arena<MaterialBinding>,
+    pub textures: Arena<TextureGpuData>,
+}
+impl RenderResources {
     pub fn new() -> Self {
-        let meshes = Mutex::new(Arena::new());
-        let materials = Mutex::new(Arena::new());
-        let textures = Mutex::new(Arena::new());
+        let meshes = Arena::new();
+        let materials = Arena::new();
+        let textures = Arena::new();
+        let models = Arena::new();
+        let skeletons = Arena::new();
+        let animation_clips = Arena::new();
+        let animations = Arena::new();
 
         Self {
             meshes,
             materials,
             textures,
+            models,
+            skeletons,
+            animation_clips,
+            animations,
         }
     }
 
-    pub fn initialize_placeholders(&self, wgpu_context: &WgpuContext) -> PlaceholderTextureIds {
-        let mut textures = self.textures.lock().unwrap();
+    pub fn initialize_placeholders(&mut self, wgpu_context: &WgpuContext) -> PlaceholderTextureIds {
         let extent = wgpu::Extent3d {
             width: 1,
             height: 1,
@@ -290,25 +379,24 @@ impl GpuResources {
             ..Default::default()
         });
         let brdf_view = brdf_texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let normals = textures.insert(TextureGpuData { texture: normals_texture, texture_view: normals_view });
-        let base_color = textures.insert(TextureGpuData { texture: base_color_texture, texture_view: base_color_view });
-        let occlusion = textures.insert(TextureGpuData { texture: occlusion_texture, texture_view: occlusion_view });
-        let emissive = textures.insert(TextureGpuData { texture: emissive_texture, texture_view: emissive_view });
-        let metallic_roughness = textures.insert(TextureGpuData { texture: metallic_roughness_texture, texture_view: metallic_roughness_view });
-        let prefiltered = textures.insert(TextureGpuData { texture: prefiltered_texture, texture_view: prefiltered_view });
-        let di = textures.insert(TextureGpuData { texture: di_texture, texture_view: di_view });
-        let brdf = textures.insert(TextureGpuData { texture: brdf_texture, texture_view: brdf_view });
-
+        let normals = self.textures.insert(TextureGpuData { texture: normals_texture, texture_view: normals_view });
+        let base_color = self.textures.insert(TextureGpuData { texture: base_color_texture, texture_view: base_color_view });
+        let occlusion = self.textures.insert(TextureGpuData { texture: occlusion_texture, texture_view: occlusion_view });
+        let emissive = self.textures.insert(TextureGpuData { texture: emissive_texture, texture_view: emissive_view });
+        let metallic_roughness = self.textures.insert(TextureGpuData { texture: metallic_roughness_texture, texture_view: metallic_roughness_view });
+        let prefiltered = self.textures.insert(TextureGpuData { texture: prefiltered_texture, texture_view: prefiltered_view });
+        let di = self.textures.insert(TextureGpuData { texture: di_texture, texture_view: di_view });
+        let brdf = self.textures.insert(TextureGpuData { texture: brdf_texture, texture_view: brdf_view });
 
         PlaceholderTextureIds {
-            normals,
-            base_color,
-            occlusion,
-            emissive,
-            metallic_roughness,
-            prefiltered,
-            di,
-            brdf,
+            normals: TextureRenderId(normals),
+            base_color: TextureRenderId(base_color),
+            occlusion: TextureRenderId(occlusion),
+            emissive: TextureRenderId(emissive),
+            metallic_roughness: TextureRenderId(metallic_roughness),
+            prefiltered: TextureRenderId(prefiltered),
+            di: TextureRenderId(di),
+            brdf: TextureRenderId(brdf),
         }
     }
 }

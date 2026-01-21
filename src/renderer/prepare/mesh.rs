@@ -2,7 +2,7 @@ use std::{cmp::Ordering, collections::HashMap, ops::Range, sync::Arc};
 
 use glam::{Mat4, Quat, Vec3};
 
-use crate::{render_snapshot::{AnimationSnapshot, SnapshotGuard}, renderer::{bindgroups::bones::{BoneMat34, BonesBinding}, buffers::instance::{Instance, Instances}, pipelines::skinned::{DrawContext, MaterialBatch, MeshBatch, ResolvedSubmesh}, utils::lerpf32}, resource_manager::{animation::{AnimationClip, Channel, Track}, file_formats::{animationfile, skeletonfile}, registry::{CpuState, MaterialId, MeshId, ModelId}, resource_manager::ResourceManager}, sim::animator};
+use crate::{render_snapshot::{AnimationSnapshot, SnapshotGuard}, renderer::{bindgroups::bones::{BoneMat34, BonesBinding}, buffers::instance::{Instance, Instances}, pipelines::skinned::DrawContext, utils::lerpf32}, resource_system::{animation::{AnimationClip, Channel, Track}, file_formats::{animationfile, skeletonfile}, registry::{GameState, MaterialId, MeshId, ModelId}, render_resources::{self, MaterialRenderId, MeshRenderId, ModelRenderId, RenderResources}, resource_manager::ResourceManager}, sim::animator};
 
 struct UnresolvedSubmesh {
     transforms: Vec<Mat4>,
@@ -11,16 +11,95 @@ struct UnresolvedSubmesh {
     base_vertex: i32,
 }
 
-pub fn resolve_skinned_draw(
+pub fn resolve_skinned_draw<'a>(
     bones: &mut BonesBinding,
     bones_layout: &wgpu::BindGroupLayout,
     instances: &mut Instances,
-    snaps: &SnapshotGuard,
+    snaps: &'a SnapshotGuard,
     t: f32,
-    resource_manager: &Arc<ResourceManager>,
+    render_resources: &RenderResources,
     device: &wgpu::Device,
     queue: &wgpu::Queue,
-) -> DrawContext {
+) -> DrawContext<'a> {
+    let mut joint_palette: Vec<BoneMat34> = vec![];
+    let mut instance_data = vec![];
+    let mut instance_ranges = vec![0..0; snaps.curr.skinned_draw_snapshot.draws.len()];
+
+    for mat_batch in &snaps.curr.skinned_draw_snapshot.material_batches {
+        for mesh_batch in &snaps.curr.skinned_draw_snapshot.mesh_batches[mat_batch.mesh_range.clone()] {
+            for draw_idx in mesh_batch.draw_range.clone() {
+                let node = &snaps.curr.skinned_draw_snapshot.draws[draw_idx].node;
+                let curr_node_inst = snaps.curr.model_instances.get(node).unwrap();
+                let prev_node_inst = snaps.prev.model_instances.get(node);
+
+                // append joint_palette
+                let joint_matrices = {
+                    if let Some(anim_snap) = &curr_node_inst.animation {
+                        let skeleton = render_resources.skeletons.get(curr_node_inst.skeleton.into()).unwrap();
+                        let anim_data = match &anim_snap {
+                            AnimationSnapshot::AnimationStateSnapshot(animation_state_snapshot) => {
+                                let anim_clip = render_resources.animation_clips.get(animation_state_snapshot.clip_id.into()).unwrap();
+                                let anim = render_resources.animations.get(anim_clip.animation.into()).unwrap();
+                                let clip_time = prev_node_inst
+                                    .and_then(|node| node.animation.as_ref())
+                                    .map(|prev_anim_snap| match prev_anim_snap {
+                                        AnimationSnapshot::AnimationStateSnapshot(animation_state_snapshot) =>
+                                            animation_state_snapshot.animation_time,
+                                        AnimationSnapshot::AnimationTransitionSnapshot(animation_transition_snapshot) =>
+                                            animation_transition_snapshot.to_time,
+                                    })
+                                    .map(|prev_time| lerpf32(prev_time, animation_state_snapshot.animation_time, t))
+                                    .unwrap_or(0f32);
+                                AnimationData::Single(SingleAnimationData { clip: anim, time: clip_time, time_wrap_mode: animation_state_snapshot.time_wrap })
+                            },
+                            AnimationSnapshot::AnimationTransitionSnapshot(animation_transition_snapshot) => {
+                                let from_clip = render_resources.animation_clips.get(animation_transition_snapshot.from_clip_id.into()).unwrap();
+                                let to_clip = render_resources.animation_clips.get(animation_transition_snapshot.to_clip_id.into()).unwrap();
+                                let from_anim = render_resources.animations.get(from_clip.animation.into()).unwrap();
+                                let to_anim = render_resources.animations.get(to_clip.animation.into()).unwrap();
+                                let blend_time = animation_transition_snapshot.blend_time;
+
+                                let prev_times = &prev_node_inst
+                                    .and_then(|node| node.animation.as_ref())
+                                    .map(|prev_anim_snap| match prev_anim_snap {
+                                        AnimationSnapshot::AnimationStateSnapshot(animation_state_snapshot) =>
+                                            (animation_state_snapshot.animation_time, 0.0),
+                                        AnimationSnapshot::AnimationTransitionSnapshot(animation_transition_snapshot) =>
+                                            (animation_transition_snapshot.from_time, animation_transition_snapshot.to_time)
+                                    }).unwrap_or((0.0, 0.0));
+                                let from_time = lerpf32(prev_times.0, animation_transition_snapshot.from_time, t);
+                                let to_time = lerpf32(prev_times.1, animation_transition_snapshot.to_time, t);
+
+                                let from_time_wrap_mode = animation_transition_snapshot.from_time_wrap;
+                                let to_time_wrap_mode = animation_transition_snapshot.to_time_wrap;
+
+                                AnimationData::Blend(BlendAnimationData { from_clip: from_anim, to_clip: to_anim, from_time, to_time, blend_time, to_time_wrap_mode, from_time_wrap_mode })
+                            },
+                        };
+                        compute_joint_matrices(&skeleton, anim_data)
+                    } else {
+                        // no animation
+                        todo!()
+                    }
+                };
+                let palette_offset = joint_palette.len() as u32;
+                joint_palette.extend_from_slice(&joint_matrices);
+                // append instance_data
+                // update instance_ranges
+            }
+        }
+    }
+
+    bones.update(joint_palette, bones_layout, device, queue);
+    instances.update(instance_data, queue, device);
+
+    DrawContext {
+        snap: &snaps.curr.skinned_draw_snapshot,
+        instance_ranges,
+    }
+
+    /*
+
     // Joints are sorted per model-instance, and each submesh-instance refers to the base joint offset
     // of the matching model-instance
     let mut joint_palette: Vec<BoneMat34> = vec![];
@@ -29,27 +108,18 @@ pub fn resolve_skinned_draw(
     // material > model > submesh > submesh-instance
     let mut instance_data = vec![];
 
-    let mut unresolved = HashMap::<MaterialId, HashMap<ModelId, (Vec<UnresolvedSubmesh>, MeshId, u32)>>::new();
+    let mut unresolved = HashMap::<MaterialRenderId, HashMap<ModelRenderId, (Vec<UnresolvedSubmesh>, MeshRenderId, u32)>>::new();
 
     // write joint_palette, since it's in model-order
     // collect transforms and joint palette offsets so they can be written in draw-order
     // into the instance buffer
-    let reg = resource_manager.registry.lock().unwrap();
-    let models = resource_manager.cpu.models.lock().unwrap();
-    let skeletons = resource_manager.cpu.skeletons.lock().unwrap();
-    let anim_clips = resource_manager.cpu.animation_clips.lock().unwrap();
-    let anims = resource_manager.cpu.animations.lock().unwrap();
-    'model_loop: for (model_id, model_instances) in &snaps.curr.model_instances {
-        let model_entry = match reg.get_id(model_id) {
-            Some(m) => m,
-            None => continue 'model_loop,
-        };
-        let model_cpu_idx = match model_entry.cpu_state {
-            CpuState::Ready(index) => index,
-            _ => continue 'model_loop,
-        };
-        let model = models.get(model_cpu_idx).unwrap();
-        let prev_instances = &snaps.prev.model_instances.get(model_id);
+    let models = &render_resources.models;
+    let skeletons = &render_resources.skeletons;
+    let anim_clips = &render_resources.animation_clips;
+    let anims = &render_resources.animations;
+    for (model_render_id, model_instances) in &snaps.curr.model_instances {
+        let model = models.get((*model_render_id).into()).unwrap();
+        let prev_instances = &snaps.prev.model_instances.get(model_render_id);
         for (node_idx, curr_instance) in model_instances {
             let prev_instance = prev_instances.and_then(|nodes| nodes.get(node_idx));
             let model_instance_world =
@@ -67,32 +137,17 @@ pub fn resolve_skinned_draw(
                 };
 
             let joint_matrices = {
-                let skeleton_entry = reg.get(&model.skeleton);
-                let skeleton_cpu_idx = match skeleton_entry.cpu_state {
-                    CpuState::Ready(index) => index,
-                    _ => continue 'model_loop,
-                };
-                let skeleton = skeletons.get(skeleton_cpu_idx).unwrap();
+                let skeleton = skeletons.get(model.skeleton.into()).unwrap();
                 let anim_snapshot = curr_instance.animation.as_ref().unwrap();
                 let anim_data = match &anim_snapshot {
                     AnimationSnapshot::AnimationStateSnapshot(animation_state_snapshot) => {
                         let anim_clip = {
-                            let anim_clip_handle = &model.animations[animation_state_snapshot.clip_idx as usize];
-                            let anim_clip_entry = reg.get(anim_clip_handle);
-                            let anim_clip_idx = match anim_clip_entry.cpu_state {
-                                CpuState::Ready(idx) => idx,
-                                _ => continue 'model_loop,
-                            };
-                            anim_clips.get(anim_clip_idx).unwrap()
+                            let anim_clip_id = &model.anim_clips[animation_state_snapshot.clip_idx as usize];
+                            anim_clips.get((*anim_clip_id).into()).unwrap()
                         };
                         let anim = {
-                            let anim_handle = &anim_clip.animation;
-                            let anim_entry = reg.get(anim_handle);
-                            let anim_idx = match anim_entry.cpu_state {
-                                CpuState::Ready(idx) => idx,
-                                _ => continue 'model_loop,
-                            };
-                            anims.get(anim_idx).unwrap()
+                            let anim_id = &anim_clip.animation;
+                            anims.get((*anim_id).into()).unwrap()
                         };
                         let clip_time = prev_instance
                             .and_then(|node| node.animation.as_ref())
@@ -108,45 +163,25 @@ pub fn resolve_skinned_draw(
                     },
                     AnimationSnapshot::AnimationTransitionSnapshot(animation_transition_snapshot) => {
                         let from_clip = {
-                            let anim_clip_handle = &model.animations[animation_transition_snapshot.from_clip_idx as usize];
-                            let anim_clip_entry = reg.get(&anim_clip_handle);
-                            let anim_clip_idx = match anim_clip_entry.cpu_state {
-                                CpuState::Ready(idx) => idx,
-                                _ => continue 'model_loop,
-                            };
-                            anim_clips.get(anim_clip_idx).unwrap()
+                            let anim_clip_id = &model.anim_clips[animation_transition_snapshot.from_clip_idx as usize];
+                            anim_clips.get((*anim_clip_id).into()).unwrap()
                         };
                         let to_clip = {
-                            let anim_clip_handle = &model.animations[animation_transition_snapshot.to_clip_idx as usize];
-                            let anim_clip_entry = reg.get(&anim_clip_handle);
-                            let anim_clip_idx = match anim_clip_entry.cpu_state {
-                                CpuState::Ready(idx) => idx,
-                                _ => continue 'model_loop,
-                            };
-                            anim_clips.get(anim_clip_idx).unwrap()
+                            let anim_clip_id = &model.anim_clips[animation_transition_snapshot.to_clip_idx as usize];
+                            anim_clips.get((*anim_clip_id).into()).unwrap()
                         };
                         let from_anim = {
-                            let anim_handle = &from_clip.animation;
-                            let anim_entry = reg.get(anim_handle);
-                            let anim_idx = match anim_entry.cpu_state {
-                                CpuState::Ready(idx) => idx,
-                                _ => continue 'model_loop,
-                            };
-                            anims.get(anim_idx).unwrap()
+                            let anim_id = &from_clip.animation;
+                            anims.get((*anim_id).into()).unwrap()
                         };
                         let to_anim = {
-                            let anim_handle = &to_clip.animation;
-                            let anim_entry = reg.get(anim_handle);
-                            let anim_idx = match anim_entry.cpu_state {
-                                CpuState::Ready(idx) => idx,
-                                _ => continue 'model_loop,
-                            };
-                            anims.get(anim_idx).unwrap()
+                            let anim_id = &to_clip.animation;
+                            anims.get((*anim_id).into()).unwrap()
                         };
                         let blend_time = animation_transition_snapshot.blend_time;
 
                         let prev_times = &snaps.prev.model_instances
-                            .get(model_id)
+                            .get(model_render_id)
                             .and_then(|nodes| nodes.get(node_idx))
                             .and_then(|node| node.animation.as_ref())
                             .map(|prev_anim_snap| match prev_anim_snap {
@@ -164,14 +199,13 @@ pub fn resolve_skinned_draw(
                         AnimationData::Blend(BlendAnimationData { from_clip: from_anim, to_clip: to_anim, from_time, to_time, blend_time, to_time_wrap_mode, from_time_wrap_mode })
                     },
                 };
-                compute_joint_matrices(&skeleton.manifest, anim_data)
+                compute_joint_matrices(&skeleton, anim_data)
             };
             let palette_offset = joint_palette.len() as u32;
             joint_palette.extend_from_slice(&joint_matrices);
 
             // submesh-instances
             for submesh in &model.submeshes {
-                let mat_id = submesh.material.id();
                 let mut transforms = vec![];
                 for sub_inst in &submesh.instances {
                     let sub_inst_m4 = Mat4::from_cols_array_2d(sub_inst);
@@ -184,16 +218,16 @@ pub fn resolve_skinned_draw(
                     index_range: submesh.index_range.clone(),
                     base_vertex: submesh.base_vertex as i32,
                 };
-                if let Some(um) = unresolved.get_mut(&mat_id) {
-                    if let Some((p, _, _)) = um.get_mut(&model_id) {
+                if let Some(um) = unresolved.get_mut(&submesh.material) {
+                    if let Some((p, _, _)) = um.get_mut(&model_render_id) {
                         p.push(u);
                     } else {
-                        um.insert(model_id.clone(), (vec![u], model.mesh.id(), model.manifest.vertex_buffer_start_offset));
+                        um.insert(model_render_id.clone(), (vec![u], model.mesh, model.vertex_buffer_start_offset));
                     }
                 } else {
-                    unresolved.insert(mat_id.clone(), {
+                    unresolved.insert(submesh.material, {
                         let mut um = HashMap::new();
-                        um.insert(model_id.clone(), (vec![u], model.mesh.id(), model.manifest.vertex_buffer_start_offset));
+                        um.insert(model_render_id.clone(), (vec![u], model.mesh, model.vertex_buffer_start_offset));
                         um
                     });
                 }
@@ -239,6 +273,7 @@ pub fn resolve_skinned_draw(
     DrawContext {
         draws, material_batches, mesh_batches
     }
+    */
 }
 
 fn mat4_to_bone_mat34(m: Mat4) -> BoneMat34 {

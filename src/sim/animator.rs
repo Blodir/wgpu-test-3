@@ -1,4 +1,4 @@
-use crate::render_snapshot::{AnimationSnapshot, AnimationStateSnapshot, AnimationTransitionSnapshot};
+use crate::{render_snapshot::{AnimationSnapshot, AnimationStateSnapshot, AnimationTransitionSnapshot}, resource_system::{game_resources::{self, GameResources}, registry::{GameState, ModelHandle, RenderState, ResourceRegistry}, render_resources::AnimationClipRenderId}};
 
 /// What happens when animation time leaves [0, duration)
 #[derive(Clone, Copy)]
@@ -129,36 +129,59 @@ impl Animator {
         }
     }
 
-    pub fn build_snapshot(&self, animation_graphs: &Vec<AnimationGraph>) -> AnimationSnapshot {
+    pub fn build_snapshot(&self, animation_graphs: &Vec<AnimationGraph>, model_handle: &ModelHandle, resource_registry: &ResourceRegistry, game_resources: &GameResources) -> Option<AnimationSnapshot> {
         let animation_graph = &animation_graphs[self.animation_graph];
-        match &self.current_state {
-            AnimatorState::State(animator_state_state) => {
-                let state = &animation_graph.states[animator_state_state.state_idx as usize];
-                AnimationSnapshot::AnimationStateSnapshot(
-                    AnimationStateSnapshot {
-                        clip_idx: state.clip_idx,
-                        animation_time: animator_state_state.animation_time,
-                        time_wrap: state.time_wrap,
-                        boundary_mode: state.boundary_mode
+        if let GameState::Ready(model_game_idx) = resource_registry.get(model_handle).game_state {
+            let anim_clip_handles = &game_resources.models.get(model_game_idx).unwrap().animations;
+            match &self.current_state {
+                AnimatorState::State(animator_state_state) => {
+                    let state = &animation_graph.states[animator_state_state.state_idx as usize];
+                    if let RenderState::Ready(id) = resource_registry.get(&anim_clip_handles[state.clip_idx as usize]).render_state {
+                        Some(
+                            AnimationSnapshot::AnimationStateSnapshot(
+                                AnimationStateSnapshot {
+                                    clip_id: AnimationClipRenderId(id),
+                                    animation_time: animator_state_state.animation_time,
+                                    time_wrap: state.time_wrap,
+                                    boundary_mode: state.boundary_mode
+                                }
+                            )
+                        )
+                    } else {
+                        None
                     }
-                )
-            },
-            AnimatorState::Transition(animator_transition_state) => {
-                let from_state = &animation_graph.states[animator_transition_state.from as usize];
-                let transition = &animation_graph.transitions[animator_transition_state.transition as usize];
-                let to_state = &animation_graph.states[transition.to as usize];
-                AnimationSnapshot::AnimationTransitionSnapshot(
-                    AnimationTransitionSnapshot {
-                        from_clip_idx: from_state.clip_idx,
-                        to_clip_idx: to_state.clip_idx,
-                        blend_time: transition.blend_time,
-                        from_time: animator_transition_state.from_time,
-                        to_time: animator_transition_state.to_time,
-                        from_time_wrap: from_state.time_wrap,
-                        to_time_wrap: to_state.time_wrap,
+                },
+                AnimatorState::Transition(animator_transition_state) => {
+                    let from_state = &animation_graph.states[animator_transition_state.from as usize];
+                    let transition = &animation_graph.transitions[animator_transition_state.transition as usize];
+                    let to_state = &animation_graph.states[transition.to as usize];
+                    if let (
+                        RenderState::Ready(from_id),
+                        RenderState::Ready(to_id),
+                    ) = (
+                        &resource_registry.get(&anim_clip_handles[from_state.clip_idx as usize]).render_state,
+                        &resource_registry.get(&anim_clip_handles[to_state.clip_idx as usize]).render_state,
+                    ) {
+                        Some(
+                            AnimationSnapshot::AnimationTransitionSnapshot(
+                                AnimationTransitionSnapshot {
+                                    from_clip_id: AnimationClipRenderId(*from_id),
+                                    to_clip_id: AnimationClipRenderId(*to_id),
+                                    blend_time: transition.blend_time,
+                                    from_time: animator_transition_state.from_time,
+                                    to_time: animator_transition_state.to_time,
+                                    from_time_wrap: from_state.time_wrap,
+                                    to_time_wrap: to_state.time_wrap,
+                                }
+                            )
+                        )
+                    } else {
+                        None
                     }
-                )
-            },
+                },
+            }
+        } else {
+            todo!()
         }
     }
 }

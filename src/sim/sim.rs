@@ -1,7 +1,5 @@
 use std::{
-    sync::Arc,
-    thread,
-    time::{Duration, Instant},
+    cell::RefCell, rc::Rc, sync::Arc, thread, time::{Duration, Instant}
 };
 
 use crossbeam_queue::{ArrayQueue, SegQueue};
@@ -11,7 +9,7 @@ use winit::{
 };
 
 use crate::{
-    render_snapshot::{RenderSnapshot, SnapshotHandoff}, resource_manager::resource_manager::ResourceManager
+    render_snapshot::{RenderSnapshot, SnapshotHandoff}, resource_system::{game_resources::{CreateGameResourceRequest, CreateGameResourceResponse, GameResources}, registry::{ResourceRegistry, ResourceRequest, ResourceResult}, resource_manager::ResourceManager}
 };
 
 use super::scene_tree::build_test_animation_blending;
@@ -30,10 +28,15 @@ const SPIN: Duration = Duration::from_micros(200);
 pub fn spawn_sim(
     inputs: Arc<SegQueue<InputEvent>>,
     snap_handoff: Arc<SnapshotHandoff>,
-    resource_manager: Arc<ResourceManager>,
+    reg_req_tx: crossbeam::channel::Sender<ResourceRequest>,
+    reg_res_rx: crossbeam::channel::Receiver<ResourceResult>,
+    game_req_rx: crossbeam::channel::Receiver<CreateGameResourceRequest>,
+    game_res_tx: crossbeam::channel::Sender<CreateGameResourceResponse>,
 ) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
-        let (mut scene, animation_graphs) = build_test_animation_blending(&resource_manager);
+        let resource_registry = Rc::new(RefCell::new(ResourceRegistry::new(reg_req_tx, reg_res_rx)));
+        let mut game_resources = GameResources::new(game_req_rx, game_res_tx);
+        let (mut scene, animation_graphs) = build_test_animation_blending(&resource_registry);
         let mut next = Instant::now() + TICK;
         let mut prev_tick = Instant::now();
         let mut shift_is_pressed = false;
@@ -45,6 +48,8 @@ pub fn spawn_sim(
             prev_tick = now;
 
             scene.global_time_sec = (now - sim_start_time).as_secs_f32();
+
+            game_resources.process_requests(&resource_registry);
 
             'a: while let Some(event) = inputs.pop() {
                 match event {
@@ -122,9 +127,9 @@ pub fn spawn_sim(
                 }
             }
 
-            scene.update(&resource_manager, &animation_graphs, scene.root, dt);
+            scene.update(&resource_registry, &animation_graphs, scene.root, dt);
 
-            let snap = RenderSnapshot::build(&scene, &resource_manager, &animation_graphs);
+            let snap = RenderSnapshot::build(&scene, &resource_registry, &animation_graphs);
             snap_handoff.publish(snap);
 
             next += TICK;
