@@ -15,7 +15,7 @@ impl Into<Index> for SceneNodeId {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Sun {
     pub direction: [f32; 3],
     pub color: [f32; 3],
@@ -40,6 +40,7 @@ pub enum RenderDataType {
     None,
 }
 
+#[derive(Debug)]
 pub struct Environment {
     pub sun: Sun,
     pub prefiltered: TextureHandle,
@@ -157,7 +158,7 @@ pub fn build_test_animation_blending(resource_registry: &Rc<RefCell<ResourceRegi
     let model_handle = resource_registry.request_model("assets/local/Fox/Fox.json");
 
     let mut children = vec![];
-    let grid_size = 10;
+    let grid_size = 40;
     for i in 0..grid_size {
         for j in 0..grid_size {
             let spacing = 200.0;

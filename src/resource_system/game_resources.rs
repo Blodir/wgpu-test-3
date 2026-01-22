@@ -3,7 +3,7 @@ use std::{cell::RefCell, rc::Rc};
 use generational_arena::{Arena, Index};
 use glam::Mat4;
 
-use super::{file_formats::{animationfile, materialfile, modelfile}, registry::{AnimationClipHandle, AnimationClipId, AnimationHandle, MaterialHandle, MaterialId, MeshHandle, ModelId, RenderState, ResourceRegistry, SkeletonHandle, TextureHandle}, render_resources::{AnimationRenderId, MaterialRenderId, MeshRenderId, SkeletonRenderId, TextureRenderId}};
+use super::{file_formats::{animationfile, materialfile, modelfile}, registry::{AnimationClipHandle, AnimationClipId, AnimationHandle, MaterialHandle, MaterialId, MeshHandle, ModelId, RenderState, ResourceRegistry, SkeletonHandle, TextureHandle}, render_resources::{AnimationClipRenderId, AnimationRenderId, MaterialRenderId, MeshRenderId, SkeletonRenderId, SubMesh, TextureRenderId}};
 
 use super::registry::RegistryExt;
 
@@ -35,7 +35,7 @@ pub struct ModelGameData {
     pub manifest: modelfile::Model,
     pub mesh: MeshHandle,
     pub submesh_instances: Vec<Vec<Mat4>>,
-    pub animations: Vec<AnimationClipHandle>,
+    pub animation_clips: Vec<AnimationClipHandle>,
     pub skeleton: SkeletonHandle,
     pub materials: Vec<MaterialHandle>,
     pub aabb: modelfile::Aabb,
@@ -67,8 +67,9 @@ pub enum CreateGameResourceResponse {
         game_id: ModelGameId,
         mesh: MeshRenderId,
         skeleton: SkeletonRenderId,
-        animations: Vec<AnimationRenderId>,
-        materials: Vec<MaterialRenderId>,
+        animation_clips: Vec<AnimationClipRenderId>,
+        submeshes: Vec<SubMesh>,
+        vertex_buffer_start_offset: u32,
     },
     Material {
         id: MaterialId,
@@ -127,7 +128,7 @@ impl GameResources {
                     let data = ModelGameData {
                         mesh: registry.request_mesh(&manifest.buffer_path),
                         skeleton: registry.request_skeleton(&manifest.skeletonfile_path),
-                        animations: manifest.animations.iter().map(|a| registry.request_animation_clip(a)).collect(),
+                        animation_clips: manifest.animations.iter().map(|a| registry.request_animation_clip(a)).collect(),
                         materials: manifest.material_paths.iter().map(|a| registry.request_material(a)).collect(),
                         aabb: manifest.aabb.clone(),
                         submesh_instances: manifest.primitives.iter().map(|prim| prim.instances.iter().map(|m| Mat4::from_cols_array_2d(m)).collect()).collect(),
@@ -178,10 +179,10 @@ impl GameResources {
                         continue 'staging_loop;
                     };
 
-                    let mut animation_render_ids = vec![];
-                    for anim_handle in &model_game_data.animations {
-                        if let RenderState::Ready(index) = reg.get(anim_handle).render_state {
-                            animation_render_ids.push(AnimationRenderId(index));
+                    let mut animation_clip_render_ids = vec![];
+                    for anim_clip_handle in &model_game_data.animation_clips {
+                        if let RenderState::Ready(index) = reg.get(anim_clip_handle).render_state {
+                            animation_clip_render_ids.push(AnimationClipRenderId(index));
                         } else {
                             staging.push(StagedData::Model(id, model_game_data));
                             continue 'staging_loop;
@@ -198,16 +199,27 @@ impl GameResources {
                         };
                     }
 
+                    let vertex_buffer_start_offset = model_game_data.manifest.vertex_buffer_start_offset;
+                    let submeshes = model_game_data.manifest.primitives.iter().map(|prim| {
+                        SubMesh {
+                            index_range: prim.index_byte_offset / 4..prim.index_byte_offset / 4 + prim.index_byte_length / 4,
+                            base_vertex: prim.base_vertex,
+                            material: material_render_ids[prim.material as usize],
+                        }
+                    }).collect();
                     let game_id = self.models.insert(model_game_data);
                     let res = CreateGameResourceResponse::Model {
                         id,
                         game_id: ModelGameId(game_id),
                         mesh: mesh_render_id,
                         skeleton: skeleton_render_id,
-                        animations: animation_render_ids,
-                        materials: material_render_ids,
+                        animation_clips: animation_clip_render_ids,
+                        submeshes,
+                        vertex_buffer_start_offset,
                     };
-                    self.res_tx.send(res);
+                    if self.res_tx.send(res).is_err() {
+                        todo!();
+                    };
                 },
                 StagedData::Material(id, material_game_data) => {
                     let reg = registry.borrow_mut();

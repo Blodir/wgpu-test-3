@@ -4,13 +4,6 @@ use glam::{Mat4, Quat, Vec3};
 
 use crate::{render_snapshot::{AnimationSnapshot, SnapshotGuard}, renderer::{bindgroups::bones::{BoneMat34, BonesBinding}, buffers::instance::{Instance, Instances}, pipelines::skinned::DrawContext, utils::lerpf32}, resource_system::{animation::{AnimationClip, Channel, Track}, file_formats::{animationfile, skeletonfile}, registry::{GameState, MaterialId, MeshId, ModelId}, render_resources::{self, MaterialRenderId, MeshRenderId, ModelRenderId, RenderResources}, resource_manager::ResourceManager}, sim::{animator, scene_tree::SceneNodeId}};
 
-struct UnresolvedSubmesh {
-    transforms: Vec<Mat4>,
-    palette_offset: u32,
-    index_range: Range<u32>,
-    base_vertex: i32,
-}
-
 pub fn resolve_skinned_draw<'a>(
     bones: &mut BonesBinding,
     bones_layout: &wgpu::BindGroupLayout,

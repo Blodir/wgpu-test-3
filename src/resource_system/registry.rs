@@ -20,7 +20,7 @@ pub trait ResourceTag {
 }
 
 /// Non-owning reference to a registry entry, the entry is not guaranteed to be present
-#[derive(Copy, Clone, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
 pub struct HandleId<T: ResourceTag> {
     idx: generational_arena::Index,
     _marker: PhantomData<T>,
@@ -128,7 +128,7 @@ pub enum ResourceRequest {
 }
 
 pub enum ResourceResult {
-    ModelResult { id: ModelId, game_id: ModelGameId },
+    ModelResult { id: ModelId, game_id: ModelGameId, render_id: ModelRenderId },
     MeshResult { id: MeshId, render_id: MeshRenderId },
     SkeletonResult { id: SkeletonId, render_id: SkeletonRenderId },
     AnimationResult { id: AnimationId, render_id: AnimationRenderId },
@@ -415,9 +415,10 @@ impl RegistryExt for Rc<RefCell<ResourceRegistry>> {
         let mut reg = self.borrow_mut();
         while let Ok(msg) = reg.res_rx.try_recv() {
             match msg {
-                ResourceResult::ModelResult { id, game_id } => {
+                ResourceResult::ModelResult { id, game_id, render_id } => {
                     let entry = reg.entries.get_mut(id.idx).unwrap();
                     entry.game_state = GameState::Ready(game_id.into());
+                    entry.render_state = RenderState::Ready(render_id.into());
                 }
                 ResourceResult::MeshResult { id, render_id } => {
                     let entry = reg.entries.get_mut(id.idx).unwrap();

@@ -135,7 +135,7 @@ impl Animator {
         let resource_registry = resource_registry.borrow();
         let animation_graph = &animation_graphs[self.animation_graph];
         if let GameState::Ready(model_game_idx) = resource_registry.get(model_handle).game_state {
-            let anim_clip_handles = &game_resources.models.get(model_game_idx).unwrap().animations;
+            let anim_clip_handles = &game_resources.models.get(model_game_idx).unwrap().animation_clips;
             match &self.current_state {
                 AnimatorState::State(animator_state_state) => {
                     let state = &animation_graph.states[animator_state_state.state_idx as usize];
@@ -184,7 +184,7 @@ impl Animator {
                 },
             }
         } else {
-            todo!()
+            None
         }
     }
 }

@@ -6,7 +6,7 @@ use crate::renderer::{bindgroups::material::MaterialBinding, wgpu_context::WgpuC
 
 use super::{animation::AnimationClip, file_formats::{animationfile, skeletonfile::Skeleton}};
 
-#[derive(Hash, Eq, PartialEq, Clone, Copy)]
+#[derive(Hash, Eq, PartialEq, Clone, Copy, Debug)]
 pub struct ModelRenderId(pub Index);
 impl Into<Index> for ModelRenderId {
     fn into(self) -> Index {
@@ -14,7 +14,7 @@ impl Into<Index> for ModelRenderId {
     }
 }
 
-#[derive(Hash, Eq, PartialEq, Clone, Copy)]
+#[derive(Hash, Eq, PartialEq, Clone, Copy, Debug)]
 pub struct SkeletonRenderId(pub Index);
 impl Into<Index> for SkeletonRenderId {
     fn into(self) -> Index {
@@ -22,7 +22,7 @@ impl Into<Index> for SkeletonRenderId {
     }
 }
 
-#[derive(Hash, Eq, PartialEq, Clone, Copy)]
+#[derive(Hash, Eq, PartialEq, Clone, Copy, Debug)]
 pub struct AnimationClipRenderId(pub Index);
 impl Into<Index> for AnimationClipRenderId {
     fn into(self) -> Index {
@@ -30,7 +30,7 @@ impl Into<Index> for AnimationClipRenderId {
     }
 }
 
-#[derive(Hash, Eq, PartialEq, Clone, Copy)]
+#[derive(Hash, Eq, PartialEq, Clone, Copy, Debug)]
 pub struct AnimationRenderId(pub Index);
 impl Into<Index> for AnimationRenderId {
     fn into(self) -> Index {
@@ -38,7 +38,7 @@ impl Into<Index> for AnimationRenderId {
     }
 }
 
-#[derive(Hash, Eq, PartialEq, Clone, Copy)]
+#[derive(Hash, Eq, PartialEq, Clone, Copy, Debug)]
 pub struct MeshRenderId(pub Index);
 impl Into<Index> for MeshRenderId {
     fn into(self) -> Index {
@@ -46,7 +46,7 @@ impl Into<Index> for MeshRenderId {
     }
 }
 
-#[derive(Hash, Eq, PartialEq, Clone, Copy)]
+#[derive(Hash, Eq, PartialEq, Clone, Copy, Debug)]
 pub struct MaterialRenderId(pub Index);
 impl Into<Index> for MaterialRenderId {
     fn into(self) -> Index {
@@ -54,7 +54,7 @@ impl Into<Index> for MaterialRenderId {
     }
 }
 
-#[derive(Hash, Eq, PartialEq, Clone, Copy)]
+#[derive(Hash, Eq, PartialEq, Clone, Copy, Debug)]
 pub struct TextureRenderId(pub Index);
 impl Into<Index> for TextureRenderId {
     fn into(self) -> Index {

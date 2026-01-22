@@ -114,6 +114,7 @@ pub struct ModelInstanceSnapshot {
     pub skeleton_id: SkeletonRenderId,
 }
 
+#[derive(Debug)]
 pub struct EnvironmentMapSnapshot {
     pub prefiltered: TextureRenderId,
     pub di: TextureRenderId,

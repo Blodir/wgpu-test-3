@@ -9,7 +9,7 @@ use winit::{
 };
 
 use crate::{
-    render_snapshot::{RenderSnapshot, SnapshotHandoff}, resource_system::{game_resources::{CreateGameResourceRequest, CreateGameResourceResponse, GameResources}, registry::{ResourceRegistry, ResourceRequest, ResourceResult}, resource_manager::ResourceManager}
+    render_snapshot::{RenderSnapshot, SnapshotHandoff}, resource_system::{game_resources::{CreateGameResourceRequest, CreateGameResourceResponse, GameResources}, registry::{RegistryExt, ResourceRegistry, ResourceRequest, ResourceResult}, resource_manager::ResourceManager}
 };
 
 use super::scene_tree::build_test_animation_blending;
@@ -50,6 +50,7 @@ pub fn spawn_sim(
             scene.global_time_sec = (now - sim_start_time).as_secs_f32();
 
             game_resources.process_requests(&resource_registry);
+            resource_registry.process_responses();
 
             'a: while let Some(event) = inputs.pop() {
                 match event {

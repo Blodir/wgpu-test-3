@@ -4,7 +4,7 @@ use wgpu::util::{BufferInitDescriptor, DeviceExt as _};
 
 use crate::renderer::{wgpu_context::WgpuContext, Renderer};
 
-use super::{file_formats::{animationfile, dds}, game_resources::{CreateGameResourceRequest, CreateGameResourceResponse, GameResources, MaterialGameData, MaterialGameId}, io_manager::{IoManager, IoRequest, IoResponse}, registry::{GameState, RenderState, ResourceKind, ResourceRequest, ResourceResult}, render_resources::{AnimationClipRenderData, AnimationClipRenderId, AnimationRenderId, MaterialRenderId, MeshGpuData, MeshRenderId, RenderResources, SkeletonRenderId, TextureGpuData, TextureRenderId}, texture::upload_texture};
+use super::{file_formats::{animationfile, dds}, game_resources::{CreateGameResourceRequest, CreateGameResourceResponse, GameResources, MaterialGameData, MaterialGameId}, io_manager::{IoManager, IoRequest, IoResponse}, registry::{GameState, RenderState, ResourceKind, ResourceRequest, ResourceResult}, render_resources::{AnimationClipRenderData, AnimationClipRenderId, AnimationRenderId, MaterialRenderId, MeshGpuData, MeshRenderId, ModelRenderData, ModelRenderId, RenderResources, SkeletonRenderId, TextureGpuData, TextureRenderId}, texture::upload_texture};
 
 pub struct ResourceManager {
     io: IoManager,
@@ -54,8 +54,16 @@ impl ResourceManager {
             };
 
             match res {
-                CreateGameResourceResponse::Model { id, game_id, mesh, skeleton, animations, materials } => {
-                    if self.registry_res_tx.send(ResourceResult::ModelResult { id, game_id }).is_err() {
+                CreateGameResourceResponse::Model { id, game_id, mesh, skeleton, animation_clips, submeshes, vertex_buffer_start_offset } => {
+                    let model_render = ModelRenderData {
+                        vertex_buffer_start_offset,
+                        mesh_id: mesh,
+                        submeshes,
+                        skeleton,
+                        anim_clips: animation_clips,
+                    };
+                    let render_idx = render_resources.models.insert(model_render);
+                    if self.registry_res_tx.send(ResourceResult::ModelResult { id, game_id, render_id: ModelRenderId(render_idx) }).is_err() {
                         todo!();
                     }
                 },
@@ -137,7 +145,9 @@ impl ResourceManager {
                     });
                     let mesh_gpu = MeshGpuData { buffer };
                     let idx = render_resources.meshes.insert(mesh_gpu);
-                    self.registry_res_tx.send(ResourceResult::MeshResult { id, render_id: MeshRenderId(idx) });
+                    if self.registry_res_tx.send(ResourceResult::MeshResult { id, render_id: MeshRenderId(idx) }).is_err() {
+                        todo!();
+                    };
                     /*
                     let cpu_data = MeshGameData { index_vertex_data: data };
                     let cpu_idx = self.cpu.meshes.lock().unwrap().insert(cpu_data);
@@ -219,7 +229,9 @@ impl ResourceManager {
                     };
                     let texture_gpu = TextureGpuData { texture, texture_view };
                     let idx = render_resources.textures.insert(texture_gpu);
-                    self.registry_res_tx.send(ResourceResult::TextureResult { id, render_id: TextureRenderId(idx) });
+                    if self.registry_res_tx.send(ResourceResult::TextureResult { id, render_id: TextureRenderId(idx) }).is_err() {
+                        todo!();
+                    }
 
                     /*
                     let cpu_data: TextureGameData = data;
