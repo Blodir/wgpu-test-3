@@ -129,7 +129,7 @@ pub fn spawn_sim(
 
             scene.update(&resource_registry, &animation_graphs, scene.root, dt);
 
-            let snap = RenderSnapshot::build(&scene, &resource_registry, &animation_graphs);
+            let snap = RenderSnapshot::build(&scene, &resource_registry, &animation_graphs, &game_resources);
             snap_handoff.publish(snap);
 
             next += TICK;

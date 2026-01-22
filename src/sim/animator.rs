@@ -1,3 +1,5 @@
+use std::{cell::RefCell, rc::Rc};
+
 use crate::{render_snapshot::{AnimationSnapshot, AnimationStateSnapshot, AnimationTransitionSnapshot}, resource_system::{game_resources::{self, GameResources}, registry::{GameState, ModelHandle, RenderState, ResourceRegistry}, render_resources::AnimationClipRenderId}};
 
 /// What happens when animation time leaves [0, duration)
@@ -129,7 +131,8 @@ impl Animator {
         }
     }
 
-    pub fn build_snapshot(&self, animation_graphs: &Vec<AnimationGraph>, model_handle: &ModelHandle, resource_registry: &ResourceRegistry, game_resources: &GameResources) -> Option<AnimationSnapshot> {
+    pub fn build_snapshot(&self, animation_graphs: &Vec<AnimationGraph>, model_handle: &ModelHandle, resource_registry: &Rc<RefCell<ResourceRegistry>>, game_resources: &GameResources) -> Option<AnimationSnapshot> {
+        let resource_registry = resource_registry.borrow();
         let animation_graph = &animation_graphs[self.animation_graph];
         if let GameState::Ready(model_game_idx) = resource_registry.get(model_handle).game_state {
             let anim_clip_handles = &game_resources.models.get(model_game_idx).unwrap().animations;

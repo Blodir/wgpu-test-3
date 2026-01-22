@@ -9,6 +9,11 @@ use super::{animator::{self, AnimationGraph, Animator}, camera::Camera};
 
 #[derive(Hash, Eq, PartialEq, Clone, Copy)]
 pub struct SceneNodeId(Index);
+impl Into<Index> for SceneNodeId {
+    fn into(self) -> Index {
+        self.0
+    }
+}
 
 #[derive(Clone)]
 pub struct Sun {
@@ -53,22 +58,22 @@ impl Environment {
 }
 
 pub struct Node {
-    pub parent: Option<Index>,
-    pub children: Vec<Index>,
+    pub parent: Option<SceneNodeId>,
+    pub children: Vec<SceneNodeId>,
     pub transform: Mat4,
     pub render_data: RenderDataType,
 }
 
 pub struct Scene {
-    pub root: Index,
+    pub root: SceneNodeId,
     pub nodes: Arena<Node>,
     pub camera: Camera,
     pub environment: Environment,
     pub global_time_sec: f32,
 }
 impl Scene {
-    pub fn update(&mut self, resource_registry: &Rc<RefCell<ResourceRegistry>>, animation_graphs: &Vec<AnimationGraph>, node: Index, dt: f32) {
-        let node = &mut self.nodes[node];
+    pub fn update(&mut self, resource_registry: &Rc<RefCell<ResourceRegistry>>, animation_graphs: &Vec<AnimationGraph>, node: SceneNodeId, dt: f32) {
+        let node = self.nodes.get_mut(node.into()).unwrap();
         // TODO remove this after testing
         if (self.global_time_sec % 16.0).abs() < dt {
             self.environment.prefiltered = resource_registry.request_texture("assets/kloofendal_overcast_puresky_8k.prefiltered.dds", true);
@@ -166,7 +171,7 @@ pub fn build_test_animation_blending(resource_registry: &Rc<RefCell<ResourceRegi
                 transform,
                 render_data,
             });
-            children.push(child);
+            children.push(SceneNodeId(child));
         }
     }
 
@@ -185,7 +190,7 @@ pub fn build_test_animation_blending(resource_registry: &Rc<RefCell<ResourceRegi
     };
 
     let scene = Scene {
-        root: root_handle,
+        root: SceneNodeId(root_handle),
         nodes,
         environment,
         camera: Camera::default(),

@@ -1,6 +1,7 @@
 use std::{cell::RefCell, rc::Rc};
 
 use generational_arena::{Arena, Index};
+use glam::Mat4;
 
 use super::{file_formats::{animationfile, materialfile, modelfile}, registry::{AnimationClipHandle, AnimationClipId, AnimationHandle, MaterialHandle, MaterialId, MeshHandle, ModelId, RenderState, ResourceRegistry, SkeletonHandle, TextureHandle}, render_resources::{AnimationRenderId, MaterialRenderId, MeshRenderId, SkeletonRenderId, TextureRenderId}};
 
@@ -31,8 +32,9 @@ impl Into<Index> for AnimationClipGameId {
 }
 
 pub struct ModelGameData {
-    // pub manifest: modelfile::Model,
+    pub manifest: modelfile::Model,
     pub mesh: MeshHandle,
+    pub submesh_instances: Vec<Vec<Mat4>>,
     pub animations: Vec<AnimationClipHandle>,
     pub skeleton: SkeletonHandle,
     pub materials: Vec<MaterialHandle>,
@@ -127,7 +129,9 @@ impl GameResources {
                         skeleton: registry.request_skeleton(&manifest.skeletonfile_path),
                         animations: manifest.animations.iter().map(|a| registry.request_animation_clip(a)).collect(),
                         materials: manifest.material_paths.iter().map(|a| registry.request_material(a)).collect(),
-                        aabb: manifest.aabb,
+                        aabb: manifest.aabb.clone(),
+                        submesh_instances: manifest.primitives.iter().map(|prim| prim.instances.iter().map(|m| Mat4::from_cols_array_2d(m)).collect()).collect(),
+                        manifest,
                     };
                     self.staging.push(StagedData::Model(id, data));
                 },

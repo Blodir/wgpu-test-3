@@ -112,8 +112,9 @@ impl ModelPipeline {
         bones_bind_group: &wgpu::BindGroup,
         render_resources: &RenderResources
     ) {
-        let gpu_materials = &render_resources.materials;
-        let gpu_meshes = &render_resources.meshes;
+        let models = &render_resources.models;
+        let materials = &render_resources.materials;
+        let meshes = &render_resources.meshes;
 
         // TODO can this descriptor be reused?
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -144,29 +145,31 @@ impl ModelPipeline {
         render_pass.set_bind_group(3, bones_bind_group, &[]);
 
         for material_batch in &draw_context.snap.material_batches {
-            let material = gpu_materials.get(material_batch.material.into()).unwrap();
+            let material = materials.get(material_batch.material_id.into()).unwrap();
             render_pass.set_bind_group(
                 2u32,
                 &material.bind_group,
                 &[],
             );
             for mesh_batch in &draw_context.snap.mesh_batches[material_batch.mesh_range.clone()] {
-                let mesh = gpu_meshes.get(mesh_batch.mesh.into()).unwrap();
+                let model = models.get(mesh_batch.model_id.into()).unwrap();
+                let mesh = meshes.get(model.mesh_id.into()).unwrap();
                 render_pass.set_index_buffer(
-                    mesh.buffer.slice(0..mesh_batch.vertex_buffer_start_offset),
+                    mesh.buffer.slice(0..model.vertex_buffer_start_offset as u64),
                     wgpu::IndexFormat::Uint32,
                 );
                 // apparently there's no performance benefit to not just taking the whole instace buffer slice
                 render_pass.set_vertex_buffer(0, instance_buffer.slice(..));
                 render_pass.set_vertex_buffer(
                     1u32,
-                    mesh.buffer.slice(mesh_batch.vertex_buffer_start_offset..)
+                    mesh.buffer.slice(model.vertex_buffer_start_offset as u64..)
                 );
-                for draw_idx in mesh_batch.draw_range.clone() {
-                    let draw = &draw_context.snap.draws[draw_idx];
+                for draw_idx in mesh_batch.submesh_range.clone() {
+                    let submesh_batch = &draw_context.snap.submesh_batches[draw_idx];
+                    let submesh = &model.submeshes[submesh_batch.submesh_idx];
                     render_pass.draw_indexed(
-                        draw.index_range.clone(),
-                        draw.base_vertex,
+                        submesh.index_range.clone(),
+                        submesh.base_vertex as i32,
                         draw_context.instance_ranges[draw_idx].clone(),
                     );
                 }

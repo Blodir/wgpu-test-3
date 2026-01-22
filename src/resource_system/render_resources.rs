@@ -84,7 +84,6 @@ pub struct PlaceholderTextureIds {
 }
 
 pub struct SubMesh {
-    pub instances: Vec<[[f32; 4]; 4]>,
     pub index_range: Range<u32>,
     pub base_vertex: u32,
     pub material: MaterialRenderId,
@@ -92,7 +91,7 @@ pub struct SubMesh {
 
 pub struct ModelRenderData {
     pub vertex_buffer_start_offset: u32,
-    pub mesh: MeshRenderId,
+    pub mesh_id: MeshRenderId,
     pub submeshes: Vec<SubMesh>,
     pub skeleton: SkeletonRenderId,
     pub anim_clips: Vec<AnimationClipRenderId>,
