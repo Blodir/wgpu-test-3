@@ -15,18 +15,19 @@ pub fn accumulate_instance_snapshots(
     frustum: &Frustum,
     resource_registry: &Rc<RefCell<ResourceRegistry>>,
     game_resources: &GameResources,
+    frame_index: u32,
 ) {
     let node = scene.nodes.get(node_id.into()).unwrap();
     let transform = node.transform * base_transform;
-    let (model_handle, maybe_animation_snapshot) = match &node.render_data {
+    let (model_handle, last_visible_frame, maybe_animation_snapshot) = match &node.render_data {
         RenderDataType::None => {
             for child in &node.children {
-                accumulate_instance_snapshots(scene, animation_graphs, instances, &transform, *child, frustum, resource_registry, game_resources);
+                accumulate_instance_snapshots(scene, animation_graphs, instances, &transform, *child, frustum, resource_registry, game_resources, frame_index);
             }
             return;
         },
-        RenderDataType::Model(model_handle) => (model_handle, None),
-        RenderDataType::AnimatedModel(animated_model) => (&animated_model.model, animated_model.animator.build_snapshot(animation_graphs, &animated_model.model, resource_registry, game_resources)),
+        RenderDataType::Model(static_model) => (&static_model.handle, *static_model.last_visible_frame.borrow(), None),
+        RenderDataType::AnimatedModel(animated_model) => (&animated_model.model, *animated_model.last_visible_frame.borrow(), animated_model.animator.build_snapshot(animation_graphs, &animated_model.model, resource_registry, game_resources)),
     };
 
     let reg = resource_registry.borrow();
@@ -37,7 +38,17 @@ pub fn accumulate_instance_snapshots(
         &entry.game_state,
     ) {
         let model_game = game_resources.models.get(*model_game_id).unwrap();
-        if frustum_intersects_aabb_world(frustum, &model_game.aabb, &transform) {
+        // render everything that was visible on the previous frame to reduce popping when the camera moves fast
+        let last_frame_visible = frame_index.wrapping_sub(last_visible_frame) <= 1;
+        let intersect = frustum_intersects_aabb_world(frustum, &model_game.aabb, &transform);
+        if last_frame_visible || intersect {
+            if intersect {
+                match &scene.nodes.get(node_id.into()).unwrap().render_data {
+                    RenderDataType::Model(static_model) => static_model.last_visible_frame.replace(frame_index),
+                    RenderDataType::AnimatedModel(animated_model) => animated_model.last_visible_frame.replace(frame_index),
+                    RenderDataType::None => 0u32,
+                };
+            }
             let mut submesh_transforms = vec![];
             for submesh in &model_game.submesh_instances {
                 let mut t = vec![];
@@ -60,7 +71,7 @@ pub fn accumulate_instance_snapshots(
     }
 
     for child in &node.children {
-        accumulate_instance_snapshots(scene, animation_graphs, instances, &transform, *child, frustum, resource_registry, game_resources);
+        accumulate_instance_snapshots(scene, animation_graphs, instances, &transform, *child, frustum, resource_registry, game_resources, frame_index);
     }
 }
 
@@ -188,7 +199,7 @@ impl SkinnedMeshDrawSnapshot {
         for (node_id, snap) in instances {
             let node = scene.nodes.get((*node_id).into()).unwrap();
             let model_handle = match &node.render_data {
-                RenderDataType::Model(handle) => handle,
+                RenderDataType::Model(static_model) => &static_model.handle,
                 RenderDataType::AnimatedModel(animated_model) => &animated_model.model,
                 RenderDataType::None => panic!(),
             };
@@ -258,10 +269,11 @@ pub struct RenderSnapshot {
     pub camera: CameraSnapshot,
 }
 impl RenderSnapshot {
-    pub fn build(scene: &Scene, resource_registry: &Rc<RefCell<ResourceRegistry>>, animation_graphs: &Vec<AnimationGraph>, game_resources: &GameResources) -> Self {
+    pub fn build(scene: &mut Scene, resource_registry: &Rc<RefCell<ResourceRegistry>>, animation_graphs: &Vec<AnimationGraph>, game_resources: &GameResources, frame_index: u32) -> Self {
         let mut model_instances = HashMap::<SceneNodeId, ModelInstanceSnapshot>::new();
         let frustum = scene.camera.build_frustum();
-        accumulate_instance_snapshots(scene, animation_graphs, &mut model_instances, &Mat4::IDENTITY, scene.root, &frustum, resource_registry, game_resources);
+        accumulate_instance_snapshots(scene, animation_graphs, &mut model_instances, &Mat4::IDENTITY, scene.root, &frustum, resource_registry, game_resources, frame_index);
+        dbg!(model_instances.len());
         let skinned_draw_snapshot = SkinnedMeshDrawSnapshot::build(scene, &model_instances, resource_registry, game_resources);
 
         let environment = EnvironmentSnapshot::from(&scene.environment, resource_registry);

@@ -41,6 +41,7 @@ pub fn spawn_sim(
         let mut prev_tick = Instant::now();
         let mut shift_is_pressed = false;
         let mut mouse_btn_is_pressed = false;
+        let mut frame_index = 0u32;
         let sim_start_time = Instant::now();
         loop {
             let now = Instant::now();
@@ -130,7 +131,7 @@ pub fn spawn_sim(
 
             scene.update(&resource_registry, &animation_graphs, scene.root, dt);
 
-            let snap = RenderSnapshot::build(&scene, &resource_registry, &animation_graphs, &game_resources);
+            let snap = RenderSnapshot::build(&mut scene, &resource_registry, &animation_graphs, &game_resources, frame_index);
             snap_handoff.publish(snap);
 
             next += TICK;
@@ -143,6 +144,8 @@ pub fn spawn_sim(
                 // if we fell behind, resync the schedule
                 next = Instant::now() + TICK;
             }
+
+            frame_index = frame_index.wrapping_add(1);
         }
     })
 }

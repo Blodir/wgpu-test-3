@@ -1,4 +1,4 @@
-use std::{cell::RefCell, rc::Rc, sync::Arc};
+use std::{cell::RefCell, rc::Rc, sync::Arc, u32};
 
 use glam::{Mat4, Vec3};
 
@@ -29,13 +29,19 @@ impl Default for Sun {
     }
 }
 
+pub struct StaticModel {
+    pub handle: ModelHandle,
+    pub last_visible_frame: RefCell<u32>, // temp using interior mutability because cba
+}
+
 pub struct AnimatedModel {
     pub model: ModelHandle,
     pub animator: Animator,
+    pub last_visible_frame: RefCell<u32>,
 }
 
 pub enum RenderDataType {
-    Model(ModelHandle),
+    Model(StaticModel),
     AnimatedModel(AnimatedModel),
     None,
 }
@@ -165,7 +171,7 @@ pub fn build_test_animation_blending(resource_registry: &Rc<RefCell<ResourceRegi
             let x = i as f32 * spacing - ((grid_size as f32 * spacing) / 2.0);
             let z = j as f32 * spacing - ((grid_size as f32 * spacing) / 2.0);
             let transform = Mat4::from_translation(Vec3::new(x, 0.0, z));
-            let render_data = RenderDataType::AnimatedModel(AnimatedModel { model: model_handle.clone(), animator: Animator::new(0, 0) });
+            let render_data = RenderDataType::AnimatedModel(AnimatedModel { model: model_handle.clone(), animator: Animator::new(0, 0), last_visible_frame: RefCell::new(u32::MAX) });
             let child = nodes.insert(Node {
                 parent: None,
                 children: vec![],
