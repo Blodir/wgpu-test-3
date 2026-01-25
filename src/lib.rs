@@ -14,6 +14,7 @@ pub mod resource_system;
 pub mod renderer;
 pub mod sim;
 pub mod app;
+pub mod job_system;
 
 pub fn run() {
     let (game_req_tx, game_req_rx) = crossbeam::channel::unbounded();
