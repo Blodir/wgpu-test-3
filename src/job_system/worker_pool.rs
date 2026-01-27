@@ -2,27 +2,48 @@ use std::sync::Arc;
 
 use crossbeam::channel::{Receiver, Sender};
 
-use crate::{renderer::pose_storage::PoseData, resource_system::{animation::AnimationClip, file_formats::skeletonfile::Skeleton}, sim::scene_tree::SceneNodeId};
+use crate::{renderer::pose_storage::PoseData, resource_system::{animation::AnimationClip, file_formats::skeletonfile::Skeleton}, sim::{animator::{BoundaryMode, TimeWrapMode}, scene_tree::SceneNodeId}};
 
-struct PoseTask {
-    skeleton: Arc<Skeleton>,
-    clip: Arc<AnimationClip>,
-    animation: Arc<Animation>,
-    time: f32,
-    pose_id: PoseId,
+pub struct SinglePoseTask {
+    pub node_id: SceneNodeId,
+    pub skeleton: Arc<Skeleton>,
+    pub clip: Arc<AnimationClip>,
+    pub time_wrap: TimeWrapMode,
+    pub boundary_mode: BoundaryMode,
+    /// time in seconds since the transition into this state started
+    pub animation_time: f32,
+}
+
+pub struct BlendPoseTask {
+    pub node_id: SceneNodeId,
+    pub skeleton: Arc<Skeleton>,
+    pub from_clip: Arc<AnimationClip>,
+    pub to_clip: Arc<AnimationClip>,
+    pub blend_time: f32,
+    /// time in seconds since the transition to the previous state started
+    pub from_time: f32,
+    /// time in seconds since this transition started
+    pub to_time: f32,
+    pub from_time_wrap: TimeWrapMode,
+    pub to_time_wrap: TimeWrapMode,
+}
+
+pub enum AnimPoseTask {
+    Single(SinglePoseTask),
+    Blend(BlendPoseTask),
 }
 
 pub enum Task {
-    Pose(Vec<PoseTask>)
+    Pose(Vec<AnimPoseTask>)
 }
 
-pub struct PoseResponse {
+pub struct AnimPoseTaskResult {
     pub node_id: SceneNodeId,
     pub data: PoseData,
 }
 
 pub enum RenderResponse {
-    Pose(PoseResponse),
+    Pose(Vec<AnimPoseTaskResult>),
 }
 pub enum GameResponse {}
 
