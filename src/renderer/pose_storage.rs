@@ -5,12 +5,14 @@ use glam::{Quat, Vec3};
 
 use crate::{job_system::worker_pool::{AnimPoseTaskResult, RenderResponse}, sim::scene_tree::SceneNodeId};
 
+#[derive(Clone)]
 pub struct TRS {
     pub t: Vec3,
     pub r: Quat,
     pub s: Vec3,
 }
 
+#[derive(Clone)]
 pub enum PoseTime {
     SingleTime(f32),
     BlendTime(f32, f32),
@@ -43,11 +45,18 @@ pub enum GetPoseResponse<'a> {
     Nothing, // no poses ready yet, skip or use bind pose
 }
 
-struct PoseStorage {
+pub struct PoseStorage {
     pub scene_to_pose_id: HashMap<SceneNodeId, Index>,
     pub pose_data: Arena<PoseEntry>,
 }
 impl PoseStorage {
+    pub fn new() -> Self {
+        Self {
+            scene_to_pose_id: HashMap::new(),
+            pose_data: Arena::new(),
+        }
+    }
+
     pub fn receive_pose(&mut self, res: AnimPoseTaskResult) {
         let idx = self.scene_to_pose_id.entry(res.node_id).or_insert(self.pose_data.insert(PoseEntry::default()));
         let data = self.pose_data.get_mut(*idx).unwrap();
@@ -56,15 +65,40 @@ impl PoseStorage {
         if data.poses.len() == 0 {
             data.poses.insert(0, res.data);
         } else {
-            for i in 0..=data.poses.len() {
-                if i == data.poses.len() {
-                    data.poses.insert(i, res.data);
-                    break;
-                }
-                if res.data.time < data.poses[i].time {
-                    data.poses.insert(i, res.data);
-                    break;
-                }
+            match res.data.time {
+                PoseTime::SingleTime(curr_time) => {
+                    for i in 0..=data.poses.len() {
+                        if i == data.poses.len() {
+                            data.poses.insert(i, res.data);
+                            break;
+                        }
+                        let comp_time = match data.poses[i].time {
+                            PoseTime::SingleTime(t) => t,
+                            PoseTime::BlendTime(t0, t1) => t1,
+                        };
+                        if comp_time < curr_time {
+                            data.poses.insert(i, res.data);
+                            break;
+                        }
+                    }
+                },
+                PoseTime::BlendTime(curr_from, curr_to) => {
+                    for i in 0..=data.poses.len() {
+                        if i == data.poses.len() {
+                            data.poses.insert(i, res.data);
+                            break;
+                        }
+                        let comp_time = match data.poses[i].time {
+                            PoseTime::SingleTime(t) => t,
+                            PoseTime::BlendTime(t0, t1) => t0,
+                        };
+                        if comp_time < curr_from {
+                            data.poses.insert(i, res.data);
+                            break;
+                        }
+                    }
+
+                },
             }
         }
 

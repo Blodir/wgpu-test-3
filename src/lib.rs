@@ -1,4 +1,5 @@
 use crossbeam_queue::SegQueue;
+use job_system::worker_pool::{self, WorkerPool};
 use render_snapshot::{RenderSnapshot, SnapshotHandoff};
 use resource_system::resource_manager::ResourceManager;
 use sim::sim::{spawn_sim, InputEvent};
@@ -27,10 +28,13 @@ pub fn run() {
     let sim_inputs = Arc::new(SegQueue::<InputEvent>::new());
     let sim_handle = spawn_sim(sim_inputs.clone(), snap_handoff.clone(), registry_req_tx, registry_res_rx, game_req_rx, game_res_tx);
 
+    let (worker_pool, tx, render_rx, game_rx) = WorkerPool::init();
+
     let app = Arc::new(Mutex::new(app::App::new(
         sim_inputs.clone(),
         snap_handoff.clone(),
         resource_manager,
+        render_rx,
     )));
     let event_loop = EventLoop::new().unwrap();
     event_loop.set_control_flow(ControlFlow::Poll);

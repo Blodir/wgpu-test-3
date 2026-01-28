@@ -181,7 +181,7 @@ fn compute_joint_trs<'a>(task: AnimPoseTask) -> Vec<TRS> {
         .collect()
 }
 
-fn execute_pose_tasks(tasks: Vec<AnimPoseTask>, render_tx: crossbeam::channel::Sender<RenderResponse>) {
+pub fn execute_pose_tasks(tasks: Vec<AnimPoseTask>, render_tx: &mut crossbeam::channel::Sender<RenderResponse>) {
     if render_tx.send(
         RenderResponse::Pose(
             tasks.into_iter().map(|task| {

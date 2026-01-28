@@ -13,6 +13,7 @@ use super::buffers::instance::Instances;
 use super::pipelines::post_processing::PostProcessingPipeline;
 use super::pipelines::skinned::ModelPipeline;
 use super::pipelines::skybox::SkyboxPipeline;
+use super::pose_storage::{self, PoseStorage};
 use super::prepare::camera::prepare_camera;
 use super::prepare::lights::prepare_lights;
 use super::prepare::mesh::resolve_skinned_draw;
@@ -152,6 +153,8 @@ impl Renderer {
         &mut self,
         wgpu_context: &WgpuContext,
         render_resources: &RenderResources,
+        pose_storage: &mut PoseStorage,
+        frame_idx: u32,
     ) -> Result<(), wgpu::SurfaceError> {
         let snaps = self.snapshot_handoff.load();
         let now = Instant::now();
@@ -181,7 +184,7 @@ impl Renderer {
             &self.lights.bind_group,
         );
 
-        let draw_context = resolve_skinned_draw(&mut self.bones, &self.layouts.bones, &mut self.instances, &snaps, t, render_resources, &wgpu_context.device, &wgpu_context.queue);
+        let draw_context = resolve_skinned_draw(&mut self.bones, &self.layouts.bones, &mut self.instances, &snaps, t, &wgpu_context.device, &wgpu_context.queue, pose_storage, frame_idx);
 
         self.model_pipeline.render(
             draw_context,

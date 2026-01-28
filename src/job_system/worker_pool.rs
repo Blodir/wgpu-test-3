@@ -4,6 +4,8 @@ use crossbeam::channel::{Receiver, Sender};
 
 use crate::{renderer::pose_storage::PoseData, resource_system::{animation::AnimationClip, file_formats::skeletonfile::Skeleton}, sim::{animator::{BoundaryMode, TimeWrapMode}, scene_tree::SceneNodeId}};
 
+use super::anim_pose::execute_pose_tasks;
+
 pub struct SinglePoseTask {
     pub node_id: SceneNodeId,
     pub skeleton: Arc<Skeleton>,
@@ -49,19 +51,19 @@ pub enum GameResponse {}
 
 fn worker_loop(
     rx: crossbeam::channel::Receiver<Task>,
-    render_tx: crossbeam::channel::Sender<RenderResponse>,
+    render_tx: &mut crossbeam::channel::Sender<RenderResponse>,
     game_tx: crossbeam::channel::Sender<GameResponse>,
 ) {
     while let Ok(task) = rx.recv() {
         match task {
             Task::Pose(tasks) => {
-                let _ = render_tx.send(todo!());
+                execute_pose_tasks(tasks, render_tx);
             }
         }
     }
 }
 
-struct WorkerPool {
+pub struct WorkerPool {
     workers: Vec<std::thread::JoinHandle<()>>,
 }
 impl WorkerPool {
@@ -73,10 +75,10 @@ impl WorkerPool {
         let workers = (0..8)
             .map(|_| {
                 let rx = req_rx.clone();
-                let render_tx = render_res_tx.clone();
+                let mut render_tx = render_res_tx.clone();
                 let game_tx = game_res_tx.clone();
                 std::thread::spawn(move || {
-                    worker_loop(rx, render_tx, game_tx);
+                    worker_loop(rx, &mut render_tx, game_tx);
                 })
             })
             .collect();

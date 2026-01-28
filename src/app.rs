@@ -4,7 +4,7 @@ use crossbeam_queue::SegQueue;
 use pollster::FutureExt as _;
 use winit::{application::ApplicationHandler, dpi::PhysicalSize, event::{DeviceEvent, WindowEvent}, event_loop::ActiveEventLoop, window::{Window, WindowId}};
 
-use crate::{render_snapshot::SnapshotHandoff, renderer::{wgpu_context::WgpuContext, Renderer}, resource_system::{render_resources::RenderResources, resource_manager::ResourceManager}, sim::sim::InputEvent};
+use crate::{job_system::worker_pool::RenderResponse, render_snapshot::SnapshotHandoff, renderer::{pose_storage::PoseStorage, wgpu_context::WgpuContext, Renderer}, resource_system::{render_resources::RenderResources, resource_manager::ResourceManager}, sim::sim::InputEvent};
 
 fn resize(
     physical_size: PhysicalSize<u32>,
@@ -24,8 +24,10 @@ fn resize(
 struct RenderContext<'surface> {
     renderer: Arc<Mutex<Renderer>>,
     render_resources: RenderResources,
+    pose_storage: PoseStorage,
     window: Arc<Window>,
     wgpu_context: WgpuContext<'surface>,
+    frame_idx: u32,
 }
 
 pub struct App<'surface> {
@@ -33,15 +35,17 @@ pub struct App<'surface> {
     snap_handoff: Arc<SnapshotHandoff>,
     sim_inputs: Arc<SegQueue<InputEvent>>,
     resource_manager: ResourceManager,
+    task_res_rx: crossbeam::channel::Receiver<RenderResponse>,
 }
 
 impl App<'_> {
-    pub fn new(sim_inputs: Arc<SegQueue<InputEvent>>, snap_handoff: Arc<SnapshotHandoff>, resource_manager: ResourceManager) -> Self {
+    pub fn new(sim_inputs: Arc<SegQueue<InputEvent>>, snap_handoff: Arc<SnapshotHandoff>, resource_manager: ResourceManager, task_res_rx: crossbeam::channel::Receiver<RenderResponse>) -> Self {
         Self {
             render_context: None,
             snap_handoff,
             sim_inputs,
             resource_manager,
+            task_res_rx
         }
     }
 }
@@ -61,12 +65,15 @@ impl<'surface> ApplicationHandler for App<'surface> {
                 Renderer::new(&wgpu_context, self.snap_handoff.clone(), placeholders, &render_resources)
             )
         );
+        let pose_storage = PoseStorage::new();
         self.render_context = Some(
             RenderContext {
                 window,
                 renderer,
                 render_resources,
+                pose_storage,
                 wgpu_context,
+                frame_idx: 0u32,
             }
         );
     }
@@ -82,14 +89,29 @@ impl<'surface> ApplicationHandler for App<'surface> {
                     let mut renderer = render_context.renderer.lock().unwrap();
                     self.resource_manager.process_game_responses(&mut renderer, &mut render_context.render_resources, &render_context.wgpu_context);
                     self.resource_manager.process_reg_requests();
+
+                    for res in self.task_res_rx.try_iter() {
+                        match res {
+                            RenderResponse::Pose(anim_pose_task_results) => {
+                                for r in anim_pose_task_results {
+                                    render_context.pose_storage.receive_pose(r);
+                                }
+                            },
+                        }
+                    }
+
                     // self.resource_manager.process_upload_queue(&mut renderer, &mut render_context.render_resources, &render_context.wgpu_context);
                     match renderer.render(
                         &render_context.wgpu_context,
                         &render_context.render_resources,
+                        &mut render_context.pose_storage,
+                        render_context.frame_idx,
                     ) {
                         Ok(_) => {}
                         Err(e) => eprintln!("render error: {:?}", e),
                     }
+
+                    render_context.frame_idx += 1;
                 }
             }
             WindowEvent::Resized(physical_size) => {

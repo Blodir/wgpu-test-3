@@ -273,7 +273,6 @@ impl RenderSnapshot {
         let mut model_instances = HashMap::<SceneNodeId, ModelInstanceSnapshot>::new();
         let frustum = scene.camera.build_frustum();
         accumulate_instance_snapshots(scene, animation_graphs, &mut model_instances, &Mat4::IDENTITY, scene.root, &frustum, resource_registry, game_resources, frame_index);
-        dbg!(model_instances.len());
         let skinned_draw_snapshot = SkinnedMeshDrawSnapshot::build(scene, &model_instances, resource_registry, game_resources);
 
         let environment = EnvironmentSnapshot::from(&scene.environment, resource_registry);
