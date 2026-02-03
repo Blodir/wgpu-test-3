@@ -180,7 +180,7 @@ impl Animator {
                             clip: anim.clone(),
                             time_wrap: state.time_wrap,
                             boundary_mode: state.boundary_mode,
-                            local_time: ((next_instance_time - animator_state_state.start_instance_time) as f32 / ANIM_TICKS_PER_SEC as f32) * state.speed,
+                            local_time: ((next_instance_time.saturating_sub(animator_state_state.start_instance_time)) as f32 / ANIM_TICKS_PER_SEC as f32) * state.speed,
                         }
                     }
                 ),
@@ -215,8 +215,8 @@ impl Animator {
                         };
                         let to_anim = game_resources.animations.get(to_anim_game_idx).unwrap();
 
-                        let from_time = ((next_instance_time - animator_transition_state.from_start_instance_time) as f32 / ANIM_TICKS_PER_SEC as f32) * from_state.speed;
-                        let to_time = ((next_instance_time - animator_transition_state.to_start_instance_time) as f32 / ANIM_TICKS_PER_SEC as f32) * to_state.speed;
+                        let from_time = ((next_instance_time.saturating_sub(animator_transition_state.from_start_instance_time)) as f32 / ANIM_TICKS_PER_SEC as f32) * from_state.speed;
+                        let to_time = ((next_instance_time.saturating_sub(animator_transition_state.to_start_instance_time)) as f32 / ANIM_TICKS_PER_SEC as f32) * to_state.speed;
 
                         BlendPoseTask {
                             node_id,
