@@ -26,9 +26,9 @@ pub fn run() {
     let initial_snap = RenderSnapshot::init();
     let snap_handoff = Arc::new(SnapshotHandoff::new(initial_snap));
     let sim_inputs = Arc::new(SegQueue::<InputEvent>::new());
-    let sim_handle = spawn_sim(sim_inputs.clone(), snap_handoff.clone(), registry_req_tx, registry_res_rx, game_req_rx, game_res_tx);
 
-    let (worker_pool, tx, render_rx, game_rx) = WorkerPool::init();
+    let (worker_pool, task_tx, render_rx, game_rx) = WorkerPool::init();
+    let sim_handle = spawn_sim(sim_inputs.clone(), snap_handoff.clone(), registry_req_tx, registry_res_rx, game_req_rx, game_res_tx, task_tx);
 
     let app = Arc::new(Mutex::new(app::App::new(
         sim_inputs.clone(),

@@ -4,35 +4,11 @@ use generational_arena::{Arena, Index};
 
 use crate::renderer::{bindgroups::material::MaterialBinding, wgpu_context::WgpuContext};
 
-use super::{animation::AnimationClip, file_formats::{animationfile, skeletonfile::Skeleton}};
+use super::{animation::AnimationClip, file_formats::animationfile};
 
 #[derive(Hash, Eq, PartialEq, Clone, Copy, Debug)]
 pub struct ModelRenderId(pub Index);
 impl Into<Index> for ModelRenderId {
-    fn into(self) -> Index {
-        self.0
-    }
-}
-
-#[derive(Hash, Eq, PartialEq, Clone, Copy, Debug)]
-pub struct SkeletonRenderId(pub Index);
-impl Into<Index> for SkeletonRenderId {
-    fn into(self) -> Index {
-        self.0
-    }
-}
-
-#[derive(Hash, Eq, PartialEq, Clone, Copy, Debug)]
-pub struct AnimationClipRenderId(pub Index);
-impl Into<Index> for AnimationClipRenderId {
-    fn into(self) -> Index {
-        self.0
-    }
-}
-
-#[derive(Hash, Eq, PartialEq, Clone, Copy, Debug)]
-pub struct AnimationRenderId(pub Index);
-impl Into<Index> for AnimationRenderId {
     fn into(self) -> Index {
         self.0
     }
@@ -93,20 +69,10 @@ pub struct ModelRenderData {
     pub vertex_buffer_start_offset: u32,
     pub mesh_id: MeshRenderId,
     pub submeshes: Vec<SubMesh>,
-    pub skeleton: SkeletonRenderId,
-    pub anim_clips: Vec<AnimationClipRenderId>,
-}
-
-pub struct AnimationClipRenderData {
-    pub manifest: animationfile::AnimationClip,
-    pub animation: AnimationRenderId,
 }
 
 pub struct RenderResources {
     pub models: Arena<ModelRenderData>,
-    pub skeletons: Arena<Skeleton>,
-    pub animation_clips: Arena<AnimationClipRenderData>,
-    pub animations: Arena<AnimationClip>,
     pub meshes: Arena<MeshGpuData>,
     pub materials: Arena<MaterialBinding>,
     pub textures: Arena<TextureGpuData>,
@@ -117,18 +83,12 @@ impl RenderResources {
         let materials = Arena::new();
         let textures = Arena::new();
         let models = Arena::new();
-        let skeletons = Arena::new();
-        let animation_clips = Arena::new();
-        let animations = Arena::new();
 
         Self {
             meshes,
             materials,
             textures,
             models,
-            skeletons,
-            animation_clips,
-            animations,
         }
     }
 

@@ -4,7 +4,7 @@ use wgpu::util::{BufferInitDescriptor, DeviceExt as _};
 
 use crate::renderer::{wgpu_context::WgpuContext, Renderer};
 
-use super::{file_formats::{animationfile, dds}, game_resources::{CreateGameResourceRequest, CreateGameResourceResponse, GameResources, MaterialGameData, MaterialGameId}, io_manager::{IoManager, IoRequest, IoResponse}, registry::{GameState, RenderState, ResourceKind, ResourceRequest, ResourceResult}, render_resources::{AnimationClipRenderData, AnimationClipRenderId, AnimationRenderId, MaterialRenderId, MeshGpuData, MeshRenderId, ModelRenderData, ModelRenderId, RenderResources, SkeletonRenderId, TextureGpuData, TextureRenderId}, texture::upload_texture};
+use super::{file_formats::{animationfile, dds}, game_resources::{CreateGameResourceRequest, CreateGameResourceResponse, GameResources, MaterialGameData, MaterialGameId}, io_manager::{IoManager, IoRequest, IoResponse}, registry::{GameState, RenderState, ResourceKind, ResourceRequest, ResourceResult}, render_resources::{MaterialRenderId, MeshGpuData, MeshRenderId, ModelRenderData, ModelRenderId, RenderResources, TextureGpuData, TextureRenderId}, texture::upload_texture};
 
 pub struct ResourceManager {
     io: IoManager,
@@ -54,13 +54,11 @@ impl ResourceManager {
             };
 
             match res {
-                CreateGameResourceResponse::Model { id, game_id, mesh, skeleton, animation_clips, submeshes, vertex_buffer_start_offset } => {
+                CreateGameResourceResponse::Model { id, game_id, mesh, submeshes, vertex_buffer_start_offset } => {
                     let model_render = ModelRenderData {
                         vertex_buffer_start_offset,
                         mesh_id: mesh,
                         submeshes,
-                        skeleton,
-                        anim_clips: animation_clips,
                     };
                     let render_idx = render_resources.models.insert(model_render);
                     if self.registry_res_tx.send(ResourceResult::ModelResult { id, game_id, render_id: ModelRenderId(render_idx) }).is_err() {
@@ -79,16 +77,21 @@ impl ResourceManager {
                         todo!();
                     }
                 },
-                CreateGameResourceResponse::AnimationClip { id, game_id, manifest, animation } => {
-                    let data = AnimationClipRenderData {
-                        manifest,
-                        animation,
-                    };
-                    let render_id = render_resources.animation_clips.insert(data);
-                    if self.registry_res_tx.send(ResourceResult::AnimationClipResult { id, game_id, render_id: AnimationClipRenderId(render_id) }).is_err() {
+                CreateGameResourceResponse::AnimationClip { id, game_id } => {
+                    if self.registry_res_tx.send(ResourceResult::AnimationClipResult { id, game_id }).is_err() {
                         todo!();
                     }
                 }
+                CreateGameResourceResponse::Skeleton { id, game_id } => {
+                    if self.registry_res_tx.send(ResourceResult::SkeletonResult { id, game_id }).is_err() {
+                        todo!();
+                    }
+                },
+                CreateGameResourceResponse::Animation { id, game_id } => {
+                    if self.registry_res_tx.send(ResourceResult::AnimationResult { id, game_id }).is_err() {
+                        todo!();
+                    }
+                },
             }
         }
 
@@ -178,15 +181,9 @@ impl ResourceManager {
                     */
                 },
                 IoResponse::SkeletonLoaded { id, skeleton } => {
-                    let idx = render_resources.skeletons.insert(skeleton);
-                    self.registry_res_tx.send(ResourceResult::SkeletonResult { id, render_id: SkeletonRenderId(idx) });
-                    /*
-                    let cpu_data = SkeletonCpuData { manifest: skeleton };
-                    let cpu_idx = self.cpu.skeletons.lock().unwrap().insert(cpu_data);
-                    let mut reg = self.registry.lock().unwrap();
-                    let entry = reg.entries.get_mut(id).unwrap();
-                    entry.game_state = GameState::Ready(cpu_idx);
-                    */
+                    if self.game_req_tx.send(CreateGameResourceRequest::Skeleton { id, manifest: skeleton }).is_err() {
+                        todo!();
+                    }
                 },
                 IoResponse::AnimationClipLoaded { id, clip } => {
                     if self.game_req_tx.send(CreateGameResourceRequest::AnimationClip { id, manifest: clip }).is_err() {
@@ -202,15 +199,9 @@ impl ResourceManager {
                     */
                 },
                 IoResponse::AnimationLoaded { id, parsed_clip } => {
-                    let idx = render_resources.animations.insert(parsed_clip);
-                    self.registry_res_tx.send(ResourceResult::AnimationResult { id, render_id: AnimationRenderId(idx) });
-                    /*
-                    let cpu_data: AnimationCpuData = parsed_clip;
-                    let cpu_idx = self.cpu.animations.lock().unwrap().insert(cpu_data);
-                    let mut reg = self.registry.lock().unwrap();
-                    let entry = reg.entries.get_mut(id).unwrap();
-                    entry.game_state = GameState::Ready(cpu_idx);
-                    */
+                    if self.game_req_tx.send(CreateGameResourceRequest::Animation { id, anim: parsed_clip }).is_err() {
+                        todo!();
+                    }
                 },
                 IoResponse::TextureLoaded { id, data } => {
                     // TODO move this function away from dds module, also it should probs just take the cpudata directly

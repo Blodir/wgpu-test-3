@@ -1,9 +1,9 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, rc::Rc, sync::Arc};
 
 use generational_arena::{Arena, Index};
 use glam::Mat4;
 
-use super::{file_formats::{animationfile, materialfile, modelfile}, registry::{AnimationClipHandle, AnimationClipId, AnimationHandle, MaterialHandle, MaterialId, MeshHandle, ModelId, RenderState, ResourceRegistry, SkeletonHandle, TextureHandle}, render_resources::{AnimationClipRenderId, AnimationRenderId, MaterialRenderId, MeshRenderId, SkeletonRenderId, SubMesh, TextureRenderId}};
+use super::{animation::{self, AnimationClip}, file_formats::{animationfile, materialfile, modelfile, skeletonfile::{self, Skeleton}}, registry::{AnimationClipHandle, AnimationClipId, AnimationHandle, AnimationId, MaterialHandle, MaterialId, MeshHandle, ModelId, RenderState, ResourceRegistry, SkeletonHandle, SkeletonId, TextureHandle}, render_resources::{MaterialRenderId, MeshRenderId, SubMesh, TextureRenderId}};
 
 use super::registry::RegistryExt;
 
@@ -24,8 +24,24 @@ impl Into<Index> for MaterialGameId {
 }
 
 #[derive(Hash, Eq, PartialEq, Clone, Copy)]
-pub struct AnimationClipGameId(Index);
+pub struct AnimationClipGameId(pub Index);
 impl Into<Index> for AnimationClipGameId {
+    fn into(self) -> Index {
+        self.0
+    }
+}
+
+#[derive(Hash, Eq, PartialEq, Clone, Copy)]
+pub struct AnimationGameId(pub Index);
+impl Into<Index> for AnimationGameId {
+    fn into(self) -> Index {
+        self.0
+    }
+}
+
+#[derive(Hash, Eq, PartialEq, Clone, Copy)]
+pub struct SkeletonGameId(pub Index);
+impl Into<Index> for SkeletonGameId {
     fn into(self) -> Index {
         self.0
     }
@@ -59,6 +75,8 @@ pub enum CreateGameResourceRequest {
     Model { id: ModelId, manifest: modelfile::Model },
     Material { id: MaterialId, manifest: materialfile::Material },
     AnimationClip { id: AnimationClipId, manifest: animationfile::AnimationClip },
+    Skeleton { id: SkeletonId,  manifest: skeletonfile::Skeleton },
+    Animation { id: AnimationId, anim: animation::AnimationClip },
 }
 
 pub enum CreateGameResourceResponse {
@@ -66,8 +84,6 @@ pub enum CreateGameResourceResponse {
         id: ModelId,
         game_id: ModelGameId,
         mesh: MeshRenderId,
-        skeleton: SkeletonRenderId,
-        animation_clips: Vec<AnimationClipRenderId>,
         submeshes: Vec<SubMesh>,
         vertex_buffer_start_offset: u32,
     },
@@ -84,21 +100,28 @@ pub enum CreateGameResourceResponse {
     AnimationClip {
         id: AnimationClipId,
         game_id: AnimationClipGameId,
-        manifest: animationfile::AnimationClip,
-        animation: AnimationRenderId,
+    },
+    Skeleton {
+        id: SkeletonId,
+        game_id: SkeletonGameId,
+    },
+    Animation {
+        id: AnimationId,
+        game_id: AnimationGameId,
     },
 }
 
 pub enum StagedData {
     Model(ModelId, ModelGameData),
     Material(MaterialId, MaterialGameData),
-    AnimationClip(AnimationClipId, AnimationClipGameData),
 }
 
 pub struct GameResources {
     pub models: Arena<ModelGameData>,
     pub materials: Arena<MaterialGameData>,
     pub animation_clips: Arena<AnimationClipGameData>,
+    pub animations: Arena<Arc<AnimationClip>>,
+    pub skeletons: Arena<Arc<Skeleton>>,
     pub staging: Vec<StagedData>,
     pub req_rx: crossbeam::channel::Receiver<CreateGameResourceRequest>,
     pub res_tx: crossbeam::channel::Sender<CreateGameResourceResponse>,
@@ -112,6 +135,8 @@ impl GameResources {
             models: Arena::new(),
             materials: Arena::new(),
             animation_clips: Arena::new(),
+            animations: Arena::new(),
+            skeletons: Arena::new(),
             staging: vec![],
             req_rx,
             res_tx,
@@ -155,8 +180,23 @@ impl GameResources {
                 CreateGameResourceRequest::AnimationClip { id, manifest } => {
                     let animation = registry.request_animation(&manifest.binary_path, &manifest);
                     let data = AnimationClipGameData { manifest, animation };
-                    self.staging.push(StagedData::AnimationClip(id, data));
+                    let game_id = self.animation_clips.insert(data);
+                    let res = CreateGameResourceResponse::AnimationClip {
+                        id,
+                        game_id: AnimationClipGameId(game_id),
+                    };
+                    self.res_tx.send(res);
                 }
+                CreateGameResourceRequest::Skeleton { id, manifest } => {
+                    let game_id = self.skeletons.insert(Arc::new(manifest));
+                    let res = CreateGameResourceResponse::Skeleton { id, game_id: SkeletonGameId(game_id) };
+                    self.res_tx.send(res);
+                },
+                CreateGameResourceRequest::Animation { id, anim } => {
+                    let game_id = self.animations.insert(Arc::new(anim));
+                    let res = CreateGameResourceResponse::Animation { id, game_id: AnimationGameId(game_id) };
+                    self.res_tx.send(res);
+                },
             }
         }
 
@@ -171,23 +211,6 @@ impl GameResources {
                         staging.push(StagedData::Model(id, model_game_data));
                         continue 'staging_loop;
                     };
-
-                    let skeleton_render_id = if let RenderState::Ready(index) = reg.get(&model_game_data.skeleton).render_state {
-                        SkeletonRenderId(index)
-                    } else {
-                        staging.push(StagedData::Model(id, model_game_data));
-                        continue 'staging_loop;
-                    };
-
-                    let mut animation_clip_render_ids = vec![];
-                    for anim_clip_handle in &model_game_data.animation_clips {
-                        if let RenderState::Ready(index) = reg.get(anim_clip_handle).render_state {
-                            animation_clip_render_ids.push(AnimationClipRenderId(index));
-                        } else {
-                            staging.push(StagedData::Model(id, model_game_data));
-                            continue 'staging_loop;
-                        };
-                    }
 
                     let mut material_render_ids = vec![];
                     for mat_handle in &model_game_data.materials {
@@ -212,8 +235,6 @@ impl GameResources {
                         id,
                         game_id: ModelGameId(game_id),
                         mesh: mesh_render_id,
-                        skeleton: skeleton_render_id,
-                        animation_clips: animation_clip_render_ids,
                         submeshes,
                         vertex_buffer_start_offset,
                     };
@@ -280,25 +301,6 @@ impl GameResources {
                         emissive_texture,
                         base_color_texture,
                         metallic_roughness_texture,
-                    };
-                    self.res_tx.send(res);
-                },
-                StagedData::AnimationClip(id, anim_clip_game_data) => {
-                    let reg = registry.borrow_mut();
-                    let anim_render_id = if let RenderState::Ready(index) = reg.get(&anim_clip_game_data.animation).render_state {
-                        AnimationRenderId(index)
-                    } else {
-                        staging.push(StagedData::AnimationClip(id, anim_clip_game_data));
-                        continue 'staging_loop;
-                    };
-
-                    let manifest = anim_clip_game_data.manifest.clone();
-                    let game_id = self.animation_clips.insert(anim_clip_game_data);
-                    let res = CreateGameResourceResponse::AnimationClip {
-                        id,
-                        game_id: AnimationClipGameId(game_id),
-                        manifest,
-                        animation: anim_render_id,
                     };
                     self.res_tx.send(res);
                 },

@@ -43,3 +43,7 @@ pub fn create_shader_module(device: &wgpu::Device, path: &str) -> wgpu::ShaderMo
 pub fn lerpf32(a: f32, b: f32, t: f32) -> f32 {
     a + (b - a) * t
 }
+
+pub fn lerpu64(a: u64, b: u64, t: f32) -> u64 {
+    a + ((b - a) as f32 * t).round() as u64
+}

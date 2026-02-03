@@ -8,16 +8,18 @@ use super::anim_pose::execute_pose_tasks;
 
 pub struct SinglePoseTask {
     pub node_id: SceneNodeId,
+    pub instance_time: u64,
     pub skeleton: Arc<Skeleton>,
     pub clip: Arc<AnimationClip>,
     pub time_wrap: TimeWrapMode,
     pub boundary_mode: BoundaryMode,
     /// time in seconds since the transition into this state started
-    pub animation_time: f32,
+    pub local_time: f32,
 }
 
 pub struct BlendPoseTask {
     pub node_id: SceneNodeId,
+    pub instance_time: u64,
     pub skeleton: Arc<Skeleton>,
     pub from_clip: Arc<AnimationClip>,
     pub to_clip: Arc<AnimationClip>,

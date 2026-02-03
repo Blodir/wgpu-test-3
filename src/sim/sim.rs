@@ -9,10 +9,10 @@ use winit::{
 };
 
 use crate::{
-    render_snapshot::{RenderSnapshot, SnapshotHandoff}, resource_system::{game_resources::{CreateGameResourceRequest, CreateGameResourceResponse, GameResources}, registry::{RegistryExt, ResourceRegistry, ResourceRequest, ResourceResult}, resource_manager::ResourceManager}
+    job_system::worker_pool::Task, render_snapshot::{RenderSnapshot, SnapshotHandoff}, resource_system::{game_resources::{CreateGameResourceRequest, CreateGameResourceResponse, GameResources}, registry::{RegistryExt, ResourceRegistry, ResourceRequest, ResourceResult}, resource_manager::ResourceManager}
 };
 
-use super::scene_tree::build_test_animation_blending;
+use super::scene_tree::{build_test_animation_blending, RenderDataType};
 
 #[derive(Debug)]
 pub enum InputEvent {
@@ -22,7 +22,7 @@ pub enum InputEvent {
     Exit,
 }
 
-const TICK: Duration = Duration::from_nanos(50_000_000); // 20hz ish
+const TICK: Duration = Duration::from_millis(100);
 const SPIN: Duration = Duration::from_micros(200);
 
 pub fn spawn_sim(
@@ -32,6 +32,7 @@ pub fn spawn_sim(
     reg_res_rx: crossbeam::channel::Receiver<ResourceResult>,
     game_req_rx: crossbeam::channel::Receiver<CreateGameResourceRequest>,
     game_res_tx: crossbeam::channel::Sender<CreateGameResourceResponse>,
+    job_task_tx: crossbeam::channel::Sender<Task>,
 ) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
         let resource_registry = Rc::new(RefCell::new(ResourceRegistry::new(reg_req_tx, reg_res_rx)));
@@ -132,6 +133,21 @@ pub fn spawn_sim(
             scene.update(&resource_registry, &animation_graphs, scene.root, dt);
 
             let snap = RenderSnapshot::build(&mut scene, &resource_registry, &animation_graphs, &game_resources, frame_index);
+
+            // schedule animation jobs
+            for (node_id, _) in &snap.model_instances {
+                match &mut scene.nodes.get_mut((*node_id).into()).unwrap().render_data {
+                    RenderDataType::Model(static_model) => (),
+                    RenderDataType::AnimatedModel(animated_model) => {
+                        let job = animated_model.animator.build_job(dt, &animation_graphs, *node_id, &animated_model.model, &game_resources, &resource_registry);
+                        if job_task_tx.send(Task::Pose(job)).is_err() {
+                            todo!();
+                        }
+                    },
+                    RenderDataType::None => (),
+                }
+            }
+
             snap_handoff.publish(snap);
 
             next += TICK;

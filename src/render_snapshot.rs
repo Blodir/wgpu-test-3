@@ -4,7 +4,7 @@ use arc_swap::{ArcSwap, Guard};
 use generational_arena::Index;
 use glam::{Mat4, Quat, Vec3};
 
-use crate::{resource_system::{game_resources::{self, GameResources}, registry::{GameState, ModelId, RenderState, ResourceRegistry, TextureId}, render_resources::{AnimationClipRenderId, MaterialRenderId, MeshRenderId, ModelRenderId, SkeletonRenderId, TextureRenderId}, resource_manager::ResourceManager}, sim::{animator::{AnimationGraph, BoundaryMode, TimeWrapMode}, camera::{Camera, Frustum, frustum_intersects_aabb_world}, scene_tree::{Environment, RenderDataType, Scene, SceneNodeId, Sun}}};
+use crate::{resource_system::{game_resources::{self, GameResources}, registry::{GameState, ModelId, RenderState, ResourceRegistry, TextureId}, render_resources::{MaterialRenderId, MeshRenderId, ModelRenderId, TextureRenderId}, resource_manager::ResourceManager}, sim::{animator::{AnimationGraph, BoundaryMode, TimeWrapMode}, camera::{Camera, Frustum, frustum_intersects_aabb_world}, scene_tree::{Environment, RenderDataType, Scene, SceneNodeId, Sun}}};
 
 pub fn accumulate_instance_snapshots(
     scene: &Scene,
@@ -27,7 +27,7 @@ pub fn accumulate_instance_snapshots(
             return;
         },
         RenderDataType::Model(static_model) => (&static_model.handle, *static_model.last_visible_frame.borrow(), None),
-        RenderDataType::AnimatedModel(animated_model) => (&animated_model.model, *animated_model.last_visible_frame.borrow(), animated_model.animator.build_snapshot(animation_graphs, &animated_model.model, resource_registry, game_resources)),
+        RenderDataType::AnimatedModel(animated_model) => (&animated_model.model, *animated_model.last_visible_frame.borrow(), Some(animated_model.animator.build_snapshot())),
     };
 
     let reg = resource_registry.borrow();
@@ -58,14 +58,11 @@ pub fn accumulate_instance_snapshots(
                 submesh_transforms.push(t);
             }
             if !submesh_transforms.is_empty() {
-                if let RenderState::Ready(skeleton_id) = reg.get(&model_game.skeleton).render_state {
-                    let inst = ModelInstanceSnapshot {
-                        submesh_transforms,
-                        animation: maybe_animation_snapshot,
-                        skeleton_id: SkeletonRenderId(skeleton_id),
-                    };
-                    instances.insert(node_id, inst);
-                }
+                let inst = ModelInstanceSnapshot {
+                    submesh_transforms,
+                    animation: maybe_animation_snapshot,
+                };
+                instances.insert(node_id, inst);
             }
         }
     }
@@ -94,6 +91,7 @@ impl Default for CameraSnapshot {
     }
 }
 
+/*
 pub struct AnimationStateSnapshot {
     pub clip_id: AnimationClipRenderId,
     pub time_wrap: TimeWrapMode,
@@ -118,11 +116,13 @@ pub enum AnimationSnapshot {
     AnimationStateSnapshot(AnimationStateSnapshot),
     AnimationTransitionSnapshot(AnimationTransitionSnapshot),
 }
+ */
+
+pub struct AnimationSnapshot(pub u64);
 
 pub struct ModelInstanceSnapshot {
     pub submesh_transforms: Vec<Vec<Mat4>>,
     pub animation: Option<AnimationSnapshot>,
-    pub skeleton_id: SkeletonRenderId,
 }
 
 #[derive(Debug)]

@@ -2,7 +2,7 @@ use std::{cmp::Ordering, collections::HashMap, ops::Range, sync::Arc};
 
 use glam::{Mat4, Quat, Vec3};
 
-use crate::{render_snapshot::{AnimationSnapshot, SnapshotGuard}, renderer::{bindgroups::bones::{BoneMat34, BonesBinding}, buffers::instance::{Instance, Instances}, pipelines::skinned::DrawContext, pose_storage::{self, PoseStorage, PoseTime, TRS}, utils::lerpf32}, resource_system::{animation::{AnimationClip, Channel, Track}, file_formats::{animationfile, skeletonfile}, registry::{GameState, MaterialId, MeshId, ModelId}, render_resources::{self, MaterialRenderId, MeshRenderId, ModelRenderId, RenderResources}, resource_manager::ResourceManager}, sim::{animator, scene_tree::SceneNodeId}};
+use crate::{render_snapshot::{AnimationSnapshot, SnapshotGuard}, renderer::{bindgroups::bones::{BoneMat34, BonesBinding}, buffers::instance::{Instance, Instances}, pipelines::skinned::DrawContext, pose_storage::{self, PoseStorage, TRS}, utils::{lerpf32, lerpu64}}, resource_system::{animation::{AnimationClip, Channel, Track}, file_formats::{animationfile, skeletonfile}}, sim::{animator, scene_tree::SceneNodeId}};
 
 pub fn resolve_skinned_draw<'a>(
     bones: &mut BonesBinding,
@@ -24,52 +24,23 @@ pub fn resolve_skinned_draw<'a>(
         let prev_node_inst = snaps.prev.model_instances.get(node_id);
         let palette_offset = joint_palette.len() as u32;
         if let Some(anim_snap) = &curr_node_inst.animation {
-            let pose_time = match &anim_snap {
-                AnimationSnapshot::AnimationStateSnapshot(animation_state_snapshot) => {
-                    let time = prev_node_inst
-                        .and_then(|node| node.animation.as_ref())
-                        .map(|prev_anim_snap| match prev_anim_snap {
-                            AnimationSnapshot::AnimationStateSnapshot(animation_state_snapshot) =>
-                                animation_state_snapshot.animation_time,
-                            AnimationSnapshot::AnimationTransitionSnapshot(animation_transition_snapshot) =>
-                                animation_transition_snapshot.to_time,
-                        })
-                        .map(|prev_time| lerpf32(prev_time, animation_state_snapshot.animation_time, t))
-                        .unwrap_or(0f32);
-                    PoseTime::SingleTime(time)
-                },
-                AnimationSnapshot::AnimationTransitionSnapshot(animation_transition_snapshot) => {
-                    let prev_times = &prev_node_inst
-                        .and_then(|node| node.animation.as_ref())
-                        .map(|prev_anim_snap| match prev_anim_snap {
-                            AnimationSnapshot::AnimationStateSnapshot(animation_state_snapshot) =>
-                                (animation_state_snapshot.animation_time, 0.0),
-                            AnimationSnapshot::AnimationTransitionSnapshot(animation_transition_snapshot) =>
-                                (animation_transition_snapshot.from_time, animation_transition_snapshot.to_time)
-                        }).unwrap_or((0.0, 0.0));
-                    let from_time = lerpf32(prev_times.0, animation_transition_snapshot.from_time, t);
-                    let to_time = lerpf32(prev_times.1, animation_transition_snapshot.to_time, t);
-                    PoseTime::BlendTime(from_time, to_time)
-                }
-            };
-            let pose = pose_storage.get(node_id, pose_time.clone(), frame_idx);
-            let joints = match pose {
+            let snap_time = prev_node_inst
+                .and_then(|node| node.animation.as_ref())
+                .map(|prev| lerpu64(prev.0, anim_snap.0, t))
+                .unwrap_or(anim_snap.0);
+            let poses = pose_storage.get(node_id, snap_time.clone(), frame_idx);
+            let joints = match poses {
                 pose_storage::GetPoseResponse::One(pose_data) => pose_data.joints.clone(),
-                pose_storage::GetPoseResponse::Two(pose_data, pose_data1) => {
-                    // (curr - t0) / (t1 - t0)
-                    // this is not enough information to be able to tell if the current snapshot time is from the blend "from" clip or "to" clip... TODO
-                    let a = match (&pose_time, &pose_data.time, &pose_data1.time) {
-                        (PoseTime::SingleTime(curr), PoseTime::SingleTime(t0), PoseTime::SingleTime(t1)) => (curr - t0) / (t1 - t0),
-                        (PoseTime::SingleTime(curr), PoseTime::SingleTime(t0), PoseTime::BlendTime(from1, to1)) => (curr - t0) / (from1 - t0),
-                        (PoseTime::SingleTime(curr), PoseTime::BlendTime(from0, to0), PoseTime::SingleTime(t1)) => (curr - t1) / (to0 - t1),
-                        (PoseTime::SingleTime(curr), PoseTime::BlendTime(from0, to0), PoseTime::BlendTime(from1, to1)) => (curr - to0) / (to1 - to0),
-                        (PoseTime::BlendTime(curr_from, curr_to), PoseTime::SingleTime(t0), PoseTime::SingleTime(t1)) => (curr_to - t0) / (t1 - t0), // ok this just makes no sense so im guessing
-                        (PoseTime::BlendTime(curr_from, curr_to), PoseTime::SingleTime(t0), PoseTime::BlendTime(from1, to1)) => (curr_from - t0) / (from1 - t0),
-                        (PoseTime::BlendTime(curr_from, curr_to), PoseTime::BlendTime(from0, to0), PoseTime::SingleTime(t1)) => (curr_to - to0) / (t1 - to0),
-                        (PoseTime::BlendTime(curr_from, curr_to), PoseTime::BlendTime(from0, to0), PoseTime::BlendTime(from1, to1)) => (curr_from - from0) / (from1 - from0),
-                    };
-                    pose_data.joints.iter().zip(&pose_data1.joints)
-                        .map(|(pose0, pose1)| TRS { t: pose0.t.lerp(pose1.t, a), r: pose0.r.slerp(pose1.r, a), s: pose0.s.lerp(pose1.s, a)  }).collect()
+                pose_storage::GetPoseResponse::Two(pose_data0, pose_data1) => {
+                    let nom = snap_time.saturating_sub(pose_data0.time);
+                    let denom = pose_data1.time.saturating_sub(pose_data0.time);
+                    if denom == 0 {
+                        pose_data0.joints.clone()
+                    } else {
+                        let a = (nom as f32 / denom as f32).min(1.0).max(0.0);
+                        pose_data0.joints.iter().zip(&pose_data1.joints)
+                            .map(|(pose0, pose1)| TRS { t: pose0.t.lerp(pose1.t, a), r: pose0.r.slerp(pose1.r, a), s: pose0.s.lerp(pose1.s, a)  }).collect()
+                    }
                 }
                 // don't render if animation is missing... maybe in the future fill with temp bind pose?
                 pose_storage::GetPoseResponse::Nothing => continue,

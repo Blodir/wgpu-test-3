@@ -2,7 +2,7 @@ use std::{cell::RefCell, collections::HashMap, marker::PhantomData, rc::{Rc, Wea
 
 use generational_arena::{Arena, Index};
 
-use super::{file_formats::animationfile, game_resources::{AnimationClipGameId, MaterialGameId, ModelGameId}, render_resources::{AnimationClipRenderId, AnimationRenderId, MaterialRenderId, MeshRenderId, ModelRenderId, SkeletonRenderId, TextureRenderId}};
+use super::{file_formats::animationfile, game_resources::{AnimationClipGameId, AnimationGameId, MaterialGameId, ModelGameId, SkeletonGameId}, render_resources::{MaterialRenderId, MeshRenderId, ModelRenderId, TextureRenderId}};
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum ResourceKind {
@@ -130,9 +130,9 @@ pub enum ResourceRequest {
 pub enum ResourceResult {
     ModelResult { id: ModelId, game_id: ModelGameId, render_id: ModelRenderId },
     MeshResult { id: MeshId, render_id: MeshRenderId },
-    SkeletonResult { id: SkeletonId, render_id: SkeletonRenderId },
-    AnimationResult { id: AnimationId, render_id: AnimationRenderId },
-    AnimationClipResult { id: AnimationClipId, game_id: AnimationClipGameId, render_id: AnimationClipRenderId },
+    SkeletonResult { id: SkeletonId, game_id: SkeletonGameId },
+    AnimationResult { id: AnimationId, game_id: AnimationGameId },
+    AnimationClipResult { id: AnimationClipId, game_id: AnimationClipGameId },
     TextureResult { id: TextureId, render_id: TextureRenderId },
     MaterialResult { id: MaterialId, game_id: MaterialGameId, render_id: MaterialRenderId },
 }
@@ -424,18 +424,17 @@ impl RegistryExt for Rc<RefCell<ResourceRegistry>> {
                     let entry = reg.entries.get_mut(id.idx).unwrap();
                     entry.render_state = RenderState::Ready(render_id.into());
                 },
-                ResourceResult::SkeletonResult { id, render_id } => {
-                    let entry = reg.entries.get_mut(id.idx).unwrap();
-                    entry.render_state = RenderState::Ready(render_id.into());
-                },
-                ResourceResult::AnimationResult { id, render_id } => {
-                    let entry = reg.entries.get_mut(id.idx).unwrap();
-                    entry.render_state = RenderState::Ready(render_id.into());
-                },
-                ResourceResult::AnimationClipResult { id, game_id, render_id } => {
+                ResourceResult::SkeletonResult { id, game_id } => {
                     let entry = reg.entries.get_mut(id.idx).unwrap();
                     entry.game_state = GameState::Ready(game_id.into());
-                    entry.render_state = RenderState::Ready(render_id.into());
+                },
+                ResourceResult::AnimationResult { id, game_id } => {
+                    let entry = reg.entries.get_mut(id.idx).unwrap();
+                    entry.game_state = GameState::Ready(game_id.into());
+                },
+                ResourceResult::AnimationClipResult { id, game_id } => {
+                    let entry = reg.entries.get_mut(id.idx).unwrap();
+                    entry.game_state = GameState::Ready(game_id.into());
                 },
                 ResourceResult::TextureResult { id, render_id } => {
                     let entry = reg.entries.get_mut(id.idx).unwrap();

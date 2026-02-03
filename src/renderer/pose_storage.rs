@@ -12,15 +12,9 @@ pub struct TRS {
     pub s: Vec3,
 }
 
-#[derive(Clone)]
-pub enum PoseTime {
-    SingleTime(f32),
-    BlendTime(f32, f32),
-}
-
 pub struct PoseData {
     pub joints: Vec<TRS>,
-    pub time: PoseTime,
+    pub time: u64,
 }
 
 struct PoseEntry {
@@ -36,7 +30,7 @@ impl Default for PoseEntry {
     }
 }
 
-const POSE_STORAGE_BUFFER_SIZE: usize = 3;
+pub const POSE_STORAGE_BUFFER_SIZE: usize = 4;
 const POSE_GC_GRACE_FRAMES: u32 = 60;
 
 pub enum GetPoseResponse<'a> {
@@ -59,51 +53,26 @@ impl PoseStorage {
 
     pub fn receive_pose(&mut self, res: AnimPoseTaskResult) {
         let idx = self.scene_to_pose_id.entry(res.node_id).or_insert(self.pose_data.insert(PoseEntry::default()));
-        let data = self.pose_data.get_mut(*idx).unwrap();
+        let entry = self.pose_data.get_mut(*idx).unwrap();
 
         // sorted insert
-        if data.poses.len() == 0 {
-            data.poses.insert(0, res.data);
+        if entry.poses.len() == 0 {
+            entry.poses.push(res.data);
         } else {
-            match res.data.time {
-                PoseTime::SingleTime(curr_time) => {
-                    for i in 0..=data.poses.len() {
-                        if i == data.poses.len() {
-                            data.poses.insert(i, res.data);
-                            break;
-                        }
-                        let comp_time = match data.poses[i].time {
-                            PoseTime::SingleTime(t) => t,
-                            PoseTime::BlendTime(t0, t1) => t1,
-                        };
-                        if comp_time < curr_time {
-                            data.poses.insert(i, res.data);
-                            break;
-                        }
-                    }
-                },
-                PoseTime::BlendTime(curr_from, curr_to) => {
-                    for i in 0..=data.poses.len() {
-                        if i == data.poses.len() {
-                            data.poses.insert(i, res.data);
-                            break;
-                        }
-                        let comp_time = match data.poses[i].time {
-                            PoseTime::SingleTime(t) => t,
-                            PoseTime::BlendTime(t0, t1) => t0,
-                        };
-                        if comp_time < curr_from {
-                            data.poses.insert(i, res.data);
-                            break;
-                        }
-                    }
-
-                },
+            for i in 0..=entry.poses.len() {
+                if i == entry.poses.len() {
+                    entry.poses.insert(i, res.data);
+                    break;
+                }
+                if entry.poses[i].time > res.data.time {
+                    entry.poses.insert(i, res.data);
+                    break;
+                }
             }
         }
 
-        if data.poses.len() > POSE_STORAGE_BUFFER_SIZE {
-            data.poses.remove(0);
+        if entry.poses.len() > POSE_STORAGE_BUFFER_SIZE {
+            entry.poses.remove(0);
         }
     }
 
@@ -116,7 +85,7 @@ impl PoseStorage {
         });
     }
 
-    pub fn get<'a>(&'a mut self, id: &SceneNodeId, pose_time: PoseTime, frame_idx: u32) -> GetPoseResponse<'a> {
+    pub fn get<'a>(&'a mut self, id: &SceneNodeId, pose_time: u64, frame_idx: u32) -> GetPoseResponse<'a> {
         if let Some(idx) = self.scene_to_pose_id.get(id) {
             let entry = self.pose_data.get_mut(*idx).unwrap();
             entry.last_seen = frame_idx;
@@ -127,31 +96,16 @@ impl PoseStorage {
             } else {
                 // linear search for the most recent animation time that is smaller than the query
                 let mut best_idx = 0;
-                match pose_time {
-                    PoseTime::SingleTime(curr_time) => {
-                        for i in 0..(entry.poses.len() - 1) {
-                            let comp_time = match entry.poses[i].time {
-                                PoseTime::SingleTime(t) => t,
-                                PoseTime::BlendTime(t0, t1) => t1,
-                            };
-                            if comp_time < curr_time {
-                                best_idx = i;
-                            }
-                        }
-                    },
-                    PoseTime::BlendTime(curr_from, curr_to) => {
-                        for i in 0..(entry.poses.len() - 1) {
-                            let comp_time = match entry.poses[i].time {
-                                PoseTime::SingleTime(t) => t,
-                                PoseTime::BlendTime(t0, t1) => t0,
-                            };
-                            if comp_time < curr_from {
-                                best_idx = i;
-                            }
-                        }
-                    },
+                for i in 0..entry.poses.len() {
+                    if entry.poses[i].time < pose_time {
+                        best_idx = i;
+                    }
                 }
-                GetPoseResponse::Two(&entry.poses[best_idx], &entry.poses[best_idx + 1])
+                if best_idx == entry.poses.len() - 1 {
+                    GetPoseResponse::One(&entry.poses[best_idx])
+                } else {
+                    GetPoseResponse::Two(&entry.poses[best_idx], &entry.poses[best_idx + 1])
+                }
             }
         } else {
             GetPoseResponse::Nothing
