@@ -96,9 +96,7 @@ impl Renderer {
         );
 
         let camera = CameraBinding::new(
-            &CameraSnapshot::default(),
             &wgpu_context.device,
-            &wgpu_context.surface_config,
             &layouts.camera,
         );
         let bones = BonesBinding::new(&layouts.bones, &wgpu_context.device);
