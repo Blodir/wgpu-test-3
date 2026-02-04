@@ -93,9 +93,7 @@ impl<'surface> ApplicationHandler for App<'surface> {
                     for res in self.task_res_rx.try_iter() {
                         match res {
                             RenderResponse::Pose(anim_pose_task_results) => {
-                                for r in anim_pose_task_results {
-                                    render_context.pose_storage.receive_pose(r);
-                                }
+                                render_context.pose_storage.receive_poses(anim_pose_task_results);
                             },
                         }
                     }

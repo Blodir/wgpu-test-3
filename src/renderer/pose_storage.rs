@@ -83,7 +83,6 @@ impl PoseBuffer {
     }
 
     fn insert_one(&mut self, data: PoseData) {
-        // TODO batching, workers should return arrays of poses so we only need to shift once
         if self.times.len() == POSE_STORAGE_BUFFER_SIZE {
             self.evict_first_n(1);
         }
@@ -179,14 +178,22 @@ impl PoseStorage {
         }
     }
 
-    pub fn receive_pose(&mut self, res: AnimPoseTaskResult) {
+    pub fn receive_poses(&mut self, res: AnimPoseTaskResult) {
         match self.scene_to_pose_id.get(&res.node_id) {
             Some(pose_idx) => {
                 let entry = self.pose_data.get_mut(*pose_idx).unwrap();
-                entry.buffer.insert_one(res.data);
+                // TODO improve performance: insert multiple poses in one call (so we only shift once)
+                for d in res.data {
+                    entry.buffer.insert_one(d);
+                }
             },
             None => {
-                let idx = self.pose_data.insert(PoseEntry::new(res.data));
+                let mut data = res.data.into_iter();
+                let mut entry = PoseEntry::new(data.next().unwrap());
+                for d in data {
+                    entry.buffer.insert_one(d);
+                }
+                let idx = self.pose_data.insert(entry);
                 self.scene_to_pose_id.insert(res.node_id, idx);
             },
         }

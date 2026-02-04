@@ -140,7 +140,7 @@ pub fn spawn_sim(
                     RenderDataType::Model(static_model) => (),
                     RenderDataType::AnimatedModel(animated_model) => {
                         let job = animated_model.animator.build_job(dt, &animation_graphs, *node_id, &animated_model.model, &game_resources, &resource_registry);
-                        if job_task_tx.send(Task::Pose(job)).is_err() {
+                        if job_task_tx.send(Task::Pose(*node_id, job)).is_err() {
                             todo!();
                         }
                     },

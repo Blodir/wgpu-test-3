@@ -7,7 +7,6 @@ use crate::{renderer::pose_storage::PoseData, resource_system::{animation::Anima
 use super::anim_pose::execute_pose_tasks;
 
 pub struct SinglePoseTask {
-    pub node_id: SceneNodeId,
     pub instance_time: u64,
     pub skeleton: Arc<Skeleton>,
     pub clip: Arc<AnimationClip>,
@@ -18,7 +17,6 @@ pub struct SinglePoseTask {
 }
 
 pub struct BlendPoseTask {
-    pub node_id: SceneNodeId,
     pub instance_time: u64,
     pub skeleton: Arc<Skeleton>,
     pub from_clip: Arc<AnimationClip>,
@@ -38,16 +36,16 @@ pub enum AnimPoseTask {
 }
 
 pub enum Task {
-    Pose(Vec<AnimPoseTask>)
+    Pose(SceneNodeId, Vec<AnimPoseTask>)
 }
 
 pub struct AnimPoseTaskResult {
     pub node_id: SceneNodeId,
-    pub data: PoseData,
+    pub data: Vec<PoseData>,
 }
 
 pub enum RenderResponse {
-    Pose(Vec<AnimPoseTaskResult>),
+    Pose(AnimPoseTaskResult),
 }
 pub enum GameResponse {}
 
@@ -58,8 +56,8 @@ fn worker_loop(
 ) {
     while let Ok(task) = rx.recv() {
         match task {
-            Task::Pose(tasks) => {
-                execute_pose_tasks(tasks, render_tx);
+            Task::Pose(node_id, tasks) => {
+                execute_pose_tasks(node_id, tasks, render_tx);
             }
         }
     }

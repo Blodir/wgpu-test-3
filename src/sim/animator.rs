@@ -175,7 +175,6 @@ impl Animator {
                         let anim = game_resources.animations.get(anim_game_idx).unwrap();
                         SinglePoseTask {
                             instance_time: next_instance_time,
-                            node_id,
                             skeleton: skeleton.clone(),
                             clip: anim.clone(),
                             time_wrap: state.time_wrap,
@@ -219,7 +218,6 @@ impl Animator {
                         let to_time = ((next_instance_time.saturating_sub(animator_transition_state.to_start_instance_time)) as f32 / ANIM_TICKS_PER_SEC as f32) * to_state.speed;
 
                         BlendPoseTask {
-                            node_id,
                             instance_time: next_instance_time,
                             skeleton: skeleton.clone(),
                             from_clip: from_anim.clone(),

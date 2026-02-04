@@ -2,7 +2,7 @@ use std::{cmp::Ordering, sync::Arc};
 
 use glam::{Mat4, Quat, Vec3};
 
-use crate::{job_system::worker_pool::{AnimPoseTask, AnimPoseTaskResult, BlendPoseTask, RenderResponse, SinglePoseTask}, renderer::pose_storage::{PoseData, TRS}, resource_system::{animation::{AnimationClip, Channel, Track}, file_formats::{animationfile, skeletonfile}}, sim::animator};
+use crate::{job_system::worker_pool::{AnimPoseTask, AnimPoseTaskResult, BlendPoseTask, RenderResponse, SinglePoseTask}, renderer::pose_storage::{PoseData, TRS}, resource_system::{animation::{AnimationClip, Channel, Track}, file_formats::{animationfile, skeletonfile}}, sim::{animator, scene_tree::SceneNodeId}};
 
 fn bin_search_anim_indices(times: &[f32], val: f32) -> (usize, usize) {
     let n = times.len();
@@ -128,7 +128,7 @@ fn compute_joint_trs<'a>(task: AnimPoseTask) -> Vec<TRS> {
 
     let mut joint_matrices: Vec<_> = skeleton.joints.iter().map(|joint| Mat4::from_cols_array_2d(&joint.trs)).collect();
     match task {
-        AnimPoseTask::Single(SinglePoseTask { node_id, instance_time, skeleton, clip, time_wrap, boundary_mode, local_time }) => {
+        AnimPoseTask::Single(SinglePoseTask { instance_time, skeleton, clip, time_wrap, boundary_mode, local_time }) => {
             let pose = compute_animated_pose(&clip, &skeleton, &base_locals, local_time, &time_wrap);
             for (idx, maybe_joint) in pose.iter().enumerate() {
                 if let Some(joint) = maybe_joint {
@@ -136,7 +136,7 @@ fn compute_joint_trs<'a>(task: AnimPoseTask) -> Vec<TRS> {
                 }
             }
         },
-        AnimPoseTask::Blend(BlendPoseTask { node_id, instance_time, skeleton, from_clip, to_clip, blend_time, from_time, to_time, from_time_wrap, to_time_wrap }) => {
+        AnimPoseTask::Blend(BlendPoseTask { instance_time, skeleton, from_clip, to_clip, blend_time, from_time, to_time, from_time_wrap, to_time_wrap }) => {
             let pose_1 = compute_animated_pose(&from_clip, &skeleton, &base_locals, from_time, &from_time_wrap);
             let pose_2 = compute_animated_pose(&to_clip, &skeleton, &base_locals, to_time, &to_time_wrap);
             let blend_t = (to_time / blend_time).min(1.0);
@@ -181,23 +181,23 @@ fn compute_joint_trs<'a>(task: AnimPoseTask) -> Vec<TRS> {
         .collect()
 }
 
-pub fn execute_pose_tasks(tasks: Vec<AnimPoseTask>, render_tx: &mut crossbeam::channel::Sender<RenderResponse>) {
+pub fn execute_pose_tasks(node_id: SceneNodeId, tasks: Vec<AnimPoseTask>, render_tx: &mut crossbeam::channel::Sender<RenderResponse>) {
     if render_tx.send(
         RenderResponse::Pose(
-            tasks.into_iter().map(|task| {
-                let (node_id, time) = match task {
-                    AnimPoseTask::Single(ref t) => (t.node_id, t.instance_time),
-                    AnimPoseTask::Blend(ref t) => (t.node_id, t.instance_time)
-                };
-                let joints = compute_joint_trs(task);
-                AnimPoseTaskResult {
-                    node_id,
-                    data: PoseData {
+            AnimPoseTaskResult {
+                node_id,
+                data: tasks.into_iter().map(|task| {
+                    let time = match task {
+                        AnimPoseTask::Single(ref t) => t.instance_time,
+                        AnimPoseTask::Blend(ref t) => t.instance_time,
+                    };
+                    let joints = compute_joint_trs(task);
+                    PoseData {
                         time,
                         joints,
-                    },
-                }
-            }).collect()
+                    }
+                }).collect()
+            }
         )
     ).is_err() {
         todo!();
