@@ -164,7 +164,7 @@ pub fn build_test_animation_blending(resource_registry: &Rc<RefCell<ResourceRegi
     let model_handle = resource_registry.request_model("assets/local/Fox/Fox.json");
 
     let mut children = vec![];
-    let grid_size = 1;
+    let grid_size = 70;
     for i in 0..grid_size {
         for j in 0..grid_size {
             let spacing = 200.0;

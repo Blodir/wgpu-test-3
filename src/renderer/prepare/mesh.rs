@@ -71,8 +71,8 @@ pub fn resolve_skinned_draw<'a>(
                     if let Some(palette_offset) = node_to_palette_offset.get(node_id) {
                         if let Some(prev_transforms) = maybe_prev_transforms {
                             for idx in 0..curr_transforms.len() {
-                                let (s1, r1, t1) = prev_transforms[idx].to_scale_rotation_translation();
-                                let (s2, r2, t2) = curr_transforms[idx].to_scale_rotation_translation();
+                                let TRS { t: t1, r: r1, s: s1 } = prev_transforms[idx];
+                                let TRS { t: t2, r: r2, s: s2 } = curr_transforms[idx];
                                 let s3 = s1.lerp(s2, t);
                                 let r3 = r1.slerp(r2, t);
                                 let t3 = t1.lerp(t2, t);
@@ -82,7 +82,7 @@ pub fn resolve_skinned_draw<'a>(
                             }
                         } else {
                             for transform in curr_transforms {
-                                let instance = Instance::new(*transform, *palette_offset);
+                                let instance = Instance::new(Mat4::from_scale_rotation_translation(transform.s, transform.r, transform.t), *palette_offset);
                                 instance_data.push(instance);
                             }
                         };

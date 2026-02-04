@@ -4,7 +4,7 @@ use arc_swap::{ArcSwap, Guard};
 use generational_arena::Index;
 use glam::{Mat4, Quat, Vec3};
 
-use crate::{resource_system::{game_resources::{self, GameResources}, registry::{GameState, ModelId, RenderState, ResourceRegistry, TextureId}, render_resources::{MaterialRenderId, MeshRenderId, ModelRenderId, TextureRenderId}, resource_manager::ResourceManager}, sim::{animator::{AnimationGraph, BoundaryMode, TimeWrapMode}, camera::{Camera, Frustum, frustum_intersects_aabb_world}, scene_tree::{Environment, RenderDataType, Scene, SceneNodeId, Sun}}};
+use crate::{renderer::pose_storage::TRS, resource_system::{game_resources::{self, GameResources}, registry::{GameState, ModelId, RenderState, ResourceRegistry, TextureId}, render_resources::{MaterialRenderId, MeshRenderId, ModelRenderId, TextureRenderId}, resource_manager::ResourceManager}, sim::{animator::{AnimationGraph, BoundaryMode, TimeWrapMode}, camera::{frustum_intersects_aabb_world, Camera, Frustum}, scene_tree::{Environment, RenderDataType, Scene, SceneNodeId, Sun}}};
 
 pub fn accumulate_instance_snapshots(
     scene: &Scene,
@@ -51,11 +51,12 @@ pub fn accumulate_instance_snapshots(
             }
             let mut submesh_transforms = vec![];
             for submesh in &model_game.submesh_instances {
-                let mut t = vec![];
+                let mut sub = vec![];
                 for submesh_instance in submesh {
-                    t.push(transform * submesh_instance);
+                    let (s, r, t) = (transform * submesh_instance).to_scale_rotation_translation();
+                    sub.push(TRS { t, r, s });
                 }
-                submesh_transforms.push(t);
+                submesh_transforms.push(sub);
             }
             if !submesh_transforms.is_empty() {
                 let inst = ModelInstanceSnapshot {
@@ -121,7 +122,7 @@ pub enum AnimationSnapshot {
 pub struct AnimationSnapshot(pub u64);
 
 pub struct ModelInstanceSnapshot {
-    pub submesh_transforms: Vec<Vec<Mat4>>,
+    pub submesh_transforms: Vec<Vec<TRS>>,
     pub animation: Option<AnimationSnapshot>,
 }
 
