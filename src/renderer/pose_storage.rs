@@ -3,9 +3,9 @@ use std::collections::HashMap;
 use generational_arena::{Arena, Index};
 use glam::{Quat, Vec3};
 
-use crate::{job_system::worker_pool::{AnimPoseTaskResult, RenderResponse}, sim::scene_tree::SceneNodeId};
+use crate::{job_system::worker_pool::{AnimPoseTaskResult}, sim::scene_tree::SceneNodeId};
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct TRS {
     pub t: Vec3,
     pub r: Quat,
@@ -18,30 +18,158 @@ pub struct PoseData {
 }
 
 struct PoseEntry {
-    poses: Vec<PoseData>,
+    buffer: PoseBuffer,
     last_seen: u32,
 }
-impl Default for PoseEntry {
-    fn default() -> Self {
+impl PoseEntry {
+    fn new(first_pose: PoseData) -> Self {
         Self {
-            poses: vec![],
+            buffer: PoseBuffer::new(first_pose),
             last_seen: u32::MAX,
         }
     }
 }
 
 pub const POSE_STORAGE_BUFFER_SIZE: usize = 4;
-const POSE_GC_GRACE_FRAMES: u32 = 60;
+const POSE_GC_GRACE_FRAMES: u32 = 120;
 
 pub enum GetPoseResponse<'a> {
-    One(&'a PoseData), // only one pose ready, use that
-    Two(&'a PoseData, &'a PoseData), // 2+ poses ready, interpolate
+    One(&'a [TRS]), // only one pose ready, use that
+    Two(u64, &'a [TRS], u64, &'a [TRS]), // 2+ poses ready, interpolate
     Nothing, // no poses ready yet, skip or use bind pose
 }
 
+struct PoseBuffer {
+    times: Vec<u64>,
+    joints: Vec<TRS>,
+    joints_count: usize,
+}
+impl PoseBuffer {
+    fn new(first_pose: PoseData) -> Self {
+        let joints_count = first_pose.joints.len();
+        let times = Vec::with_capacity(POSE_STORAGE_BUFFER_SIZE);
+        let joints = Vec::with_capacity(joints_count * POSE_STORAGE_BUFFER_SIZE);
+
+        let mut this = Self {
+            times,
+            joints,
+            joints_count,
+        };
+        this.insert_one(first_pose);
+
+        this
+    }
+
+    fn evict_first_n(
+        &mut self,
+        n_poses: usize,
+    ) {
+        // evict joints
+        let joints_n = n_poses * self.joints_count;
+        let joints_len = self.joints.len();
+
+        debug_assert!(joints_n <= joints_len);
+
+        self.joints.copy_within(joints_n..joints_len, 0);
+        self.joints.truncate(joints_len - joints_n);
+
+        // evict times
+        let times_len = self.times.len();
+
+        debug_assert!(n_poses <= times_len);
+
+        self.times.copy_within(n_poses..times_len, 0);
+        self.times.truncate(times_len - n_poses);
+    }
+
+    fn insert_one(&mut self, data: PoseData) {
+        // TODO batching, workers should return arrays of poses so we only need to shift once
+        if self.times.len() == POSE_STORAGE_BUFFER_SIZE {
+            self.evict_first_n(1);
+        }
+
+        let times_len = self.times.len();
+
+        // fast path
+        if times_len == 0 || self.times[times_len - 1] <= data.time {
+            self.times.push(data.time);
+            self.joints.extend_from_slice(&data.joints);
+            return;
+        }
+
+        // slow path: linear search and shift
+        let mut insert_i = times_len;
+        for i in 0..times_len {
+            if data.time < self.times[i] {
+                insert_i = i;
+                break;
+            }
+        }
+
+        self.times.push(0);
+        self.times.copy_within(insert_i..times_len, insert_i + 1);
+        self.times[insert_i] = data.time;
+
+        let jc = self.joints_count;
+        let old_joint_len = times_len * jc;
+
+        unsafe {
+            self.joints.set_len(old_joint_len + jc);
+        }
+
+        let src = insert_i * jc;
+        let dst = (insert_i + 1) * jc;
+
+        self.joints.copy_within(src..old_joint_len, dst);
+        self.joints[src..src + jc].copy_from_slice(&data.joints);
+    }
+
+    fn get<'a>(&'a self, query_time: u64) -> GetPoseResponse<'a> {
+        let len = self.times.len();
+
+        if len == 0 {
+            return GetPoseResponse::Nothing;
+        }
+
+        if len == 1 {
+            return GetPoseResponse::One(&self.joints[0..self.joints_count]);
+        }
+
+        let mut best_idx = None;
+
+        for i in 0..len {
+            if self.times[i] <= query_time {
+                best_idx = Some(i);
+            } else {
+                break;
+            }
+        }
+
+        let idx = match best_idx {
+            Some(i) => i,
+            None => {
+                return GetPoseResponse::One(
+                    &self.joints[0..self.joints_count],
+                );
+            }
+        };
+
+        if idx == len - 1 {
+            GetPoseResponse::One(&self.joints[idx * self.joints_count..(idx + 1) * self.joints_count])
+        } else {
+            GetPoseResponse::Two(
+                self.times[idx],
+                &self.joints[idx * self.joints_count..(idx + 1) * self.joints_count],
+                self.times[idx + 1],
+                &self.joints[(idx + 1) * self.joints_count..(idx + 2) * self.joints_count],
+            )
+        }
+    }
+}
+
 pub struct PoseStorage {
-    pub scene_to_pose_id: HashMap<SceneNodeId, Index>,
-    pub pose_data: Arena<PoseEntry>,
+    scene_to_pose_id: HashMap<SceneNodeId, Index>,
+    pose_data: Arena<PoseEntry>,
 }
 impl PoseStorage {
     pub fn new() -> Self {
@@ -52,30 +180,19 @@ impl PoseStorage {
     }
 
     pub fn receive_pose(&mut self, res: AnimPoseTaskResult) {
-        let idx = self.scene_to_pose_id.entry(res.node_id).or_insert(self.pose_data.insert(PoseEntry::default()));
-        let entry = self.pose_data.get_mut(*idx).unwrap();
-
-        // sorted insert
-        if entry.poses.len() == 0 {
-            entry.poses.push(res.data);
-        } else {
-            for i in 0..=entry.poses.len() {
-                if i == entry.poses.len() {
-                    entry.poses.insert(i, res.data);
-                    break;
-                }
-                if entry.poses[i].time > res.data.time {
-                    entry.poses.insert(i, res.data);
-                    break;
-                }
-            }
-        }
-
-        if entry.poses.len() > POSE_STORAGE_BUFFER_SIZE {
-            entry.poses.remove(0);
+        match self.scene_to_pose_id.get(&res.node_id) {
+            Some(pose_idx) => {
+                let entry = self.pose_data.get_mut(*pose_idx).unwrap();
+                entry.buffer.insert_one(res.data);
+            },
+            None => {
+                let idx = self.pose_data.insert(PoseEntry::new(res.data));
+                self.scene_to_pose_id.insert(res.node_id, idx);
+            },
         }
     }
 
+    // TODO this is never called
     pub fn run_gc(&mut self, frame_idx: u32) {
         self.pose_data.retain(|_idx, entry| {
             frame_idx.saturating_sub(entry.last_seen) < POSE_GC_GRACE_FRAMES
@@ -85,28 +202,11 @@ impl PoseStorage {
         });
     }
 
-    pub fn get<'a>(&'a mut self, id: &SceneNodeId, pose_time: u64, frame_idx: u32) -> GetPoseResponse<'a> {
+    pub fn get<'a>(&'a mut self, id: &SceneNodeId, query_time: u64, frame_idx: u32) -> GetPoseResponse<'a> {
         if let Some(idx) = self.scene_to_pose_id.get(id) {
             let entry = self.pose_data.get_mut(*idx).unwrap();
             entry.last_seen = frame_idx;
-            if entry.poses.len() == 0 {
-                GetPoseResponse::Nothing
-            } else if entry.poses.len() == 1 {
-                GetPoseResponse::One(&entry.poses[0])
-            } else {
-                // linear search for the most recent animation time that is smaller than the query
-                let mut best_idx = 0;
-                for i in 0..entry.poses.len() {
-                    if entry.poses[i].time < pose_time {
-                        best_idx = i;
-                    }
-                }
-                if best_idx == entry.poses.len() - 1 {
-                    GetPoseResponse::One(&entry.poses[best_idx])
-                } else {
-                    GetPoseResponse::Two(&entry.poses[best_idx], &entry.poses[best_idx + 1])
-                }
-            }
+            entry.buffer.get(query_time)
         } else {
             GetPoseResponse::Nothing
         }

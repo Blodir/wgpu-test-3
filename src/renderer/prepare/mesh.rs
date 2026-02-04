@@ -29,17 +29,17 @@ pub fn resolve_skinned_draw<'a>(
                 .map(|prev| lerpu64(prev.0, anim_snap.0, t))
                 .unwrap_or(anim_snap.0);
             let poses = pose_storage.get(node_id, snap_time.clone(), frame_idx);
-            let joints = match poses {
-                pose_storage::GetPoseResponse::One(pose_data) => pose_data.joints.clone(),
-                pose_storage::GetPoseResponse::Two(pose_data0, pose_data1) => {
-                    let nom = snap_time.saturating_sub(pose_data0.time);
-                    let denom = pose_data1.time.saturating_sub(pose_data0.time);
+            let joints: Vec<TRS> = match poses {
+                pose_storage::GetPoseResponse::One(pose_data) => pose_data.to_vec(),
+                pose_storage::GetPoseResponse::Two(time0, joints0, time1, joints1) => {
+                    let nom = snap_time.saturating_sub(time0);
+                    let denom = time1.saturating_sub(time0);
                     if denom == 0 {
-                        pose_data0.joints.clone()
+                        joints0.to_vec()
                     } else {
                         let a = (nom as f32 / denom as f32).min(1.0).max(0.0);
-                        pose_data0.joints.iter().zip(&pose_data1.joints)
-                            .map(|(pose0, pose1)| TRS { t: pose0.t.lerp(pose1.t, a), r: pose0.r.slerp(pose1.r, a), s: pose0.s.lerp(pose1.s, a)  }).collect()
+                        joints0.iter().zip(joints1)
+                            .map(|(trs0, trs1)| TRS { t: trs0.t.lerp(trs1.t, a), r: trs0.r.slerp(trs1.r, a), s: trs0.s.lerp(trs1.s, a) }).collect()
                     }
                 }
                 // don't render if animation is missing... maybe in the future fill with temp bind pose?

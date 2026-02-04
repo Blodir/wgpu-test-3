@@ -9,3 +9,4 @@
 *.cap
 *.rdc
 assets/*
+flamegraph.svg
