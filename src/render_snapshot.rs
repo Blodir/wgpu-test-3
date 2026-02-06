@@ -4,12 +4,13 @@ use arc_swap::{ArcSwap, Guard};
 use generational_arena::Index;
 use glam::{Mat4, Quat, Vec3};
 
-use crate::{renderer::pose_storage::TRS, resource_system::{game_resources::{self, GameResources}, registry::{GameState, ModelId, RenderState, ResourceRegistry, TextureId}, render_resources::{MaterialRenderId, MeshRenderId, ModelRenderId, TextureRenderId}, resource_manager::ResourceManager}, sim::{animator::{AnimationGraph, BoundaryMode, TimeWrapMode}, camera::{frustum_intersects_aabb_world, Camera, Frustum}, scene_tree::{Environment, RenderDataType, Scene, SceneNodeId, Sun}}};
+use crate::{renderer::{pipelines::MeshPipelineKind, pose_storage::TRS}, resource_system::{game_resources::{self, GameResources}, registry::{GameState, ModelId, RenderState, ResourceRegistry, TextureId}, render_resources::{MaterialRenderId, MeshRenderId, ModelRenderId, TextureRenderId}, resource_manager::ResourceManager}, sim::{animator::{AnimationGraph, BoundaryMode, TimeWrapMode}, camera::{Camera, Frustum, frustum_intersects_aabb_world}, scene_tree::{Environment, RenderDataType, Scene, SceneNodeId, Sun}}};
 
 pub fn accumulate_instance_snapshots(
     scene: &Scene,
     animation_graphs: &Vec<AnimationGraph>,
-    instances: &mut HashMap<SceneNodeId, ModelInstanceSnapshot>,
+    skinned_instances: &mut HashMap<SceneNodeId, SkinnedInstanceSnapshot>,
+    static_instances: &mut HashMap<SceneNodeId, StaticInstanceSnapshot>,
     base_transform: &Mat4,
     node_id: SceneNodeId,
     frustum: &Frustum,
@@ -22,7 +23,7 @@ pub fn accumulate_instance_snapshots(
     let (model_handle, last_visible_frame, maybe_animation_snapshot) = match &node.render_data {
         RenderDataType::None => {
             for child in &node.children {
-                accumulate_instance_snapshots(scene, animation_graphs, instances, &transform, *child, frustum, resource_registry, game_resources, frame_index);
+                accumulate_instance_snapshots(scene, animation_graphs, skinned_instances, static_instances, &transform, *child, frustum, resource_registry, game_resources, frame_index);
             }
             return;
         },
@@ -59,17 +60,27 @@ pub fn accumulate_instance_snapshots(
                 submesh_transforms.push(sub);
             }
             if !submesh_transforms.is_empty() {
-                let inst = ModelInstanceSnapshot {
-                    submesh_transforms,
-                    animation: maybe_animation_snapshot,
-                };
-                instances.insert(node_id, inst);
+                match model_game.manifest.deformation {
+                    crate::resource_system::file_formats::modelfile::Deformation::None => {
+                        let inst = StaticInstanceSnapshot {
+                            submesh_transforms,
+                        };
+                        static_instances.insert(node_id, inst);
+                    },
+                    crate::resource_system::file_formats::modelfile::Deformation::Skinned { .. } => {
+                        let inst = SkinnedInstanceSnapshot {
+                            submesh_transforms,
+                            animation: maybe_animation_snapshot,
+                        };
+                        skinned_instances.insert(node_id, inst);
+                    },
+                }
             }
         }
     }
 
     for child in &node.children {
-        accumulate_instance_snapshots(scene, animation_graphs, instances, &transform, *child, frustum, resource_registry, game_resources, frame_index);
+        accumulate_instance_snapshots(scene, animation_graphs, skinned_instances, static_instances, &transform, *child, frustum, resource_registry, game_resources, frame_index);
     }
 }
 
@@ -92,40 +103,6 @@ impl Default for CameraSnapshot {
     }
 }
 
-/*
-pub struct AnimationStateSnapshot {
-    pub clip_id: AnimationClipRenderId,
-    pub time_wrap: TimeWrapMode,
-    pub boundary_mode: BoundaryMode,
-    /// time in seconds since the transition into this state started
-    pub animation_time: f32,
-}
-
-pub struct AnimationTransitionSnapshot {
-    pub from_clip_id: AnimationClipRenderId,
-    pub to_clip_id: AnimationClipRenderId,
-    pub blend_time: f32,
-    /// time in seconds since the transition to the previous state started
-    pub from_time: f32,
-    /// time in seconds since this transition started
-    pub to_time: f32,
-    pub from_time_wrap: TimeWrapMode,
-    pub to_time_wrap: TimeWrapMode,
-}
-
-pub enum AnimationSnapshot {
-    AnimationStateSnapshot(AnimationStateSnapshot),
-    AnimationTransitionSnapshot(AnimationTransitionSnapshot),
-}
- */
-
-pub struct AnimationSnapshot(pub u64);
-
-pub struct ModelInstanceSnapshot {
-    pub submesh_transforms: Vec<Vec<TRS>>,
-    pub animation: Option<AnimationSnapshot>,
-}
-
 #[derive(Debug)]
 pub struct EnvironmentMapSnapshot {
     pub prefiltered: TextureRenderId,
@@ -133,11 +110,11 @@ pub struct EnvironmentMapSnapshot {
     pub brdf: TextureRenderId,
 }
 
-pub struct EnvironmentSnapshot {
+pub struct LightsSnapshot {
     pub sun: Sun,
     pub environment_map: Option<EnvironmentMapSnapshot>,
 }
-impl EnvironmentSnapshot {
+impl LightsSnapshot {
     pub fn from(environment: &Environment, resource_registry: &Rc<RefCell<ResourceRegistry>>) -> Self {
         if let (
             RenderState::Ready(prefiltered_render_id),
@@ -165,6 +142,17 @@ impl EnvironmentSnapshot {
     }
 }
 
+pub struct AnimationSnapshot(pub u64);
+
+pub struct SkinnedInstanceSnapshot {
+    pub submesh_transforms: Vec<Vec<TRS>>,
+    pub animation: Option<AnimationSnapshot>,
+}
+
+pub struct StaticInstanceSnapshot {
+    pub submesh_transforms: Vec<Vec<TRS>>,
+}
+
 pub struct SubmeshBatch {
     pub instances: Vec<SceneNodeId>,
     pub submesh_idx: usize,
@@ -181,26 +169,36 @@ pub struct MaterialBatch {
 }
 
 #[derive(Default)]
-pub struct SkinnedMeshDrawSnapshot {
+pub struct MeshDrawSnapshot {
     pub submesh_batches: Vec<SubmeshBatch>,
     pub material_batches: Vec<MaterialBatch>,
     pub mesh_batches: Vec<MeshBatch>,
+    pub skinned_batch: std::ops::Range<usize>,
+    pub static_batch: std::ops::Range<usize>,
+    pub skinned_instances: HashMap<SceneNodeId, SkinnedInstanceSnapshot>,
+    pub static_instances: HashMap<SceneNodeId, StaticInstanceSnapshot>,
 }
-impl SkinnedMeshDrawSnapshot {
+impl MeshDrawSnapshot {
     fn build(
         scene: &Scene,
-        instances: &HashMap<SceneNodeId, ModelInstanceSnapshot>,
         resource_registry: &Rc<RefCell<ResourceRegistry>>,
         game_resources: &GameResources,
+        animation_graphs: &Vec<AnimationGraph>,
+        frame_index: u32,
     ) -> Self {
-        let reg = resource_registry.borrow();
-        let mut materials: HashMap<MaterialRenderId, HashMap<ModelRenderId, Vec<Vec<SceneNodeId>>>> = HashMap::new();
+        let mut skinned_instances = HashMap::<SceneNodeId, SkinnedInstanceSnapshot>::new();
+        let mut static_instances = HashMap::<SceneNodeId, StaticInstanceSnapshot>::new();
+        let frustum = scene.camera.build_frustum();
+        accumulate_instance_snapshots(scene, animation_graphs, &mut skinned_instances, &mut static_instances, &Mat4::IDENTITY, scene.root, &frustum, resource_registry, game_resources, frame_index);
 
-        // correct rendered nodes in hashmaps
-        for (node_id, snap) in instances {
+        let reg = resource_registry.borrow();
+        let mut pipelines: HashMap<MeshPipelineKind, HashMap<MaterialRenderId, HashMap<ModelRenderId, Vec<Vec<SceneNodeId>>>>> = HashMap::new();
+
+        // collect rendered nodes in hashmaps
+        for (node_id, snap) in &skinned_instances {
             let node = scene.nodes.get((*node_id).into()).unwrap();
             let model_handle = match &node.render_data {
-                RenderDataType::Model(static_model) => &static_model.handle,
+                RenderDataType::Model(static_model) => panic!(),
                 RenderDataType::AnimatedModel(animated_model) => &animated_model.model,
                 RenderDataType::None => panic!(),
             };
@@ -213,12 +211,45 @@ impl SkinnedMeshDrawSnapshot {
             ) {
                 let model_game_data = game_resources.models.get(*model_game_id).unwrap();
 
-                for submesh_idx in 0..model_game_data.manifest.primitives.len() {
-                    let submesh = &model_game_data.manifest.primitives[submesh_idx];
+                for submesh_idx in 0..model_game_data.manifest.submeshes.len() {
+                    let submesh = &model_game_data.manifest.submeshes[submesh_idx];
                     let mat_handle = &model_game_data.materials[submesh.material as usize];
                     if let RenderState::Ready(mat_render_id) = resource_registry.borrow().get(&mat_handle).render_state {
+                        let materials = pipelines.entry(MeshPipelineKind::SkinnedPbr).or_insert(HashMap::new());
                         let models = materials.entry(MaterialRenderId(mat_render_id)).or_insert(HashMap::new());
-                        let submeshes = models.entry(ModelRenderId(*model_render_id)).or_insert(vec![vec![]; model_game_data.manifest.primitives.len()]);
+                        let submeshes = models.entry(ModelRenderId(*model_render_id)).or_insert(vec![vec![]; model_game_data.manifest.submeshes.len()]);
+                        submeshes[submesh_idx].push(*node_id);
+                    }
+                }
+            }
+        }
+
+        for (node_id, snap) in &static_instances {
+            let node = scene.nodes.get((*node_id).into()).unwrap();
+            let model_handle = match &node.render_data {
+                RenderDataType::Model(static_model) => &static_model.handle,
+                RenderDataType::AnimatedModel(animated_model) => {
+                    println!("Warning: animator on a static model");
+                    &animated_model.model
+                },
+                RenderDataType::None => panic!(),
+            };
+            if let (
+                GameState::Ready(model_game_id),
+                RenderState::Ready(model_render_id),
+            ) = (
+                &reg.get(&model_handle).game_state,
+                &reg.get(&model_handle).render_state,
+            ) {
+                let model_game_data = game_resources.models.get(*model_game_id).unwrap();
+
+                for submesh_idx in 0..model_game_data.manifest.submeshes.len() {
+                    let submesh = &model_game_data.manifest.submeshes[submesh_idx];
+                    let mat_handle = &model_game_data.materials[submesh.material as usize];
+                    if let RenderState::Ready(mat_render_id) = resource_registry.borrow().get(&mat_handle).render_state {
+                        let materials = pipelines.entry(MeshPipelineKind::StaticPbr).or_insert(HashMap::new());
+                        let models = materials.entry(MaterialRenderId(mat_render_id)).or_insert(HashMap::new());
+                        let submeshes = models.entry(ModelRenderId(*model_render_id)).or_insert(vec![vec![]; model_game_data.manifest.submeshes.len()]);
                         submeshes[submesh_idx].push(*node_id);
                     }
                 }
@@ -226,32 +257,47 @@ impl SkinnedMeshDrawSnapshot {
         }
 
         // build batches from hashmaps
+        let mut mat_offset = 0usize;
+        let mut skinned_batch = 0..0;
+        let mut static_batch = 0..0;
         let mut material_batches: Vec<MaterialBatch> = vec![];
         let mut mesh_batches: Vec<MeshBatch> = vec![];
         let mut submesh_batches: Vec<SubmeshBatch> = vec![];
 
-        for (mat_render_id, models) in materials.iter_mut() {
-            let mat_batch = MaterialBatch {
-                material_id: *mat_render_id,
-                mesh_range: mesh_batches.len()..models.len(),
-            };
-            material_batches.push(mat_batch);
-            for (model_render_id, submeshes) in models.iter_mut() {
-                let mesh_batch = MeshBatch {
-                    model_id: *model_render_id,
-                    submesh_range: submesh_batches.len()..submeshes.len(),
+        for (pipeline_kind, materials) in pipelines.iter_mut() {
+            for (mat_render_id, models) in materials.iter_mut() {
+                let mat_batch = MaterialBatch {
+                    material_id: *mat_render_id,
+                    mesh_range: mesh_batches.len()..models.len(),
                 };
-                mesh_batches.push(mesh_batch);
-                let mut i = 0;
-                for instances in submeshes.drain(..) {
-                    let submesh_batch = SubmeshBatch {
-                        instances,
-                        submesh_idx: i,
+                material_batches.push(mat_batch);
+                for (model_render_id, submeshes) in models.iter_mut() {
+                    let mesh_batch = MeshBatch {
+                        model_id: *model_render_id,
+                        submesh_range: submesh_batches.len()..submeshes.len(),
                     };
-                    submesh_batches.push(submesh_batch);
+                    mesh_batches.push(mesh_batch);
+                    let mut i = 0;
+                    for instances in submeshes.drain(..) {
+                        let submesh_batch = SubmeshBatch {
+                            instances,
+                            submesh_idx: i,
+                        };
+                        submesh_batches.push(submesh_batch);
 
-                    i += 1;
+                        i += 1;
+                    }
                 }
+            }
+            match pipeline_kind {
+                MeshPipelineKind::StaticPbr => {
+                    static_batch = mat_offset..material_batches.len();
+                    mat_offset = material_batches.len();
+                },
+                MeshPipelineKind::SkinnedPbr => {
+                    skinned_batch = mat_offset..material_batches.len();
+                    mat_offset = material_batches.len();
+                },
             }
         }
 
@@ -259,39 +305,37 @@ impl SkinnedMeshDrawSnapshot {
             submesh_batches,
             material_batches,
             mesh_batches,
+            skinned_batch,
+            static_batch,
+            skinned_instances,
+            static_instances,
         }
     }
 }
 
 pub struct RenderSnapshot {
-    pub skinned_draw_snapshot: SkinnedMeshDrawSnapshot,
-    pub model_instances: HashMap<SceneNodeId, ModelInstanceSnapshot>,
-    pub environment: EnvironmentSnapshot,
+    pub mesh_draw_snapshot: MeshDrawSnapshot,
+    pub lights: LightsSnapshot,
     pub camera: CameraSnapshot,
 }
 impl RenderSnapshot {
     pub fn build(scene: &mut Scene, resource_registry: &Rc<RefCell<ResourceRegistry>>, animation_graphs: &Vec<AnimationGraph>, game_resources: &GameResources, frame_index: u32) -> Self {
-        let mut model_instances = HashMap::<SceneNodeId, ModelInstanceSnapshot>::new();
-        let frustum = scene.camera.build_frustum();
-        accumulate_instance_snapshots(scene, animation_graphs, &mut model_instances, &Mat4::IDENTITY, scene.root, &frustum, resource_registry, game_resources, frame_index);
-        let skinned_draw_snapshot = SkinnedMeshDrawSnapshot::build(scene, &model_instances, resource_registry, game_resources);
+        let skinned_draw_snapshot = MeshDrawSnapshot::build(scene, resource_registry, game_resources, animation_graphs, frame_index);
 
-        let environment = EnvironmentSnapshot::from(&scene.environment, resource_registry);
+        let environment = LightsSnapshot::from(&scene.environment, resource_registry);
         let camera = scene.camera.build_snapshot();
         Self {
-            model_instances,
-            skinned_draw_snapshot,
-            environment,
+            mesh_draw_snapshot: skinned_draw_snapshot,
+            lights: environment,
             camera,
         }
     }
 
     pub fn init() -> Self {
         Self {
-            model_instances: HashMap::new(),
-            environment: EnvironmentSnapshot { sun: Sun::default(), environment_map: None },
+            lights: LightsSnapshot { sun: Sun::default(), environment_map: None },
             camera: Camera::default().build_snapshot(),
-            skinned_draw_snapshot: SkinnedMeshDrawSnapshot::default(),
+            mesh_draw_snapshot: MeshDrawSnapshot::default(),
         }
     }
 }

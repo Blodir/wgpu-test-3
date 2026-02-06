@@ -1,24 +1,18 @@
 use std::ops::Range;
 
-use crate::{render_snapshot::SkinnedMeshDrawSnapshot, renderer::{attachments::depth::DepthTexture, buffers::{instance::Instance, vertex::Vertex}, shader_cache::ShaderCache, wgpu_context::WgpuContext}, resource_system::{registry::{MaterialId, MeshId, RenderState}, render_resources::{self, MaterialRenderId, MeshRenderId, RenderResources}, resource_manager::ResourceManager}};
+use crate::{render_snapshot::MeshDrawSnapshot, renderer::{attachments::depth::DepthTexture, buffers::{skinned_instance::SkinnedInstance, skinned_vertex::SkinnedVertex, static_instance::StaticInstance, static_vertex::StaticVertex}, prepare::mesh::DrawContext, shader_cache::ShaderCache, wgpu_context::WgpuContext}, resource_system::{registry::{MaterialId, MeshId, RenderState}, render_resources::{self, MaterialRenderId, MeshRenderId, RenderResources}, resource_manager::ResourceManager}};
 
-pub struct DrawContext<'a> {
-    pub snap: &'a SkinnedMeshDrawSnapshot,
-    pub instance_ranges: Vec<Range<u32>>,
-}
-
-pub struct ModelPipeline {
+pub struct StaticPbrPipeline {
     pub render_pipeline: wgpu::RenderPipeline,
 }
 
-impl ModelPipeline {
+impl StaticPbrPipeline {
     pub fn new(
         wgpu_context: &WgpuContext,
         shader_cache: &mut ShaderCache,
         material_bind_group_layout: &wgpu::BindGroupLayout,
         camera_bind_group_layout: &wgpu::BindGroupLayout,
         lights_bind_group_layout: &wgpu::BindGroupLayout,
-        bones_bind_group_layout: &wgpu::BindGroupLayout,
     ) -> Self {
         let render_pipeline = Self::build_pipeline(
             wgpu_context,
@@ -26,7 +20,6 @@ impl ModelPipeline {
             camera_bind_group_layout,
             lights_bind_group_layout,
             &material_bind_group_layout,
-            &bones_bind_group_layout,
         );
 
         Self {
@@ -40,32 +33,31 @@ impl ModelPipeline {
         camera_bind_group_layout: &wgpu::BindGroupLayout,
         lights_bind_group_layout: &wgpu::BindGroupLayout,
         material_bind_group_layout: &wgpu::BindGroupLayout,
-        bones_bind_group_layout: &wgpu::BindGroupLayout,
     ) -> wgpu::RenderPipeline {
-        let vertex_buffer_layouts = &[Instance::desc(), Vertex::desc()];
+        let vertex_buffer_layouts = &[StaticInstance::desc(), StaticVertex::desc()];
         let bind_group_layouts = &[
             camera_bind_group_layout,
             lights_bind_group_layout,
             material_bind_group_layout,
-            bones_bind_group_layout,
         ];
         let render_pipeline_layout =
             wgpu_context.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("Model Pipeline Layout"),
+                label: Some("Static PBR Pipeline Layout"),
                 bind_group_layouts,
                 push_constant_ranges: &[],
             });
-        let shader_module = shader_cache.get("src/renderer/shaders/pbr.wgsl".to_string(), wgpu_context);
+        let vertex_shader_module = shader_cache.get("src/renderer/shaders/static_pbr.vert.wgsl".to_string(), wgpu_context);
+        let fragment_shader_module = shader_cache.get("src/renderer/shaders/pbr.frag.wgsl".to_string(), wgpu_context);
         wgpu_context.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Model Pipeline"),
+            label: Some("Static PBR Pipeline"),
             layout: Some(&render_pipeline_layout),
             vertex: wgpu::VertexState {
-                module: &shader_module,
+                module: &vertex_shader_module,
                 entry_point: "vs_main",
                 buffers: vertex_buffer_layouts,
             },
             fragment: Some(wgpu::FragmentState {
-                module: &shader_module,
+                module: &fragment_shader_module,
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
                     format: wgpu_context.surface_config.format,
@@ -74,7 +66,6 @@ impl ModelPipeline {
                 })],
             }),
             primitive: wgpu::PrimitiveState {
-                // TODO gltf may have different topologies
                 topology: wgpu::PrimitiveTopology::TriangleList,
                 strip_index_format: None,
                 front_face: wgpu::FrontFace::Ccw,
@@ -109,7 +100,6 @@ impl ModelPipeline {
         depth_texture_view: &wgpu::TextureView,
         camera_bind_group: &wgpu::BindGroup,
         lights_bind_group: &wgpu::BindGroup,
-        bones_bind_group: &wgpu::BindGroup,
         render_resources: &RenderResources
     ) {
         let models = &render_resources.models;
@@ -118,19 +108,21 @@ impl ModelPipeline {
 
         // TODO can this descriptor be reused?
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("Model Render Pass"),
+            label: Some("Static PBR Render Pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: &msaa_texture_view,
+                // last pass drawing to msaa resolves
                 resolve_target: Some(&msaa_resolve_texture_view),
                 ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
-                    store: wgpu::StoreOp::Discard,
+                    // don't clear previous passes work
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
                 },
             })],
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                 view: depth_texture_view,
                 depth_ops: Some(wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(1.0),
+                    load: wgpu::LoadOp::Load,
                     store: wgpu::StoreOp::Store,
                 }),
                 stencil_ops: None,
@@ -142,9 +134,8 @@ impl ModelPipeline {
         render_pass.set_pipeline(&self.render_pipeline);
         render_pass.set_bind_group(0u32, camera_bind_group, &[]);
         render_pass.set_bind_group(1, lights_bind_group, &[]);
-        render_pass.set_bind_group(3, bones_bind_group, &[]);
 
-        for material_batch in &draw_context.snap.material_batches {
+        for material_batch in &draw_context.snap.material_batches[draw_context.snap.static_batch.clone()] {
             let material = materials.get(material_batch.material_id.into()).unwrap();
             render_pass.set_bind_group(
                 2u32,

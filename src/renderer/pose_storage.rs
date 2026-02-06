@@ -5,7 +5,7 @@ use glam::{Quat, Vec3};
 
 use crate::{job_system::worker_pool::{AnimPoseTaskResult}, sim::scene_tree::SceneNodeId};
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct TRS {
     pub t: Vec3,
     pub r: Quat,

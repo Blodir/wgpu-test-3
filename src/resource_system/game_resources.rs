@@ -47,12 +47,19 @@ impl Into<Index> for SkeletonGameId {
     }
 }
 
+pub enum DeformationData {
+    None,
+    Skinned {
+        skeleton: SkeletonHandle,
+        animation_clips: Vec<AnimationClipHandle>,
+    }
+}
+
 pub struct ModelGameData {
     pub manifest: modelfile::Model,
     pub mesh: MeshHandle,
     pub submesh_instances: Vec<Vec<Mat4>>,
-    pub animation_clips: Vec<AnimationClipHandle>,
-    pub skeleton: SkeletonHandle,
+    pub deformation: DeformationData,
     pub materials: Vec<MaterialHandle>,
     pub aabb: modelfile::Aabb,
 }
@@ -151,12 +158,19 @@ impl GameResources {
             match req {
                 CreateGameResourceRequest::Model { id, manifest } => {
                     let data = ModelGameData {
-                        mesh: registry.request_mesh(&manifest.buffer_path),
-                        skeleton: registry.request_skeleton(&manifest.skeletonfile_path),
-                        animation_clips: manifest.animations.iter().map(|a| registry.request_animation_clip(a)).collect(),
+                        mesh: registry.request_mesh(&manifest.buffer),
+                        deformation: match manifest.deformation {
+                            modelfile::Deformation::None => DeformationData::None,
+                            modelfile::Deformation::Skinned { ref skeleton, ref animations } => {
+                                DeformationData::Skinned {
+                                    skeleton: registry.request_skeleton(skeleton),
+                                    animation_clips: animations.iter().map(|a| registry.request_animation_clip(a)).collect(),
+                                }
+                            },
+                        },
                         materials: manifest.material_paths.iter().map(|a| registry.request_material(a)).collect(),
                         aabb: manifest.aabb.clone(),
-                        submesh_instances: manifest.primitives.iter().map(|prim| prim.instances.iter().map(|m| Mat4::from_cols_array_2d(m)).collect()).collect(),
+                        submesh_instances: manifest.submeshes.iter().map(|prim| prim.instances.iter().map(|m| Mat4::from_cols_array_2d(m)).collect()).collect(),
                         manifest,
                     };
                     self.staging.push(StagedData::Model(id, data));
@@ -223,7 +237,7 @@ impl GameResources {
                     }
 
                     let vertex_buffer_start_offset = model_game_data.manifest.vertex_buffer_start_offset;
-                    let submeshes = model_game_data.manifest.primitives.iter().map(|prim| {
+                    let submeshes = model_game_data.manifest.submeshes.iter().map(|prim| {
                         SubMesh {
                             index_range: prim.index_byte_offset / 4..prim.index_byte_offset / 4 + prim.index_byte_length / 4,
                             base_vertex: prim.base_vertex,

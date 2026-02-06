@@ -1,5 +1,5 @@
 {
-  "primitives": [
+  "submeshes": [
     {
       "instances": [
         [
@@ -32,7 +32,7 @@
       "index_byte_offset": 0,
       "index_byte_length": 10464,
       "vertex_byte_offset": 0,
-      "vertex_byte_length": 92600,
+      "vertex_byte_length": 74080,
       "base_vertex": 0,
       "material": 0
     },
@@ -67,8 +67,8 @@
       ],
       "index_byte_offset": 10464,
       "index_byte_length": 14976,
-      "vertex_byte_offset": 92600,
-      "vertex_byte_length": 75600,
+      "vertex_byte_offset": 74080,
+      "vertex_byte_length": 60480,
       "base_vertex": 926,
       "material": 0
     },
@@ -103,102 +103,28 @@
       ],
       "index_byte_offset": 25440,
       "index_byte_length": 39288,
-      "vertex_byte_offset": 168200,
-      "vertex_byte_length": 246300,
+      "vertex_byte_offset": 134560,
+      "vertex_byte_length": 197040,
       "base_vertex": 1682,
       "material": 0
     }
   ],
-  "materials": [
-    {
-      "base_color_factor": [
-        1.0,
-        1.0,
-        1.0,
-        1.0
-      ],
-      "metallic_factor": 1.0,
-      "roughness_factor": 1.0,
-      "emissive_factor": [
-        1.0,
-        1.0,
-        1.0
-      ],
-      "normal_texture_scale": 1.0,
-      "occlusion_strength": 1.0,
-      "alpha_mode": "Opaque",
-      "alpha_cutoff": 0.5,
-      "double_sided": false,
-      "normal_texture": {
-        "source": "assets/local/Lantern/normals.dds",
-        "sampler": {
-          "mag_filter": "Linear",
-          "min_filter": "Linear",
-          "mipmap_filter": "None",
-          "wrap_u": "Repeat",
-          "wrap_v": "Repeat",
-          "wrap_w": "Repeat"
-        }
-      },
-      "occlusion_texture": {
-        "source": "assets/shared/occlusion.placeholder.dds",
-        "sampler": {
-          "mag_filter": "Linear",
-          "min_filter": "Linear",
-          "mipmap_filter": "None",
-          "wrap_u": "Repeat",
-          "wrap_v": "Repeat",
-          "wrap_w": "Repeat"
-        }
-      },
-      "emissive_texture": {
-        "source": "assets/local/Lantern/emissive.dds",
-        "sampler": {
-          "mag_filter": "Linear",
-          "min_filter": "Linear",
-          "mipmap_filter": "None",
-          "wrap_u": "Repeat",
-          "wrap_v": "Repeat",
-          "wrap_w": "Repeat"
-        }
-      },
-      "base_color_texture": {
-        "source": "assets/local/Lantern/base_color.dds",
-        "sampler": {
-          "mag_filter": "Linear",
-          "min_filter": "Linear",
-          "mipmap_filter": "None",
-          "wrap_u": "Repeat",
-          "wrap_v": "Repeat",
-          "wrap_w": "Repeat"
-        }
-      },
-      "metallic_roughness_texture": {
-        "source": "assets/local/Lantern/metallic_roughness.dds",
-        "sampler": {
-          "mag_filter": "Linear",
-          "min_filter": "Linear",
-          "mipmap_filter": "None",
-          "wrap_u": "Repeat",
-          "wrap_v": "Repeat",
-          "wrap_w": "Repeat"
-        }
-      }
-    }
+  "material_paths": [
+    "assets/local/Lantern/LanternPost_Mat.material.json"
   ],
-  "buffer_path": "assets/local/Lantern/Lantern.bin",
-  "skeletonfile_path": "assets/local/Lantern/Lantern.skeleton.json",
+  "buffer": "assets/local/Lantern/Lantern.bin",
+  "deformation": "None",
   "vertex_buffer_start_offset": 64728,
   "aabb": {
     "min": [
-      0.0,
-      0.0,
-      0.0
+      -7.7455993,
+      -12.832109,
+      -2.3157098
     ],
     "max": [
-      0.0,
-      0.0,
-      0.0
+      7.7455993,
+      12.832109,
+      2.3157098
     ]
   }
 }

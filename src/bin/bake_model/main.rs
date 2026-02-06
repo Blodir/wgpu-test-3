@@ -3,7 +3,8 @@ use animations::bake_animation;
 use glam::Mat4;
 use gltf::Document;
 use materials::bake_material;
-use wgpu_test_3::renderer::buffers::vertex::Vertex;
+use wgpu_test_3::renderer::buffers::skinned_vertex::SkinnedVertex;
+use wgpu_test_3::renderer::buffers::static_vertex::StaticVertex;
 use std::fs;
 use std::{collections::HashMap, env, fs::File, io::Write};
 use tangents::generate_tangents_for_mesh;
@@ -14,7 +15,7 @@ use gltf_utils::{
     read_occlusion_texcoord_buffer, read_position_buffer, read_tangents_buffer, read_weights_buffer,
     JointsBuffer,
 };
-use wgpu_test_3::resource_system::file_formats::modelfile;
+use wgpu_test_3::resource_system::file_formats::modelfile::{self, Deformation};
 
 mod aabb;
 mod tangents;
@@ -39,18 +40,11 @@ fn bake(
     let json_path = format!("{}/{}.json", directory_path, model_name);
 
     let skeletonfile_path = format!("assets/local/{}/{}.skeleton.json", model_name, model_name);
-    let joint_reindex = bake_skeletonfile(gltf, buffers, &skeletonfile_path)?;
-
-    let animations: Result<Vec<_>, _> = gltf.animations()
-        .enumerate()
-        .map(|(idx, anim)| -> Result<String, Box<dyn std::error::Error>> {
-            let anim_json_path = format!("assets/local/{}/{}_{}.animation.json", model_name, model_name, idx);
-            let anim_bin_path  = format!("assets/local/{}/{}_{}.animation.bin",  model_name, model_name, idx);
-            bake_animation(&anim, buffers, &joint_reindex, &anim_json_path, &anim_bin_path)?;
-            Ok(anim_json_path)
-        })
-        .collect();
-    let animations = animations?;
+    let maybe_joint_reindex = if gltf.skins().len() > 0 {
+        Some(bake_skeletonfile(gltf, buffers, &skeletonfile_path)?)
+    } else {
+        None
+    };
 
     // (mesh, skin)
     let mut meshes_and_skins = vec![];
@@ -102,7 +96,6 @@ fn bake(
         let index_bytes: Vec<u8> = bytemuck::cast_slice(&indices).to_vec();
         let index_bytes_count = index_bytes.len();
 
-        let mut verts: Vec<Vertex> = vec![];
         let pos_buffer = read_position_buffer(&primitive, buffers);
         let normals_buffer = match read_normal_buffer(&primitive, buffers) {
             Some(t) => t,
@@ -150,43 +143,68 @@ fn bake(
         let weights_buffer = read_weights_buffer(&primitive, buffers);
         let joints_buffer = read_joints_buffer(&primitive, buffers);
         aabbs.push(calculate_aabb(&pos_buffer));
-        for i in 0..pos_buffer.len() {
-            let vert = Vertex {
-                position: pos_buffer[i],
-                normal: normals_buffer[i],
-                tangent: tangents_buffer[i],
-                weights: weights_buffer[i],
-                joints: match &joints_buffer {
-                    JointsBuffer::U8(buffer) => buffer[i].map(|skin_joint_idx| {
-                        let maybe_node_idx = maybe_skin_idx.map(|i| {
-                            let joints: Vec<_> = skins[i].joints().collect();
-                            joints[skin_joint_idx as usize].index()
-                        });
-                        *maybe_node_idx.and_then(|node_idx| joint_reindex.get(&(node_idx as u32))).unwrap_or(&0u32) as u8
-                    }),
-                    JointsBuffer::U16(buffer) => buffer[i].map(|skin_joint_idx| {
-                        let maybe_node_idx = maybe_skin_idx.map(|i| {
-                            let joints: Vec<_> = skins[i].joints().collect();
-                            joints[skin_joint_idx as usize].index()
-                        });
-                        *maybe_node_idx.and_then(|node_idx| joint_reindex.get(&(node_idx as u32))).unwrap_or(&0u32) as u8
-                    }),
-                },
-                base_color_tex_coords: base_color_texcoord_buffer[i],
-                normal_tex_coords: normals_texcoord_buffer[i],
-                metallic_roughness_tex_coords: metallic_roughness_texcoord_buffer[i],
-                occlusion_tex_coords: occlusion_texcoord_buffer[i],
-                emissive_tex_coords: emissive_texcoord_buffer[i],
-            };
-            verts.push(vert);
-        }
-        let vertex_count = verts.len();
-        let vertex_bytes: Vec<u8> = bytemuck::cast_slice(&verts).to_vec();
+        let (vertex_bytes, vertex_count) = match maybe_joint_reindex {
+            Some(ref joint_reindex) => {
+                let mut verts: Vec<SkinnedVertex> = vec![];
+                for i in 0..pos_buffer.len() {
+                    let vert = SkinnedVertex {
+                        position: pos_buffer[i],
+                        normal: normals_buffer[i],
+                        tangent: tangents_buffer[i],
+                        weights: weights_buffer[i],
+                        joints: match &joints_buffer {
+                            JointsBuffer::U8(buffer) => buffer[i].map(|skin_joint_idx| {
+                                let maybe_node_idx = maybe_skin_idx.map(|i| {
+                                    let joints: Vec<_> = skins[i].joints().collect();
+                                    joints[skin_joint_idx as usize].index()
+                                });
+                                *maybe_node_idx.and_then(|node_idx| joint_reindex.get(&(node_idx as u32))).unwrap_or(&0u32) as u8
+                            }),
+                            JointsBuffer::U16(buffer) => buffer[i].map(|skin_joint_idx| {
+                                let maybe_node_idx = maybe_skin_idx.map(|i| {
+                                    let joints: Vec<_> = skins[i].joints().collect();
+                                    joints[skin_joint_idx as usize].index()
+                                });
+                                *maybe_node_idx.and_then(|node_idx| joint_reindex.get(&(node_idx as u32))).unwrap_or(&0u32) as u8
+                            }),
+                        },
+                        base_color_tex_coords: base_color_texcoord_buffer[i],
+                        normal_tex_coords: normals_texcoord_buffer[i],
+                        metallic_roughness_tex_coords: metallic_roughness_texcoord_buffer[i],
+                        occlusion_tex_coords: occlusion_texcoord_buffer[i],
+                        emissive_tex_coords: emissive_texcoord_buffer[i],
+                    };
+                    verts.push(vert);
+                }
+                let vertex_count = verts.len();
+                let vertex_bytes: Vec<u8> = bytemuck::cast_slice(&verts).to_vec();
+                (vertex_bytes, vertex_count)
+            },
+            None => {
+                let mut verts: Vec<StaticVertex> = vec![];
+                for i in 0..pos_buffer.len() {
+                    let vert = StaticVertex {
+                        position: pos_buffer[i],
+                        normal: normals_buffer[i],
+                        tangent: tangents_buffer[i],
+                        base_color_tex_coords: base_color_texcoord_buffer[i],
+                        normal_tex_coords: normals_texcoord_buffer[i],
+                        metallic_roughness_tex_coords: metallic_roughness_texcoord_buffer[i],
+                        occlusion_tex_coords: occlusion_texcoord_buffer[i],
+                        emissive_tex_coords: emissive_texcoord_buffer[i],
+                    };
+                    verts.push(vert);
+                }
+                let vertex_count = verts.len();
+                let vertex_bytes: Vec<u8> = bytemuck::cast_slice(&verts).to_vec();
+                (vertex_bytes, vertex_count)
+            },
+        };
         let vertex_bytes_count = vertex_bytes.len();
 
         output_index_buffers.push(index_bytes);
         output_vertex_buffers.push(vertex_bytes);
-        output_primitives.push(modelfile::Primitive {
+        output_primitives.push(modelfile::Submesh {
             instances: primitive_instances_map
                 .get(&(mesh_idx, primitive.index()))
                 .unwrap()
@@ -216,16 +234,37 @@ fn bake(
     }
 
     let aabb = fold_aabb(&aabbs);
+
+    let deformation = match maybe_joint_reindex {
+        Some(joint_reindex) => {
+            let animations: Result<Vec<_>, _> = gltf.animations()
+                .enumerate()
+                .map(|(idx, anim)| -> Result<String, Box<dyn std::error::Error>> {
+                    let anim_json_path = format!("assets/local/{}/{}_{}.animation.json", model_name, model_name, idx);
+                    let anim_bin_path  = format!("assets/local/{}/{}_{}.animation.bin",  model_name, model_name, idx);
+                    bake_animation(&anim, buffers, &joint_reindex, &anim_json_path, &anim_bin_path)?;
+                    Ok(anim_json_path)
+                })
+                .collect();
+            let animations = animations?;
+
+            Deformation::Skinned {
+                skeleton: skeletonfile_path.to_string(),
+                animations
+            }
+        },
+        None => Deformation::None,
+    };
+
     let model = modelfile::Model {
-        buffer_path: binary_path.to_string(),
-        skeletonfile_path: skeletonfile_path.to_string(),
+        buffer: binary_path.to_string(),
         // vertex buffer starts immediately after indices
         // note: vertex buffer requires alignment to 4 bytes, but since indices are u32, it's already aligned!
         vertex_buffer_start_offset: current_index_byte_offset as u32,
-        primitives: output_primitives,
+        submeshes: output_primitives,
         material_paths,
-        animations,
         aabb,
+        deformation,
     };
 
     fs::create_dir_all(directory_path)?;

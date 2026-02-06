@@ -1,6 +1,6 @@
 use std::{cell::RefCell, rc::Rc, sync::Arc, u32};
 
-use glam::{Mat4, Vec3};
+use glam::{Mat4, Quat, Vec3};
 
 use crate::resource_system::{registry::{ModelHandle, RegistryExt as _, ResourceRegistry, TextureHandle}, resource_manager::ResourceManager};
 use generational_arena::{Arena, Index};
@@ -81,15 +81,6 @@ pub struct Scene {
 impl Scene {
     pub fn update(&mut self, resource_registry: &Rc<RefCell<ResourceRegistry>>, animation_graphs: &Vec<AnimationGraph>, node: SceneNodeId, dt: f32) {
         let node = self.nodes.get_mut(node.into()).unwrap();
-        // TODO remove this after testing
-        if (self.global_time_sec % 16.0).abs() < dt {
-            self.environment.prefiltered = resource_registry.request_texture("assets/kloofendal_overcast_puresky_8k.prefiltered.dds", true);
-            self.environment.di = resource_registry.request_texture("assets/kloofendal_overcast_puresky_8k.di.dds", true);
-        }
-        if (self.global_time_sec % 16.0 - 8.0).abs() < dt {
-            self.environment.prefiltered = resource_registry.request_texture("assets/steinbach_field_4k.prefiltered.dds", true);
-            self.environment.di = resource_registry.request_texture("assets/steinbach_field_4k.di.dds", true);
-        }
         match &mut node.render_data {
             RenderDataType::None => (),
             RenderDataType::Model(model_handle) => (),
@@ -143,7 +134,7 @@ impl Scene {
     }
 }
 
-pub fn build_test_animation_blending(resource_registry: &Rc<RefCell<ResourceRegistry>>) -> (Scene, Vec<AnimationGraph>) {
+pub fn build_test_scene(resource_registry: &Rc<RefCell<ResourceRegistry>>) -> (Scene, Vec<AnimationGraph>) {
     let mut nodes = Arena::new();
 
     let animation_graph = AnimationGraph {
@@ -161,17 +152,19 @@ pub fn build_test_animation_blending(resource_registry: &Rc<RefCell<ResourceRegi
     };
     let animation_graphs = vec![animation_graph];
 
-    let model_handle = resource_registry.request_model("assets/local/Fox/Fox.json");
+    let model_handle = resource_registry.request_model("assets/local/Lantern/Lantern.json");
 
     let mut children = vec![];
-    let grid_size = 70;
+    let grid_size = 10;
     for i in 0..grid_size {
         for j in 0..grid_size {
             let spacing = 200.0;
             let x = i as f32 * spacing - ((grid_size as f32 * spacing) / 2.0);
             let z = j as f32 * spacing - ((grid_size as f32 * spacing) / 2.0);
-            let transform = Mat4::from_translation(Vec3::new(x, 0.0, z));
-            let render_data = RenderDataType::AnimatedModel(AnimatedModel { model: model_handle.clone(), animator: Animator::new(0, 0), last_visible_frame: RefCell::new(u32::MAX) });
+            //let transform = Mat4::from_translation(Vec3::new(x, 0.0, z));
+            let transform = Mat4::from_scale_rotation_translation(Vec3::new(10.0, 10.0, 10.0), Quat::IDENTITY, Vec3::new(x, 0.0, z));
+            //let render_data = RenderDataType::AnimatedModel(AnimatedModel { model: model_handle.clone(), animator: Animator::new(0, 0), last_visible_frame: RefCell::new(u32::MAX) });
+            let render_data = RenderDataType::Model(StaticModel { handle: model_handle.clone(), last_visible_frame: RefCell::new(u32::MAX) });
             let child = nodes.insert(Node {
                 parent: None,
                 children: vec![],

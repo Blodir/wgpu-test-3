@@ -12,7 +12,7 @@ use crate::{
     job_system::worker_pool::Task, render_snapshot::{RenderSnapshot, SnapshotHandoff}, resource_system::{game_resources::{CreateGameResourceRequest, CreateGameResourceResponse, GameResources}, registry::{RegistryExt, ResourceRegistry, ResourceRequest, ResourceResult}, resource_manager::ResourceManager}
 };
 
-use super::scene_tree::{build_test_animation_blending, RenderDataType};
+use super::scene_tree::{build_test_scene, RenderDataType};
 
 #[derive(Debug)]
 pub enum InputEvent {
@@ -37,7 +37,7 @@ pub fn spawn_sim(
     std::thread::spawn(move || {
         let resource_registry = Rc::new(RefCell::new(ResourceRegistry::new(reg_req_tx, reg_res_rx)));
         let mut game_resources = GameResources::new(game_req_rx, game_res_tx);
-        let (mut scene, animation_graphs) = build_test_animation_blending(&resource_registry);
+        let (mut scene, animation_graphs) = build_test_scene(&resource_registry);
         let mut next = Instant::now() + TICK;
         let mut prev_tick = Instant::now();
         let mut shift_is_pressed = false;
@@ -135,7 +135,7 @@ pub fn spawn_sim(
             let snap = RenderSnapshot::build(&mut scene, &resource_registry, &animation_graphs, &game_resources, frame_index);
 
             // schedule animation jobs
-            for (node_id, _) in &snap.model_instances {
+            for (node_id, _) in &snap.mesh_draw_snapshot.skinned_instances {
                 match &mut scene.nodes.get_mut((*node_id).into()).unwrap().render_data {
                     RenderDataType::Model(static_model) => (),
                     RenderDataType::AnimatedModel(animated_model) => {

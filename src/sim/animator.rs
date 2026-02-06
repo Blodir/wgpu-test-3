@@ -143,7 +143,11 @@ impl Animator {
 
         let model = game_resources.models.get(model_game_idx).unwrap();
 
-        let skeleton_game_idx = match resource_registry.borrow().get(&model.skeleton).game_state {
+        let skeleton_handle = match model.deformation {
+            game_resources::DeformationData::None => panic!(),
+            game_resources::DeformationData::Skinned { ref skeleton, ref animation_clips } => skeleton,
+        };
+        let skeleton_game_idx = match resource_registry.borrow().get(skeleton_handle).game_state {
             GameState::Ready(index) => index,
             _ => return job,
         };
@@ -162,7 +166,11 @@ impl Animator {
                 AnimatorState::State(animator_state_state) => AnimPoseTask::Single(
                     {
                         let state = &animation_graphs[self.animation_graph].states[animator_state_state.state_idx as usize];
-                        let clip_handle = &model.animation_clips[state.clip_idx as usize];
+                        let animation_clips = match model.deformation {
+                            game_resources::DeformationData::None => panic!(),
+                            game_resources::DeformationData::Skinned { ref skeleton, ref animation_clips } => animation_clips,
+                        };
+                        let clip_handle = &animation_clips[state.clip_idx as usize];
                         let clip_game_idx = match resource_registry.borrow().get(clip_handle).game_state {
                             GameState::Ready(index) => index,
                             _ => return job,
@@ -189,8 +197,12 @@ impl Animator {
                         let transition = &animation_graphs[self.animation_graph].transitions[animator_transition_state.transition as usize];
                         let to_state = &animation_graphs[self.animation_graph].states[transition.to as usize];
 
-                        let from_handle = &model.animation_clips[from_state.clip_idx as usize];
-                        let to_handle = &model.animation_clips[to_state.clip_idx as usize];
+                        let animation_clips = match model.deformation {
+                            game_resources::DeformationData::None => panic!(),
+                            game_resources::DeformationData::Skinned { ref skeleton, ref animation_clips } => animation_clips,
+                        };
+                        let from_handle = &animation_clips[from_state.clip_idx as usize];
+                        let to_handle = &animation_clips[to_state.clip_idx as usize];
                         let from_game_idx = match resource_registry.borrow().get(from_handle).game_state {
                             GameState::Ready(index) => index,
                             _ => return job,

@@ -1,4 +1,4 @@
-use crate::{render_snapshot::{EnvironmentMapSnapshot, SnapshotGuard}, renderer::{bindgroups::lights::LightsBinding, sampler_cache::SamplerCache, wgpu_context::WgpuContext}, resource_system::{file_formats::materialfile, registry::RenderState, render_resources::RenderResources, resource_manager::ResourceManager}};
+use crate::{render_snapshot::{LightsSnapshot, SnapshotGuard}, renderer::{bindgroups::lights::LightsBinding, sampler_cache::SamplerCache, wgpu_context::WgpuContext}, resource_system::{file_formats::materialfile, registry::RenderState, render_resources::RenderResources, resource_manager::ResourceManager}};
 
 pub fn prepare_lights(
     snaps: &SnapshotGuard,
@@ -8,9 +8,9 @@ pub fn prepare_lights(
     wgpu_context: &WgpuContext,
     bind_group_layout: &wgpu::BindGroupLayout,
 ) {
-    lights_binding.update_sun(&snaps.curr.environment.sun, &wgpu_context.queue);
+    lights_binding.update_sun(&snaps.curr.lights.sun, &wgpu_context.queue);
 
-    if let Some(e) = &snaps.curr.environment.environment_map {
+    if let Some(e) = &snaps.curr.lights.environment_map {
         // if one of env maps has changed, we must rebuild the bindgroup entirely
         if e.prefiltered != lights_binding.curr_prefiltered_render_id || e.di != lights_binding.curr_di_render_id || e.brdf != lights_binding.curr_brdf_render_id {
             let gpu_textures = &render_resources.textures;

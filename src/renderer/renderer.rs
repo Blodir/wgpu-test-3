@@ -1,4 +1,3 @@
-use std::f32;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -9,9 +8,9 @@ use super::bindgroups::bones::BonesBinding;
 use super::bindgroups::camera::CameraBinding;
 use super::bindgroups::lights::LightsBinding;
 use super::bindgroups::material::MaterialBinding;
-use super::buffers::instance::Instances;
+use super::buffers::skinned_instance::SkinnedInstances;
 use super::pipelines::post_processing::PostProcessingPipeline;
-use super::pipelines::skinned::ModelPipeline;
+use super::pipelines::skinned_pbr::SkinnedPbrPipeline;
 use super::pipelines::skybox::SkyboxPipeline;
 use super::pose_storage::{self, PoseStorage};
 use super::prepare::camera::prepare_camera;
@@ -22,6 +21,9 @@ use super::shader_cache::ShaderCache;
 use super::wgpu_context::WgpuContext;
 
 use crate::render_snapshot::{CameraSnapshot, SnapshotHandoff};
+use crate::renderer::buffers::static_instance::StaticInstances;
+use crate::renderer::pipelines::static_pbr::StaticPbrPipeline;
+use crate::renderer::prepare::mesh::resolve_static_draw;
 use crate::resource_system::file_formats::materialfile;
 use crate::resource_system::render_resources::{self, PlaceholderTextureIds, RenderResources, TextureRenderId};
 
@@ -65,7 +67,8 @@ pub struct Renderer {
     depth_texture: DepthTexture,
     msaa_textures: MSAATextures,
     skybox_pipeline: SkyboxPipeline,
-    model_pipeline: ModelPipeline,
+    skinned_pipeline: SkinnedPbrPipeline,
+    static_pipeline: StaticPbrPipeline,
     post_pipeline: PostProcessingPipeline,
     snapshot_handoff: Arc<SnapshotHandoff>,
     pub layouts: Layouts,
@@ -75,7 +78,8 @@ pub struct Renderer {
     bones: BonesBinding,
     pub camera: CameraBinding,
     lights: LightsBinding,
-    instances: Instances,
+    skinned_instances: SkinnedInstances,
+    static_instances: StaticInstances,
 }
 impl Renderer {
     pub fn new(
@@ -100,7 +104,8 @@ impl Renderer {
             &layouts.camera,
         );
         let bones = BonesBinding::new(&layouts.bones, &wgpu_context.device);
-        let instances = Instances::new(wgpu_context);
+        let skinned_instances = SkinnedInstances::new(wgpu_context);
+        let static_instances = StaticInstances::new(wgpu_context);
 
         let skybox_output =
             SkyboxOutputTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
@@ -113,13 +118,20 @@ impl Renderer {
             &layouts.camera,
             &layouts.lights,
         );
-        let model_pipeline = ModelPipeline::new(
+        let skinned_pipeline = SkinnedPbrPipeline::new(
             &wgpu_context,
             &mut shader_cache,
             &layouts.pbr_material,
             &layouts.camera,
             &layouts.lights,
             &layouts.bones,
+        );
+        let static_pipeline = StaticPbrPipeline::new(
+            &wgpu_context,
+            &mut shader_cache,
+            &layouts.pbr_material,
+            &layouts.camera,
+            &layouts.lights,
         );
         let post_pipeline = PostProcessingPipeline::new(
             &wgpu_context,
@@ -133,17 +145,19 @@ impl Renderer {
             depth_texture,
             msaa_textures,
             skybox_pipeline,
-            model_pipeline,
+            skinned_pipeline,
             post_pipeline,
             snapshot_handoff,
             layouts,
             bones,
             camera,
             lights,
-            instances,
+            skinned_instances,
             placeholders,
             sampler_cache,
             shader_cache,
+            static_instances,
+            static_pipeline,
         }
     }
 
@@ -182,11 +196,12 @@ impl Renderer {
             &self.lights.bind_group,
         );
 
-        let draw_context = resolve_skinned_draw(&mut self.bones, &self.layouts.bones, &mut self.instances, &snaps, t, &wgpu_context.device, &wgpu_context.queue, pose_storage, frame_idx);
+        let skinned_draw_context = resolve_skinned_draw(&mut self.bones, &self.layouts.bones, &mut self.skinned_instances, &snaps, t, &wgpu_context.device, &wgpu_context.queue, pose_storage, frame_idx);
+        let static_draw_context = resolve_static_draw(&mut self.static_instances, &snaps, t, &wgpu_context.device, &wgpu_context.queue);
 
-        self.model_pipeline.render(
-            draw_context,
-            &self.instances.buffer,
+        self.skinned_pipeline.render(
+            skinned_draw_context,
+            &self.skinned_instances.buffer,
             &mut encoder,
             &self.msaa_textures.msaa_texture_view,
             &self.msaa_textures.resolve_texture_view,
@@ -194,6 +209,18 @@ impl Renderer {
             &self.camera.bind_group,
             &self.lights.bind_group,
             &self.bones.bind_group,
+            render_resources,
+        );
+
+        self.static_pipeline.render(
+            static_draw_context,
+            &self.static_instances.buffer,
+            &mut encoder,
+            &self.msaa_textures.msaa_texture_view,
+            &self.msaa_textures.resolve_texture_view,
+            &self.depth_texture.view,
+            &self.camera.bind_group,
+            &self.lights.bind_group,
             render_resources,
         );
 

@@ -1,8 +1,7 @@
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct Vertex {
+pub struct StaticVertex {
     pub tangent: [f32; 4],
-    pub weights: [f32; 4],
     pub position: [f32; 3],
     pub normal: [f32; 3],
     pub normal_tex_coords: [f32; 2],
@@ -10,15 +9,13 @@ pub struct Vertex {
     pub emissive_tex_coords: [f32; 2],
     pub base_color_tex_coords: [f32; 2],
     pub metallic_roughness_tex_coords: [f32; 2],
-    pub joints: [u8; 4],
     // TODO add padding for alignment
 }
 
-impl Default for Vertex {
+impl Default for StaticVertex {
     fn default() -> Self {
-        Vertex {
+        StaticVertex {
             tangent: [1.0, 0.0, 0.0, 1.0],
-            weights: [1.0, 0.0, 0.0, 0.0],
             position: [0.0, 0.0, 0.0],
             normal: [0.0, 0.0, 1.0],
             normal_tex_coords: [0.0, 0.0],
@@ -26,18 +23,15 @@ impl Default for Vertex {
             emissive_tex_coords: [0.0, 0.0],
             base_color_tex_coords: [0.0, 0.0],
             metallic_roughness_tex_coords: [0.0, 0.0],
-            joints: [0, 0, 0, 0],
         }
     }
 }
 
-impl Vertex {
-    const BASE_SHADER_LOCATION: u32 = 8;
+impl StaticVertex {
+    const BASE_SHADER_LOCATION: u32 = 7;
     const OFFSET_TAN: wgpu::BufferAddress = 0;
-    const OFFSET_WEI: wgpu::BufferAddress =
-        Self::OFFSET_TAN + size_of::<[f32; 4]>() as wgpu::BufferAddress;
     const OFFSET_POS: wgpu::BufferAddress =
-        Self::OFFSET_WEI + size_of::<[f32; 4]>() as wgpu::BufferAddress;
+        Self::OFFSET_TAN + size_of::<[f32; 4]>() as wgpu::BufferAddress;
     const OFFSET_NOR: wgpu::BufferAddress =
         Self::OFFSET_POS + size_of::<[f32; 3]>() as wgpu::BufferAddress;
     const OFFSET_NTC: wgpu::BufferAddress =
@@ -50,9 +44,7 @@ impl Vertex {
     // optimization: combining emissive and base color tex coords
     const OFFSET_MET: wgpu::BufferAddress =
         Self::OFFSET_EMI + size_of::<[f32; 4]>() as wgpu::BufferAddress;
-    const OFFSET_JOI: wgpu::BufferAddress =
-        Self::OFFSET_MET + size_of::<[f32; 2]>() as wgpu::BufferAddress;
-    const ATTRIBUTES: [wgpu::VertexAttribute; 8] = [
+    const ATTRIBUTES: [wgpu::VertexAttribute; 6] = [
         // 16 byte fields are first for better data alignment
         // I have not tested if this actually matters
         // at least need to add padding first for data alignment to matter
@@ -62,23 +54,18 @@ impl Vertex {
             format: wgpu::VertexFormat::Float32x4,
         },
         wgpu::VertexAttribute {
-            offset: Self::OFFSET_WEI,
-            shader_location: Self::BASE_SHADER_LOCATION + 1,
-            format: wgpu::VertexFormat::Float32x4,
-        },
-        wgpu::VertexAttribute {
             offset: Self::OFFSET_POS,
-            shader_location: Self::BASE_SHADER_LOCATION + 2,
+            shader_location: Self::BASE_SHADER_LOCATION + 1,
             format: wgpu::VertexFormat::Float32x3,
         },
         wgpu::VertexAttribute {
             offset: Self::OFFSET_NOR,
-            shader_location: Self::BASE_SHADER_LOCATION + 3,
+            shader_location: Self::BASE_SHADER_LOCATION + 2,
             format: wgpu::VertexFormat::Float32x3,
         },
         wgpu::VertexAttribute {
             offset: Self::OFFSET_NTC,
-            shader_location: Self::BASE_SHADER_LOCATION + 4,
+            shader_location: Self::BASE_SHADER_LOCATION + 3,
             // optimization: combining normal tex coords and occlusion tex coords
             format: wgpu::VertexFormat::Float32x4,
         },
@@ -91,7 +78,7 @@ impl Vertex {
         */
         wgpu::VertexAttribute {
             offset: Self::OFFSET_EMI,
-            shader_location: Self::BASE_SHADER_LOCATION + 5,
+            shader_location: Self::BASE_SHADER_LOCATION + 4,
             // optimization: combining emissive base color tex coords
             format: wgpu::VertexFormat::Float32x4,
         },
@@ -104,19 +91,14 @@ impl Vertex {
         */
         wgpu::VertexAttribute {
             offset: Self::OFFSET_MET,
-            shader_location: Self::BASE_SHADER_LOCATION + 6,
+            shader_location: Self::BASE_SHADER_LOCATION + 5,
             format: wgpu::VertexFormat::Float32x2,
-        },
-        wgpu::VertexAttribute {
-            offset: Self::OFFSET_JOI,
-            shader_location: Self::BASE_SHADER_LOCATION + 7,
-            format: wgpu::VertexFormat::Uint8x4,
         },
     ];
 
     pub fn desc() -> wgpu::VertexBufferLayout<'static> {
         wgpu::VertexBufferLayout {
-            array_stride: size_of::<Vertex>() as wgpu::BufferAddress,
+            array_stride: size_of::<StaticVertex>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Vertex,
             attributes: &Self::ATTRIBUTES,
         }
