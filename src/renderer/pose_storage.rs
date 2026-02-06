@@ -30,7 +30,7 @@ impl PoseEntry {
     }
 }
 
-pub const POSE_STORAGE_BUFFER_SIZE: usize = 4;
+pub const POSE_STORAGE_BUFFER_SIZE: usize = 6;
 const POSE_GC_GRACE_FRAMES: u32 = 120;
 
 pub enum GetPoseResponse<'a> {

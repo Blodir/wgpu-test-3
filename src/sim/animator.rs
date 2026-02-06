@@ -160,7 +160,7 @@ impl Animator {
             // at worst there may be one pose ahead and one behind the snapshot interval
             let min_sample_length = delta_ticks / (POSE_STORAGE_BUFFER_SIZE as u64 - 2);
             // TODO logic to determine goal sample rate
-            let delta = 16 * min_sample_length;
+            let delta = 4 * min_sample_length;
             let next_instance_time = self.last_scheduled_time + delta;
             let task = match &self.current_state {
                 AnimatorState::State(animator_state_state) => AnimPoseTask::Single(

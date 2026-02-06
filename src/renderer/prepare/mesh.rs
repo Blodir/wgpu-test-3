@@ -2,7 +2,7 @@ use std::{cmp::Ordering, collections::HashMap, ops::Range, sync::Arc};
 
 use glam::{Mat4, Quat, Vec3};
 
-use crate::{render_snapshot::{AnimationSnapshot, MeshDrawSnapshot, SnapshotGuard}, renderer::{bindgroups::bones::{BoneMat34, BonesBinding}, buffers::{skinned_instance::{SkinnedInstance, SkinnedInstances}, static_instance::{StaticInstance, StaticInstances}}, pose_storage::{self, PoseStorage, TRS}, utils::{lerpf32, lerpu64}}, resource_system::{animation::{AnimationClip, Channel, Track}, file_formats::{animationfile, skeletonfile}}, sim::{animator, scene_tree::SceneNodeId}};
+use crate::{render_snapshot::{AnimationSnapshot, MeshDrawSnapshot, SnapshotGuard}, renderer::{bindgroups::bones::{BoneMat34, BonesBinding}, buffers::{skinned_instance::{SkinnedInstance, SkinnedInstances}, static_instance::{StaticInstance, StaticInstances}}, pose_storage::{self, PoseStorage, TRS}, utils::{QuatExt, lerpf32, lerpu64}}, resource_system::{animation::{AnimationClip, Channel, Track}, file_formats::{animationfile, skeletonfile}}, sim::{animator, scene_tree::SceneNodeId}};
 
 pub struct DrawContext<'a> {
     pub snap: &'a MeshDrawSnapshot,
@@ -57,8 +57,7 @@ pub fn resolve_skinned_draw<'a>(
                         let a = (nom as f32 / denom as f32).min(1.0).max(0.0);
                         // TODO perf: refactor this to push directly into joint palette instead of collecting into vec
                         joints0.iter().zip(joints1)
-                            // TODO perf: replace slerp with nlerp
-                            .map(|(trs0, trs1)| TRS { t: trs0.t.lerp(trs1.t, a), r: trs0.r.slerp(trs1.r, a), s: trs0.s.lerp(trs1.s, a) }).collect()
+                            .map(|(trs0, trs1)| TRS { t: trs0.t.lerp(trs1.t, a), r: trs0.r.nlerp(trs1.r, a), s: trs0.s.lerp(trs1.s, a) }).collect()
                     }
                 }
                 // don't render if animation is missing... maybe in the future fill with temp bind pose?
@@ -93,7 +92,7 @@ pub fn resolve_skinned_draw<'a>(
                                 let TRS { t: t1, r: r1, s: s1 } = prev_transforms[idx];
                                 let TRS { t: t2, r: r2, s: s2 } = curr_transforms[idx];
                                 let s3 = s1.lerp(s2, t);
-                                let r3 = r1.slerp(r2, t);
+                                let r3 = r1.nlerp(r2, t);
                                 let t3 = t1.lerp(t2, t);
                                 let transform = Mat4::from_scale_rotation_translation(s3, r3, t3);
                                 let instance = SkinnedInstance::new(transform, *palette_offset);
@@ -150,7 +149,7 @@ pub fn resolve_static_draw<'a>(
                             let TRS { t: t1, r: r1, s: s1 } = prev_transforms[idx];
                             let TRS { t: t2, r: r2, s: s2 } = curr_transforms[idx];
                             let s3 = s1.lerp(s2, t);
-                            let r3 = r1.slerp(r2, t);
+                            let r3 = r1.nlerp(r2, t);
                             let t3 = t1.lerp(t2, t);
                             let transform = Mat4::from_scale_rotation_translation(s3, r3, t3);
                             let instance = StaticInstance::new(transform);

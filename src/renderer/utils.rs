@@ -1,3 +1,5 @@
+use glam::Quat;
+
 fn read_shaders(path: &str) -> std::io::Result<String> {
     let mut file = std::fs::File::open(path)?;
     let mut contents = String::new();
@@ -46,4 +48,19 @@ pub fn lerpf32(a: f32, b: f32, t: f32) -> f32 {
 
 pub fn lerpu64(a: u64, b: u64, t: f32) -> u64 {
     a + ((b - a) as f32 * t).round() as u64
+}
+
+pub trait QuatExt {
+    fn nlerp(self, other: Quat, t: f32) -> Quat;
+}
+
+impl QuatExt for Quat {
+    #[inline]
+    fn nlerp(self, other: Quat, t: f32) -> Quat {
+        let mut b = other;
+        if self.dot(other) < 0.0 {
+            b = -b;
+        }
+        (self * (1.0 - t) + b * t).normalize()
+    }
 }

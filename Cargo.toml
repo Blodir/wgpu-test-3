@@ -22,3 +22,6 @@ arc-swap = "1.7.1"
 crossbeam-queue = "0.3.12"
 mikktspace = "0.3.0"
 crossbeam = "0.8.4"
+
+[profile.release]
+debug = true

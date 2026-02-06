@@ -100,7 +100,6 @@ impl SkinnedPbrPipeline {
         instance_buffer: &wgpu::Buffer,
         encoder: &mut wgpu::CommandEncoder,
         msaa_texture_view: &wgpu::TextureView,
-        msaa_resolve_texture_view: &wgpu::TextureView,
         depth_texture_view: &wgpu::TextureView,
         camera_bind_group: &wgpu::BindGroup,
         lights_bind_group: &wgpu::BindGroup,

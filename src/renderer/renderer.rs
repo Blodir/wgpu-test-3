@@ -204,7 +204,6 @@ impl Renderer {
             &self.skinned_instances.buffer,
             &mut encoder,
             &self.msaa_textures.msaa_texture_view,
-            &self.msaa_textures.resolve_texture_view,
             &self.depth_texture.view,
             &self.camera.bind_group,
             &self.lights.bind_group,
