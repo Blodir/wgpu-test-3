@@ -2,7 +2,7 @@ use std::{cmp::Ordering, sync::Arc};
 
 use glam::{Mat4, Quat, Vec3};
 
-use crate::{job_system::worker_pool::{AnimPoseTask, AnimPoseTaskResult, BlendPoseTask, RenderResponse, SinglePoseTask}, renderer::pose_storage::{PoseData, TRS}, resource_system::{animation::{AnimationClip, Channel, Track}, file_formats::{animationfile, skeletonfile}}, sim::{animator, scene_tree::SceneNodeId}};
+use crate::{job_system::worker_pool::{AnimPoseTask, AnimPoseTaskResult, BlendPoseTask, RenderResponse, SinglePoseTask}, renderer::{pose_storage::{PoseData, TRS}, utils::QuatExt}, resource_system::{animation::{AnimationClip, Channel, Track}, file_formats::{animationfile, skeletonfile}}, sim::{animator, scene_tree::SceneNodeId}};
 
 fn bin_search_anim_indices(times: &[f32], val: f32) -> (usize, usize) {
     let n = times.len();
@@ -146,7 +146,7 @@ fn compute_joint_trs<'a>(task: AnimPoseTask) -> Vec<TRS> {
                 if let Some(joint_1) = maybe_joint_1 {
                     if let Some(joint_2) = maybe_joint_2 {
                         let s = joint_1.0.lerp(joint_2.0, blend_t);
-                        let r = joint_1.1.slerp(joint_2.1, blend_t);
+                        let r = joint_1.1.nlerp(joint_2.1, blend_t);
                         let t = joint_1.2.lerp(joint_2.2, blend_t);
                         joint_matrices[idx] = Mat4::from_scale_rotation_translation(s, r, t);
                     } else {
