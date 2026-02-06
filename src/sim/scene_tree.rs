@@ -67,8 +67,19 @@ impl Environment {
 pub struct Node {
     pub parent: Option<SceneNodeId>,
     pub children: Vec<SceneNodeId>,
-    pub transform: Mat4,
+    transform: Mat4,
+    pub transform_last_mut: u32,
     pub render_data: RenderDataType,
+}
+impl Node {
+    pub fn get_transform(&self) -> &Mat4 {
+        &self.transform
+    }
+
+    pub fn get_transform_mut(&mut self, frame_index: u32) -> &mut Mat4 {
+        self.transform_last_mut = frame_index;
+        &mut self.transform
+    }
 }
 
 pub struct Scene {
@@ -156,7 +167,7 @@ pub fn build_test_scene(resource_registry: &Rc<RefCell<ResourceRegistry>>) -> (S
     let model_handle = resource_registry.request_model("assets/local/Fox/Fox.json");
 
     let mut children = vec![];
-    let grid_size = 50;
+    let grid_size = 100;
     for i in 0..grid_size {
         for j in 0..grid_size {
             let spacing = 200.0;
@@ -170,6 +181,7 @@ pub fn build_test_scene(resource_registry: &Rc<RefCell<ResourceRegistry>>) -> (S
                 parent: None,
                 children: vec![],
                 transform,
+                transform_last_mut: 0,
                 render_data,
             });
             children.push(SceneNodeId(child));
@@ -180,6 +192,7 @@ pub fn build_test_scene(resource_registry: &Rc<RefCell<ResourceRegistry>>) -> (S
         parent: None,
         children,
         transform: Mat4::IDENTITY,
+        transform_last_mut: 0,
         render_data: RenderDataType::None,
     });
 

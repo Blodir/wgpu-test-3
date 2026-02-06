@@ -79,8 +79,9 @@ pub fn spawn_sim(
                             let camera = &mut scene.camera;
                             match delta {
                                 MouseScrollDelta::LineDelta(x, y) => {
+                                    let scroll_speed = 10f32;
                                     camera.eye.z = (camera.eye.z
-                                        + ((if shift_is_pressed { 10f32 } else { 1f32 })
+                                        + ((if shift_is_pressed { 10f32 * scroll_speed } else { scroll_speed })
                                             * -y as f32))
                                         .max(0f32);
                                 }

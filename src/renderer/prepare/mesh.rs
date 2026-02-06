@@ -46,27 +46,33 @@ pub fn resolve_skinned_draw<'a>(
                 .map(|prev| lerpu64(prev.0, anim_snap.0, t))
                 .unwrap_or(anim_snap.0);
             let poses = pose_storage.get(node_id, snap_time.clone(), frame_idx);
-            let joints: Vec<TRS> = match poses {
-                pose_storage::GetPoseResponse::One(pose_data) => pose_data.to_vec(),
+            match poses {
+                pose_storage::GetPoseResponse::One(pose_data) => joint_palette.extend(
+                    pose_data.iter().map(|joint| mat4_to_bone_mat34(Mat4::from_scale_rotation_translation(joint.s, joint.r, joint.t)))
+                ),
                 pose_storage::GetPoseResponse::Two(time0, joints0, time1, joints1) => {
                     let nom = snap_time.saturating_sub(time0);
                     let denom = time1.saturating_sub(time0);
                     if denom == 0 {
-                        joints0.to_vec()
+                        joint_palette.extend(
+                            joints0.iter().map(|joint| mat4_to_bone_mat34(Mat4::from_scale_rotation_translation(joint.s, joint.r, joint.t)))
+                        )
                     } else {
                         let a = (nom as f32 / denom as f32).min(1.0).max(0.0);
-                        // TODO perf: refactor this to push directly into joint palette instead of collecting into vec
-                        joints0.iter().zip(joints1)
-                            .map(|(trs0, trs1)| TRS { t: trs0.t.lerp(trs1.t, a), r: trs0.r.nlerp(trs1.r, a), s: trs0.s.lerp(trs1.s, a) }).collect()
+                        joint_palette.extend(
+                            joints0.iter().zip(joints1).map(|(trs0, trs1)| mat4_to_bone_mat34(
+                                Mat4::from_scale_rotation_translation(
+                                    trs0.s.lerp(trs1.s, a),
+                                    trs0.r.nlerp(trs1.r, a),
+                                    trs0.t.lerp(trs1.t, a),
+                                )
+                            ))
+                        );
                     }
                 }
                 // don't render if animation is missing... maybe in the future fill with temp bind pose?
                 pose_storage::GetPoseResponse::Nothing => continue,
             };
-
-            for joint in joints {
-                joint_palette.push(mat4_to_bone_mat34(Mat4::from_scale_rotation_translation(joint.s, joint.r, joint.t)));
-            }
         } else {
             // no animation
             todo!()
@@ -81,6 +87,20 @@ pub fn resolve_skinned_draw<'a>(
                 let inst_start = instance_data.len();
                 for node_id in &curr_draw.instances {
                     let curr_node_inst = snaps.curr.mesh_draw_snapshot.skinned_instances.get(node_id).unwrap();
+
+                    // no need to interpolate if transform hasn't changed
+                    if !curr_node_inst.dirty {
+                        if let Some(palette_offset) = node_to_palette_offset.get(node_id) {
+                            let curr_transforms = &curr_node_inst.submesh_transforms[curr_draw.submesh_idx];
+                            for transform in curr_transforms {
+                                let instance = SkinnedInstance::new(Mat4::from_scale_rotation_translation(transform.s, transform.r, transform.t), *palette_offset);
+                                instance_data.push(instance);
+                            }
+                        }
+                        continue;
+                    }
+
+                    // otherwise: interpolate
                     let prev_node_inst = snaps.prev.mesh_draw_snapshot.skinned_instances.get(node_id);
 
                     let curr_transforms = &curr_node_inst.submesh_transforms[curr_draw.submesh_idx];
@@ -139,6 +159,17 @@ pub fn resolve_static_draw<'a>(
                 let inst_start = instance_data.len();
                 for node_id in &curr_draw.instances {
                     let curr_node_inst = snaps.curr.mesh_draw_snapshot.static_instances.get(node_id).unwrap();
+                    // no need to interpolate if transform hasn't changed
+                    if !curr_node_inst.dirty {
+                        let curr_transforms = &curr_node_inst.submesh_transforms[curr_draw.submesh_idx];
+                        for transform in curr_transforms {
+                            let instance = StaticInstance::new(Mat4::from_scale_rotation_translation(transform.s, transform.r, transform.t));
+                            instance_data.push(instance);
+                        }
+                        continue;
+                    }
+
+                    // otherwise: interpolate
                     let prev_node_inst = snaps.prev.mesh_draw_snapshot.static_instances.get(node_id);
 
                     let curr_transforms = &curr_node_inst.submesh_transforms[curr_draw.submesh_idx];

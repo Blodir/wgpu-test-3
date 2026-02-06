@@ -19,7 +19,7 @@ pub fn accumulate_instance_snapshots(
     frame_index: u32,
 ) {
     let node = scene.nodes.get(node_id.into()).unwrap();
-    let transform = node.transform * base_transform;
+    let transform = node.get_transform() * base_transform;
     let (model_handle, last_visible_frame, maybe_animation_snapshot) = match &node.render_data {
         RenderDataType::None => {
             for child in &node.children {
@@ -64,6 +64,7 @@ pub fn accumulate_instance_snapshots(
                     crate::resource_system::file_formats::modelfile::Deformation::None => {
                         let inst = StaticInstanceSnapshot {
                             submesh_transforms,
+                            dirty: node.transform_last_mut == frame_index,
                         };
                         static_instances.insert(node_id, inst);
                     },
@@ -71,6 +72,7 @@ pub fn accumulate_instance_snapshots(
                         let inst = SkinnedInstanceSnapshot {
                             submesh_transforms,
                             animation: maybe_animation_snapshot,
+                            dirty: node.transform_last_mut == frame_index,
                         };
                         skinned_instances.insert(node_id, inst);
                     },
@@ -147,10 +149,12 @@ pub struct AnimationSnapshot(pub u64);
 pub struct SkinnedInstanceSnapshot {
     pub submesh_transforms: Vec<Vec<TRS>>,
     pub animation: Option<AnimationSnapshot>,
+    pub dirty: bool,
 }
 
 pub struct StaticInstanceSnapshot {
     pub submesh_transforms: Vec<Vec<TRS>>,
+    pub dirty: bool,
 }
 
 pub struct SubmeshBatch {
