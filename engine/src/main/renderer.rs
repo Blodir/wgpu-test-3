@@ -21,9 +21,9 @@ use super::shader_cache::ShaderCache;
 use super::wgpu_context::WgpuContext;
 
 use crate::render_snapshot::{CameraSnapshot, SnapshotHandoff};
-use crate::renderer::buffers::static_instance::StaticInstances;
-use crate::renderer::pipelines::static_pbr::StaticPbrPipeline;
-use crate::renderer::prepare::mesh::resolve_static_draw;
+use crate::main::buffers::static_instance::StaticInstances;
+use crate::main::pipelines::static_pbr::StaticPbrPipeline;
+use crate::main::prepare::mesh::resolve_static_draw;
 use crate::resource_system::file_formats::materialfile;
 use crate::resource_system::render_resources::{self, PlaceholderTextureIds, RenderResources, TextureRenderId};
 

@@ -1,4 +1,4 @@
-use crate::{render_snapshot::{LightsSnapshot, SnapshotGuard}, renderer::{bindgroups::lights::LightsBinding, sampler_cache::SamplerCache, wgpu_context::WgpuContext}, resource_system::{file_formats::materialfile, registry::RenderState, render_resources::RenderResources, resource_manager::ResourceManager}};
+use crate::{render_snapshot::{LightsSnapshot, SnapshotGuard}, main::{bindgroups::lights::LightsBinding, sampler_cache::SamplerCache, wgpu_context::WgpuContext}, resource_system::{file_formats::materialfile, registry::RenderState, render_resources::RenderResources, resource_manager::ResourceManager}};
 
 pub fn prepare_lights(
     snaps: &SnapshotGuard,

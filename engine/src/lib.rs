@@ -12,7 +12,7 @@ use winit::{
 
 pub mod render_snapshot;
 pub mod resource_system;
-pub mod renderer;
+pub mod main;
 pub mod sim;
 pub mod app;
 pub mod job_system;

@@ -5,3 +5,6 @@ edition = "2021"
 
 [dependencies]
 engine = { path = "../../engine" }
+
+[profile.release]
+debug = true

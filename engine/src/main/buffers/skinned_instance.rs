@@ -1,7 +1,7 @@
 use glam::{Mat3, Mat4};
 use wgpu::util::DeviceExt as _;
 
-use crate::renderer::wgpu_context::WgpuContext;
+use crate::main::wgpu_context::WgpuContext;
 
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]

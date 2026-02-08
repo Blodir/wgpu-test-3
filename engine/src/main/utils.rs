@@ -8,7 +8,7 @@ fn read_shaders(path: &str) -> std::io::Result<String> {
 }
 
 fn read_fallback_shaders() -> std::io::Result<String> {
-    let mut file = std::fs::File::open("engine/src/renderer/shaders/fallback.wgsl")?;
+    let mut file = std::fs::File::open("engine/src/main/shaders/fallback.wgsl")?;
     let mut contents = String::new();
     std::io::Read::read_to_string(&mut file, &mut contents)?;
     Ok(contents)

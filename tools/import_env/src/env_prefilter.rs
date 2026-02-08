@@ -91,7 +91,7 @@ impl EnvPrefilterPipeline {
                 bind_group_layouts,
                 push_constant_ranges: &[],
             });
-        let shader_module = engine::renderer::utils::create_shader_module(
+        let shader_module = engine::main::utils::create_shader_module(
             device,
             "tools/import_env/src/env_prefilter.wgsl",
         );

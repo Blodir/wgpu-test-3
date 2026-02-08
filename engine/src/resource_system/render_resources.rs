@@ -2,7 +2,7 @@ use std::ops::Range;
 
 use generational_arena::{Arena, Index};
 
-use crate::renderer::{bindgroups::material::MaterialBinding, wgpu_context::WgpuContext};
+use crate::main::{bindgroups::material::MaterialBinding, wgpu_context::WgpuContext};
 
 use super::{animation::AnimationClip, file_formats::animationfile};
 

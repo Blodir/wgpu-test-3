@@ -1,6 +1,6 @@
 use glam::{Mat3, Mat4, Quat, Vec3, Vec4};
 
-use crate::{render_snapshot::CameraSnapshot, renderer::wgpu_context, resource_system::file_formats::modelfile::Aabb};
+use crate::{render_snapshot::CameraSnapshot, main::wgpu_context, resource_system::file_formats::modelfile::Aabb};
 
 fn look_at_rotation(eye: Vec3, target: Vec3, world_up: Vec3) -> Quat {
     let forward = (target - eye).normalize();

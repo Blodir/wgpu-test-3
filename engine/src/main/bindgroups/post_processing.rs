@@ -1,4 +1,4 @@
-use crate::renderer::attachments::{msaa::MSAATextures, skybox::SkyboxOutputTexture};
+use crate::main::attachments::{msaa::MSAATextures, skybox::SkyboxOutputTexture};
 
 pub struct PostProcessingInputs {}
 pub struct PostProcessingInputsBinding {

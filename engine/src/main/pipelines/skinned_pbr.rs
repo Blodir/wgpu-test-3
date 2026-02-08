@@ -1,18 +1,19 @@
 use std::ops::Range;
 
-use crate::{render_snapshot::MeshDrawSnapshot, renderer::{attachments::depth::DepthTexture, buffers::{skinned_instance::SkinnedInstance, skinned_vertex::SkinnedVertex, static_instance::StaticInstance, static_vertex::StaticVertex}, prepare::mesh::DrawContext, shader_cache::ShaderCache, wgpu_context::WgpuContext}, resource_system::{registry::{MaterialId, MeshId, RenderState}, render_resources::{self, MaterialRenderId, MeshRenderId, RenderResources}, resource_manager::ResourceManager}};
+use crate::{render_snapshot::MeshDrawSnapshot, main::{attachments::depth::DepthTexture, buffers::{skinned_instance::SkinnedInstance, skinned_vertex::SkinnedVertex}, prepare::mesh::DrawContext, shader_cache::ShaderCache, wgpu_context::WgpuContext}, resource_system::{registry::{MaterialId, MeshId, RenderState}, render_resources::{self, MaterialRenderId, MeshRenderId, RenderResources}, resource_manager::ResourceManager}};
 
-pub struct StaticPbrPipeline {
+pub struct SkinnedPbrPipeline {
     pub render_pipeline: wgpu::RenderPipeline,
 }
 
-impl StaticPbrPipeline {
+impl SkinnedPbrPipeline {
     pub fn new(
         wgpu_context: &WgpuContext,
         shader_cache: &mut ShaderCache,
         material_bind_group_layout: &wgpu::BindGroupLayout,
         camera_bind_group_layout: &wgpu::BindGroupLayout,
         lights_bind_group_layout: &wgpu::BindGroupLayout,
+        bones_bind_group_layout: &wgpu::BindGroupLayout,
     ) -> Self {
         let render_pipeline = Self::build_pipeline(
             wgpu_context,
@@ -20,6 +21,7 @@ impl StaticPbrPipeline {
             camera_bind_group_layout,
             lights_bind_group_layout,
             &material_bind_group_layout,
+            &bones_bind_group_layout,
         );
 
         Self {
@@ -33,23 +35,25 @@ impl StaticPbrPipeline {
         camera_bind_group_layout: &wgpu::BindGroupLayout,
         lights_bind_group_layout: &wgpu::BindGroupLayout,
         material_bind_group_layout: &wgpu::BindGroupLayout,
+        bones_bind_group_layout: &wgpu::BindGroupLayout,
     ) -> wgpu::RenderPipeline {
-        let vertex_buffer_layouts = &[StaticInstance::desc(), StaticVertex::desc()];
+        let vertex_buffer_layouts = &[SkinnedInstance::desc(), SkinnedVertex::desc()];
         let bind_group_layouts = &[
             camera_bind_group_layout,
             lights_bind_group_layout,
             material_bind_group_layout,
+            bones_bind_group_layout,
         ];
         let render_pipeline_layout =
             wgpu_context.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("Static PBR Pipeline Layout"),
+                label: Some("Skinned PBR Pipeline Layout"),
                 bind_group_layouts,
                 push_constant_ranges: &[],
             });
-        let vertex_shader_module = shader_cache.get("engine/src/renderer/shaders/static_pbr.vert.wgsl".to_string(), wgpu_context);
-        let fragment_shader_module = shader_cache.get("engine/src/renderer/shaders/pbr.frag.wgsl".to_string(), wgpu_context);
+        let vertex_shader_module = shader_cache.get("engine/src/main/shaders/skinned_pbr.vert.wgsl".to_string(), wgpu_context);
+        let fragment_shader_module = shader_cache.get("engine/src/main/shaders/pbr.frag.wgsl".to_string(), wgpu_context);
         wgpu_context.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Static PBR Pipeline"),
+            label: Some("Skinned PBR Pipeline"),
             layout: Some(&render_pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &vertex_shader_module,
@@ -96,10 +100,10 @@ impl StaticPbrPipeline {
         instance_buffer: &wgpu::Buffer,
         encoder: &mut wgpu::CommandEncoder,
         msaa_texture_view: &wgpu::TextureView,
-        msaa_resolve_texture_view: &wgpu::TextureView,
         depth_texture_view: &wgpu::TextureView,
         camera_bind_group: &wgpu::BindGroup,
         lights_bind_group: &wgpu::BindGroup,
+        bones_bind_group: &wgpu::BindGroup,
         render_resources: &RenderResources
     ) {
         let models = &render_resources.models;
@@ -108,21 +112,20 @@ impl StaticPbrPipeline {
 
         // TODO can this descriptor be reused?
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("Static PBR Render Pass"),
+            label: Some("Skinned PBR Render Pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: &msaa_texture_view,
-                // last pass drawing to msaa resolves
-                resolve_target: Some(&msaa_resolve_texture_view),
+                // first pass drawing to msaa shouldn't resolve
+                resolve_target: None,
                 ops: wgpu::Operations {
-                    // don't clear previous passes work
-                    load: wgpu::LoadOp::Load,
+                    load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
                     store: wgpu::StoreOp::Store,
                 },
             })],
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                 view: depth_texture_view,
                 depth_ops: Some(wgpu::Operations {
-                    load: wgpu::LoadOp::Load,
+                    load: wgpu::LoadOp::Clear(1.0),
                     store: wgpu::StoreOp::Store,
                 }),
                 stencil_ops: None,
@@ -134,8 +137,9 @@ impl StaticPbrPipeline {
         render_pass.set_pipeline(&self.render_pipeline);
         render_pass.set_bind_group(0u32, camera_bind_group, &[]);
         render_pass.set_bind_group(1, lights_bind_group, &[]);
+        render_pass.set_bind_group(3, bones_bind_group, &[]);
 
-        for material_batch in &draw_context.snap.material_batches[draw_context.snap.static_batch.clone()] {
+        for material_batch in &draw_context.snap.material_batches[draw_context.snap.skinned_batch.clone()] {
             let material = materials.get(material_batch.material_id.into()).unwrap();
             render_pass.set_bind_group(
                 2u32,

@@ -2,7 +2,7 @@ use std::{cmp::Ordering, sync::Arc};
 
 use glam::{Mat4, Quat, Vec3};
 
-use crate::{job_system::worker_pool::{AnimPoseTask, AnimPoseTaskResult, BlendPoseTask, RenderResponse, SinglePoseTask}, renderer::{pose_storage::{PoseData, TRS}, utils::QuatExt}, resource_system::{animation::{AnimationClip, Channel, Track}, file_formats::{animationfile, skeletonfile}}, sim::{animator, scene_tree::SceneNodeId}};
+use crate::{job_system::worker_pool::{AnimPoseTask, AnimPoseTaskResult, BlendPoseTask, RenderResponse, SinglePoseTask}, main::{pose_storage::{PoseData, TRS}, utils::QuatExt}, resource_system::{animation::{AnimationClip, Channel, Track}, file_formats::{animationfile, skeletonfile}}, sim::{animator, scene_tree::SceneNodeId}};
 
 fn bin_search_anim_indices(times: &[f32], val: f32) -> (usize, usize) {
     let n = times.len();

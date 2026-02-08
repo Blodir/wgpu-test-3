@@ -1,4 +1,4 @@
-use crate::renderer::wgpu_context::{self, WgpuContext};
+use crate::main::wgpu_context::{self, WgpuContext};
 
 pub struct TextureLoadData {
     pub data: Vec<u8>,

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crossbeam::channel::{Receiver, Sender};
 
-use crate::{renderer::pose_storage::PoseData, resource_system::{animation::AnimationClip, file_formats::skeletonfile::Skeleton}, sim::{animator::{BoundaryMode, TimeWrapMode}, scene_tree::SceneNodeId}};
+use crate::{main::pose_storage::PoseData, resource_system::{animation::AnimationClip, file_formats::skeletonfile::Skeleton}, sim::{animator::{BoundaryMode, TimeWrapMode}, scene_tree::SceneNodeId}};
 
 use super::anim_pose::execute_pose_tasks;
 
