@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use generational_arena::{Arena, Index};
 use glam::{Quat, Vec3};
 
-use crate::{job_system::worker_pool::{AnimPoseTaskResult}, sim::scene_tree::SceneNodeId};
+use crate::{job_system::worker_pool::{AnimPoseTaskResult}, game::scene_tree::SceneNodeId};
 
 #[derive(Clone, Copy, Debug)]
 pub struct TRS {
