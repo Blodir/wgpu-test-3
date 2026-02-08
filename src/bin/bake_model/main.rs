@@ -211,8 +211,7 @@ fn bake(
                 .iter()
                 .map(|m| (*m).to_cols_array_2d())
                 .collect(),
-            // TODO default material!
-            material: primitive.material().index().unwrap() as u32,
+            material: primitive.material().index().map(|i| i as u32),
             index_byte_length: index_bytes_count as u32,
             index_byte_offset: current_index_byte_offset as u32,
             vertex_byte_length: vertex_bytes_count as u32,

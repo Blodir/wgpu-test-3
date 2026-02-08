@@ -123,7 +123,12 @@ pub enum StagedData {
     Material(MaterialId, MaterialGameData),
 }
 
+pub struct Placeholders {
+    pub material: MaterialHandle,
+}
+
 pub struct GameResources {
+    pub placeholders: Placeholders,
     pub models: Arena<ModelGameData>,
     pub materials: Arena<MaterialGameData>,
     pub animation_clips: Arena<AnimationClipGameData>,
@@ -137,8 +142,11 @@ impl GameResources {
     pub fn new(
         req_rx: crossbeam::channel::Receiver<CreateGameResourceRequest>,
         res_tx: crossbeam::channel::Sender<CreateGameResourceResponse>,
+        registry: &Rc<RefCell<ResourceRegistry>>,
     ) -> Self {
+        let placeholders = Placeholders { material: registry.request_material(None) };
         Self {
+            placeholders,
             models: Arena::new(),
             materials: Arena::new(),
             animation_clips: Arena::new(),
@@ -168,7 +176,7 @@ impl GameResources {
                                 }
                             },
                         },
-                        materials: manifest.material_paths.iter().map(|a| registry.request_material(a)).collect(),
+                        materials: manifest.material_paths.iter().map(|a| registry.request_material(Some(a))).collect(),
                         aabb: manifest.aabb.clone(),
                         submesh_instances: manifest.submeshes.iter().map(|prim| prim.instances.iter().map(|m| Mat4::from_cols_array_2d(m)).collect()).collect(),
                         manifest,
@@ -237,13 +245,26 @@ impl GameResources {
                     }
 
                     let vertex_buffer_start_offset = model_game_data.manifest.vertex_buffer_start_offset;
-                    let submeshes = model_game_data.manifest.submeshes.iter().map(|prim| {
-                        SubMesh {
-                            index_range: prim.index_byte_offset / 4..prim.index_byte_offset / 4 + prim.index_byte_length / 4,
-                            base_vertex: prim.base_vertex,
-                            material: material_render_ids[prim.material as usize],
-                        }
-                    }).collect();
+                    let mut submeshes = vec![];
+                    for submesh in &model_game_data.manifest.submeshes {
+                        let material = if let Some(mat_idx) = submesh.material {
+                            material_render_ids[mat_idx as usize]
+                        } else {
+                            if let RenderState::Ready(index) = reg.get(&self.placeholders.material).render_state {
+                                MaterialRenderId(index)
+                            } else {
+                                staging.push(StagedData::Model(id, model_game_data));
+                                continue 'staging_loop;
+                            }
+                        };
+                        submeshes.push(
+                            SubMesh {
+                                index_range: submesh.index_byte_offset / 4..submesh.index_byte_offset / 4 + submesh.index_byte_length / 4,
+                                base_vertex: submesh.base_vertex,
+                                material,
+                            }
+                        )
+                    }
                     let game_id = self.models.insert(model_game_data);
                     let res = CreateGameResourceResponse::Model {
                         id,

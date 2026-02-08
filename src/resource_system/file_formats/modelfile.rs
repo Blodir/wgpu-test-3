@@ -8,7 +8,7 @@ pub struct Submesh {
     pub vertex_byte_offset: u32,
     pub vertex_byte_length: u32,
     pub base_vertex: u32,
-    pub material: u32,
+    pub material: Option<u32>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

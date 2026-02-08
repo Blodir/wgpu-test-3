@@ -163,8 +163,8 @@ pub fn build_test_scene(resource_registry: &Rc<RefCell<ResourceRegistry>>) -> (S
     };
     let animation_graphs = vec![animation_graph];
 
-    //let model_handle = resource_registry.request_model("assets/local/Lantern/Lantern.json");
-    let model_handle = resource_registry.request_model("assets/local/Fox/Fox.json");
+    let model_handle = resource_registry.request_model("assets/local/Lantern/Lantern.json");
+    //let model_handle = resource_registry.request_model("assets/local/Fox/Fox.json");
 
     let mut children = vec![];
     let grid_size = 100;
@@ -173,10 +173,10 @@ pub fn build_test_scene(resource_registry: &Rc<RefCell<ResourceRegistry>>) -> (S
             let spacing = 200.0;
             let x = i as f32 * spacing - ((grid_size as f32 * spacing) / 2.0);
             let z = j as f32 * spacing - ((grid_size as f32 * spacing) / 2.0);
-            let transform = Mat4::from_translation(Vec3::new(x, 0.0, z));
-            //let transform = Mat4::from_scale_rotation_translation(Vec3::new(10.0, 10.0, 10.0), Quat::IDENTITY, Vec3::new(x, 0.0, z));
-            let render_data = RenderDataType::AnimatedModel(AnimatedModel { model: model_handle.clone(), animator: Animator::new(0, 0), last_visible_frame: RefCell::new(u32::MAX) });
-            //let render_data = RenderDataType::Model(StaticModel { handle: model_handle.clone(), last_visible_frame: RefCell::new(u32::MAX) });
+            //let transform = Mat4::from_translation(Vec3::new(x, 0.0, z));
+            let transform = Mat4::from_scale_rotation_translation(Vec3::new(10.0, 10.0, 10.0), Quat::IDENTITY, Vec3::new(x, 0.0, z));
+            //let render_data = RenderDataType::AnimatedModel(AnimatedModel { model: model_handle.clone(), animator: Animator::new(0, 0), last_visible_frame: RefCell::new(u32::MAX) });
+            let render_data = RenderDataType::Model(StaticModel { handle: model_handle.clone(), last_visible_frame: RefCell::new(u32::MAX) });
             let child = nodes.insert(Node {
                 parent: None,
                 children: vec![],

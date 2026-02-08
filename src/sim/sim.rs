@@ -36,7 +36,7 @@ pub fn spawn_sim(
 ) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
         let resource_registry = Rc::new(RefCell::new(ResourceRegistry::new(reg_req_tx, reg_res_rx)));
-        let mut game_resources = GameResources::new(game_req_rx, game_res_tx);
+        let mut game_resources = GameResources::new(game_req_rx, game_res_tx, &resource_registry);
         let (mut scene, animation_graphs) = build_test_scene(&resource_registry);
         let mut next = Instant::now() + TICK;
         let mut prev_tick = Instant::now();

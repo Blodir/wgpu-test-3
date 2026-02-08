@@ -120,7 +120,7 @@ pub enum RenderState {
 pub enum ResourceRequest {
     LoadModel { id: ModelId, path: String },
     LoadMesh { id: MeshId, path: String },
-    LoadMaterial { id: MaterialId, path: String },
+    LoadMaterial { id: MaterialId, path: Option<String> },
     LoadSkeleton { id: SkeletonId, path: String },
     LoadAnimationClip { id: AnimationClipId, path: String },
     LoadAnimation { id: AnimationId, path: String, header: animationfile::AnimationClip },
@@ -196,7 +196,7 @@ pub trait RegistryExt {
     fn dec_ref(&self, idx: Index, kind: ResourceKind);
     fn request_model(&self, path: &str) -> ModelHandle;
     fn request_mesh(&self, path: &str) -> MeshHandle;
-    fn request_material(&self, path: &str) -> MaterialHandle;
+    fn request_material(&self, path: Option<&str>) -> MaterialHandle;
     fn request_skeleton(&self, path: &str) -> SkeletonHandle;
     fn request_animation_clip(&self, path: &str) -> AnimationClipHandle;
     fn request_animation(&self, path: &str, header: &animationfile::AnimationClip) -> AnimationHandle;
@@ -281,28 +281,42 @@ impl RegistryExt for Rc<RefCell<ResourceRegistry>> {
 
     fn request_material(
         &self,
-        path: &str,
+        path: Option<&str>,
     ) -> MaterialHandle {
         let mut reg = self.borrow_mut();
-        if let Some(&idx) = reg.by_path.get(path) {
-            let entry = reg.entries.get_mut(idx).unwrap();
-            entry.ref_count += 1;
-            return MaterialHandle::new(idx, self);
-        }
-
-        let idx = reg.entries.insert(
-            Entry {
-                kind: ResourceKind::Material,
-                ref_count: 1u32,
-                game_state: GameState::Loading,
-                render_state: RenderState::Absent,
+        if let Some(path) = path {
+            if let Some(&idx) = reg.by_path.get(path) {
+                let entry = reg.entries.get_mut(idx).unwrap();
+                entry.ref_count += 1;
+                return MaterialHandle::new(idx, self);
             }
-        );
-        reg.by_path.insert(path.to_string(), idx);
 
-        let handle = MaterialHandle::new(idx, self);
-        reg.resource_request(ResourceRequest::LoadMaterial { id: handle.id(), path: path.to_string() });
-        handle
+            let idx = reg.entries.insert(
+                Entry {
+                    kind: ResourceKind::Material,
+                    ref_count: 1u32,
+                    game_state: GameState::Loading,
+                    render_state: RenderState::Absent,
+                }
+            );
+            reg.by_path.insert(path.to_string(), idx);
+
+            let handle = MaterialHandle::new(idx, self);
+            reg.resource_request(ResourceRequest::LoadMaterial { id: handle.id(), path: Some(path.to_string()) });
+            handle
+        } else {
+            let idx = reg.entries.insert(
+                Entry {
+                    kind: ResourceKind::Material,
+                    ref_count: 1u32,
+                    game_state: GameState::Loading,
+                    render_state: RenderState::Absent,
+                }
+            );
+            let handle = MaterialHandle::new(idx, self);
+            reg.resource_request(ResourceRequest::LoadMaterial { id: handle.id(), path: None });
+            handle
+        }
     }
 
     fn request_skeleton(

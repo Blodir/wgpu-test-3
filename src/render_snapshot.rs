@@ -217,7 +217,7 @@ impl MeshDrawSnapshot {
 
                 for submesh_idx in 0..model_game_data.manifest.submeshes.len() {
                     let submesh = &model_game_data.manifest.submeshes[submesh_idx];
-                    let mat_handle = &model_game_data.materials[submesh.material as usize];
+                    let mat_handle = &submesh.material.as_ref().map(|m| &model_game_data.materials[*m as usize]).unwrap_or(&game_resources.placeholders.material);
                     if let RenderState::Ready(mat_render_id) = resource_registry.borrow().get(&mat_handle).render_state {
                         let materials = pipelines.entry(MeshPipelineKind::SkinnedPbr).or_insert(HashMap::new());
                         let models = materials.entry(MaterialRenderId(mat_render_id)).or_insert(HashMap::new());
@@ -249,7 +249,7 @@ impl MeshDrawSnapshot {
 
                 for submesh_idx in 0..model_game_data.manifest.submeshes.len() {
                     let submesh = &model_game_data.manifest.submeshes[submesh_idx];
-                    let mat_handle = &model_game_data.materials[submesh.material as usize];
+                    let mat_handle = submesh.material.as_ref().map(|m| &model_game_data.materials[*m as usize]).unwrap_or(&game_resources.placeholders.material);
                     if let RenderState::Ready(mat_render_id) = resource_registry.borrow().get(&mat_handle).render_state {
                         let materials = pipelines.entry(MeshPipelineKind::StaticPbr).or_insert(HashMap::new());
                         let models = materials.entry(MaterialRenderId(mat_render_id)).or_insert(HashMap::new());

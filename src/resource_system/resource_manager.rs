@@ -2,7 +2,7 @@
 use generational_arena::Index;
 use wgpu::util::{BufferInitDescriptor, DeviceExt as _};
 
-use crate::renderer::{wgpu_context::WgpuContext, Renderer};
+use crate::{renderer::{Renderer, wgpu_context::WgpuContext}, resource_system::file_formats::materialfile};
 
 use super::{file_formats::{animationfile, dds}, game_resources::{CreateGameResourceRequest, CreateGameResourceResponse, GameResources, MaterialGameData, MaterialGameId}, io_manager::{IoManager, IoRequest, IoResponse}, registry::{GameState, RenderState, ResourceKind, ResourceRequest, ResourceResult}, render_resources::{MaterialRenderId, MeshGpuData, MeshRenderId, ModelRenderData, ModelRenderId, RenderResources, TextureGpuData, TextureRenderId}, texture::upload_texture};
 
@@ -29,12 +29,38 @@ impl ResourceManager {
         }
     }
 
-    pub fn process_reg_requests(&mut self) {
+    pub fn process_reg_requests(
+        &mut self,
+    ) {
         for msg in self.registry_req_rx.try_iter() {
             match msg {
                 ResourceRequest::LoadModel { id, path } => self.make_io_request(IoRequest::LoadModel { id, path }),
                 ResourceRequest::LoadMesh { id, path } => self.make_io_request(IoRequest::LoadMesh { id, path }),
-                ResourceRequest::LoadMaterial { id, path } => self.make_io_request(IoRequest::LoadMaterial { id, path }),
+                ResourceRequest::LoadMaterial { id, path } => {
+                    if let Some(path) = path {
+                        self.make_io_request(IoRequest::LoadMaterial { id, path });
+                    } else {
+                        let manifest = materialfile::Material {
+                            base_color_factor: [1.0, 1.0, 1.0, 1.0],
+                            metallic_factor: 1.0,
+                            roughness_factor: 1.0,
+                            emissive_factor: [1.0, 1.0, 1.0],
+                            normal_texture_scale: 1.0,
+                            occlusion_strength: 1.0,
+                            alpha_mode: materialfile::AlphaMode::Opaque,
+                            alpha_cutoff: 1.0,
+                            double_sided: false,
+                            normal_texture: None,
+                            occlusion_texture: None,
+                            emissive_texture: None,
+                            base_color_texture: None,
+                            metallic_roughness_texture: None,
+                        };
+                        if self.game_req_tx.send(CreateGameResourceRequest::Material { id, manifest }).is_err() {
+                            todo!();
+                        }
+                    }
+                },
                 ResourceRequest::LoadSkeleton { id, path } => self.make_io_request(IoRequest::LoadSkeleton { id, path }),
                 ResourceRequest::LoadAnimationClip { id, path } => self.make_io_request(IoRequest::LoadAnimationClip { id, path }),
                 ResourceRequest::LoadAnimation { id, path, header } => self.make_io_request(IoRequest::LoadAnimation { id, path, header }),
