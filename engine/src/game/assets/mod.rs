@@ -1,3 +1,3 @@
 pub mod registry;
-pub mod game_resources;
+pub mod store;
 pub mod runtime_formats;

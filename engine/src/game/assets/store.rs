@@ -131,7 +131,7 @@ pub struct Placeholders {
     pub material: MaterialHandle,
 }
 
-pub struct GameResources {
+pub struct GameAssetStore {
     pub placeholders: Placeholders,
     pub models: Arena<ModelGameData>,
     pub materials: Arena<MaterialGameData>,
@@ -142,7 +142,7 @@ pub struct GameResources {
     pub req_rx: crossbeam::channel::Receiver<CreateGameResourceRequest>,
     pub res_tx: crossbeam::channel::Sender<CreateGameResourceResponse>,
 }
-impl GameResources {
+impl GameAssetStore {
     pub fn new(
         req_rx: crossbeam::channel::Receiver<CreateGameResourceRequest>,
         res_tx: crossbeam::channel::Sender<CreateGameResourceResponse>,

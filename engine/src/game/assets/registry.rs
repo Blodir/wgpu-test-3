@@ -4,7 +4,7 @@ use generational_arena::{Arena, Index};
 
 use crate::resource_system::file_formats::animationfile;
 use crate::resource_system::render_resources::{MaterialRenderId, MeshRenderId, ModelRenderId, TextureRenderId};
-use super::{game_resources::{AnimationClipGameId, AnimationGameId, MaterialGameId, ModelGameId, SkeletonGameId}};
+use super::{store::{AnimationClipGameId, AnimationGameId, MaterialGameId, ModelGameId, SkeletonGameId}};
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum ResourceKind {

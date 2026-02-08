@@ -4,7 +4,7 @@ use arc_swap::{ArcSwap, Guard};
 use generational_arena::Index;
 use glam::{Mat4, Quat, Vec3};
 
-use crate::game::assets::game_resources::{self, GameResources};
+use crate::game::assets::store::{self, GameAssetStore};
 use crate::game::assets::registry::{GameState, ModelId, RenderState, ResourceRegistry, TextureId};
 use crate::{main::{pipelines::MeshPipelineKind, pose_storage::TRS}, resource_system::{render_resources::{MaterialRenderId, MeshRenderId, ModelRenderId, TextureRenderId}, resource_manager::ResourceManager}, game::{animator::{AnimationGraph, BoundaryMode, TimeWrapMode}, camera::{Camera, Frustum, frustum_intersects_aabb_world}, scene_tree::{Environment, RenderDataType, Scene, SceneNodeId, Sun}}};
 
@@ -17,7 +17,7 @@ pub fn accumulate_instance_snapshots(
     node_id: SceneNodeId,
     frustum: &Frustum,
     resource_registry: &Rc<RefCell<ResourceRegistry>>,
-    game_resources: &GameResources,
+    game_resources: &GameAssetStore,
     frame_index: u32,
 ) {
     let node = scene.nodes.get(node_id.into()).unwrap();
@@ -188,7 +188,7 @@ impl MeshDrawSnapshot {
     fn build(
         scene: &Scene,
         resource_registry: &Rc<RefCell<ResourceRegistry>>,
-        game_resources: &GameResources,
+        game_resources: &GameAssetStore,
         animation_graphs: &Vec<AnimationGraph>,
         frame_index: u32,
     ) -> Self {
@@ -325,7 +325,7 @@ pub struct RenderSnapshot {
     pub camera: CameraSnapshot,
 }
 impl RenderSnapshot {
-    pub fn build(scene: &mut Scene, resource_registry: &Rc<RefCell<ResourceRegistry>>, animation_graphs: &Vec<AnimationGraph>, game_resources: &GameResources, frame_index: u32) -> Self {
+    pub fn build(scene: &mut Scene, resource_registry: &Rc<RefCell<ResourceRegistry>>, animation_graphs: &Vec<AnimationGraph>, game_resources: &GameAssetStore, frame_index: u32) -> Self {
         let skinned_draw_snapshot = MeshDrawSnapshot::build(scene, resource_registry, game_resources, animation_graphs, frame_index);
 
         let environment = LightsSnapshot::from(&scene.environment, resource_registry);
