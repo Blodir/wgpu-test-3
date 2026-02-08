@@ -4,7 +4,9 @@ use wgpu::util::{BufferInitDescriptor, DeviceExt as _};
 
 use crate::{main::{Renderer, wgpu_context::WgpuContext}, resource_system::file_formats::materialfile};
 
-use super::{file_formats::{animationfile, dds}, game_resources::{CreateGameResourceRequest, CreateGameResourceResponse, GameResources, MaterialGameData, MaterialGameId}, io_manager::{IoManager, IoRequest, IoResponse}, registry::{GameState, RenderState, ResourceKind, ResourceRequest, ResourceResult}, render_resources::{MaterialRenderId, MeshGpuData, MeshRenderId, ModelRenderData, ModelRenderId, RenderResources, TextureGpuData, TextureRenderId}, texture::upload_texture};
+use crate::game::assets::registry::{GameState, RenderState, ResourceKind, ResourceRequest, ResourceResult};
+use crate::game::assets::game_resources::{CreateGameResourceRequest, CreateGameResourceResponse, GameResources, MaterialGameData, MaterialGameId};
+use super::{file_formats::{animationfile, dds}, io_manager::{IoManager, IoRequest, IoResponse}, render_resources::{MaterialRenderId, MeshGpuData, MeshRenderId, ModelRenderData, ModelRenderId, RenderResources, TextureGpuData, TextureRenderId}, texture::upload_texture};
 
 pub struct ResourceManager {
     io: IoManager,

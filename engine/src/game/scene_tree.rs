@@ -2,7 +2,7 @@ use std::{cell::RefCell, rc::Rc, sync::Arc, u32};
 
 use glam::{Mat4, Quat, Vec3};
 
-use crate::resource_system::{registry::{ModelHandle, RegistryExt as _, ResourceRegistry, TextureHandle}, resource_manager::ResourceManager};
+use super::assets::registry::{ModelHandle, RegistryExt as _, ResourceRegistry, TextureHandle};
 use generational_arena::{Arena, Index};
 
 use super::{animator::{self, AnimationGraph, Animator}, camera::Camera};

@@ -8,8 +8,10 @@ use winit::{
     keyboard::{KeyCode, PhysicalKey},
 };
 
+use super::assets::registry::{RegistryExt, ResourceRegistry, ResourceRequest, ResourceResult};
+use super::assets::game_resources::{CreateGameResourceRequest, CreateGameResourceResponse, GameResources};
 use crate::{
-    job_system::worker_pool::Task, render_snapshot::{RenderSnapshot, SnapshotHandoff}, resource_system::{game_resources::{CreateGameResourceRequest, CreateGameResourceResponse, GameResources}, registry::{RegistryExt, ResourceRegistry, ResourceRequest, ResourceResult}, resource_manager::ResourceManager}
+    job_system::worker_pool::Task, render_snapshot::{RenderSnapshot, SnapshotHandoff},
 };
 
 use super::scene_tree::{build_test_scene, RenderDataType};

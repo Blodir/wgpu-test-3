@@ -1,6 +1,8 @@
 use std::{cell::RefCell, rc::Rc, sync::Arc};
 
-use crate::{job_system::worker_pool::{AnimPoseTask, BlendPoseTask, SinglePoseTask, Task}, render_snapshot::AnimationSnapshot, main::pose_storage::POSE_STORAGE_BUFFER_SIZE, resource_system::{file_formats::skeletonfile::Skeleton, game_resources::{self, GameResources}, registry::{GameState, ModelHandle, ModelId, RenderState, ResourceRegistry}}};
+use super::assets::registry::{GameState, ModelHandle, ModelId, RenderState, ResourceRegistry};
+use super::assets::game_resources::{self, GameResources};
+use crate::{job_system::worker_pool::{AnimPoseTask, BlendPoseTask, SinglePoseTask, Task}, render_snapshot::AnimationSnapshot, main::pose_storage::POSE_STORAGE_BUFFER_SIZE, resource_system::{file_formats::skeletonfile::Skeleton}};
 
 use super::scene_tree::SceneNodeId;
 

@@ -1,6 +1,7 @@
 use std::ops::Range;
 
-use crate::{render_snapshot::MeshDrawSnapshot, main::{attachments::depth::DepthTexture, buffers::{skinned_instance::SkinnedInstance, skinned_vertex::SkinnedVertex, static_instance::StaticInstance, static_vertex::StaticVertex}, prepare::mesh::DrawContext, shader_cache::ShaderCache, wgpu_context::WgpuContext}, resource_system::{registry::{MaterialId, MeshId, RenderState}, render_resources::{self, MaterialRenderId, MeshRenderId, RenderResources}, resource_manager::ResourceManager}};
+use crate::game::assets::registry::{MaterialId, MeshId, RenderState};
+use crate::{render_snapshot::MeshDrawSnapshot, main::{attachments::depth::DepthTexture, buffers::{skinned_instance::SkinnedInstance, skinned_vertex::SkinnedVertex, static_instance::StaticInstance, static_vertex::StaticVertex}, prepare::mesh::DrawContext, shader_cache::ShaderCache, wgpu_context::WgpuContext}, resource_system::{render_resources::{self, MaterialRenderId, MeshRenderId, RenderResources}, resource_manager::ResourceManager}};
 
 pub struct StaticPbrPipeline {
     pub render_pipeline: wgpu::RenderPipeline,

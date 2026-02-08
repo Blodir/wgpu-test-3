@@ -3,7 +3,9 @@ use std::{fs::File, io::Read as _};
 use ddsfile::{Caps2, Dds};
 use glam::{Quat, Vec3};
 
-use super::{animation, file_formats::{animationfile, dds, materialfile, modelfile, skeletonfile}, registry::{AnimationClipId, AnimationId, HandleId, MaterialId, MeshId, ModelId, SkeletonId, TextureId}, texture::TextureLoadData};
+use crate::game::assets::runtime_formats::animation;
+use crate::game::assets::registry::{AnimationClipId, AnimationId, HandleId, MaterialId, MeshId, ModelId, SkeletonId, TextureId};
+use super::{file_formats::{animationfile, dds, materialfile, modelfile, skeletonfile}, texture::TextureLoadData};
 
 pub enum IoRequest {
     LoadModel { id: ModelId, path: String },

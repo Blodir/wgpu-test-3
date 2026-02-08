@@ -3,7 +3,11 @@ use std::{cell::RefCell, rc::Rc, sync::Arc};
 use generational_arena::{Arena, Index};
 use glam::Mat4;
 
-use super::{animation::{self, AnimationClip}, file_formats::{animationfile, materialfile, modelfile, skeletonfile::{self, Skeleton}}, registry::{AnimationClipHandle, AnimationClipId, AnimationHandle, AnimationId, MaterialHandle, MaterialId, MeshHandle, ModelId, RenderState, ResourceRegistry, SkeletonHandle, SkeletonId, TextureHandle}, render_resources::{MaterialRenderId, MeshRenderId, SubMesh, TextureRenderId}};
+use super::runtime_formats::animation::{self, AnimationClip};
+use crate::resource_system::file_formats::{animationfile, materialfile, modelfile, skeletonfile::{self, Skeleton}};
+use crate::resource_system::render_resources::{MaterialRenderId, MeshRenderId, SubMesh, TextureRenderId};
+use super::{registry::{AnimationClipHandle, AnimationClipId, AnimationHandle, AnimationId, MaterialHandle, MaterialId, MeshHandle, ModelId,
+        RenderState, ResourceRegistry, SkeletonHandle, SkeletonId, TextureHandle}};
 
 use super::registry::RegistryExt;
 

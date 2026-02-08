@@ -2,7 +2,8 @@ use std::{cmp::Ordering, collections::HashMap, ops::Range, sync::Arc};
 
 use glam::{Mat4, Quat, Vec3};
 
-use crate::{render_snapshot::{AnimationSnapshot, MeshDrawSnapshot, SnapshotGuard}, main::{bindgroups::bones::{BoneMat34, BonesBinding}, buffers::{skinned_instance::{SkinnedInstance, SkinnedInstances}, static_instance::{StaticInstance, StaticInstances}}, pose_storage::{self, PoseStorage, TRS}, utils::{QuatExt, lerpf32, lerpu64}}, resource_system::{animation::{AnimationClip, Channel, Track}, file_formats::{animationfile, skeletonfile}}, game::{animator, scene_tree::SceneNodeId}};
+use crate::game::assets::runtime_formats::animation::{AnimationClip, Channel, Track};
+use crate::{render_snapshot::{AnimationSnapshot, MeshDrawSnapshot, SnapshotGuard}, main::{bindgroups::bones::{BoneMat34, BonesBinding}, buffers::{skinned_instance::{SkinnedInstance, SkinnedInstances}, static_instance::{StaticInstance, StaticInstances}}, pose_storage::{self, PoseStorage, TRS}, utils::{QuatExt, lerpf32, lerpu64}}, resource_system::{file_formats::{animationfile, skeletonfile}}, game::{animator, scene_tree::SceneNodeId}};
 
 pub struct DrawContext<'a> {
     pub snap: &'a MeshDrawSnapshot,

@@ -2,7 +2,9 @@ use std::{cell::RefCell, collections::HashMap, marker::PhantomData, rc::{Rc, Wea
 
 use generational_arena::{Arena, Index};
 
-use super::{file_formats::animationfile, game_resources::{AnimationClipGameId, AnimationGameId, MaterialGameId, ModelGameId, SkeletonGameId}, render_resources::{MaterialRenderId, MeshRenderId, ModelRenderId, TextureRenderId}};
+use crate::resource_system::file_formats::animationfile;
+use crate::resource_system::render_resources::{MaterialRenderId, MeshRenderId, ModelRenderId, TextureRenderId};
+use super::{game_resources::{AnimationClipGameId, AnimationGameId, MaterialGameId, ModelGameId, SkeletonGameId}};
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum ResourceKind {

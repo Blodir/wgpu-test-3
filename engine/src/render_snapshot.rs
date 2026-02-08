@@ -4,7 +4,9 @@ use arc_swap::{ArcSwap, Guard};
 use generational_arena::Index;
 use glam::{Mat4, Quat, Vec3};
 
-use crate::{main::{pipelines::MeshPipelineKind, pose_storage::TRS}, resource_system::{game_resources::{self, GameResources}, registry::{GameState, ModelId, RenderState, ResourceRegistry, TextureId}, render_resources::{MaterialRenderId, MeshRenderId, ModelRenderId, TextureRenderId}, resource_manager::ResourceManager}, game::{animator::{AnimationGraph, BoundaryMode, TimeWrapMode}, camera::{Camera, Frustum, frustum_intersects_aabb_world}, scene_tree::{Environment, RenderDataType, Scene, SceneNodeId, Sun}}};
+use crate::game::assets::game_resources::{self, GameResources};
+use crate::game::assets::registry::{GameState, ModelId, RenderState, ResourceRegistry, TextureId};
+use crate::{main::{pipelines::MeshPipelineKind, pose_storage::TRS}, resource_system::{render_resources::{MaterialRenderId, MeshRenderId, ModelRenderId, TextureRenderId}, resource_manager::ResourceManager}, game::{animator::{AnimationGraph, BoundaryMode, TimeWrapMode}, camera::{Camera, Frustum, frustum_intersects_aabb_world}, scene_tree::{Environment, RenderDataType, Scene, SceneNodeId, Sun}}};
 
 pub fn accumulate_instance_snapshots(
     scene: &Scene,

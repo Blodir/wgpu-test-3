@@ -4,7 +4,7 @@ use generational_arena::{Arena, Index};
 
 use crate::main::{bindgroups::material::MaterialBinding, wgpu_context::WgpuContext};
 
-use super::{animation::AnimationClip, file_formats::animationfile};
+use crate::game::assets::runtime_formats::animation::AnimationClip;
 
 #[derive(Hash, Eq, PartialEq, Clone, Copy, Debug)]
 pub struct ModelRenderId(pub Index);
