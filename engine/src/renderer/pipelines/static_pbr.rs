@@ -46,8 +46,8 @@ impl StaticPbrPipeline {
                 bind_group_layouts,
                 push_constant_ranges: &[],
             });
-        let vertex_shader_module = shader_cache.get("src/renderer/shaders/static_pbr.vert.wgsl".to_string(), wgpu_context);
-        let fragment_shader_module = shader_cache.get("src/renderer/shaders/pbr.frag.wgsl".to_string(), wgpu_context);
+        let vertex_shader_module = shader_cache.get("engine/src/renderer/shaders/static_pbr.vert.wgsl".to_string(), wgpu_context);
+        let fragment_shader_module = shader_cache.get("engine/src/renderer/shaders/pbr.frag.wgsl".to_string(), wgpu_context);
         wgpu_context.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Static PBR Pipeline"),
             layout: Some(&render_pipeline_layout),

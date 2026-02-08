@@ -10,15 +10,6 @@ pub enum Target {
 pub enum Interpolation {
     Linear, Step, CubicSpline
 }
-impl From<gltf::animation::Interpolation> for Interpolation {
-    fn from(value: gltf::animation::Interpolation) -> Self {
-        match value {
-            gltf::animation::Interpolation::Linear => Interpolation::Linear,
-            gltf::animation::Interpolation::Step => Interpolation::Step,
-            gltf::animation::Interpolation::CubicSpline => Interpolation::CubicSpline,
-        }
-    }
-}
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct AnimationClip {

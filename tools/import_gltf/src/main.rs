@@ -3,8 +3,8 @@ use animations::bake_animation;
 use glam::Mat4;
 use gltf::Document;
 use materials::bake_material;
-use wgpu_test_3::renderer::buffers::skinned_vertex::SkinnedVertex;
-use wgpu_test_3::renderer::buffers::static_vertex::StaticVertex;
+use engine::renderer::buffers::skinned_vertex::SkinnedVertex;
+use engine::renderer::buffers::static_vertex::StaticVertex;
 use std::fs;
 use std::{collections::HashMap, env, fs::File, io::Write};
 use tangents::generate_tangents_for_mesh;
@@ -15,7 +15,7 @@ use gltf_utils::{
     read_occlusion_texcoord_buffer, read_position_buffer, read_tangents_buffer, read_weights_buffer,
     JointsBuffer,
 };
-use wgpu_test_3::resource_system::file_formats::modelfile::{self, Deformation};
+use engine::resource_system::file_formats::modelfile::{self, Deformation};
 
 mod aabb;
 mod tangents;

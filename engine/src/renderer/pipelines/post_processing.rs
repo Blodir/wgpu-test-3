@@ -28,7 +28,7 @@ impl PostProcessingPipeline {
                 bind_group_layouts,
                 push_constant_ranges: &[],
             });
-        let shader_module = shader_cache.get("src/renderer/shaders/post_processing.wgsl".to_string(), wgpu_context);
+        let shader_module = shader_cache.get("engine/src/renderer/shaders/post_processing.wgsl".to_string(), wgpu_context);
         let render_pipeline = wgpu_context.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Post Processing Render Pipeline"),
             layout: Some(&render_pipeline_layout),

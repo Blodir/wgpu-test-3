@@ -1,6 +1,48 @@
 use std::{fs::File, path::Path};
 
-use wgpu_test_3::resource_system::file_formats::{dds::{create_dds, gltf_img_to_dxgi_format}, materialfile};
+use engine::resource_system::file_formats::{dds::{create_dds}, materialfile};
+
+pub fn gltf_img_to_dxgi_format(image: &gltf::image::Data, srgb: bool) -> ddsfile::DxgiFormat {
+    let format = image.format;
+    let bc = image.width % 4 == 0 && image.height % 4 == 0;
+
+    match (format, srgb, bc) {
+        (gltf::image::Format::R8, false, true) => ddsfile::DxgiFormat::BC4_UNorm,
+        (gltf::image::Format::R8, false, false) => ddsfile::DxgiFormat::R8_UNorm,
+        (gltf::image::Format::R8, true, _) => ddsfile::DxgiFormat::Unknown,
+
+        (gltf::image::Format::R8G8, false, true) => ddsfile::DxgiFormat::BC5_UNorm,
+        (gltf::image::Format::R8G8, false, false) => ddsfile::DxgiFormat::R8G8_UNorm,
+        (gltf::image::Format::R8G8, true, _) => ddsfile::DxgiFormat::Unknown,
+
+        // rgb8 is supported only with bc1 compression
+        (gltf::image::Format::R8G8B8, true, true) => ddsfile::DxgiFormat::BC1_UNorm_sRGB,
+        (gltf::image::Format::R8G8B8, false, true) => ddsfile::DxgiFormat::BC1_UNorm,
+        (gltf::image::Format::R8G8B8, _, _) => ddsfile::DxgiFormat::Unknown,
+
+        (gltf::image::Format::R8G8B8A8, true, true) => ddsfile::DxgiFormat::BC2_UNorm_sRGB,
+        (gltf::image::Format::R8G8B8A8, false, true) => ddsfile::DxgiFormat::BC2_UNorm,
+        (gltf::image::Format::R8G8B8A8, true, false) => ddsfile::DxgiFormat::R8G8B8A8_UNorm_sRGB,
+        (gltf::image::Format::R8G8B8A8, false, false) => ddsfile::DxgiFormat::R8G8B8A8_UNorm,
+
+        (gltf::image::Format::R16, false, false) => ddsfile::DxgiFormat::R16_UNorm,
+        (gltf::image::Format::R16, _, _) => ddsfile::DxgiFormat::Unknown,
+
+        (gltf::image::Format::R16G16, false, false) => ddsfile::DxgiFormat::R16G16_UNorm,
+        (gltf::image::Format::R16G16, _, _) => ddsfile::DxgiFormat::Unknown,
+
+        // we lose whether the data is srgb or straight :/
+        (gltf::image::Format::R16G16B16, _, _) => ddsfile::DxgiFormat::Unknown,
+
+        // block_compression crate takes RGBA as input, even for RGB formats
+        (gltf::image::Format::R16G16B16A16, _, true) => ddsfile::DxgiFormat::BC6H_UF16,
+        (gltf::image::Format::R16G16B16A16, _, false) => ddsfile::DxgiFormat::R16G16B16A16_Float,
+
+        (gltf::image::Format::R32G32B32FLOAT, _, _) => ddsfile::DxgiFormat::R32G32B32_Float,
+        (gltf::image::Format::R32G32B32A32FLOAT, _, _) => ddsfile::DxgiFormat::R32G32B32A32_Float,
+    }
+}
+
 
 use crate::utils::ensure_parent_dir_exists;
 

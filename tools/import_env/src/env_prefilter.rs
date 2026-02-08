@@ -91,9 +91,9 @@ impl EnvPrefilterPipeline {
                 bind_group_layouts,
                 push_constant_ranges: &[],
             });
-        let shader_module = wgpu_test_3::renderer::utils::create_shader_module(
+        let shader_module = engine::renderer::utils::create_shader_module(
             device,
-            "src/bin/bake_env_map/env_prefilter.wgsl",
+            "tools/import_env/src/env_prefilter.wgsl",
         );
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Environment Map Prefilter Render Pipeline"),

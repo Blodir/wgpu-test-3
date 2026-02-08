@@ -1,6 +1,6 @@
 use std::io;
 
-use wgpu_test_3::run;
+use engine::run;
 
 fn main() -> io::Result<()> {
     run();

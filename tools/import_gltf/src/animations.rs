@@ -1,11 +1,19 @@
 use std::{collections::HashMap, fs::File, io::Write as _, path::Path};
 
 use gltf::{Accessor, Document};
-use wgpu_test_3::resource_system::file_formats::animationfile::{self, BinRef, Sampler3, SamplerQuat, Target, Track};
+use engine::resource_system::file_formats::animationfile::{self, BinRef, Interpolation, Sampler3, SamplerQuat, Target, Track};
 
 use crate::{gltf_utils::{read3f32, read4f32}, utils::ensure_parent_dir_exists};
 
 use super::gltf_utils::readf32;
+
+fn gltf_interpolation_to_engine_interpolation(value: gltf::animation::Interpolation) -> Interpolation {
+    match value {
+        gltf::animation::Interpolation::Linear => Interpolation::Linear,
+        gltf::animation::Interpolation::Step => Interpolation::Step,
+        gltf::animation::Interpolation::CubicSpline => Interpolation::CubicSpline,
+    }
+}
 
 pub struct TempTargetSamplers<'a> {
     pub translation: Option<gltf::animation::Sampler<'a>>,
@@ -151,7 +159,7 @@ pub fn bake_animation(
 
         let translation = translation_values_data.map(|values_data| {
             let times = translation_times;
-            let interpolation = samplers.translation.unwrap().interpolation().into();
+            let interpolation = gltf_interpolation_to_engine_interpolation(samplers.translation.unwrap().interpolation());
 
             let offset = current_binary_offset;
             let count = values_data.len() as u32;
@@ -164,7 +172,7 @@ pub fn bake_animation(
 
         let rotation = rotation_values_data.map(|values_data| {
             let times = rotation_times;
-            let interpolation = samplers.rotation.unwrap().interpolation().into();
+            let interpolation = gltf_interpolation_to_engine_interpolation(samplers.rotation.unwrap().interpolation());
 
             let offset = current_binary_offset;
             let count = values_data.len() as u32;
@@ -177,7 +185,7 @@ pub fn bake_animation(
 
         let scale = scale_values_data.map(|values_data| {
             let times = scale_times;
-            let interpolation = samplers.scale.unwrap().interpolation().into();
+            let interpolation = gltf_interpolation_to_engine_interpolation(samplers.scale.unwrap().interpolation());
 
             let offset = current_binary_offset;
             assert_eq!(current_binary_offset, binary_data.len() as u32);

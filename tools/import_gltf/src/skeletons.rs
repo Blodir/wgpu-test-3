@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use gltf::{Document, Node};
-use wgpu_test_3::resource_system::file_formats::skeletonfile;
+use engine::resource_system::file_formats::skeletonfile;
 
 use super::gltf_utils::read_mat4;
 use super::utils::ensure_parent_dir_exists;
