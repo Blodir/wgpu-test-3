@@ -16,14 +16,14 @@ use super::pose_storage::{self, PoseStorage};
 use super::prepare::camera::prepare_camera;
 use super::prepare::lights::prepare_lights;
 use super::prepare::mesh::resolve_skinned_draw;
-use super::sampler_cache::SamplerCache;
-use super::shader_cache::ShaderCache;
-use super::wgpu_context::WgpuContext;
+use super::super::sampler_cache::SamplerCache;
+use super::super::shader_cache::ShaderCache;
+use super::super::wgpu_context::WgpuContext;
 
 use crate::render_snapshot::{CameraSnapshot, SnapshotHandoff};
-use crate::main::buffers::static_instance::StaticInstances;
-use crate::main::pipelines::static_pbr::StaticPbrPipeline;
-use crate::main::prepare::mesh::resolve_static_draw;
+use crate::main::world::buffers::static_instance::StaticInstances;
+use crate::main::world::pipelines::static_pbr::StaticPbrPipeline;
+use crate::main::world::prepare::mesh::resolve_static_draw;
 use crate::resource_system::file_formats::materialfile;
 use crate::resource_system::render_resources::{self, PlaceholderTextureIds, RenderResources, TextureRenderId};
 

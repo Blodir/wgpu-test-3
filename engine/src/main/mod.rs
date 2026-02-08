@@ -1,12 +1,5 @@
-pub mod attachments;
-pub mod bindgroups;
-pub mod buffers;
-pub mod pipelines;
-pub mod prepare;
+pub mod world;
 pub mod utils;
 pub mod wgpu_context;
 pub mod sampler_cache;
 pub mod shader_cache;
-pub mod pose_storage;
-pub mod renderer;
-pub use renderer::*;

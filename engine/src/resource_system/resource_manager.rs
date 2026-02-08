@@ -2,7 +2,7 @@
 use generational_arena::Index;
 use wgpu::util::{BufferInitDescriptor, DeviceExt as _};
 
-use crate::{main::{Renderer, wgpu_context::WgpuContext}, resource_system::file_formats::materialfile};
+use crate::{main::{world::Renderer, wgpu_context::WgpuContext}, resource_system::file_formats::materialfile};
 
 use crate::game::assets::registry::{GameState, RenderState, ResourceKind, ResourceRequest, ResourceResult};
 use crate::game::assets::store::{CreateGameResourceRequest, CreateGameResourceResponse, GameAssetStore, MaterialGameData, MaterialGameId};

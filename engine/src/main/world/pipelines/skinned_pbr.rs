@@ -1,7 +1,8 @@
 use std::ops::Range;
 
 use crate::game::assets::registry::{MaterialId, MeshId, RenderState};
-use crate::{render_snapshot::MeshDrawSnapshot, main::{attachments::depth::DepthTexture, buffers::{skinned_instance::SkinnedInstance, skinned_vertex::SkinnedVertex}, prepare::mesh::DrawContext, shader_cache::ShaderCache, wgpu_context::WgpuContext}, resource_system::{render_resources::{self, MaterialRenderId, MeshRenderId, RenderResources}, resource_manager::ResourceManager}};
+use crate::main::{shader_cache::ShaderCache, wgpu_context::WgpuContext};
+use crate::{render_snapshot::MeshDrawSnapshot, main::world::{attachments::depth::DepthTexture, buffers::{skinned_instance::SkinnedInstance, skinned_vertex::SkinnedVertex}, prepare::mesh::DrawContext}, resource_system::{render_resources::{self, MaterialRenderId, MeshRenderId, RenderResources}, resource_manager::ResourceManager}};
 
 pub struct SkinnedPbrPipeline {
     pub render_pipeline: wgpu::RenderPipeline,
@@ -51,8 +52,8 @@ impl SkinnedPbrPipeline {
                 bind_group_layouts,
                 push_constant_ranges: &[],
             });
-        let vertex_shader_module = shader_cache.get("engine/src/main/shaders/skinned_pbr.vert.wgsl".to_string(), wgpu_context);
-        let fragment_shader_module = shader_cache.get("engine/src/main/shaders/pbr.frag.wgsl".to_string(), wgpu_context);
+        let vertex_shader_module = shader_cache.get("engine/src/main/world/shaders/skinned_pbr.vert.wgsl".to_string(), wgpu_context);
+        let fragment_shader_module = shader_cache.get("engine/src/main/world/shaders/pbr.frag.wgsl".to_string(), wgpu_context);
         wgpu_context.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Skinned PBR Pipeline"),
             layout: Some(&render_pipeline_layout),
