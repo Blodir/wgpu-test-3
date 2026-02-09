@@ -12,7 +12,7 @@ use super::buffers::skinned_instance::SkinnedInstances;
 use super::pipelines::post_processing::PostProcessingPipeline;
 use super::pipelines::skinned_pbr::SkinnedPbrPipeline;
 use super::pipelines::skybox::SkyboxPipeline;
-use super::pose_storage::{self, PoseStorage};
+use super::anim_pose_store::{self, AnimPoseStore};
 use super::prepare::camera::prepare_camera;
 use super::prepare::lights::prepare_lights;
 use super::prepare::mesh::resolve_skinned_draw;
@@ -165,7 +165,7 @@ impl Renderer {
         &mut self,
         wgpu_context: &WgpuContext,
         render_resources: &RenderAssetStore,
-        pose_storage: &mut PoseStorage,
+        pose_storage: &mut AnimPoseStore,
         frame_idx: u32,
     ) -> Result<(), wgpu::SurfaceError> {
         let snaps = self.snapshot_handoff.load();

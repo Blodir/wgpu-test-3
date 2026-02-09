@@ -166,11 +166,11 @@ impl PoseBuffer {
     }
 }
 
-pub struct PoseStorage {
+pub struct AnimPoseStore {
     scene_to_pose_id: HashMap<SceneNodeId, Index>,
     pose_data: Arena<PoseEntry>,
 }
-impl PoseStorage {
+impl AnimPoseStore {
     pub fn new() -> Self {
         Self {
             scene_to_pose_id: HashMap::new(),

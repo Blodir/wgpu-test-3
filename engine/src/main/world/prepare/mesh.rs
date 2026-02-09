@@ -3,7 +3,7 @@ use std::{cmp::Ordering, collections::HashMap, ops::Range, sync::Arc};
 use glam::{Mat4, Quat, Vec3};
 
 use crate::game::assets::runtime_formats::animation::{AnimationClip, Channel, Track};
-use crate::{render_snapshot::{AnimationSnapshot, MeshDrawSnapshot, SnapshotGuard}, main::{world::bindgroups::bones::{BoneMat34, BonesBinding}, world::buffers::{skinned_instance::{SkinnedInstance, SkinnedInstances}, static_instance::{StaticInstance, StaticInstances}}, world::pose_storage::{self, PoseStorage, TRS}, utils::{QuatExt, lerpf32, lerpu64}}, main::assets::io::{asset_formats::{animationfile, skeletonfile}}, game::{animator, scene_tree::SceneNodeId}};
+use crate::{render_snapshot::{AnimationSnapshot, MeshDrawSnapshot, SnapshotGuard}, main::{world::bindgroups::bones::{BoneMat34, BonesBinding}, world::buffers::{skinned_instance::{SkinnedInstance, SkinnedInstances}, static_instance::{StaticInstance, StaticInstances}}, world::anim_pose_store::{self, AnimPoseStore, TRS}, utils::{QuatExt, lerpf32, lerpu64}}, main::assets::io::{asset_formats::{animationfile, skeletonfile}}, game::{animator, scene_tree::SceneNodeId}};
 
 pub struct DrawContext<'a> {
     pub snap: &'a MeshDrawSnapshot,
@@ -29,7 +29,7 @@ pub fn resolve_skinned_draw<'a>(
     t: f32,
     device: &wgpu::Device,
     queue: &wgpu::Queue,
-    pose_storage: &mut PoseStorage,
+    pose_storage: &mut AnimPoseStore,
     frame_idx: u32,
 ) -> DrawContext<'a> {
     // TODO perf: maybe reuse this vec from previous frame to reduce resizing? Could call vec.clear();
@@ -48,10 +48,10 @@ pub fn resolve_skinned_draw<'a>(
                 .unwrap_or(anim_snap.0);
             let poses = pose_storage.get(node_id, snap_time.clone(), frame_idx);
             match poses {
-                pose_storage::GetPoseResponse::One(pose_data) => joint_palette.extend(
+                anim_pose_store::GetPoseResponse::One(pose_data) => joint_palette.extend(
                     pose_data.iter().map(|joint| mat4_to_bone_mat34(Mat4::from_scale_rotation_translation(joint.s, joint.r, joint.t)))
                 ),
-                pose_storage::GetPoseResponse::Two(time0, joints0, time1, joints1) => {
+                anim_pose_store::GetPoseResponse::Two(time0, joints0, time1, joints1) => {
                     let nom = snap_time.saturating_sub(time0);
                     let denom = time1.saturating_sub(time0);
                     if denom == 0 {
@@ -72,7 +72,7 @@ pub fn resolve_skinned_draw<'a>(
                     }
                 }
                 // don't render if animation is missing... maybe in the future fill with temp bind pose?
-                pose_storage::GetPoseResponse::Nothing => continue,
+                anim_pose_store::GetPoseResponse::Nothing => continue,
             };
         } else {
             // no animation

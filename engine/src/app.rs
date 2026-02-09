@@ -4,7 +4,7 @@ use crossbeam_queue::SegQueue;
 use pollster::FutureExt as _;
 use winit::{application::ApplicationHandler, dpi::PhysicalSize, event::{DeviceEvent, WindowEvent}, event_loop::ActiveEventLoop, window::{Window, WindowId}};
 
-use crate::{job_system::worker_pool::RenderResponse, render_snapshot::SnapshotHandoff, main::{world::pose_storage::PoseStorage, wgpu_context::WgpuContext, world::Renderer}, main::assets::{store::RenderAssetStore, manager::RenderAssetManager}, game::sim::InputEvent};
+use crate::{job_system::worker_pool::RenderResponse, render_snapshot::SnapshotHandoff, main::{world::anim_pose_store::AnimPoseStore, wgpu_context::WgpuContext, world::Renderer}, main::assets::{store::RenderAssetStore, manager::RenderAssetManager}, game::sim::InputEvent};
 
 fn resize(
     physical_size: PhysicalSize<u32>,
@@ -24,7 +24,7 @@ fn resize(
 struct RenderContext<'surface> {
     renderer: Arc<Mutex<Renderer>>,
     render_resources: RenderAssetStore,
-    pose_storage: PoseStorage,
+    pose_storage: AnimPoseStore,
     window: Arc<Window>,
     wgpu_context: WgpuContext<'surface>,
     frame_idx: u32,
@@ -65,7 +65,7 @@ impl<'surface> ApplicationHandler for App<'surface> {
                 Renderer::new(&wgpu_context, self.snap_handoff.clone(), placeholders, &render_resources)
             )
         );
-        let pose_storage = PoseStorage::new();
+        let pose_storage = AnimPoseStore::new();
         self.render_context = Some(
             RenderContext {
                 window,
