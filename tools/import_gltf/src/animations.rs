@@ -1,7 +1,7 @@
 use std::{collections::HashMap, fs::File, io::Write as _, path::Path};
 
 use gltf::{Accessor, Document};
-use engine::resource_system::file_formats::animationfile::{self, BinRef, Interpolation, Sampler3, SamplerQuat, Target, Track};
+use engine::main::assets::io::asset_formats::animationfile::{self, BinRef, Interpolation, Sampler3, SamplerQuat, Target, Track};
 
 use crate::{gltf_utils::{read3f32, read4f32}, utils::ensure_parent_dir_exists};
 

@@ -6,7 +6,8 @@ use glam::{Mat4, Quat, Vec3};
 
 use crate::game::assets::store::{self, GameAssetStore};
 use crate::game::assets::registry::{GameState, ModelId, RenderState, ResourceRegistry, TextureId};
-use crate::{main::{world::pipelines::MeshPipelineKind, world::pose_storage::TRS}, resource_system::{render_resources::{MaterialRenderId, MeshRenderId, ModelRenderId, TextureRenderId}, resource_manager::ResourceManager}, game::{animator::{AnimationGraph, BoundaryMode, TimeWrapMode}, camera::{Camera, Frustum, frustum_intersects_aabb_world}, scene_tree::{Environment, RenderDataType, Scene, SceneNodeId, Sun}}};
+use crate::main::assets::io::asset_formats::modelfile;
+use crate::{main::{world::pipelines::MeshPipelineKind, world::pose_storage::TRS}, main::assets::{render_resources::{MaterialRenderId, MeshRenderId, ModelRenderId, TextureRenderId}, resource_manager::ResourceManager}, game::{animator::{AnimationGraph, BoundaryMode, TimeWrapMode}, camera::{Camera, Frustum, frustum_intersects_aabb_world}, scene_tree::{Environment, RenderDataType, Scene, SceneNodeId, Sun}}};
 
 pub fn accumulate_instance_snapshots(
     scene: &Scene,
@@ -63,14 +64,14 @@ pub fn accumulate_instance_snapshots(
             }
             if !submesh_transforms.is_empty() {
                 match model_game.manifest.deformation {
-                    crate::resource_system::file_formats::modelfile::Deformation::None => {
+                    modelfile::Deformation::None => {
                         let inst = StaticInstanceSnapshot {
                             submesh_transforms,
                             dirty: node.transform_last_mut == frame_index,
                         };
                         static_instances.insert(node_id, inst);
                     },
-                    crate::resource_system::file_formats::modelfile::Deformation::Skinned { .. } => {
+                    modelfile::Deformation::Skinned { .. } => {
                         let inst = SkinnedInstanceSnapshot {
                             submesh_transforms,
                             animation: maybe_animation_snapshot,

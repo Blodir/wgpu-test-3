@@ -24,8 +24,8 @@ use crate::render_snapshot::{CameraSnapshot, SnapshotHandoff};
 use crate::main::world::buffers::static_instance::StaticInstances;
 use crate::main::world::pipelines::static_pbr::StaticPbrPipeline;
 use crate::main::world::prepare::mesh::resolve_static_draw;
-use crate::resource_system::file_formats::materialfile;
-use crate::resource_system::render_resources::{self, PlaceholderTextureIds, RenderResources, TextureRenderId};
+use crate::main::assets::io::asset_formats::materialfile;
+use crate::main::assets::render_resources::{self, PlaceholderTextureIds, RenderResources, TextureRenderId};
 
 pub struct Layouts {
     pub camera: wgpu::BindGroupLayout,

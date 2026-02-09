@@ -1,6 +1,6 @@
 use std::f32;
 
-use engine::resource_system::file_formats::modelfile;
+use engine::main::assets::io::asset_formats::modelfile;
 
 // TODO: take animations into account
 pub fn calculate_aabb(positions: &Vec<[f32; 3]>) -> modelfile::Aabb {

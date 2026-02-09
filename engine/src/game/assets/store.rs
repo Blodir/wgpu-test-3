@@ -4,8 +4,8 @@ use generational_arena::{Arena, Index};
 use glam::Mat4;
 
 use super::runtime_formats::animation::{self, AnimationClip};
-use crate::resource_system::file_formats::{animationfile, materialfile, modelfile, skeletonfile::{self, Skeleton}};
-use crate::resource_system::render_resources::{MaterialRenderId, MeshRenderId, SubMesh, TextureRenderId};
+use crate::main::assets::io::asset_formats::{animationfile, materialfile, modelfile, skeletonfile::{self, Skeleton}};
+use crate::main::assets::render_resources::{MaterialRenderId, MeshRenderId, SubMesh, TextureRenderId};
 use super::{registry::{AnimationClipHandle, AnimationClipId, AnimationHandle, AnimationId, MaterialHandle, MaterialId, MeshHandle, ModelId,
         RenderState, ResourceRegistry, SkeletonHandle, SkeletonId, TextureHandle}};
 

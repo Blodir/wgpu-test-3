@@ -1,7 +1,7 @@
 use crossbeam_queue::SegQueue;
 use job_system::worker_pool::{self, WorkerPool};
 use render_snapshot::{RenderSnapshot, SnapshotHandoff};
-use resource_system::resource_manager::ResourceManager;
+use main::assets::resource_manager::ResourceManager;
 use game::sim::{spawn_sim, InputEvent};
 use std::sync::{Arc, Mutex};
 use winit::{
@@ -11,7 +11,6 @@ use winit::{
 };
 
 pub mod render_snapshot;
-pub mod resource_system;
 pub mod main;
 pub mod game;
 pub mod app;

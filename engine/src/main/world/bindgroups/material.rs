@@ -1,6 +1,6 @@
 use wgpu::{util::DeviceExt as _, BindGroupLayout};
 
-use crate::{main::{sampler_cache::{self, SamplerCache}, wgpu_context::WgpuContext}, resource_system::file_formats::materialfile};
+use crate::main::{assets::io::asset_formats::materialfile, sampler_cache::{self, SamplerCache}, wgpu_context::WgpuContext};
 
 pub struct MaterialBinding {
     pub bind_group: wgpu::BindGroup,

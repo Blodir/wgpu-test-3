@@ -15,7 +15,7 @@ use gltf_utils::{
     read_occlusion_texcoord_buffer, read_position_buffer, read_tangents_buffer, read_weights_buffer,
     JointsBuffer,
 };
-use engine::resource_system::file_formats::modelfile::{self, Deformation};
+use engine::main::assets::io::asset_formats::modelfile::{self, Deformation};
 
 mod aabb;
 mod tangents;

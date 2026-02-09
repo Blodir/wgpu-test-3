@@ -5,7 +5,8 @@ use glam::{Quat, Vec3};
 
 use crate::game::assets::runtime_formats::animation;
 use crate::game::assets::registry::{AnimationClipId, AnimationId, HandleId, MaterialId, MeshId, ModelId, SkeletonId, TextureId};
-use super::{file_formats::{animationfile, dds, materialfile, modelfile, skeletonfile}, texture::TextureLoadData};
+use super::{asset_formats::{animationfile, dds, materialfile, modelfile, skeletonfile}};
+use super::super::texture::TextureLoadData;
 
 pub enum IoRequest {
     LoadModel { id: ModelId, path: String },
