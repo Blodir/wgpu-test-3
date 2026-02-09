@@ -1,2 +1,2 @@
-pub mod io_manager;
+pub mod worker_pool;
 pub mod asset_formats;

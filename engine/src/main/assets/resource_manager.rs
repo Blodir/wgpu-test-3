@@ -8,11 +8,11 @@ use super::io::asset_formats::materialfile;
 use crate::game::assets::registry::{GameState, RenderState, ResourceKind, ResourceRequest, ResourceResult};
 use crate::game::assets::store::{CreateGameResourceRequest, CreateGameResourceResponse, GameAssetStore, MaterialGameData, MaterialGameId};
 use super::{render_resources::{MaterialRenderId, MeshGpuData, MeshRenderId, ModelRenderData, ModelRenderId, RenderResources, TextureGpuData, TextureRenderId}, texture::upload_texture};
-use super::io::io_manager::{IoManager, IoRequest, IoResponse};
+use super::io::worker_pool::{IoWorkerPool, IoRequest, IoResponse};
 use super::io::asset_formats::{animationfile, dds};
 
 pub struct ResourceManager {
-    io: IoManager,
+    io: IoWorkerPool,
     game_res_rx: crossbeam::channel::Receiver<CreateGameResourceResponse>,
     game_req_tx: crossbeam::channel::Sender<CreateGameResourceRequest>,
     registry_req_rx: crossbeam::channel::Receiver<ResourceRequest>,
@@ -26,7 +26,7 @@ impl ResourceManager {
         game_req_tx: crossbeam::channel::Sender<CreateGameResourceRequest>,
     ) -> Self {
         Self {
-            io: IoManager::new(),
+            io: IoWorkerPool::new(),
             game_req_tx,
             game_res_rx,
             registry_req_rx,

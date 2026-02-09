@@ -265,12 +265,12 @@ fn io_worker_loop(
     }
 }
 
-pub struct IoManager {
+pub struct IoWorkerPool {
     pub req_tx: crossbeam::channel::Sender<IoRequest>,
     pub res_rx: crossbeam::channel::Receiver<IoResponse>,
     workers: Vec<std::thread::JoinHandle<()>>,
 }
-impl IoManager {
+impl IoWorkerPool {
     pub fn new() -> Self {
         let (req_tx, req_rx) = crossbeam::channel::unbounded();
         let (res_tx, res_rx) = crossbeam::channel::unbounded();
