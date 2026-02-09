@@ -25,7 +25,7 @@ use crate::main::world::buffers::static_instance::StaticInstances;
 use crate::main::world::pipelines::static_pbr::StaticPbrPipeline;
 use crate::main::world::prepare::mesh::resolve_static_draw;
 use crate::main::assets::io::asset_formats::materialfile;
-use crate::main::assets::render_resources::{self, PlaceholderTextureIds, RenderResources, TextureRenderId};
+use crate::main::assets::store::{self, PlaceholderTextureIds, RenderAssetStore, TextureRenderId};
 
 pub struct Layouts {
     pub camera: wgpu::BindGroupLayout,
@@ -86,7 +86,7 @@ impl Renderer {
         wgpu_context: &WgpuContext,
         snapshot_handoff: Arc<SnapshotHandoff>,
         placeholders: PlaceholderTextureIds,
-        render_resources: &RenderResources,
+        render_resources: &RenderAssetStore,
     ) -> Self {
         let layouts = Layouts::new(&wgpu_context);
         let mut sampler_cache = SamplerCache::new();
@@ -164,7 +164,7 @@ impl Renderer {
     pub fn render(
         &mut self,
         wgpu_context: &WgpuContext,
-        render_resources: &RenderResources,
+        render_resources: &RenderAssetStore,
         pose_storage: &mut PoseStorage,
         frame_idx: u32,
     ) -> Result<(), wgpu::SurfaceError> {
@@ -248,7 +248,7 @@ impl Renderer {
         );
     }
 
-    pub fn upload_material(&mut self, manifest: &materialfile::Material, normal_texture: &Option<TextureRenderId>, occlusion_texture: &Option<TextureRenderId>, emissive_texture: &Option<TextureRenderId>, base_color_texture: &Option<TextureRenderId>, metallic_roughness_texture: &Option<TextureRenderId>, render_resources: &RenderResources, wgpu_context: &WgpuContext) -> Result<MaterialBinding, ()> {
+    pub fn upload_material(&mut self, manifest: &materialfile::Material, normal_texture: &Option<TextureRenderId>, occlusion_texture: &Option<TextureRenderId>, emissive_texture: &Option<TextureRenderId>, base_color_texture: &Option<TextureRenderId>, metallic_roughness_texture: &Option<TextureRenderId>, render_resources: &RenderAssetStore, wgpu_context: &WgpuContext) -> Result<MaterialBinding, ()> {
         let textures_gpu = &render_resources.textures;
         let base_color_view = &textures_gpu.get(base_color_texture.unwrap_or(self.placeholders.base_color).into()).unwrap().texture_view;
         let emissive_view = &textures_gpu.get(emissive_texture.unwrap_or(self.placeholders.emissive).into()).unwrap().texture_view;

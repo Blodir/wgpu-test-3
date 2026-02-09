@@ -1,10 +1,10 @@
 use crate::game::assets::registry::RenderState;
-use crate::{render_snapshot::{LightsSnapshot, SnapshotGuard}, main::{world::bindgroups::lights::LightsBinding, sampler_cache::SamplerCache, wgpu_context::WgpuContext}, main::assets::{io::asset_formats::materialfile, render_resources::RenderResources, resource_manager::ResourceManager}};
+use crate::{render_snapshot::{LightsSnapshot, SnapshotGuard}, main::{world::bindgroups::lights::LightsBinding, sampler_cache::SamplerCache, wgpu_context::WgpuContext}, main::assets::{io::asset_formats::materialfile, store::RenderAssetStore, resource_manager::ResourceManager}};
 
 pub fn prepare_lights(
     snaps: &SnapshotGuard,
     lights_binding: &mut LightsBinding,
-    render_resources: &RenderResources,
+    render_resources: &RenderAssetStore,
     sampler_cache: &mut SamplerCache,
     wgpu_context: &WgpuContext,
     bind_group_layout: &wgpu::BindGroupLayout,

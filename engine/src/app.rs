@@ -4,7 +4,7 @@ use crossbeam_queue::SegQueue;
 use pollster::FutureExt as _;
 use winit::{application::ApplicationHandler, dpi::PhysicalSize, event::{DeviceEvent, WindowEvent}, event_loop::ActiveEventLoop, window::{Window, WindowId}};
 
-use crate::{job_system::worker_pool::RenderResponse, render_snapshot::SnapshotHandoff, main::{world::pose_storage::PoseStorage, wgpu_context::WgpuContext, world::Renderer}, main::assets::{render_resources::RenderResources, resource_manager::ResourceManager}, game::sim::InputEvent};
+use crate::{job_system::worker_pool::RenderResponse, render_snapshot::SnapshotHandoff, main::{world::pose_storage::PoseStorage, wgpu_context::WgpuContext, world::Renderer}, main::assets::{store::RenderAssetStore, resource_manager::ResourceManager}, game::sim::InputEvent};
 
 fn resize(
     physical_size: PhysicalSize<u32>,
@@ -23,7 +23,7 @@ fn resize(
 
 struct RenderContext<'surface> {
     renderer: Arc<Mutex<Renderer>>,
-    render_resources: RenderResources,
+    render_resources: RenderAssetStore,
     pose_storage: PoseStorage,
     window: Arc<Window>,
     wgpu_context: WgpuContext<'surface>,
@@ -58,7 +58,7 @@ impl<'surface> ApplicationHandler for App<'surface> {
                 .unwrap(),
         );
         let wgpu_context = WgpuContext::new(window.clone()).block_on();
-        let mut render_resources = RenderResources::new();
+        let mut render_resources = RenderAssetStore::new();
         let placeholders = render_resources.initialize_placeholders(&wgpu_context);
         let renderer = Arc::new(
             Mutex::new(

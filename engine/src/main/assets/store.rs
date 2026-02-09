@@ -71,13 +71,13 @@ pub struct ModelRenderData {
     pub submeshes: Vec<SubMesh>,
 }
 
-pub struct RenderResources {
+pub struct RenderAssetStore {
     pub models: Arena<ModelRenderData>,
     pub meshes: Arena<MeshGpuData>,
     pub materials: Arena<MaterialBinding>,
     pub textures: Arena<TextureGpuData>,
 }
-impl RenderResources {
+impl RenderAssetStore {
     pub fn new() -> Self {
         let meshes = Arena::new();
         let materials = Arena::new();

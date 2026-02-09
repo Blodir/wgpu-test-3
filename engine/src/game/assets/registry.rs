@@ -3,7 +3,7 @@ use std::{cell::RefCell, collections::HashMap, marker::PhantomData, rc::{Rc, Wea
 use generational_arena::{Arena, Index};
 
 use crate::main::assets::io::asset_formats::animationfile;
-use crate::main::assets::render_resources::{MaterialRenderId, MeshRenderId, ModelRenderId, TextureRenderId};
+use crate::main::assets::store::{MaterialRenderId, MeshRenderId, ModelRenderId, TextureRenderId};
 use super::{store::{AnimationClipGameId, AnimationGameId, MaterialGameId, ModelGameId, SkeletonGameId}};
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]

@@ -2,7 +2,7 @@ use std::ops::Range;
 
 use crate::game::assets::registry::{MaterialId, MeshId, RenderState};
 use crate::main::assets::resource_manager::ResourceManager;
-use crate::main::assets::render_resources::{self, MaterialRenderId, MeshRenderId, RenderResources};
+use crate::main::assets::store::{self, MaterialRenderId, MeshRenderId, RenderAssetStore};
 use crate::{render_snapshot::MeshDrawSnapshot, main::world::{attachments::depth::DepthTexture }};
 use crate::main::world::{buffers::{skinned_instance::SkinnedInstance, skinned_vertex::SkinnedVertex, static_instance::StaticInstance, static_vertex::StaticVertex}, prepare::mesh::DrawContext};
 use crate::main::{shader_cache::ShaderCache, wgpu_context::WgpuContext};
@@ -105,7 +105,7 @@ impl StaticPbrPipeline {
         depth_texture_view: &wgpu::TextureView,
         camera_bind_group: &wgpu::BindGroup,
         lights_bind_group: &wgpu::BindGroup,
-        render_resources: &RenderResources
+        render_resources: &RenderAssetStore
     ) {
         let models = &render_resources.models;
         let materials = &render_resources.materials;

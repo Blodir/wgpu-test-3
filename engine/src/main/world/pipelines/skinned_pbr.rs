@@ -3,7 +3,7 @@ use std::ops::Range;
 use crate::game::assets::registry::{MaterialId, MeshId, RenderState};
 use crate::main::{shader_cache::ShaderCache, wgpu_context::WgpuContext};
 use crate::{render_snapshot::MeshDrawSnapshot, main::world::{attachments::depth::DepthTexture, buffers::{skinned_instance::SkinnedInstance, skinned_vertex::SkinnedVertex}, prepare::mesh::DrawContext}};
-use crate::main::assets::{render_resources::{self, MaterialRenderId, MeshRenderId, RenderResources}, resource_manager::ResourceManager};
+use crate::main::assets::{store::{self, MaterialRenderId, MeshRenderId, RenderAssetStore}, resource_manager::ResourceManager};
 
 pub struct SkinnedPbrPipeline {
     pub render_pipeline: wgpu::RenderPipeline,
@@ -107,7 +107,7 @@ impl SkinnedPbrPipeline {
         camera_bind_group: &wgpu::BindGroup,
         lights_bind_group: &wgpu::BindGroup,
         bones_bind_group: &wgpu::BindGroup,
-        render_resources: &RenderResources
+        render_resources: &RenderAssetStore
     ) {
         let models = &render_resources.models;
         let materials = &render_resources.materials;

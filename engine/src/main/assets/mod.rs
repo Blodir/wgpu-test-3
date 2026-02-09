@@ -1,4 +1,4 @@
 pub mod io;
 pub mod texture;
-pub mod render_resources;
+pub mod store;
 pub mod resource_manager;

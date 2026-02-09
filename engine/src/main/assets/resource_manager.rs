@@ -7,7 +7,7 @@ use super::io::asset_formats::materialfile;
 
 use crate::game::assets::registry::{GameState, RenderState, ResourceKind, ResourceRequest, ResourceResult};
 use crate::game::assets::store::{CreateGameResourceRequest, CreateGameResourceResponse, GameAssetStore, MaterialGameData, MaterialGameId};
-use super::{render_resources::{MaterialRenderId, MeshGpuData, MeshRenderId, ModelRenderData, ModelRenderId, RenderResources, TextureGpuData, TextureRenderId}, texture::upload_texture};
+use super::{store::{MaterialRenderId, MeshGpuData, MeshRenderId, ModelRenderData, ModelRenderId, RenderAssetStore, TextureGpuData, TextureRenderId}, texture::upload_texture};
 use super::io::worker_pool::{IoWorkerPool, IoRequest, IoResponse};
 use super::io::asset_formats::{animationfile, dds};
 
@@ -74,7 +74,7 @@ impl ResourceManager {
         }
     }
 
-    pub fn process_game_responses(&self, renderer: &mut Renderer, render_resources: &mut RenderResources, wgpu_context: &WgpuContext) {
+    pub fn process_game_responses(&self, renderer: &mut Renderer, render_resources: &mut RenderAssetStore, wgpu_context: &WgpuContext) {
         while !self.game_res_rx.is_empty() {
             let res = match self.game_res_rx.recv() {
                 Ok(r) => r,
@@ -130,7 +130,7 @@ impl ResourceManager {
 
     pub fn process_io_responses(
         &self,
-        render_resources: &mut RenderResources,
+        render_resources: &mut RenderAssetStore,
         wgpu_context: &WgpuContext,
     ) {
         while !self.io.res_rx.is_empty() {
