@@ -10,10 +10,11 @@ use winit::{
     event_loop::{ControlFlow, EventLoop},
 };
 
+use crate::main::window;
+
 pub mod render_snapshot;
 pub mod main;
 pub mod game;
-pub mod app;
 pub mod job_system;
 
 pub fn run() {
@@ -29,7 +30,7 @@ pub fn run() {
     let (worker_pool, task_tx, render_rx, game_rx) = WorkerPool::init();
     let sim_handle = spawn_sim(sim_inputs.clone(), snap_handoff.clone(), registry_req_tx, registry_res_rx, game_req_rx, game_res_tx, task_tx);
 
-    let app = Arc::new(Mutex::new(app::App::new(
+    let app = Arc::new(Mutex::new(window::MainWindow::new(
         sim_inputs.clone(),
         snap_handoff.clone(),
         resource_manager,

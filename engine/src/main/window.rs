@@ -30,7 +30,7 @@ struct RenderContext<'surface> {
     frame_idx: u32,
 }
 
-pub struct App<'surface> {
+pub struct MainWindow<'surface> {
     render_context: Option<RenderContext<'surface>>,
     snap_handoff: Arc<SnapshotHandoff>,
     sim_inputs: Arc<SegQueue<InputEvent>>,
@@ -38,7 +38,7 @@ pub struct App<'surface> {
     task_res_rx: crossbeam::channel::Receiver<RenderResponse>,
 }
 
-impl App<'_> {
+impl MainWindow<'_> {
     pub fn new(sim_inputs: Arc<SegQueue<InputEvent>>, snap_handoff: Arc<SnapshotHandoff>, resource_manager: RenderAssetManager, task_res_rx: crossbeam::channel::Receiver<RenderResponse>) -> Self {
         Self {
             render_context: None,
@@ -50,7 +50,7 @@ impl App<'_> {
     }
 }
 
-impl<'surface> ApplicationHandler for App<'surface> {
+impl<'surface> ApplicationHandler for MainWindow<'surface> {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         let window = Arc::new(
             event_loop
