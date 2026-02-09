@@ -1,11 +1,9 @@
-use std::{cell::RefCell, rc::Rc, sync::Arc};
+use std::{cell::RefCell, rc::Rc};
 
-use super::assets::registry::{GameState, ModelHandle, ModelId, RenderState, ResourceRegistry};
+use super::assets::registry::{GameState, ModelHandle, ResourceRegistry};
 use super::assets::store::{self, GameAssetStore};
 use crate::game::build_snapshot::AnimationSnapshot;
-use crate::{job_system::worker_pool::{AnimPoseTask, BlendPoseTask, SinglePoseTask, Task}, main::world::anim_pose_store::POSE_STORAGE_BUFFER_SIZE, main::assets::io::{asset_formats::skeletonfile::Skeleton}};
-
-use super::scene_tree::SceneNodeId;
+use crate::{job_system::worker_pool::{AnimPoseTask, BlendPoseTask, SinglePoseTask}, main::world::anim_pose_store::POSE_STORAGE_BUFFER_SIZE};
 
 /// What happens when animation time leaves [0, duration)
 #[derive(Clone, Copy)]
@@ -116,8 +114,8 @@ impl Animator {
 
     pub fn update(&mut self, animation_graphs: &Vec<AnimationGraph>, dt: f32) {
         let maybe_updated_state = match &self.current_state {
-            AnimatorState::State(state_idx) => None,
-            AnimatorState::Transition(AnimatorTransitionState { from, transition, from_start_instance_time, to_start_instance_time }) => {
+            AnimatorState::State(_state_idx) => None,
+            AnimatorState::Transition(AnimatorTransitionState { transition, to_start_instance_time, .. }) => {
                 let ags = &animation_graphs[self.animation_graph];
                 let tr = &ags.transitions[*transition as usize];
                 if ((self.time - *to_start_instance_time) / ANIM_TICKS_PER_SEC) as f32 > tr.blend_time {
@@ -135,7 +133,7 @@ impl Animator {
         self.time += delta_ticks;
     }
 
-    pub fn build_job(&mut self, dt: f32, animation_graphs: &Vec<AnimationGraph>, node_id: SceneNodeId, model_handle: &ModelHandle, game_resources: &GameAssetStore, resource_registry: &Rc<RefCell<ResourceRegistry>>) -> Vec<AnimPoseTask> {
+    pub fn build_job(&mut self, dt: f32, animation_graphs: &Vec<AnimationGraph>, model_handle: &ModelHandle, game_resources: &GameAssetStore, resource_registry: &Rc<RefCell<ResourceRegistry>>) -> Vec<AnimPoseTask> {
         let mut job = vec![];
 
         let model_game_idx = match resource_registry.borrow().get(model_handle).game_state {
@@ -148,7 +146,7 @@ impl Animator {
 
         let skeleton_handle = match model.deformation {
             store::DeformationData::None => panic!(),
-            store::DeformationData::Skinned { ref skeleton, ref animation_clips } => skeleton,
+            store::DeformationData::Skinned { ref skeleton, .. } => skeleton,
         };
         let skeleton_game_idx = match resource_registry.borrow().get(skeleton_handle).game_state {
             GameState::Ready(index) => index,
@@ -171,7 +169,7 @@ impl Animator {
                         let state = &animation_graphs[self.animation_graph].states[animator_state_state.state_idx as usize];
                         let animation_clips = match model.deformation {
                             store::DeformationData::None => panic!(),
-                            store::DeformationData::Skinned { ref skeleton, ref animation_clips } => animation_clips,
+                            store::DeformationData::Skinned { ref animation_clips, .. } => animation_clips,
                         };
                         let clip_handle = &animation_clips[state.clip_idx as usize];
                         let clip_game_idx = match resource_registry.borrow().get(clip_handle).game_state {
@@ -202,7 +200,7 @@ impl Animator {
 
                         let animation_clips = match model.deformation {
                             store::DeformationData::None => panic!(),
-                            store::DeformationData::Skinned { ref skeleton, ref animation_clips } => animation_clips,
+                            store::DeformationData::Skinned { ref animation_clips, .. } => animation_clips,
                         };
                         let from_handle = &animation_clips[from_state.clip_idx as usize];
                         let to_handle = &animation_clips[to_state.clip_idx as usize];
@@ -253,63 +251,7 @@ impl Animator {
         job
     }
 
-    pub fn build_snapshot(&self/*, animation_graphs: &Vec<AnimationGraph>, model_handle: &ModelHandle, resource_registry: &Rc<RefCell<ResourceRegistry>>, game_resources: &GameResources */) -> AnimationSnapshot {
+    pub fn build_snapshot(&self) -> AnimationSnapshot {
         AnimationSnapshot(self.time)
-        /*
-        let resource_registry = resource_registry.borrow();
-        let animation_graph = &animation_graphs[self.animation_graph];
-        if let GameState::Ready(model_game_idx) = resource_registry.get(model_handle).game_state {
-            let anim_clip_handles = &game_resources.models.get(model_game_idx).unwrap().animation_clips;
-            match &self.current_state {
-                AnimatorState::State(animator_state_state) => {
-                    let state = &animation_graph.states[animator_state_state.state_idx as usize];
-                    if let RenderState::Ready(id) = resource_registry.get(&anim_clip_handles[state.clip_idx as usize]).render_state {
-                        Some(
-                            AnimationSnapshot::AnimationStateSnapshot(
-                                AnimationStateSnapshot {
-                                    clip_id: AnimationClipRenderId(id),
-                                    animation_time: animator_state_state.animation_time,
-                                    time_wrap: state.time_wrap,
-                                    boundary_mode: state.boundary_mode
-                                }
-                            )
-                        )
-                    } else {
-                        None
-                    }
-                },
-                AnimatorState::Transition(animator_transition_state) => {
-                    let from_state = &animation_graph.states[animator_transition_state.from as usize];
-                    let transition = &animation_graph.transitions[animator_transition_state.transition as usize];
-                    let to_state = &animation_graph.states[transition.to as usize];
-                    if let (
-                        RenderState::Ready(from_id),
-                        RenderState::Ready(to_id),
-                    ) = (
-                        &resource_registry.get(&anim_clip_handles[from_state.clip_idx as usize]).render_state,
-                        &resource_registry.get(&anim_clip_handles[to_state.clip_idx as usize]).render_state,
-                    ) {
-                        Some(
-                            AnimationSnapshot::AnimationTransitionSnapshot(
-                                AnimationTransitionSnapshot {
-                                    from_clip_id: AnimationClipRenderId(*from_id),
-                                    to_clip_id: AnimationClipRenderId(*to_id),
-                                    blend_time: transition.blend_time,
-                                    from_time: animator_transition_state.from_time,
-                                    to_time: animator_transition_state.to_time,
-                                    from_time_wrap: from_state.time_wrap,
-                                    to_time_wrap: to_state.time_wrap,
-                                }
-                            )
-                        )
-                    } else {
-                        None
-                    }
-                },
-            }
-        } else {
-            None
-        }
-         */
     }
 }

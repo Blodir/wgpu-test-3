@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, sync::Arc};
+use std::cmp::Ordering;
 
 use glam::{Mat4, Quat, Vec3};
 
@@ -129,7 +129,7 @@ fn compute_joint_trs<'a>(task: AnimPoseTask) -> Vec<TRS> {
 
     let mut joint_matrices: Vec<_> = skeleton.joints.iter().map(|joint| Mat4::from_cols_array_2d(&joint.trs)).collect();
     match task {
-        AnimPoseTask::Single(SinglePoseTask { instance_time, skeleton, clip, time_wrap, boundary_mode, local_time }) => {
+        AnimPoseTask::Single(SinglePoseTask { skeleton, clip, time_wrap, local_time, .. }) => {
             let pose = compute_animated_pose(&clip, &skeleton, &base_locals, local_time, &time_wrap);
             for (idx, maybe_joint) in pose.iter().enumerate() {
                 if let Some(joint) = maybe_joint {
@@ -137,7 +137,7 @@ fn compute_joint_trs<'a>(task: AnimPoseTask) -> Vec<TRS> {
                 }
             }
         },
-        AnimPoseTask::Blend(BlendPoseTask { instance_time, skeleton, from_clip, to_clip, blend_time, from_time, to_time, from_time_wrap, to_time_wrap }) => {
+        AnimPoseTask::Blend(BlendPoseTask { skeleton, from_clip, to_clip, blend_time, from_time, to_time, from_time_wrap, to_time_wrap, .. }) => {
             let pose_1 = compute_animated_pose(&from_clip, &skeleton, &base_locals, from_time, &from_time_wrap);
             let pose_2 = compute_animated_pose(&to_clip, &skeleton, &base_locals, to_time, &to_time_wrap);
             let blend_t = (to_time / blend_time).min(1.0);

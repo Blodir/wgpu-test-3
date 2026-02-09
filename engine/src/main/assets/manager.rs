@@ -1,15 +1,13 @@
 
-use generational_arena::Index;
 use wgpu::util::{BufferInitDescriptor, DeviceExt as _};
 
 use crate::{main::{world::Renderer, wgpu_context::WgpuContext}};
 use super::io::asset_formats::materialfile;
 
-use crate::game::assets::registry::{GameState, RenderState, ResourceKind, ResourceRequest, ResourceResult};
-use crate::game::assets::store::{CreateGameResourceRequest, CreateGameResourceResponse, GameAssetStore, MaterialGameData, MaterialGameId};
+use crate::game::assets::registry::{ResourceRequest, ResourceResult};
+use crate::game::assets::store::{CreateGameResourceRequest, CreateGameResourceResponse};
 use super::{store::{MaterialRenderId, MeshGpuData, MeshRenderId, ModelRenderData, ModelRenderId, RenderAssetStore, TextureGpuData, TextureRenderId}, texture::upload_texture};
 use super::io::worker_pool::{IoWorkerPool, IoRequest, IoResponse};
-use super::io::asset_formats::{animationfile, dds};
 
 pub struct RenderAssetManager {
     io: IoWorkerPool,
@@ -146,30 +144,6 @@ impl RenderAssetManager {
                     if self.game_req_tx.send(CreateGameResourceRequest::Model { id, manifest: model }).is_err() {
                         todo!()
                     }
-                    // Request game id
-
-                    /*
-                    let cpu_data = ModelCpuData {
-                        mesh: ResourceManager::request_mesh(self, &model.buffer_path),
-                        submeshes: model.primitives.iter().map(|prim| {
-                            let index_start = prim.index_byte_offset / 4;
-                            let index_count = prim.index_byte_length / 4;
-                            SubMesh {
-                                instances: prim.instances.clone(),
-                                index_range: index_start..index_start + index_count,
-                                base_vertex: prim.base_vertex,
-                                material: ResourceManager::request_material(self, &model.material_paths[prim.material as usize]),
-                            }
-                        }).collect(),
-                        animations: model.animations.iter().map(|anim| ResourceManager::request_animation_clip(self, anim)).collect(),
-                        skeleton: ResourceManager::request_skeleton(self, &model.skeletonfile_path),
-                        manifest: model,
-                    };
-                    let mut reg = self.registry.lock().unwrap();
-                    let entry = reg.entries.get_mut(id).unwrap();
-                    let cpu_idx = self.cpu.models.lock().unwrap().insert(cpu_data);
-                    entry.game_state = GameState::Ready(cpu_idx);
-                    */
                 },
                 IoResponse::MeshLoaded { id, data } => {
                     let buffer = wgpu_context.device.create_buffer_init(&BufferInitDescriptor {
@@ -182,34 +156,11 @@ impl RenderAssetManager {
                     if self.registry_res_tx.send(ResourceResult::MeshResult { id, render_id: MeshRenderId(idx) }).is_err() {
                         todo!();
                     };
-                    /*
-                    let cpu_data = MeshGameData { index_vertex_data: data };
-                    let cpu_idx = self.cpu.meshes.lock().unwrap().insert(cpu_data);
-                    let mut reg = self.registry.lock().unwrap();
-                    let entry = reg.entries.get_mut(id).unwrap();
-                    entry.game_state = GameState::Ready(cpu_idx);
-                    entry.render_state = RenderState::Queued;
-                    self.upload_queue.lock().unwrap().push_back(id);
-                    */
                 },
                 IoResponse::MaterialLoaded { id, material } => {
                     if self.game_req_tx.send(CreateGameResourceRequest::Material { id, manifest: material }).is_err() {
                         todo!();
                     }
-                    /*
-                    let normal_texture = material.normal_texture.as_ref().map(|t| self.request_texture(&t.source, false));
-                    let occlusion_texture = material.occlusion_texture.as_ref().map(|t| self.request_texture(&t.source, false));
-                    let emissive_texture = material.emissive_texture.as_ref().map(|t| self.request_texture(&t.source, true));
-                    let base_color_texture = material.base_color_texture.as_ref().map(|t| self.request_texture(&t.source, true));
-                    let metallic_roughness_texture = material.metallic_roughness_texture.as_ref().map(|t| self.request_texture(&t.source, true));
-                    let cpu_data = MaterialGameData { manifest: material, normal_texture, occlusion_texture, emissive_texture, base_color_texture, metallic_roughness_texture };
-                    let cpu_idx = self.cpu.materials.lock().unwrap().insert(cpu_data);
-                    let mut reg = self.registry.lock().unwrap();
-                    let entry = reg.entries.get_mut(id).unwrap();
-                    entry.game_state = GameState::Ready(cpu_idx);
-                    entry.render_state = RenderState::Queued;
-                    self.upload_queue.lock().unwrap().push_back(id);
-                    */
                 },
                 IoResponse::SkeletonLoaded { id, skeleton } => {
                     if self.game_req_tx.send(CreateGameResourceRequest::Skeleton { id, manifest: skeleton }).is_err() {
@@ -220,14 +171,6 @@ impl RenderAssetManager {
                     if self.game_req_tx.send(CreateGameResourceRequest::AnimationClip { id, manifest: clip }).is_err() {
                         todo!();
                     }
-                    /*
-                    let animation = self.request_animation(&clip.binary_path, &clip);
-                    let cpu_data = AnimationClipCpuData { manifest: clip, animation };
-                    let cpu_idx = self.cpu.animation_clips.lock().unwrap().insert(cpu_data);
-                    let mut reg = self.registry.lock().unwrap();
-                    let entry = reg.entries.get_mut(id).unwrap();
-                    entry.game_state = GameState::Ready(cpu_idx);
-                    */
                 },
                 IoResponse::AnimationLoaded { id, parsed_clip } => {
                     if self.game_req_tx.send(CreateGameResourceRequest::Animation { id, anim: parsed_clip }).is_err() {
@@ -254,16 +197,6 @@ impl RenderAssetManager {
                     if self.registry_res_tx.send(ResourceResult::TextureResult { id, render_id: TextureRenderId(idx) }).is_err() {
                         todo!();
                     }
-
-                    /*
-                    let cpu_data: TextureGameData = data;
-                    let cpu_idx = self.cpu.textures.lock().unwrap().insert(cpu_data);
-                    let mut reg = self.registry.lock().unwrap();
-                    let entry = reg.entries.get_mut(id).unwrap();
-                    entry.game_state = GameState::Ready(cpu_idx);
-                    entry.render_state = RenderState::Queued;
-                    self.upload_queue.lock().unwrap().push_back(id);
-                    */
                 },
                 IoResponse::Error { path, message } => {
                     println!("IO Error: path: {}, message: {}", path, message);
@@ -272,114 +205,12 @@ impl RenderAssetManager {
         }
     }
 
-    /*
-    pub fn process_upload_queue(
-        self: &std::sync::Arc<Self>,
-        renderer: &mut Renderer,
-        render_resources: &mut RenderResources,
-        wgpu_context: &WgpuContext,
-    ) {
-        let mut upload_queue = self.upload_queue.lock().unwrap();
-        let mut meshes_cpu = self.cpu.meshes.lock().unwrap();
-        let mut textures_cpu = self.cpu.textures.lock().unwrap();
-        let mut queue_next_frame: Vec<Index> = vec![];
-        'upload_queue: while let Some(id) = upload_queue.pop_front() {
-            let (entry_kind, entry_cpu_idx) = {
-                let reg = self.registry.lock().unwrap();
-                let entry = reg.entries.get(id).unwrap();
-
-                if entry.ref_count == 0 {
-                    continue 'upload_queue; // cancelled
-                }
-
-                let entry_kind = entry.kind;
-                let entry_cpu_idx = if let GameState::Ready(cpu_idx) = entry.game_state {
-                    cpu_idx
-                } else {
-                    println!("Warning: no cpu data for entry in upload queue");
-                    continue 'upload_queue;
-                };
-                (entry_kind, entry_cpu_idx)
-            };
-
-            match entry_kind {
-                ResourceKind::Mesh => {
-                    let buffer = {
-                        let mesh_cpu = meshes_cpu.get(entry_cpu_idx).unwrap();
-                        wgpu_context.device.create_buffer_init(&BufferInitDescriptor {
-                            label: Some("Index/vertex buffer"),
-                            contents: bytemuck::cast_slice(&mesh_cpu.index_vertex_data),
-                            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::INDEX,
-                        })
-                    };
-                    let mesh_gpu = MeshGpuData { buffer };
-                    let meshes_gpu = &mut render_resources.meshes;
-                    let gpu_idx = meshes_gpu.insert(mesh_gpu);
-                    let mut reg = self.registry.lock().unwrap();
-                    let entry = reg.entries.get_mut(id).unwrap();
-                    entry.render_state = RenderState::Ready(gpu_idx);
-                    entry.game_state = GameState::Absent;
-                    meshes_cpu.remove(entry_cpu_idx);
-                },
-                ResourceKind::Texture => {
-                    let texture_cpu = textures_cpu.get(entry_cpu_idx).unwrap();
-                    // TODO move this function away from dds module, also it should probs just take the cpudata directly
-                    let texture = upload_texture(
-                        &texture_cpu,
-                        &wgpu_context,
-                    );
-                    // TODO probably should have a is_cubemap flag?
-                    let texture_view = if texture_cpu.layers == 6 {
-                        texture.create_view(&wgpu::TextureViewDescriptor {
-                            dimension: Some(wgpu::TextureViewDimension::Cube),
-                            ..Default::default()
-                        })
-                    } else {
-                        texture.create_view(&wgpu::TextureViewDescriptor::default())
-                    };
-                    let texture_gpu = TextureGpuData { texture, texture_view };
-                    let textures_gpu = &mut render_resources.textures;
-                    let gpu_idx = textures_gpu.insert(texture_gpu);
-                    let mut reg = self.registry.lock().unwrap();
-                    let entry = reg.entries.get_mut(id).unwrap();
-                    entry.render_state = RenderState::Ready(gpu_idx);
-                    entry.game_state = GameState::Absent;
-                    textures_cpu.remove(entry_cpu_idx);
-                },
-                ResourceKind::Material => {
-                    let material_binding = match renderer.upload_material(entry_cpu_idx, self, render_resources, wgpu_context) {
-                        Ok(mat) => mat,
-                        Err(_) => {
-                            queue_next_frame.push(id);
-                            continue 'upload_queue;
-                        }
-                    };
-                    let gpu_idx = render_resources.materials.insert(material_binding);
-                    {
-                        let mut reg = self.registry.lock().unwrap();
-                        let entry = reg.entries.get_mut(id).unwrap();
-                        entry.render_state = RenderState::Ready(gpu_idx);
-                        entry.game_state = GameState::Absent;
-                    }
-                    let mut materials_cpu = self.cpu.materials.lock().unwrap();
-                    materials_cpu.remove(entry_cpu_idx);
-                },
-                _ => println!("Warning: tried to upload an unsupported resource!"),
-            }
-        }
-        upload_queue.extend(queue_next_frame);
-    }
-
     pub fn run_gc(
         self: &std::sync::Arc<Self>,
     ) {
-        // for each entry with ref count 0
-        // should there be a vec that keeps track of refcount 0s?
-        // TODO eviction
-        // during eviction remember to clean CpuResources arena etc.
+        // registry sends evict messages?
         todo!();
     }
-    */
 
     fn make_io_request(&self, req: IoRequest) {
         if self.io.req_tx.send(req).is_err() {

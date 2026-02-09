@@ -1,4 +1,4 @@
-use std::{cell::RefCell, rc::Rc, sync::Arc, u32};
+use std::{cell::RefCell, rc::Rc, u32};
 
 use glam::{Mat4, Quat, Vec3};
 
@@ -94,7 +94,7 @@ impl Scene {
         let node = self.nodes.get_mut(node.into()).unwrap();
         match &mut node.render_data {
             RenderDataType::None => (),
-            RenderDataType::Model(model_handle) => (),
+            RenderDataType::Model(_model_handle) => (),
             RenderDataType::AnimatedModel(animated_model) => {
                 // TODO remove this after testing
                 // automatically transition for fun
@@ -104,7 +104,7 @@ impl Scene {
                 let a = cycle_duration / 4.0;
                 if (phase - 0.0).abs() < dt {
                     // look -> walk
-                    if let animator::AnimatorState::State(state) = animated_model.animator.get_current_state() {
+                    if let animator::AnimatorState::State(_state) = animated_model.animator.get_current_state() {
                         match animated_model.animator.transition(0) {
                             Ok(_) => (),
                             Err(_) => println!("Incorrect transition"),
@@ -112,7 +112,7 @@ impl Scene {
                     }
                 } else if (phase - a).abs() < dt {
                     // walk -> run
-                    if let animator::AnimatorState::State(state) = animated_model.animator.get_current_state() {
+                    if let animator::AnimatorState::State(_state) = animated_model.animator.get_current_state() {
                         match animated_model.animator.transition(2) {
                             Ok(_) => (),
                             Err(_) => println!("Incorrect transition"),
@@ -120,7 +120,7 @@ impl Scene {
                     }
                 } else if (phase - (2.0 * a)).abs() < dt {
                     // run -> walk
-                    if let animator::AnimatorState::State(state) = animated_model.animator.get_current_state() {
+                    if let animator::AnimatorState::State(_state) = animated_model.animator.get_current_state() {
                         match animated_model.animator.transition(3) {
                             Ok(_) => (),
                             Err(_) => println!("Incorrect transition"),
@@ -128,7 +128,7 @@ impl Scene {
                     }
                 } else if (phase - (3.0 * a)).abs() < dt {
                     // walk -> look
-                    if let animator::AnimatorState::State(state) = animated_model.animator.get_current_state() {
+                    if let animator::AnimatorState::State(_state) = animated_model.animator.get_current_state() {
                         match animated_model.animator.transition(1) {
                             Ok(_) => (),
                             Err(_) => println!("Incorrect transition"),

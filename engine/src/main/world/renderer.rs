@@ -12,7 +12,7 @@ use super::buffers::skinned_instance::SkinnedInstances;
 use super::pipelines::post_processing::PostProcessingPipeline;
 use super::pipelines::skinned_pbr::SkinnedPbrPipeline;
 use super::pipelines::skybox::SkyboxPipeline;
-use super::anim_pose_store::{self, AnimPoseStore};
+use super::anim_pose_store::AnimPoseStore;
 use super::prepare::camera::prepare_camera;
 use super::prepare::lights::prepare_lights;
 use super::prepare::mesh::resolve_skinned_draw;
@@ -24,7 +24,7 @@ use crate::main::world::buffers::static_instance::StaticInstances;
 use crate::main::world::pipelines::static_pbr::StaticPbrPipeline;
 use crate::main::world::prepare::mesh::resolve_static_draw;
 use crate::main::assets::io::asset_formats::materialfile;
-use crate::main::assets::store::{self, PlaceholderTextureIds, RenderAssetStore, TextureRenderId};
+use crate::main::assets::store::{PlaceholderTextureIds, RenderAssetStore, TextureRenderId};
 use crate::snapshot_handoff::SnapshotHandoff;
 
 pub struct Layouts {

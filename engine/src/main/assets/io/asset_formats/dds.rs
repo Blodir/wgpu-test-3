@@ -1,7 +1,5 @@
-use std::{fs::File, io::Read as _};
-
 use block_compression::{BC6HSettings, BC7Settings, CompressionVariant};
-use ddsfile::{Caps2, Dds, DxgiFormat};
+use ddsfile::{Caps2, DxgiFormat};
 
 pub fn dxgi_format_to_compression_variant(
     format: &ddsfile::DxgiFormat,
@@ -77,7 +75,7 @@ pub fn create_dds(
                 let required_size = variant.blocks_byte_size(width, height);
                 let mut blocks_buffer = vec![0u8; required_size];
                 match variant {
-                    CompressionVariant::BC6H(settings) => {
+                    CompressionVariant::BC6H(_settings) => {
                         let u16_slice: &[u16] = bytemuck::cast_slice(&d);
                         let f16_slice: Vec<block_compression::half::f16> = u16_slice
                             .iter()

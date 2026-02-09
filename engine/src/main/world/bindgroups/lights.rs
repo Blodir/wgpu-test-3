@@ -1,6 +1,3 @@
-use std::sync::Arc;
-
-use generational_arena::Index;
 use wgpu::util::DeviceExt as _;
 
 use crate::{game::scene_tree, main::{assets::{io::asset_formats::materialfile, store::{PlaceholderTextureIds, RenderAssetStore, TextureRenderId}}, sampler_cache::SamplerCache, wgpu_context::WgpuContext}};

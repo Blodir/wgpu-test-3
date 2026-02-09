@@ -4,7 +4,7 @@ use ddsfile::{Caps2, Dds};
 use glam::{Quat, Vec3};
 
 use crate::game::assets::runtime_formats::animation;
-use crate::game::assets::registry::{AnimationClipId, AnimationId, HandleId, MaterialId, MeshId, ModelId, SkeletonId, TextureId};
+use crate::game::assets::registry::{AnimationClipId, AnimationId, MaterialId, MeshId, ModelId, SkeletonId, TextureId};
 use super::{asset_formats::{animationfile, dds, materialfile, modelfile, skeletonfile}};
 use super::super::texture::TextureLoadData;
 

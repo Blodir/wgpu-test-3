@@ -211,17 +211,23 @@ impl GameAssetStore {
                         id,
                         game_id: AnimationClipGameId(game_id),
                     };
-                    self.res_tx.send(res);
+                    if self.res_tx.send(res).is_err() {
+                        todo!();
+                    }
                 }
                 CreateGameResourceRequest::Skeleton { id, manifest } => {
                     let game_id = self.skeletons.insert(Arc::new(manifest));
                     let res = CreateGameResourceResponse::Skeleton { id, game_id: SkeletonGameId(game_id) };
-                    self.res_tx.send(res);
+                    if self.res_tx.send(res).is_err() {
+                        todo!();
+                    }
                 },
                 CreateGameResourceRequest::Animation { id, anim } => {
                     let game_id = self.animations.insert(Arc::new(anim));
                     let res = CreateGameResourceResponse::Animation { id, game_id: AnimationGameId(game_id) };
-                    self.res_tx.send(res);
+                    if self.res_tx.send(res).is_err() {
+                        todo!();
+                    }
                 },
             }
         }
@@ -341,7 +347,9 @@ impl GameAssetStore {
                         base_color_texture,
                         metallic_roughness_texture,
                     };
-                    self.res_tx.send(res);
+                    if self.res_tx.send(res).is_err() {
+                        todo!();
+                    }
                 },
             }
         }

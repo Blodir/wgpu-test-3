@@ -1,12 +1,7 @@
-use std::ops::Range;
-
-use crate::game::assets::registry::{MaterialId, MeshId, RenderState};
-use crate::main::assets::manager::RenderAssetManager;
-use crate::main::assets::store::{self, MaterialRenderId, MeshRenderId, RenderAssetStore};
+use crate::main::assets::store::RenderAssetStore;
 use crate::{main::world::{attachments::depth::DepthTexture }};
-use crate::main::world::{buffers::{skinned_instance::SkinnedInstance, skinned_vertex::SkinnedVertex, static_instance::StaticInstance, static_vertex::StaticVertex}, prepare::mesh::DrawContext};
+use crate::main::world::{buffers::{static_instance::StaticInstance, static_vertex::StaticVertex}, prepare::mesh::DrawContext};
 use crate::main::{shader_cache::ShaderCache, wgpu_context::WgpuContext};
-use crate::game::build_snapshot::MeshDrawSnapshot;
 
 pub struct StaticPbrPipeline {
     pub render_pipeline: wgpu::RenderPipeline,

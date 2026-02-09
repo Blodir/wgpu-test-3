@@ -2,7 +2,7 @@ use std::{
     cell::RefCell, rc::Rc, sync::Arc, thread, time::{Duration, Instant}
 };
 
-use crossbeam_queue::{ArrayQueue, SegQueue};
+use crossbeam_queue::SegQueue;
 use winit::{
     event::{DeviceEvent, ElementState, KeyEvent, MouseScrollDelta, WindowEvent},
     keyboard::{KeyCode, PhysicalKey},
@@ -13,7 +13,6 @@ use super::assets::store::{CreateGameResourceRequest, CreateGameResourceResponse
 use crate::{
     game::build_snapshot::RenderSnapshot, job_system::worker_pool::Task, snapshot_handoff::SnapshotHandoff
 };
-
 use super::scene_tree::{build_test_scene, RenderDataType};
 
 #[derive(Debug)]
@@ -74,26 +73,25 @@ pub fn spawn_sim(
                     },
                     InputEvent::WindowEvent(event) => match event {
                         WindowEvent::MouseWheel {
-                            device_id,
                             delta,
-                            phase,
+                            ..
                         } => {
                             let camera = &mut scene.camera;
                             match delta {
-                                MouseScrollDelta::LineDelta(x, y) => {
+                                MouseScrollDelta::LineDelta(_x, y) => {
                                     let scroll_speed = 10f32;
                                     camera.eye.z = (camera.eye.z
                                         + ((if shift_is_pressed { 10f32 * scroll_speed } else { scroll_speed })
                                             * -y as f32))
                                         .max(0f32);
                                 }
-                                MouseScrollDelta::PixelDelta(pos) => (),
+                                MouseScrollDelta::PixelDelta(_pos) => (),
                             }
                         }
                         WindowEvent::MouseInput {
-                            device_id,
                             state,
                             button,
+                            ..
                         } => {
                             match button {
                                 winit::event::MouseButton::Left => match state {
@@ -108,9 +106,8 @@ pub fn spawn_sim(
                             };
                         }
                         WindowEvent::KeyboardInput {
-                            device_id,
                             event,
-                            is_synthetic,
+                            ..
                         } => match event {
                             KeyEvent {
                                 physical_key: PhysicalKey::Code(KeyCode::ShiftLeft),
@@ -140,9 +137,9 @@ pub fn spawn_sim(
             // schedule animation jobs
             for (node_id, _) in &snap.mesh_draw_snapshot.skinned_instances {
                 match &mut scene.nodes.get_mut((*node_id).into()).unwrap().render_data {
-                    RenderDataType::Model(static_model) => (),
+                    RenderDataType::Model(_static_model) => (),
                     RenderDataType::AnimatedModel(animated_model) => {
-                        let job = animated_model.animator.build_job(dt, &animation_graphs, *node_id, &animated_model.model, &game_resources, &resource_registry);
+                        let job = animated_model.animator.build_job(dt, &animation_graphs, &animated_model.model, &game_resources, &resource_registry);
                         if job_task_tx.send(Task::Pose(*node_id, job)).is_err() {
                             todo!();
                         }

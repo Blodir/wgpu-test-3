@@ -1,6 +1,6 @@
 use wgpu::util::DeviceExt;
 
-use crate::main::{shader_cache::ShaderCache, utils, wgpu_context::WgpuContext};
+use crate::main::{shader_cache::ShaderCache, wgpu_context::WgpuContext};
 
 const INDICES: &[u16] = &[0, 2, 1, 3, 2, 0];
 

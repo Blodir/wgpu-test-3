@@ -53,7 +53,7 @@ pub enum GameResponse {}
 fn worker_loop(
     rx: crossbeam::channel::Receiver<Task>,
     render_tx: &mut crossbeam::channel::Sender<RenderResponse>,
-    game_tx: crossbeam::channel::Sender<GameResponse>,
+    _game_tx: crossbeam::channel::Sender<GameResponse>,
 ) {
     while let Ok(task) = rx.recv() {
         match task {

@@ -78,7 +78,7 @@ impl<'surface> ApplicationHandler for MainWindow<'surface> {
         );
     }
 
-    fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
+    fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
         match event {
             WindowEvent::CloseRequested => {
                 event_loop.exit();
@@ -122,8 +122,7 @@ impl<'surface> ApplicationHandler for MainWindow<'surface> {
                 }
             }
             WindowEvent::ScaleFactorChanged {
-                scale_factor,
-                inner_size_writer,
+                ..
             } => {
                 if let Some(ref mut render_context) = self.render_context {
                     let mut renderer = render_context.renderer.lock().unwrap();
@@ -143,14 +142,14 @@ impl<'surface> ApplicationHandler for MainWindow<'surface> {
         }
     }
 
-    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+    fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
         self.render_context.as_mut().unwrap().window.request_redraw();
     }
 
     fn device_event(
         &mut self,
-        event_loop: &ActiveEventLoop,
-        device_id: winit::event::DeviceId,
+        _event_loop: &ActiveEventLoop,
+        _device_id: winit::event::DeviceId,
         event: DeviceEvent,
     ) {
         match event {
