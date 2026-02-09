@@ -1,6 +1,6 @@
 use glam::{Mat3, Mat4, Vec4};
 
-use crate::{render_snapshot::SnapshotGuard, main::{world::bindgroups::camera::CameraBinding, utils::lerpf32, wgpu_context}};
+use crate::{snapshot_handoff::SnapshotGuard, main::{world::bindgroups::camera::CameraBinding, utils::lerpf32, wgpu_context}};
 
 pub fn prepare_camera(
     camera: &mut CameraBinding,

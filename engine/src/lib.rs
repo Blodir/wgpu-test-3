@@ -1,6 +1,5 @@
 use crossbeam_queue::SegQueue;
 use job_system::worker_pool::{self, WorkerPool};
-use render_snapshot::{RenderSnapshot, SnapshotHandoff};
 use main::assets::manager::RenderAssetManager;
 use game::sim::{spawn_sim, InputEvent};
 use std::sync::{Arc, Mutex};
@@ -10,9 +9,9 @@ use winit::{
     event_loop::{ControlFlow, EventLoop},
 };
 
-use crate::main::window;
+use crate::{game::build_snapshot::RenderSnapshot, main::window, snapshot_handoff::SnapshotHandoff};
 
-pub mod render_snapshot;
+pub mod snapshot_handoff;
 pub mod main;
 pub mod game;
 pub mod job_system;

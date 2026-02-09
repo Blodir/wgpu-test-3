@@ -1,13 +1,12 @@
-use std::{cell::RefCell, collections::HashMap, ops::Range, rc::Rc, sync::Arc, time::Instant};
+use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc, time::Instant};
 
 use arc_swap::{ArcSwap, Guard};
-use generational_arena::Index;
 use glam::{Mat4, Quat, Vec3};
 
-use crate::game::assets::store::{self, GameAssetStore};
-use crate::game::assets::registry::{GameState, ModelId, RenderState, ResourceRegistry, TextureId};
+use crate::game::assets::store::GameAssetStore;
+use crate::game::assets::registry::{GameState, RenderState, ResourceRegistry};
 use crate::main::assets::io::asset_formats::modelfile;
-use crate::{main::{world::pipelines::MeshPipelineKind, world::anim_pose_store::TRS}, main::assets::{store::{MaterialRenderId, MeshRenderId, ModelRenderId, TextureRenderId}, manager::RenderAssetManager}, game::{animator::{AnimationGraph, BoundaryMode, TimeWrapMode}, camera::{Camera, Frustum, frustum_intersects_aabb_world}, scene_tree::{Environment, RenderDataType, Scene, SceneNodeId, Sun}}};
+use crate::{main::{world::pipelines::MeshPipelineKind, world::anim_pose_store::TRS}, main::assets::store::{MaterialRenderId, ModelRenderId, TextureRenderId}, game::{animator::AnimationGraph, camera::{Camera, Frustum, frustum_intersects_aabb_world}, scene_tree::{Environment, RenderDataType, Scene, SceneNodeId, Sun}}};
 
 pub fn accumulate_instance_snapshots(
     scene: &Scene,
@@ -202,10 +201,10 @@ impl MeshDrawSnapshot {
         let mut pipelines: HashMap<MeshPipelineKind, HashMap<MaterialRenderId, HashMap<ModelRenderId, Vec<Vec<SceneNodeId>>>>> = HashMap::new();
 
         // collect rendered nodes in hashmaps
-        for (node_id, snap) in &skinned_instances {
+        for (node_id, _snap) in &skinned_instances {
             let node = scene.nodes.get((*node_id).into()).unwrap();
             let model_handle = match &node.render_data {
-                RenderDataType::Model(static_model) => panic!(),
+                RenderDataType::Model(_static_model) => panic!(),
                 RenderDataType::AnimatedModel(animated_model) => &animated_model.model,
                 RenderDataType::None => panic!(),
             };
@@ -231,7 +230,7 @@ impl MeshDrawSnapshot {
             }
         }
 
-        for (node_id, snap) in &static_instances {
+        for (node_id, _snap) in &static_instances {
             let node = scene.nodes.get((*node_id).into()).unwrap();
             let model_handle = match &node.render_data {
                 RenderDataType::Model(static_model) => &static_model.handle,
@@ -344,54 +343,5 @@ impl RenderSnapshot {
             camera: Camera::default().build_snapshot(),
             mesh_draw_snapshot: MeshDrawSnapshot::default(),
         }
-    }
-}
-
-pub type SnapshotGuard = Guard<Arc<SnapshotPair>>;
-
-#[derive(Clone)]
-pub struct SnapshotPair {
-    pub prev: Arc<RenderSnapshot>,
-    pub prev_timestamp: Instant,
-    pub curr: Arc<RenderSnapshot>,
-    pub curr_timestamp: Instant,
-    pub gen: u64, // optional: monotonic generation
-}
-
-pub struct SnapshotHandoff {
-    pair: ArcSwap<SnapshotPair>,
-}
-
-impl SnapshotHandoff {
-    pub fn new(init: RenderSnapshot) -> Self {
-        let init = Arc::new(init);
-        let pair = SnapshotPair {
-            prev: init.clone(),
-            prev_timestamp: Instant::now(),
-            curr: init,
-            curr_timestamp: Instant::now(),
-            gen: 0,
-        };
-        Self {
-            pair: ArcSwap::from(Arc::new(pair)),
-        }
-    }
-
-    /// Producer: publish a new current; previous becomes the old current.
-    pub fn publish(&self, snap: RenderSnapshot) {
-        let old = self.pair.load(); // coherent view
-        let next = SnapshotPair {
-            prev: old.curr.clone(),
-            prev_timestamp: old.curr_timestamp,
-            curr: Arc::new(snap),
-            curr_timestamp: Instant::now(),
-            gen: old.gen + 1,
-        };
-        self.pair.store(Arc::new(next)); // atomic pointer swap
-    }
-
-    /// Consumer: single atomic load returns a coherent (prev,curr) pair.
-    pub fn load(&self) -> SnapshotGuard {
-        self.pair.load()
     }
 }

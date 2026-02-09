@@ -11,7 +11,7 @@ use winit::{
 use super::assets::registry::{RegistryExt, ResourceRegistry, ResourceRequest, ResourceResult};
 use super::assets::store::{CreateGameResourceRequest, CreateGameResourceResponse, GameAssetStore};
 use crate::{
-    job_system::worker_pool::Task, render_snapshot::{RenderSnapshot, SnapshotHandoff},
+    game::build_snapshot::RenderSnapshot, job_system::worker_pool::Task, snapshot_handoff::SnapshotHandoff
 };
 
 use super::scene_tree::{build_test_scene, RenderDataType};

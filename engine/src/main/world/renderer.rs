@@ -20,12 +20,12 @@ use super::super::sampler_cache::SamplerCache;
 use super::super::shader_cache::ShaderCache;
 use super::super::wgpu_context::WgpuContext;
 
-use crate::render_snapshot::{CameraSnapshot, SnapshotHandoff};
 use crate::main::world::buffers::static_instance::StaticInstances;
 use crate::main::world::pipelines::static_pbr::StaticPbrPipeline;
 use crate::main::world::prepare::mesh::resolve_static_draw;
 use crate::main::assets::io::asset_formats::materialfile;
 use crate::main::assets::store::{self, PlaceholderTextureIds, RenderAssetStore, TextureRenderId};
+use crate::snapshot_handoff::SnapshotHandoff;
 
 pub struct Layouts {
     pub camera: wgpu::BindGroupLayout,

@@ -2,8 +2,9 @@ use std::ops::Range;
 
 use crate::game::assets::registry::{MaterialId, MeshId, RenderState};
 use crate::main::{shader_cache::ShaderCache, wgpu_context::WgpuContext};
-use crate::{render_snapshot::MeshDrawSnapshot, main::world::{attachments::depth::DepthTexture, buffers::{skinned_instance::SkinnedInstance, skinned_vertex::SkinnedVertex}, prepare::mesh::DrawContext}};
+use crate::{main::world::{attachments::depth::DepthTexture, buffers::{skinned_instance::SkinnedInstance, skinned_vertex::SkinnedVertex}, prepare::mesh::DrawContext}};
 use crate::main::assets::{store::{self, MaterialRenderId, MeshRenderId, RenderAssetStore}, manager::RenderAssetManager};
+use crate::game::build_snapshot::MeshDrawSnapshot;
 
 pub struct SkinnedPbrPipeline {
     pub render_pipeline: wgpu::RenderPipeline,
