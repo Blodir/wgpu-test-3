@@ -4,7 +4,7 @@ use crossbeam_queue::SegQueue;
 use pollster::FutureExt as _;
 use winit::{application::ApplicationHandler, dpi::PhysicalSize, event::{DeviceEvent, WindowEvent}, event_loop::ActiveEventLoop, window::{Window, WindowId}};
 
-use crate::{job_system::worker_pool::RenderResponse, render_snapshot::SnapshotHandoff, main::{world::pose_storage::PoseStorage, wgpu_context::WgpuContext, world::Renderer}, main::assets::{store::RenderAssetStore, resource_manager::ResourceManager}, game::sim::InputEvent};
+use crate::{job_system::worker_pool::RenderResponse, render_snapshot::SnapshotHandoff, main::{world::pose_storage::PoseStorage, wgpu_context::WgpuContext, world::Renderer}, main::assets::{store::RenderAssetStore, manager::RenderAssetManager}, game::sim::InputEvent};
 
 fn resize(
     physical_size: PhysicalSize<u32>,
@@ -34,12 +34,12 @@ pub struct App<'surface> {
     render_context: Option<RenderContext<'surface>>,
     snap_handoff: Arc<SnapshotHandoff>,
     sim_inputs: Arc<SegQueue<InputEvent>>,
-    resource_manager: ResourceManager,
+    resource_manager: RenderAssetManager,
     task_res_rx: crossbeam::channel::Receiver<RenderResponse>,
 }
 
 impl App<'_> {
-    pub fn new(sim_inputs: Arc<SegQueue<InputEvent>>, snap_handoff: Arc<SnapshotHandoff>, resource_manager: ResourceManager, task_res_rx: crossbeam::channel::Receiver<RenderResponse>) -> Self {
+    pub fn new(sim_inputs: Arc<SegQueue<InputEvent>>, snap_handoff: Arc<SnapshotHandoff>, resource_manager: RenderAssetManager, task_res_rx: crossbeam::channel::Receiver<RenderResponse>) -> Self {
         Self {
             render_context: None,
             snap_handoff,

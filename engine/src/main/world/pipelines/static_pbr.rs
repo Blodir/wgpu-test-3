@@ -1,7 +1,7 @@
 use std::ops::Range;
 
 use crate::game::assets::registry::{MaterialId, MeshId, RenderState};
-use crate::main::assets::resource_manager::ResourceManager;
+use crate::main::assets::manager::RenderAssetManager;
 use crate::main::assets::store::{self, MaterialRenderId, MeshRenderId, RenderAssetStore};
 use crate::{render_snapshot::MeshDrawSnapshot, main::world::{attachments::depth::DepthTexture }};
 use crate::main::world::{buffers::{skinned_instance::SkinnedInstance, skinned_vertex::SkinnedVertex, static_instance::StaticInstance, static_vertex::StaticVertex}, prepare::mesh::DrawContext};

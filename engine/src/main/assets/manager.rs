@@ -11,14 +11,14 @@ use super::{store::{MaterialRenderId, MeshGpuData, MeshRenderId, ModelRenderData
 use super::io::worker_pool::{IoWorkerPool, IoRequest, IoResponse};
 use super::io::asset_formats::{animationfile, dds};
 
-pub struct ResourceManager {
+pub struct RenderAssetManager {
     io: IoWorkerPool,
     game_res_rx: crossbeam::channel::Receiver<CreateGameResourceResponse>,
     game_req_tx: crossbeam::channel::Sender<CreateGameResourceRequest>,
     registry_req_rx: crossbeam::channel::Receiver<ResourceRequest>,
     registry_res_tx: crossbeam::channel::Sender<ResourceResult>,
 }
-impl ResourceManager {
+impl RenderAssetManager {
     pub fn new(
         registry_req_rx: crossbeam::channel::Receiver<ResourceRequest>,
         registry_res_tx: crossbeam::channel::Sender<ResourceResult>,

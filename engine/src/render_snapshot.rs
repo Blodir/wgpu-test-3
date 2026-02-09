@@ -7,7 +7,7 @@ use glam::{Mat4, Quat, Vec3};
 use crate::game::assets::store::{self, GameAssetStore};
 use crate::game::assets::registry::{GameState, ModelId, RenderState, ResourceRegistry, TextureId};
 use crate::main::assets::io::asset_formats::modelfile;
-use crate::{main::{world::pipelines::MeshPipelineKind, world::pose_storage::TRS}, main::assets::{store::{MaterialRenderId, MeshRenderId, ModelRenderId, TextureRenderId}, resource_manager::ResourceManager}, game::{animator::{AnimationGraph, BoundaryMode, TimeWrapMode}, camera::{Camera, Frustum, frustum_intersects_aabb_world}, scene_tree::{Environment, RenderDataType, Scene, SceneNodeId, Sun}}};
+use crate::{main::{world::pipelines::MeshPipelineKind, world::pose_storage::TRS}, main::assets::{store::{MaterialRenderId, MeshRenderId, ModelRenderId, TextureRenderId}, manager::RenderAssetManager}, game::{animator::{AnimationGraph, BoundaryMode, TimeWrapMode}, camera::{Camera, Frustum, frustum_intersects_aabb_world}, scene_tree::{Environment, RenderDataType, Scene, SceneNodeId, Sun}}};
 
 pub fn accumulate_instance_snapshots(
     scene: &Scene,

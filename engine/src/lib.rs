@@ -1,7 +1,7 @@
 use crossbeam_queue::SegQueue;
 use job_system::worker_pool::{self, WorkerPool};
 use render_snapshot::{RenderSnapshot, SnapshotHandoff};
-use main::assets::resource_manager::ResourceManager;
+use main::assets::manager::RenderAssetManager;
 use game::sim::{spawn_sim, InputEvent};
 use std::sync::{Arc, Mutex};
 use winit::{
@@ -21,7 +21,7 @@ pub fn run() {
     let (game_res_tx, game_res_rx) = crossbeam::channel::unbounded();
     let (registry_req_tx, registry_req_rx) = crossbeam::channel::unbounded();
     let (registry_res_tx, registry_res_rx) = crossbeam::channel::unbounded();
-    let resource_manager = ResourceManager::new(registry_req_rx, registry_res_tx, game_res_rx, game_req_tx);
+    let resource_manager = RenderAssetManager::new(registry_req_rx, registry_res_tx, game_res_rx, game_req_tx);
     let initial_snap = RenderSnapshot::init();
     let snap_handoff = Arc::new(SnapshotHandoff::new(initial_snap));
     let sim_inputs = Arc::new(SegQueue::<InputEvent>::new());
