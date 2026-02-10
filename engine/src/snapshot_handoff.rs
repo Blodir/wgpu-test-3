@@ -12,7 +12,6 @@ pub struct SnapshotPair {
     pub prev_timestamp: Instant,
     pub curr: Arc<RenderSnapshot>,
     pub curr_timestamp: Instant,
-    pub gen: u64, // optional: monotonic generation
 }
 
 pub struct SnapshotHandoff {
@@ -27,27 +26,23 @@ impl SnapshotHandoff {
             prev_timestamp: Instant::now(),
             curr: init,
             curr_timestamp: Instant::now(),
-            gen: 0,
         };
         Self {
             pair: ArcSwap::from(Arc::new(pair)),
         }
     }
 
-    /// Producer: publish a new current; previous becomes the old current.
     pub fn publish(&self, snap: RenderSnapshot) {
-        let old = self.pair.load(); // coherent view
+        let old = self.pair.load();
         let next = SnapshotPair {
             prev: old.curr.clone(),
             prev_timestamp: old.curr_timestamp,
             curr: Arc::new(snap),
             curr_timestamp: Instant::now(),
-            gen: old.gen + 1,
         };
-        self.pair.store(Arc::new(next)); // atomic pointer swap
+        self.pair.store(Arc::new(next));
     }
 
-    /// Consumer: single atomic load returns a coherent (prev,curr) pair.
     pub fn load(&self) -> SnapshotGuard {
         self.pair.load()
     }

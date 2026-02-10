@@ -29,36 +29,15 @@ pub fn run() {
     let (worker_pool, task_tx, render_rx, game_rx) = WorkerPool::init();
     let sim_handle = spawn_sim(sim_inputs.clone(), snap_handoff.clone(), registry_req_tx, registry_res_rx, game_req_rx, game_res_tx, task_tx);
 
-    let main_window = Arc::new(Mutex::new(window::MainWindow::new(
+    let mut main_window = window::MainWindow::new(
         sim_inputs.clone(),
         snap_handoff.clone(),
         resource_manager,
         render_rx,
-    )));
+    );
     let event_loop = EventLoop::new().unwrap();
     event_loop.set_control_flow(ControlFlow::Poll);
-
-    let main_window_clone = Arc::clone(&main_window);
-    event_loop
-        .run(move |event, event_loop| {
-            let mut main_window = main_window_clone.lock().unwrap();
-            match event {
-                Event::NewEvents(cause) => main_window.new_events(event_loop, cause),
-                Event::WindowEvent { window_id, event } => {
-                    main_window.window_event(event_loop, window_id, event)
-                }
-                Event::DeviceEvent { device_id, event } => {
-                    main_window.device_event(event_loop, device_id, event)
-                }
-                Event::UserEvent(event) => main_window.user_event(event_loop, event),
-                Event::Suspended => main_window.suspended(event_loop),
-                Event::Resumed => main_window.resumed(event_loop),
-                Event::AboutToWait => main_window.about_to_wait(event_loop),
-                Event::LoopExiting => main_window.exiting(event_loop),
-                Event::MemoryWarning => main_window.memory_warning(event_loop),
-            }
-        })
-        .unwrap();
+    let _ = event_loop.run_app(&mut main_window);
 
     sim_inputs.push(InputEvent::Exit);
     sim_handle.join().unwrap();
