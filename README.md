@@ -13,6 +13,7 @@ Features
     - animating submeshes that aren't part of a skeleton is planned
 - asset streaming
     - separate io worker pool
+    - refcounted handles owned by game thread
     - eviction not yet implemented
 - gltf import
     - .gltf and .glb files
