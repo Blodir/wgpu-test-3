@@ -24,7 +24,7 @@ pub enum BoundaryMode {
 }
 
 pub struct State {
-    pub clip_idx: u8,
+    pub clip_idx: usize,
     pub time_wrap: TimeWrapMode,
     /// This probably doesn't belong to the animation state machine, however, currently the
     /// animation files don't contain the boundary mode so it's included here in the meantime.
@@ -35,21 +35,19 @@ pub struct State {
 pub struct Transition {
     pub blend_time: f32,
     /// state idx
-    pub to: u8,
+    pub to: usize,
 }
 
 pub struct AnimationGraph {
-    /// states[state_idx] => State
     pub states: Vec<State>,
-    /// transitions[state_idx] => Transition
     pub transitions: Vec<Transition>,
 }
 
 pub struct AnimatorTransitionState {
     /// state idx
-    pub from: u8,
+    pub from: usize,
     /// transition idx
-    pub transition: u8,
+    pub transition: usize,
     /// anim ticks since the transition to the previous state started
     pub from_start_instance_time: u64,
     /// anim ticks since this transition started
@@ -57,7 +55,7 @@ pub struct AnimatorTransitionState {
 }
 
 pub struct AnimatorStateState {
-    pub state_idx: u8,
+    pub state_idx: usize,
     /// anim ticks since the transition into this state started
     pub start_instance_time: u64,
 }
@@ -82,7 +80,7 @@ pub struct Animator {
     last_scheduled_time: u64,
 }
 impl Animator {
-    pub fn new(animation_graph: usize, start_state: u8) -> Self {
+    pub fn new(animation_graph: usize, start_state: usize) -> Self {
         Self {
             animation_graph,
             current_state: AnimatorState::State(AnimatorStateState { state_idx: start_state, start_instance_time: 0 }),
@@ -96,7 +94,7 @@ impl Animator {
         &self.current_state
     }
 
-    pub fn transition(&mut self, transition_idx: u8) -> Result<(), AnimatorError> {
+    pub fn transition(&mut self, transition_idx: usize) -> Result<(), AnimatorError> {
         let prev_state = match &self.current_state {
             AnimatorState::State(idx) => Ok(idx),
             _ => Err(AnimatorError::AttemptedTransitionWhilePreviousTransitionStillPlaying)
