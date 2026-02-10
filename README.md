@@ -13,6 +13,7 @@ Features
     - animating submeshes that aren't part of a skeleton is planned
 - asset streaming
     - separate io worker pool
+    - refcounted handles owned by game thread
     - eviction not yet implemented
 - gltf import
     - .gltf and .glb files
@@ -34,7 +35,7 @@ Features
 - physically based rendering (PBR) along with image based lighting (IBL)
     - analytical lights: just directional for now
     - image based diffuse irradiance
-    - split sum specular approximation (prefiltered env map calculated on the fly, BRDF LUT read from a texture)
+    - split sum specular approximation (prefiltered env map calculated at import time, BRDF LUT read from a png)
 - normal mapping (with world-space lighting)
 - HDR (needs some improvement with physical units)
 - 4x MSAA
