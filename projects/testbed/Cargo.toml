@@ -5,6 +5,8 @@ edition = "2021"
 
 [dependencies]
 engine = { path = "../../engine" }
+glam = { version = "0.30.5", features = ["bytemuck", "serde"] }
+generational-arena = "0.2.9"
 
 [profile.release]
 debug = true

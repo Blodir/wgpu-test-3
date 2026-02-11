@@ -11,9 +11,14 @@ use winit::{
 use super::assets::registry::{RegistryExt, ResourceRegistry, ResourceRequest, ResourceResult};
 use super::assets::store::{CreateGameResourceRequest, CreateGameResourceResponse, GameAssetStore};
 use crate::{
-    game::build_snapshot::RenderSnapshot, job_system::worker_pool::Task, snapshot_handoff::SnapshotHandoff
+    game::{animator::AnimationGraph, build_snapshot::RenderSnapshot, scene_tree::{Scene, SceneNodeId}}, job_system::worker_pool::Task, snapshot_handoff::SnapshotHandoff
 };
-use super::scene_tree::{build_test_scene, RenderDataType};
+use super::scene_tree::{RenderDataType};
+
+pub trait GameTrait: Send + Sync {
+    fn init(&self, resource_registry: &Rc<RefCell<ResourceRegistry>>) -> (Scene, Vec<AnimationGraph>);
+    fn update(&self, scene: &mut Scene, resource_registry: &Rc<RefCell<ResourceRegistry>>, animation_graphs: &Vec<AnimationGraph>, node: SceneNodeId, dt: f32);
+}
 
 #[derive(Debug)]
 pub enum InputEvent {
@@ -34,11 +39,12 @@ pub fn spawn_sim(
     game_req_rx: crossbeam::channel::Receiver<CreateGameResourceRequest>,
     game_res_tx: crossbeam::channel::Sender<CreateGameResourceResponse>,
     job_task_tx: crossbeam::channel::Sender<Task>,
+    game: impl GameTrait + 'static
 ) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
         let resource_registry = Rc::new(RefCell::new(ResourceRegistry::new(reg_req_tx, reg_res_rx)));
         let mut game_resources = GameAssetStore::new(game_req_rx, game_res_tx, &resource_registry);
-        let (mut scene, animation_graphs) = build_test_scene(&resource_registry);
+        let (mut scene, animation_graphs) = game.init(&resource_registry);
         let mut next = Instant::now() + TICK;
         let mut prev_tick = Instant::now();
         let mut shift_is_pressed = false;
@@ -130,7 +136,7 @@ pub fn spawn_sim(
                 }
             }
 
-            scene.update(&resource_registry, &animation_graphs, scene.root, dt);
+            scene.update(&resource_registry, &animation_graphs, scene.root, dt, &game);
 
             let snap = RenderSnapshot::build(&mut scene, &resource_registry, &animation_graphs, &game_resources, frame_index);
 
