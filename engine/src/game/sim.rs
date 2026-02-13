@@ -16,8 +16,9 @@ use crate::{
 use super::scene_tree::{RenderDataType};
 
 pub trait GameTrait: Send + Sync {
-    fn init(&self, resource_registry: &Rc<RefCell<ResourceRegistry>>) -> (Scene, Vec<AnimationGraph>);
-    fn update(&self, scene: &mut Scene, resource_registry: &Rc<RefCell<ResourceRegistry>>, animation_graphs: &Vec<AnimationGraph>, node: SceneNodeId, dt: f32);
+    fn init(&mut self, resource_registry: &Rc<RefCell<ResourceRegistry>>) -> (Scene, Vec<AnimationGraph>);
+    fn update(&mut self, scene: &mut Scene, resource_registry: &Rc<RefCell<ResourceRegistry>>, animation_graphs: &Vec<AnimationGraph>, node: SceneNodeId, dt: f32);
+    fn consume_input(&mut self, scene: &mut Scene, event: InputEvent);
 }
 
 #[derive(Debug)]
@@ -42,13 +43,12 @@ pub fn spawn_sim(
     game: impl GameTrait + 'static
 ) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
+        let mut game = game;
         let resource_registry = Rc::new(RefCell::new(ResourceRegistry::new(reg_req_tx, reg_res_rx)));
         let mut game_resources = GameAssetStore::new(game_req_rx, game_res_tx, &resource_registry);
         let (mut scene, animation_graphs) = game.init(&resource_registry);
         let mut next = Instant::now() + TICK;
         let mut prev_tick = Instant::now();
-        let mut shift_is_pressed = false;
-        let mut mouse_btn_is_pressed = false;
         let mut frame_index = 0u32;
         let sim_start_time = Instant::now();
         loop {
@@ -61,82 +61,11 @@ pub fn spawn_sim(
             game_resources.process_requests(&resource_registry);
             resource_registry.process_responses();
 
-            'a: while let Some(event) = inputs.pop() {
-                match event {
-                    InputEvent::Exit => return (),
-                    InputEvent::AspectChange(aspect) => scene.camera.aspect = aspect,
-                    InputEvent::DeviceEvent(event) => match event {
-                        DeviceEvent::MouseMotion { delta: (x, y) } => {
-                            if !mouse_btn_is_pressed {
-                                continue 'a;
-                            }
-                            let camera = &mut scene.camera;
-                            let sensitivity = 5f32;
-                            camera.rot_x = camera.rot_x - (x as f32 / sensitivity);
-                            camera.rot_y = camera.rot_y - (y as f32 / sensitivity);
-                        }
-                        _ => (),
-                    },
-                    InputEvent::WindowEvent(event) => match event {
-                        WindowEvent::MouseWheel {
-                            delta,
-                            ..
-                        } => {
-                            let camera = &mut scene.camera;
-                            match delta {
-                                MouseScrollDelta::LineDelta(_x, y) => {
-                                    let scroll_speed = 10f32;
-                                    camera.eye.z = (camera.eye.z
-                                        + ((if shift_is_pressed { 10f32 * scroll_speed } else { scroll_speed })
-                                            * -y as f32))
-                                        .max(0f32);
-                                }
-                                MouseScrollDelta::PixelDelta(_pos) => (),
-                            }
-                        }
-                        WindowEvent::MouseInput {
-                            state,
-                            button,
-                            ..
-                        } => {
-                            match button {
-                                winit::event::MouseButton::Left => match state {
-                                    ElementState::Pressed => {
-                                        mouse_btn_is_pressed = true;
-                                    }
-                                    ElementState::Released => {
-                                        mouse_btn_is_pressed = false;
-                                    }
-                                },
-                                _ => (),
-                            };
-                        }
-                        WindowEvent::KeyboardInput {
-                            event,
-                            ..
-                        } => match event {
-                            KeyEvent {
-                                physical_key: PhysicalKey::Code(KeyCode::ShiftLeft),
-                                state: ElementState::Pressed,
-                                ..
-                            } => {
-                                shift_is_pressed = true;
-                            }
-                            KeyEvent {
-                                physical_key: PhysicalKey::Code(KeyCode::ShiftLeft),
-                                state: ElementState::Released,
-                                ..
-                            } => {
-                                shift_is_pressed = false;
-                            }
-                            _ => (),
-                        },
-                        _ => (),
-                    },
-                }
+            while let Some(event) = inputs.pop() {
+                game.consume_input(&mut scene, event);
             }
 
-            scene.update(&resource_registry, &animation_graphs, scene.root, dt, &game);
+            scene.update(&resource_registry, &animation_graphs, scene.root, dt, &mut game);
 
             let snap = RenderSnapshot::build(&mut scene, &resource_registry, &animation_graphs, &game_resources, frame_index);
 

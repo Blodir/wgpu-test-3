@@ -2666,6 +2666,7 @@ dependencies = [
  "engine",
  "generational-arena",
  "glam",
+ "winit",
 ]
 
 [[package]]

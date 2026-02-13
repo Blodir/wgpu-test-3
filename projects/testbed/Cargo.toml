@@ -7,6 +7,7 @@ edition = "2021"
 engine = { path = "../../engine" }
 glam = { version = "0.30.5", features = ["bytemuck", "serde"] }
 generational-arena = "0.2.9"
+winit = "0.30.0"
 
 [profile.release]
 debug = true

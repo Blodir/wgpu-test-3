@@ -1,12 +1,24 @@
 use std::{cell::RefCell, io};
 
-use engine::{game::{animator::{self, AnimationGraph}, assets::registry::RegistryExt as _, camera::Camera, scene_tree::{Environment, Node, RenderDataType, Scene, SceneNodeId, StaticModel, Sun}, sim::GameTrait}, run};
+use engine::{game::{animator::{self, AnimationGraph}, assets::registry::RegistryExt as _, camera::Camera, scene_tree::{Environment, Node, RenderDataType, Scene, SceneNodeId, StaticModel, Sun}, sim::{GameTrait, InputEvent}}, run};
 use generational_arena::Arena;
 use glam::{Mat4, Quat, Vec3};
+use winit::{event::{DeviceEvent, ElementState, KeyEvent, MouseScrollDelta, WindowEvent}, keyboard::{KeyCode, PhysicalKey}};
 
-struct Game {}
+struct Game {
+    shift_is_pressed: bool,
+    mouse_btn_is_pressed: bool,
+}
+impl Game {
+    fn new() -> Self {
+        Self {
+            shift_is_pressed: false,
+            mouse_btn_is_pressed: false,
+        }
+    }
+}
 impl GameTrait for Game {
-    fn init(&self, resource_registry: &std::rc::Rc<std::cell::RefCell<engine::game::assets::registry::ResourceRegistry>>) -> (engine::game::scene_tree::Scene, Vec<engine::game::animator::AnimationGraph>) {
+    fn init(&mut self, resource_registry: &std::rc::Rc<std::cell::RefCell<engine::game::assets::registry::ResourceRegistry>>) -> (engine::game::scene_tree::Scene, Vec<engine::game::animator::AnimationGraph>) {
         let mut nodes = Arena::new();
 
         let animation_graph = AnimationGraph {
@@ -75,7 +87,7 @@ impl GameTrait for Game {
         (scene, animation_graphs)
     }
 
-    fn update(&self, scene: &mut engine::game::scene_tree::Scene, resource_registry: &std::rc::Rc<std::cell::RefCell<engine::game::assets::registry::ResourceRegistry>>, animation_graphs: &Vec<engine::game::animator::AnimationGraph>, node: engine::game::scene_tree::SceneNodeId, dt: f32) {
+    fn update(&mut self, scene: &mut engine::game::scene_tree::Scene, resource_registry: &std::rc::Rc<std::cell::RefCell<engine::game::assets::registry::ResourceRegistry>>, animation_graphs: &Vec<engine::game::animator::AnimationGraph>, node: engine::game::scene_tree::SceneNodeId, dt: f32) {
         let node = scene.nodes.get_mut(node.into()).unwrap();
         match &mut node.render_data {
             RenderDataType::None => (),
@@ -125,9 +137,84 @@ impl GameTrait for Game {
             },
         }
     }
+
+    fn consume_input(&mut self, scene: &mut Scene, event: engine::game::sim::InputEvent) {
+        match event {
+            InputEvent::Exit => return (),
+            InputEvent::AspectChange(aspect) => scene.camera.aspect = aspect,
+            InputEvent::DeviceEvent(event) => match event {
+                DeviceEvent::MouseMotion { delta: (x, y) } => {
+                    if !self.mouse_btn_is_pressed {
+                        return;
+                    }
+                    let camera = &mut scene.camera;
+                    let sensitivity = 5f32;
+                    camera.rot_x = camera.rot_x - (x as f32 / sensitivity);
+                    camera.rot_y = camera.rot_y - (y as f32 / sensitivity);
+                }
+                _ => (),
+            },
+            InputEvent::WindowEvent(event) => match event {
+                WindowEvent::MouseWheel {
+                    delta,
+                    ..
+                } => {
+                    let camera = &mut scene.camera;
+                    match delta {
+                        MouseScrollDelta::LineDelta(_x, y) => {
+                            let scroll_speed = 10f32;
+                            camera.eye.z = (camera.eye.z
+                                + ((if self.shift_is_pressed { 10f32 * scroll_speed } else { scroll_speed })
+                                    * -y as f32))
+                                .max(0f32);
+                        }
+                        MouseScrollDelta::PixelDelta(_pos) => (),
+                    }
+                }
+                WindowEvent::MouseInput {
+                    state,
+                    button,
+                    ..
+                } => {
+                    match button {
+                        winit::event::MouseButton::Left => match state {
+                            ElementState::Pressed => {
+                                self.mouse_btn_is_pressed = true;
+                            }
+                            ElementState::Released => {
+                                self.mouse_btn_is_pressed = false;
+                            }
+                        },
+                        _ => (),
+                    };
+                }
+                WindowEvent::KeyboardInput {
+                    event,
+                    ..
+                } => match event {
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::ShiftLeft),
+                        state: ElementState::Pressed,
+                        ..
+                    } => {
+                        self.shift_is_pressed = true;
+                    }
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::ShiftLeft),
+                        state: ElementState::Released,
+                        ..
+                    } => {
+                        self.shift_is_pressed = false;
+                    }
+                    _ => (),
+                },
+                _ => (),
+            },
+        }
+    }
 }
 
 fn main() -> io::Result<()> {
-    run(Game {});
+    run(Game::new());
     Ok(())
 }
