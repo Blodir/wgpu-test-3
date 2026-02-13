@@ -67,6 +67,9 @@ fn bake(
 
     let mut primitive_instances_map = HashMap::<(usize, usize), Vec<Mat4>>::new();
     // TODO multi scene support
+    if gltf.scenes().len() > 1 {
+        println!("WARNING: gltf has {} scenes, importing only the first one", gltf.scenes().len());
+    }
     for node in gltf.scenes().next().unwrap().nodes() {
         accumulate_primitive_instances(&node, &Mat4::IDENTITY, &mut primitive_instances_map);
     }

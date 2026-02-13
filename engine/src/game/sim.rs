@@ -62,7 +62,10 @@ pub fn spawn_sim(
             resource_registry.process_responses();
 
             while let Some(event) = inputs.pop() {
-                game.consume_input(&mut scene, event);
+                match event {
+                    InputEvent::Exit => return (),
+                    _ => game.consume_input(&mut scene, event),
+                }
             }
 
             scene.update(&resource_registry, &animation_graphs, scene.root, dt, &mut game);

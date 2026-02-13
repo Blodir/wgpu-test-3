@@ -1,6 +1,6 @@
 use std::{cell::RefCell, io};
 
-use engine::{game::{animator::{self, AnimationGraph}, assets::registry::RegistryExt as _, camera::Camera, scene_tree::{Environment, Node, RenderDataType, Scene, SceneNodeId, StaticModel, Sun}, sim::{GameTrait, InputEvent}}, run};
+use engine::{game::{animator::{self, AnimationGraph, Animator}, assets::registry::RegistryExt as _, camera::Camera, scene_tree::{AnimatedModel, Environment, Node, RenderDataType, Scene, SceneNodeId, StaticModel, Sun}, sim::{GameTrait, InputEvent}}, run};
 use generational_arena::Arena;
 use glam::{Mat4, Quat, Vec3};
 use winit::{event::{DeviceEvent, ElementState, KeyEvent, MouseScrollDelta, WindowEvent}, keyboard::{KeyCode, PhysicalKey}};

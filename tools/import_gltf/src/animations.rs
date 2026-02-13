@@ -39,15 +39,15 @@ pub fn bake_animation(
     let mut current_binary_offset = 0u32;
 
     let mut targets = HashMap::<Target, TempTargetSamplers>::new();
-    for channel in animation.channels() {
+    'a: for channel in animation.channels() {
         let target_node = channel.target().node();
         let target = if let Some(joint_idx) = joint_reindex.get(&(target_node.index() as u32)) {
             Target::SkeletonJoint(*joint_idx)
         } else {
             // TODO primitive groups... does this make sense?
             // need to also implement re evaluation of all animation values if a non-bone node is moved
-            println!("animation is targetting a non-joint node... todo");
-            todo!();
+            println!("WARNING: animation is targetting a non-joint node... TODO");
+            continue 'a;
             Target::PrimitiveGroup(target_node.mesh().map(|m| m.index()).unwrap_or(target_node.index()) as u32)
         };
 

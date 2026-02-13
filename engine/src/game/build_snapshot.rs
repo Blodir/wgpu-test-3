@@ -271,15 +271,17 @@ impl MeshDrawSnapshot {
 
         for (pipeline_kind, materials) in pipelines.iter_mut() {
             for (mat_render_id, models) in materials.iter_mut() {
+                let mesh_batches_len = mesh_batches.len();
                 let mat_batch = MaterialBatch {
                     material_id: *mat_render_id,
-                    mesh_range: mesh_batches.len()..models.len(),
+                    mesh_range: mesh_batches_len..mesh_batches_len + models.len(),
                 };
                 material_batches.push(mat_batch);
                 for (model_render_id, submeshes) in models.iter_mut() {
+                    let submesh_batches_len = submesh_batches.len();
                     let mesh_batch = MeshBatch {
                         model_id: *model_render_id,
-                        submesh_range: submesh_batches.len()..submeshes.len(),
+                        submesh_range: submesh_batches_len..submesh_batches_len + submeshes.len(),
                     };
                     mesh_batches.push(mesh_batch);
                     let mut i = 0;
