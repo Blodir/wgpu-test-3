@@ -4,6 +4,12 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct SRT(Vec3, Quat, Vec3);
 
+impl SRT {
+    pub fn new(scale: Vec3, rotation: Quat, translation: Vec3) -> Self {
+        Self(scale, rotation, translation)
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Node {
     pub name: Option<String>,
