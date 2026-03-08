@@ -20,10 +20,7 @@ pub struct Aabb {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum Deformation {
     None,
-    Skinned {
-        skeleton: String,
-        animations: Vec<String>,
-    }
+    Skinned,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -32,6 +29,8 @@ pub struct Model {
     pub material_paths: Vec<String>,
     pub buffer: String,
     pub deformation: Deformation,
+    pub rig: String,
+    pub animations: Vec<String>,
     pub vertex_buffer_start_offset: u32,
     pub aabb: Aabb,
 }

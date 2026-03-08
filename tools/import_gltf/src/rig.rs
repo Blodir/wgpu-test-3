@@ -2,23 +2,25 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use gltf::{Document, Node};
-use engine::main::assets::io::asset_formats::skeletonfile;
+use engine::main::assets::io::asset_formats::rigfile;
 
 use super::gltf_utils::read_mat4;
 use super::utils::ensure_parent_dir_exists;
 
 /// Returns a joint reindexing map (old -> new)
-pub fn bake_skeletonfile(
+pub fn bake_rigfile(
     gltf: &Document,
     buffers: &Vec<gltf::buffer::Data>,
     output_path: &str,
 ) -> Result<HashMap<u32, u32>, Box<dyn std::error::Error>> {
     ensure_parent_dir_exists(Path::new(output_path))?;
+
     let nodes: Vec<Node> = gltf.nodes().collect();
     let mut joint_idxs = HashSet::<usize>::new();
-    let mut reindex = HashMap::<u32, u32>::new();
-    let mut inverse_bind_matrices = HashMap::<u32, [[f32; 4]; 4]>::new();
+    let mut joint_reindex = HashMap::<u32, u32>::new();
+    let mut old_idx_to_ibm = HashMap::<u32, [[f32; 4]; 4]>::new();
 
+    // collect old indexes of all the joints + inverse bind matrices
     for ref skin in gltf.skins() {
         let joints: Vec<_> = skin.joints().collect();
         for joint in &joints {
@@ -36,7 +38,7 @@ pub fn bake_skeletonfile(
                 .into());
             }
             for (joint_node, ibm) in joints.iter().zip(ibms.iter()) {
-                inverse_bind_matrices.insert(joint_node.index() as u32, *ibm);
+                old_idx_to_ibm.insert(joint_node.index() as u32, *ibm);
             }
         } else {
             return Err(format!(
@@ -46,20 +48,38 @@ pub fn bake_skeletonfile(
             .into());
         }
     }
+
+    let mut old_node_idx_to_new_node_idx = HashMap::<u32, u32>::new();
+
+    // TODO
+    // filter all nodes which don't have a mesh or joint as descendant
+    // topologically sort the nodes
+    // keep track of old_node_idx -> new_node_idx mapping
+
+    let mut joint_nodes = Vec::<u32>::new();
+    for old_idx in joint_idxs {
+        let new_idx = joint_nodes.len();
+        joint_nodes.push(old_node_idx_to_new_node_idx.get(old_idx).unwrap());
+        joint_reindex.insert(old_idx as u32, new_idx as u32);
+    }
+
+    /*
     let mut joints = Vec::<&Node>::new();
     for old_idx in joint_idxs {
         let new_idx = joints.len();
         joints.push(&nodes[old_idx]);
-        reindex.insert(old_idx as u32, new_idx as u32);
+        joint_reindex.insert(old_idx as u32, new_idx as u32);
     }
+    */
 
-    let mut output_joints: Vec<skeletonfile::Joint> = vec![];
+    /*
+    let mut output_joints: Vec<rigfile::Joint> = vec![];
     for gltf_joint in joints {
-        let mapped_joint = skeletonfile::Joint {
+        let mapped_joint = rigfile::Joint {
             name: gltf_joint.name().map(|slice| slice.to_string()),
             children: gltf_joint
                 .children()
-                .map(|child| *reindex.get(&(child.index() as u32)).unwrap())
+                .map(|child| *joint_reindex.get(&(child.index() as u32)).unwrap())
                 .collect(),
             trs: gltf_joint.transform().matrix(),
             inverse_bind_matrix: *inverse_bind_matrices
@@ -73,12 +93,15 @@ pub fn bake_skeletonfile(
         };
         output_joints.push(mapped_joint);
     }
+    */
 
-    let skeleton = skeletonfile::Skeleton {
-        joints: output_joints,
+    let rig = rigfile::Rig {
+        nodes: todo!(),
+        joint_nodes,
+        inverse_bind_matrices: todo!(),
     };
-    let json = serde_json::to_string_pretty(&skeleton)?;
+    let json = serde_json::to_string_pretty(&rig)?;
     std::fs::write(output_path, json)?;
 
-    Ok(reindex)
+    Ok(joint_reindex)
 }

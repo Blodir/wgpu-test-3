@@ -5,7 +5,7 @@ use glam::{Quat, Vec3};
 
 use crate::game::assets::runtime_formats::animation;
 use crate::game::assets::registry::{AnimationClipId, AnimationId, MaterialId, MeshId, ModelId, SkeletonId, TextureId};
-use super::{asset_formats::{animationfile, dds, materialfile, modelfile, skeletonfile}};
+use super::{asset_formats::{animationfile, dds, materialfile, modelfile, rigfile}};
 use super::super::texture::TextureLoadData;
 
 pub enum IoRequest {
@@ -22,7 +22,7 @@ pub enum IoResponse {
     ModelLoaded { id: ModelId, model: modelfile::Model },
     MeshLoaded { id: MeshId, data: Vec<u8> },
     MaterialLoaded { id: MaterialId, material: materialfile::Material },
-    SkeletonLoaded { id: SkeletonId, skeleton: skeletonfile::Skeleton },
+    SkeletonLoaded { id: SkeletonId, skeleton: rigfile::Rig },
     AnimationClipLoaded { id: AnimationClipId, clip: animationfile::AnimationClip },
     AnimationLoaded { id: AnimationId, parsed_clip: animation::AnimationClip },
     TextureLoaded { id: TextureId, data: TextureLoadData },
@@ -238,7 +238,7 @@ fn io_worker_loop(
                     |e| IoResponse::Error { path: path.clone(), message: e.to_string() },
                     |material| IoResponse::MaterialLoaded { id, material },
                 ),
-            IoRequest::LoadSkeleton { id, path } => load_json::<skeletonfile::Skeleton>(&path)
+            IoRequest::LoadSkeleton { id, path } => load_json::<rigfile::Rig>(&path)
                 .map_or_else(
                     |e| IoResponse::Error { path: path.clone(), message: e.to_string() },
                     |skeleton| IoResponse::SkeletonLoaded { id, skeleton },

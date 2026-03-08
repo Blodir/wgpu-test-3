@@ -3,13 +3,13 @@ use std::sync::Arc;
 use crossbeam::channel::{Receiver, Sender};
 
 use crate::game::assets::runtime_formats::animation::AnimationClip;
-use crate::{main::world::anim_pose_store::PoseData, main::assets::io::{asset_formats::skeletonfile::Skeleton}, game::{animator::{BoundaryMode, TimeWrapMode}, scene_tree::SceneNodeId}};
+use crate::{main::world::anim_pose_store::PoseData, main::assets::io::{asset_formats::rigfile::Rig}, game::{animator::{BoundaryMode, TimeWrapMode}, scene_tree::SceneNodeId}};
 
 use super::anim_pose::execute_pose_tasks;
 
 pub struct SinglePoseTask {
     pub instance_time: u64,
-    pub skeleton: Arc<Skeleton>,
+    pub skeleton: Arc<Rig>,
     pub clip: Arc<AnimationClip>,
     pub time_wrap: TimeWrapMode,
     pub boundary_mode: BoundaryMode,
@@ -19,7 +19,7 @@ pub struct SinglePoseTask {
 
 pub struct BlendPoseTask {
     pub instance_time: u64,
-    pub skeleton: Arc<Skeleton>,
+    pub skeleton: Arc<Rig>,
     pub from_clip: Arc<AnimationClip>,
     pub to_clip: Arc<AnimationClip>,
     pub blend_time: f32,

@@ -3,7 +3,7 @@ use std::cmp::Ordering;
 use glam::{Mat4, Quat, Vec3};
 
 use crate::game::assets::runtime_formats::animation::{AnimationClip, Channel, Track};
-use crate::{job_system::worker_pool::{AnimPoseTask, AnimPoseTaskResult, BlendPoseTask, RenderResponse, SinglePoseTask}, main::{world::anim_pose_store::{PoseData, TRS}, utils::QuatExt}, main::assets::io::{asset_formats::{animationfile, skeletonfile}}, game::{animator, scene_tree::SceneNodeId}};
+use crate::{job_system::worker_pool::{AnimPoseTask, AnimPoseTaskResult, BlendPoseTask, RenderResponse, SinglePoseTask}, main::{world::anim_pose_store::{PoseData, TRS}, utils::QuatExt}, main::assets::io::{asset_formats::{animationfile, rigfile}}, game::{animator, scene_tree::SceneNodeId}};
 
 fn bin_search_anim_indices(times: &[f32], val: f32) -> (usize, usize) {
     let n = times.len();
@@ -57,7 +57,7 @@ fn interpolate_channel_value_quat(track: &Track,channel: &Channel<Quat>, t: f32)
 }
 
 /// SRT form
-fn compute_animated_pose(animation: &AnimationClip, skeleton: &skeletonfile::Skeleton, base_locals: &Vec<(Vec3, Quat, Vec3)>, animation_time: f32, time_wrap_mode: &animator::TimeWrapMode) -> Vec<Option<(Vec3, Quat, Vec3)>> {
+fn compute_animated_pose(animation: &AnimationClip, skeleton: &rigfile::Rig, base_locals: &Vec<(Vec3, Quat, Vec3)>, animation_time: f32, time_wrap_mode: &animator::TimeWrapMode) -> Vec<Option<(Vec3, Quat, Vec3)>> {
     let mut joints: Vec<Option<(Vec3, Quat, Vec3)>> = vec![None; skeleton.joints.len()];
     for track in &animation.tracks {
         let t = if animation.duration <= f32::EPSILON {

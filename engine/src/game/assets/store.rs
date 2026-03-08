@@ -4,7 +4,7 @@ use generational_arena::{Arena, Index};
 use glam::Mat4;
 
 use super::runtime_formats::animation::{self, AnimationClip};
-use crate::main::assets::io::asset_formats::{animationfile, materialfile, modelfile, skeletonfile::{self, Skeleton}};
+use crate::main::assets::io::asset_formats::{animationfile, materialfile, modelfile, rigfile::{self, Rig}};
 use crate::main::assets::store::{MaterialRenderId, MeshRenderId, SubMesh, TextureRenderId};
 use super::{registry::{AnimationClipHandle, AnimationClipId, AnimationHandle, AnimationId, MaterialHandle, MaterialId, MeshHandle, ModelId,
         RenderState, ResourceRegistry, SkeletonHandle, SkeletonId, TextureHandle}};
@@ -86,7 +86,7 @@ pub enum CreateGameResourceRequest {
     Model { id: ModelId, manifest: modelfile::Model },
     Material { id: MaterialId, manifest: materialfile::Material },
     AnimationClip { id: AnimationClipId, manifest: animationfile::AnimationClip },
-    Skeleton { id: SkeletonId,  manifest: skeletonfile::Skeleton },
+    Skeleton { id: SkeletonId,  manifest: rigfile::Rig },
     Animation { id: AnimationId, anim: animation::AnimationClip },
 }
 
@@ -137,7 +137,7 @@ pub struct GameAssetStore {
     pub materials: Arena<MaterialGameData>,
     pub animation_clips: Arena<AnimationClipGameData>,
     pub animations: Arena<Arc<AnimationClip>>,
-    pub skeletons: Arena<Arc<Skeleton>>,
+    pub skeletons: Arena<Arc<Rig>>,
     pub staging: Vec<StagedData>,
     pub req_rx: crossbeam::channel::Receiver<CreateGameResourceRequest>,
     pub res_tx: crossbeam::channel::Sender<CreateGameResourceResponse>,
