@@ -1,33 +1,8 @@
 {
   "submeshes": [
     {
-      "instances": [
-        [
-          [
-            -1.0,
-            0.0,
-            0.0,
-            0.0
-          ],
-          [
-            0.0,
-            1.0,
-            0.0,
-            0.0
-          ],
-          [
-            0.0,
-            0.0,
-            -1.0,
-            0.0
-          ],
-          [
-            3.8231542,
-            13.01603,
-            0.0,
-            1.0
-          ]
-        ]
+      "instance_nodes": [
+        1
       ],
       "index_byte_offset": 0,
       "index_byte_length": 10464,
@@ -37,33 +12,8 @@
       "material": 0
     },
     {
-      "instances": [
-        [
-          [
-            -1.0,
-            0.0,
-            0.0,
-            0.0
-          ],
-          [
-            0.0,
-            1.0,
-            0.0,
-            0.0
-          ],
-          [
-            0.0,
-            0.0,
-            -1.0,
-            0.0
-          ],
-          [
-            9.582001,
-            21.037872,
-            0.0,
-            1.0
-          ]
-        ]
+      "instance_nodes": [
+        2
       ],
       "index_byte_offset": 10464,
       "index_byte_length": 14976,
@@ -73,33 +23,8 @@
       "material": 0
     },
     {
-      "instances": [
-        [
-          [
-            -1.0,
-            0.0,
-            0.0,
-            0.0
-          ],
-          [
-            0.0,
-            1.0,
-            0.0,
-            0.0
-          ],
-          [
-            0.0,
-            0.0,
-            -1.0,
-            0.0
-          ],
-          [
-            9.582007,
-            18.009151,
-            0.0,
-            1.0
-          ]
-        ]
+      "instance_nodes": [
+        3
       ],
       "index_byte_offset": 25440,
       "index_byte_length": 39288,
@@ -114,6 +39,8 @@
   ],
   "buffer": "assets/local/Lantern/Lantern.bin",
   "deformation": "None",
+  "rig": "assets/local/Lantern/Lantern.rig.json",
+  "animations": [],
   "vertex_buffer_start_offset": 64728,
   "aabb": {
     "min": [

@@ -18,20 +18,18 @@ pub fn transform_to_mat4(transform: gltf::scene::Transform) -> Mat4 {
 
 pub fn accumulate_primitive_instances(
     node: &gltf::Node,
-    transform: &Mat4,
-    primitive_instances: &mut HashMap<(usize, usize), Vec<Mat4>>,
+    primitive_instances: &mut HashMap<(usize, usize), Vec<u32>>,
 ) {
-    let t = transform * transform_to_mat4(node.transform());
     if let Some(mesh) = &node.mesh() {
         for primitive in mesh.primitives() {
             let arr = primitive_instances
                 .entry((mesh.index(), primitive.index()))
                 .or_insert_with(Vec::new);
-            arr.push(t);
+            arr.push(node.index() as u32);
         }
     }
     for child in node.children() {
-        accumulate_primitive_instances(&child, &t, primitive_instances);
+        accumulate_primitive_instances(&child, primitive_instances);
     }
 }
 

@@ -105,8 +105,26 @@ pub fn spawn_sim(
                 frame_index,
             );
 
-            // schedule animation jobs
-            for (node_id, _) in &snap.mesh_draw_snapshot.skinned_instances {
+            // schedule animation jobs for all visible animated models
+            for node_id in snap.mesh_draw_snapshot.skinned_instances.keys() {
+                match &mut scene.nodes.get_mut((*node_id).into()).unwrap().render_data {
+                    RenderDataType::Model(_static_model) => (),
+                    RenderDataType::AnimatedModel(animated_model) => {
+                        let job = animated_model.animator.build_job(
+                            dt,
+                            &animation_graphs,
+                            &animated_model.model,
+                            &game_resources,
+                            &resource_registry,
+                        );
+                        if job_task_tx.send(Task::Pose(*node_id, job)).is_err() {
+                            todo!();
+                        }
+                    }
+                    RenderDataType::None => (),
+                }
+            }
+            for node_id in snap.mesh_draw_snapshot.static_instances.keys() {
                 match &mut scene.nodes.get_mut((*node_id).into()).unwrap().render_data {
                     RenderDataType::Model(_static_model) => (),
                     RenderDataType::AnimatedModel(animated_model) => {

@@ -113,15 +113,13 @@ impl RenderAssetManager {
                     mesh,
                     submeshes,
                     vertex_buffer_start_offset,
-                    joint_nodes,
-                    inverse_bind_matrices,
+                    rig,
                 } => {
                     let model_render = ModelRenderData {
                         vertex_buffer_start_offset,
                         mesh_id: mesh,
                         submeshes,
-                        joint_nodes,
-                        inverse_bind_matrices,
+                        rig,
                     };
                     let render_idx = render_resources.models.insert(model_render);
                     if self

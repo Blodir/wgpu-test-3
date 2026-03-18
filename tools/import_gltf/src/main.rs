@@ -3,7 +3,6 @@ use animations::bake_animation;
 use engine::main::assets::io::asset_formats::modelfile::{self, Deformation};
 use engine::main::world::buffers::skinned_vertex::SkinnedVertex;
 use engine::main::world::buffers::static_vertex::StaticVertex;
-use glam::Mat4;
 use gltf::Document;
 use gltf_utils::{
     accumulate_primitive_instances, filename_without_extension, read_base_color_texcoord_buffer,
@@ -64,7 +63,7 @@ fn bake(
             .cmp(&b.material().index().unwrap_or(0))
     });
 
-    let mut primitive_instances_map = HashMap::<(usize, usize), Vec<Mat4>>::new();
+    let mut primitive_instances_map = HashMap::<(usize, usize), Vec<u32>>::new();
     // TODO multi scene support
     if gltf.scenes().len() > 1 {
         println!(
@@ -73,7 +72,7 @@ fn bake(
         );
     }
     for node in gltf.scenes().next().unwrap().nodes() {
-        accumulate_primitive_instances(&node, &Mat4::IDENTITY, &mut primitive_instances_map);
+        accumulate_primitive_instances(&node, &mut primitive_instances_map);
     }
     let skins: Vec<_> = gltf.skins().collect();
     let mut aabbs = vec![];
@@ -211,11 +210,11 @@ fn bake(
         output_index_buffers.push(index_bytes);
         output_vertex_buffers.push(vertex_bytes);
         output_primitives.push(modelfile::Submesh {
-            instances: primitive_instances_map
+            instance_nodes: primitive_instances_map
                 .get(&(mesh_idx, primitive.index()))
                 .unwrap()
                 .iter()
-                .map(|m| (*m).to_cols_array_2d())
+                .filter_map(|old_node_idx| reindex.node_reindex.get(old_node_idx).copied())
                 .collect(),
             material: primitive.material().index().map(|i| i as u32),
             index_byte_length: index_bytes_count as u32,

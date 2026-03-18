@@ -214,10 +214,13 @@ impl Renderer {
         );
         let static_draw_context = resolve_static_draw(
             &mut self.static_instances,
+            render_resources,
             &snaps,
             t,
             &wgpu_context.device,
             &wgpu_context.queue,
+            pose_storage,
+            frame_idx,
         );
 
         self.skinned_pipeline.render(

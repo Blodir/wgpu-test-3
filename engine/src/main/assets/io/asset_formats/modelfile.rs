@@ -2,7 +2,8 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Submesh {
-    pub instances: Vec<[[f32; 4]; 4]>,
+    /// Rig node indices this submesh is attached to.
+    pub instance_nodes: Vec<u32>,
     pub index_byte_offset: u32,
     pub index_byte_length: u32,
     pub vertex_byte_offset: u32,

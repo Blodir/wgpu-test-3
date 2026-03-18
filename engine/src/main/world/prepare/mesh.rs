@@ -7,7 +7,10 @@ use crate::snapshot_handoff::SnapshotGuard;
 use crate::{
     game::scene_tree::SceneNodeId,
     main::{
-        assets::store::RenderAssetStore,
+        assets::{
+            io::asset_formats::rigfile::{Rig, SRT},
+            store::{ModelRenderId, RenderAssetStore},
+        },
         utils::{lerpu64, QuatExt},
         world::{
             anim_pose_store::{self, AnimPoseStore},
@@ -36,6 +39,73 @@ fn mat4_to_bone_mat34(m: Mat4) -> BoneMat34 {
     }
 }
 
+fn lerp_srt_to_mat4(from: &SRT, to: &SRT, t: f32) -> Mat4 {
+    let (s0, r0, t0) = from.to_scale_rotation_translation();
+    let (s1, r1, t1) = to.to_scale_rotation_translation();
+    Mat4::from_scale_rotation_translation(s0.lerp(s1, t), r0.nlerp(r1, t), t0.lerp(t1, t))
+}
+
+fn resolve_model_transform(
+    curr: &SRT,
+    prev: Option<&SRT>,
+    dirty: bool,
+    t: f32,
+) -> Mat4 {
+    if dirty {
+        if let Some(prev) = prev {
+            return lerp_srt_to_mat4(prev, curr, t);
+        }
+    }
+    curr.to_mat4()
+}
+
+fn evaluate_bind_pose_nodes(rig: &Rig) -> Vec<Mat4> {
+    let mut world_nodes = vec![Mat4::IDENTITY; rig.nodes.len()];
+    for (idx, node) in rig.nodes.iter().enumerate() {
+        let local = node.transform.to_mat4();
+        world_nodes[idx] = if let Some(parent_idx) = node.parent {
+            if let Some(parent_world) = world_nodes.get(parent_idx as usize) {
+                *parent_world * local
+            } else {
+                local
+            }
+        } else {
+            local
+        };
+    }
+    world_nodes
+}
+
+fn sample_pose_nodes(
+    pose_storage: &mut AnimPoseStore,
+    node_id: &SceneNodeId,
+    snap_time: u64,
+    frame_idx: u32,
+) -> Option<Vec<Mat4>> {
+    match pose_storage.get(node_id, snap_time, frame_idx) {
+        anim_pose_store::GetPoseResponse::One(nodes) => {
+            Some(nodes.iter().map(|n| n.to_mat4()).collect())
+        }
+        anim_pose_store::GetPoseResponse::Two(time0, nodes0, time1, nodes1) => {
+            let nom = snap_time.saturating_sub(time0);
+            let denom = time1.saturating_sub(time0);
+            let a = if denom == 0 {
+                0.0
+            } else {
+                (nom as f32 / denom as f32).clamp(0.0, 1.0)
+            };
+            Some(
+                nodes0
+                    .iter()
+                    .zip(nodes1.iter())
+                    .map(|(n0, n1)| lerp_srt_to_mat4(n0, n1, a))
+                    .collect(),
+            )
+        }
+        anim_pose_store::GetPoseResponse::Nothing => None,
+    }
+}
+
 pub fn resolve_skinned_draw<'a>(
     bones: &mut BonesBinding,
     bones_layout: &wgpu::BindGroupLayout,
@@ -48,11 +118,12 @@ pub fn resolve_skinned_draw<'a>(
     pose_storage: &mut AnimPoseStore,
     frame_idx: u32,
 ) -> DrawContext<'a> {
-    // TODO perf: maybe reuse this vec from previous frame to reduce resizing? Could call vec.clear();
     let mut joint_palette: Vec<BoneMat34> = vec![];
     let mut instance_data = vec![];
     let mut instance_ranges = vec![0..0; snaps.curr.mesh_draw_snapshot.submesh_batches.len()];
 
+    let mut bind_pose_cache: HashMap<ModelRenderId, Vec<Mat4>> = HashMap::new();
+    let mut node_world_cache: HashMap<SceneNodeId, Vec<Mat4>> = HashMap::new();
     let mut node_to_palette_offset: HashMap<SceneNodeId, u32> = HashMap::new();
 
     for mat_batch in &snaps.curr.mesh_draw_snapshot.material_batches
@@ -74,128 +145,67 @@ pub fn resolve_skinned_draw<'a>(
                         .skinned_instances
                         .get(node_id)
                         .unwrap();
+                    let prev_node_inst = snaps.prev.mesh_draw_snapshot.skinned_instances.get(node_id);
+
+                    if !node_world_cache.contains_key(node_id) {
+                        let maybe_nodes = if let Some(anim_snap) = curr_node_inst.animation {
+                            let snap_time = prev_node_inst
+                                .and_then(|n| n.animation.as_ref())
+                                .map(|prev| lerpu64(prev.0, anim_snap.0, t))
+                                .unwrap_or(anim_snap.0);
+                            sample_pose_nodes(pose_storage, node_id, snap_time, frame_idx)
+                        } else {
+                            Some(
+                                bind_pose_cache
+                                    .entry(mesh_batch.model_id)
+                                    .or_insert_with(|| evaluate_bind_pose_nodes(&model.rig))
+                                    .clone(),
+                            )
+                        };
+                        if let Some(nodes) = maybe_nodes {
+                            node_world_cache.insert(*node_id, nodes);
+                        } else {
+                            continue;
+                        }
+                    }
+                    let node_worlds = node_world_cache.get(node_id).unwrap();
+
                     let palette_offset = if let Some(offset) = node_to_palette_offset.get(node_id) {
                         *offset
                     } else {
-                        let prev_node_inst =
-                            snaps.prev.mesh_draw_snapshot.skinned_instances.get(node_id);
-                        let anim_snap = match &curr_node_inst.animation {
-                            Some(a) => a,
-                            None => continue,
-                        };
-                        let snap_time = prev_node_inst
-                            .and_then(|node| node.animation.as_ref())
-                            .map(|prev| lerpu64(prev.0, anim_snap.0, t))
-                            .unwrap_or(anim_snap.0);
-                        let palette_offset = joint_palette.len() as u32;
-                        let poses = pose_storage.get(node_id, snap_time, frame_idx);
-                        debug_assert_eq!(
-                            model.joint_nodes.len(),
-                            model.inverse_bind_matrices.len()
-                        );
-                        match poses {
-                            anim_pose_store::GetPoseResponse::One(nodes) => {
-                                for (node_idx, inverse_bind) in model
-                                    .joint_nodes
-                                    .iter()
-                                    .zip(model.inverse_bind_matrices.iter())
-                                {
-                                    let node_mat = if let Some(node) = nodes.get(*node_idx as usize)
-                                    {
-                                        node.to_mat4()
-                                    } else {
-                                        Mat4::IDENTITY
-                                    };
-                                    let skin = node_mat * *inverse_bind;
-                                    joint_palette.push(mat4_to_bone_mat34(skin));
-                                }
-                            }
-                            anim_pose_store::GetPoseResponse::Two(time0, nodes0, time1, nodes1) => {
-                                let nom = snap_time.saturating_sub(time0);
-                                let denom = time1.saturating_sub(time0);
-                                let a = if denom == 0 {
-                                    0.0
-                                } else {
-                                    (nom as f32 / denom as f32).clamp(0.0, 1.0)
-                                };
-                                for (node_idx, inverse_bind) in model
-                                    .joint_nodes
-                                    .iter()
-                                    .zip(model.inverse_bind_matrices.iter())
-                                {
-                                    let world = match (
-                                        nodes0.get(*node_idx as usize),
-                                        nodes1.get(*node_idx as usize),
-                                    ) {
-                                        (Some(node0), Some(node1)) => {
-                                            let (s0, r0, t0) =
-                                                node0.to_scale_rotation_translation();
-                                            let (s1, r1, t1) =
-                                                node1.to_scale_rotation_translation();
-                                            Mat4::from_scale_rotation_translation(
-                                                s0.lerp(s1, a),
-                                                r0.nlerp(r1, a),
-                                                t0.lerp(t1, a),
-                                            )
-                                        }
-                                        (Some(node0), None) => node0.to_mat4(),
-                                        (None, Some(node1)) => node1.to_mat4(),
-                                        (None, None) => Mat4::IDENTITY,
-                                    };
-                                    let skin = world * *inverse_bind;
-                                    joint_palette.push(mat4_to_bone_mat34(skin));
-                                }
-                            }
-                            anim_pose_store::GetPoseResponse::Nothing => continue,
+                        let offset = joint_palette.len() as u32;
+                        for (joint_node_idx, inverse_bind) in model
+                            .rig
+                            .joint_nodes
+                            .iter()
+                            .zip(model.rig.inverse_bind_matrices.iter())
+                        {
+                            let node_mat = node_worlds
+                                .get(*joint_node_idx as usize)
+                                .copied()
+                                .unwrap_or(Mat4::IDENTITY);
+                            joint_palette.push(mat4_to_bone_mat34(node_mat * *inverse_bind));
                         }
-                        node_to_palette_offset.insert(*node_id, palette_offset);
-                        palette_offset
+                        node_to_palette_offset.insert(*node_id, offset);
+                        offset
                     };
 
-                    // no need to interpolate if transform hasn't changed
-                    if !curr_node_inst.dirty {
-                        let curr_transforms =
-                            &curr_node_inst.submesh_transforms[curr_draw.submesh_idx];
-                        for transform in curr_transforms {
-                            let (s, r, t) = transform.to_scale_rotation_translation();
-                            let instance = SkinnedInstance::new(
-                                Mat4::from_scale_rotation_translation(s, r, t),
-                                palette_offset,
-                            );
-                            instance_data.push(instance);
-                        }
-                        continue;
+                    let model_transform = resolve_model_transform(
+                        &curr_node_inst.model_transform,
+                        prev_node_inst.map(|p| &p.model_transform),
+                        curr_node_inst.dirty,
+                        t,
+                    );
+                    for instance_node_idx in &model.submeshes[curr_draw.submesh_idx].instance_nodes {
+                        let node_mat = node_worlds
+                            .get(*instance_node_idx as usize)
+                            .copied()
+                            .unwrap_or(Mat4::IDENTITY);
+                        instance_data.push(SkinnedInstance::new(
+                            model_transform * node_mat,
+                            palette_offset,
+                        ));
                     }
-
-                    // otherwise: interpolate
-                    let prev_node_inst =
-                        snaps.prev.mesh_draw_snapshot.skinned_instances.get(node_id);
-
-                    let curr_transforms = &curr_node_inst.submesh_transforms[curr_draw.submesh_idx];
-                    let maybe_prev_transforms =
-                        prev_node_inst.map(|p| &p.submesh_transforms[curr_draw.submesh_idx]);
-
-                    if let Some(prev_transforms) = maybe_prev_transforms {
-                        for idx in 0..curr_transforms.len() {
-                            let (s1, r1, t1) = prev_transforms[idx].to_scale_rotation_translation();
-                            let (s2, r2, t2) = curr_transforms[idx].to_scale_rotation_translation();
-                            let s3 = s1.lerp(s2, t);
-                            let r3 = r1.nlerp(r2, t);
-                            let t3 = t1.lerp(t2, t);
-                            let transform = Mat4::from_scale_rotation_translation(s3, r3, t3);
-                            let instance = SkinnedInstance::new(transform, palette_offset);
-                            instance_data.push(instance);
-                        }
-                    } else {
-                        for transform in curr_transforms {
-                            let (s, r, t) = transform.to_scale_rotation_translation();
-                            let instance = SkinnedInstance::new(
-                                Mat4::from_scale_rotation_translation(s, r, t),
-                                palette_offset,
-                            );
-                            instance_data.push(instance);
-                        }
-                    };
                 }
 
                 instance_ranges[draw_idx] = inst_start as u32..instance_data.len() as u32;
@@ -214,20 +224,28 @@ pub fn resolve_skinned_draw<'a>(
 
 pub fn resolve_static_draw<'a>(
     instances: &mut StaticInstances,
+    render_resources: &RenderAssetStore,
     snaps: &'a SnapshotGuard,
     t: f32,
     device: &wgpu::Device,
     queue: &wgpu::Queue,
+    pose_storage: &mut AnimPoseStore,
+    frame_idx: u32,
 ) -> DrawContext<'a> {
-    // TODO perf: maybe reuse this vec from previous frame to reduce resizing? Could call vec.clear();
     let mut instance_data = vec![];
     let mut instance_ranges = vec![0..0; snaps.curr.mesh_draw_snapshot.submesh_batches.len()];
+    let mut bind_pose_cache: HashMap<ModelRenderId, Vec<Mat4>> = HashMap::new();
+    let mut node_world_cache: HashMap<SceneNodeId, Vec<Mat4>> = HashMap::new();
 
     for mat_batch in &snaps.curr.mesh_draw_snapshot.material_batches
         [snaps.curr.mesh_draw_snapshot.static_batch.clone()]
     {
         for mesh_batch in &snaps.curr.mesh_draw_snapshot.mesh_batches[mat_batch.mesh_range.clone()]
         {
+            let model = render_resources
+                .models
+                .get(mesh_batch.model_id.into())
+                .unwrap();
             for draw_idx in mesh_batch.submesh_range.clone() {
                 let curr_draw = &snaps.curr.mesh_draw_snapshot.submesh_batches[draw_idx];
                 let inst_start = instance_data.len();
@@ -238,46 +256,44 @@ pub fn resolve_static_draw<'a>(
                         .static_instances
                         .get(node_id)
                         .unwrap();
-                    // no need to interpolate if transform hasn't changed
-                    if !curr_node_inst.dirty {
-                        let curr_transforms =
-                            &curr_node_inst.submesh_transforms[curr_draw.submesh_idx];
-                        for transform in curr_transforms {
-                            let (s, r, t) = transform.to_scale_rotation_translation();
-                            let instance =
-                                StaticInstance::new(Mat4::from_scale_rotation_translation(s, r, t));
-                            instance_data.push(instance);
+                    let prev_node_inst = snaps.prev.mesh_draw_snapshot.static_instances.get(node_id);
+
+                    if !node_world_cache.contains_key(node_id) {
+                        let maybe_nodes = if let Some(anim_snap) = curr_node_inst.animation {
+                            let snap_time = prev_node_inst
+                                .and_then(|n| n.animation.as_ref())
+                                .map(|prev| lerpu64(prev.0, anim_snap.0, t))
+                                .unwrap_or(anim_snap.0);
+                            sample_pose_nodes(pose_storage, node_id, snap_time, frame_idx)
+                        } else {
+                            Some(
+                                bind_pose_cache
+                                    .entry(mesh_batch.model_id)
+                                    .or_insert_with(|| evaluate_bind_pose_nodes(&model.rig))
+                                    .clone(),
+                            )
+                        };
+                        if let Some(nodes) = maybe_nodes {
+                            node_world_cache.insert(*node_id, nodes);
+                        } else {
+                            continue;
                         }
-                        continue;
                     }
+                    let node_worlds = node_world_cache.get(node_id).unwrap();
 
-                    // otherwise: interpolate
-                    let prev_node_inst =
-                        snaps.prev.mesh_draw_snapshot.static_instances.get(node_id);
-
-                    let curr_transforms = &curr_node_inst.submesh_transforms[curr_draw.submesh_idx];
-                    let maybe_prev_transforms =
-                        prev_node_inst.map(|p| &p.submesh_transforms[curr_draw.submesh_idx]);
-
-                    if let Some(prev_transforms) = maybe_prev_transforms {
-                        for idx in 0..curr_transforms.len() {
-                            let (s1, r1, t1) = prev_transforms[idx].to_scale_rotation_translation();
-                            let (s2, r2, t2) = curr_transforms[idx].to_scale_rotation_translation();
-                            let s3 = s1.lerp(s2, t);
-                            let r3 = r1.nlerp(r2, t);
-                            let t3 = t1.lerp(t2, t);
-                            let transform = Mat4::from_scale_rotation_translation(s3, r3, t3);
-                            let instance = StaticInstance::new(transform);
-                            instance_data.push(instance);
-                        }
-                    } else {
-                        for transform in curr_transforms {
-                            let (s, r, t) = transform.to_scale_rotation_translation();
-                            let instance =
-                                StaticInstance::new(Mat4::from_scale_rotation_translation(s, r, t));
-                            instance_data.push(instance);
-                        }
-                    };
+                    let model_transform = resolve_model_transform(
+                        &curr_node_inst.model_transform,
+                        prev_node_inst.map(|p| &p.model_transform),
+                        curr_node_inst.dirty,
+                        t,
+                    );
+                    for instance_node_idx in &model.submeshes[curr_draw.submesh_idx].instance_nodes {
+                        let node_mat = node_worlds
+                            .get(*instance_node_idx as usize)
+                            .copied()
+                            .unwrap_or(Mat4::IDENTITY);
+                        instance_data.push(StaticInstance::new(model_transform * node_mat));
+                    }
                 }
 
                 instance_ranges[draw_idx] = inst_start as u32..instance_data.len() as u32;

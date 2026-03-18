@@ -1,8 +1,6 @@
 use std::{cell::RefCell, rc::Rc, sync::Arc};
 
 use generational_arena::{Arena, Index};
-use glam::Mat4;
-
 use super::registry::{
     AnimationClipHandle, AnimationClipId, AnimationHandle, AnimationId, GameState, MaterialHandle,
     MaterialId, MeshHandle, ModelId, RenderState, ResourceRegistry, RigHandle, RigId,
@@ -67,7 +65,6 @@ pub struct ModelGameData {
     pub mesh: MeshHandle,
     pub rig: RigHandle,
     pub animation_clips: Vec<AnimationClipHandle>,
-    pub submesh_instances: Vec<Vec<Mat4>>,
     pub deformation: DeformationData,
     pub materials: Vec<MaterialHandle>,
     pub aabb: modelfile::Aabb,
@@ -117,8 +114,7 @@ pub enum CreateGameResourceResponse {
         mesh: MeshRenderId,
         submeshes: Vec<SubMesh>,
         vertex_buffer_start_offset: u32,
-        joint_nodes: Vec<u32>,
-        inverse_bind_matrices: Vec<Mat4>,
+        rig: Arc<Rig>,
     },
     Material {
         id: MaterialId,
@@ -210,16 +206,6 @@ impl GameAssetStore {
                             .map(|a| registry.request_material(Some(a)))
                             .collect(),
                         aabb: manifest.aabb.clone(),
-                        submesh_instances: manifest
-                            .submeshes
-                            .iter()
-                            .map(|prim| {
-                                prim.instances
-                                    .iter()
-                                    .map(|m| Mat4::from_cols_array_2d(m))
-                                    .collect()
-                            })
-                            .collect(),
                         manifest,
                     };
                     self.staging.push(StagedData::Model(id, data));
@@ -342,16 +328,14 @@ impl GameAssetStore {
                             }
                         };
                         submeshes.push(SubMesh {
+                            instance_nodes: submesh.instance_nodes.clone(),
                             index_range: submesh.index_byte_offset / 4
                                 ..submesh.index_byte_offset / 4 + submesh.index_byte_length / 4,
                             base_vertex: submesh.base_vertex,
                             material,
                         })
                     }
-                    let (joint_nodes, inverse_bind_matrices) = {
-                        let rig = self.rigs.get(rig_game_id).unwrap();
-                        (rig.joint_nodes.clone(), rig.inverse_bind_matrices.clone())
-                    };
+                    let rig = self.rigs.get(rig_game_id).unwrap().clone();
                     let game_id = self.models.insert(model_game_data);
                     let res = CreateGameResourceResponse::Model {
                         id,
@@ -359,8 +343,7 @@ impl GameAssetStore {
                         mesh: mesh_render_id,
                         submeshes,
                         vertex_buffer_start_offset,
-                        joint_nodes,
-                        inverse_bind_matrices,
+                        rig,
                     };
                     if self.res_tx.send(res).is_err() {
                         todo!();

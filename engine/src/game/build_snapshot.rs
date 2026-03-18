@@ -78,32 +78,24 @@ pub fn accumulate_instance_snapshots(
                     RenderDataType::None => 0u32,
                 };
             }
-            let mut submesh_transforms = vec![];
-            for submesh in &model_game.submesh_instances {
-                let mut sub = vec![];
-                for submesh_instance in submesh {
-                    let (s, r, t) = (transform * submesh_instance).to_scale_rotation_translation();
-                    sub.push(SRT::new(s, r, t));
+            let (s, r, t) = transform.to_scale_rotation_translation();
+            let model_transform = SRT::new(s, r, t);
+            match model_game.manifest.deformation {
+                modelfile::Deformation::None => {
+                    let inst = StaticInstanceSnapshot {
+                        model_transform,
+                        animation: maybe_animation_snapshot,
+                        dirty: node.transform_last_mut == frame_index,
+                    };
+                    static_instances.insert(node_id, inst);
                 }
-                submesh_transforms.push(sub);
-            }
-            if !submesh_transforms.is_empty() {
-                match model_game.manifest.deformation {
-                    modelfile::Deformation::None => {
-                        let inst = StaticInstanceSnapshot {
-                            submesh_transforms,
-                            dirty: node.transform_last_mut == frame_index,
-                        };
-                        static_instances.insert(node_id, inst);
-                    }
-                    modelfile::Deformation::Skinned => {
-                        let inst = SkinnedInstanceSnapshot {
-                            submesh_transforms,
-                            animation: maybe_animation_snapshot,
-                            dirty: node.transform_last_mut == frame_index,
-                        };
-                        skinned_instances.insert(node_id, inst);
-                    }
+                modelfile::Deformation::Skinned => {
+                    let inst = SkinnedInstanceSnapshot {
+                        model_transform,
+                        animation: maybe_animation_snapshot,
+                        dirty: node.transform_last_mut == frame_index,
+                    };
+                    skinned_instances.insert(node_id, inst);
                 }
             }
         }
@@ -192,16 +184,18 @@ impl LightsSnapshot {
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct AnimationSnapshot(pub u64);
 
 pub struct SkinnedInstanceSnapshot {
-    pub submesh_transforms: Vec<Vec<SRT>>,
+    pub model_transform: SRT,
     pub animation: Option<AnimationSnapshot>,
     pub dirty: bool,
 }
 
 pub struct StaticInstanceSnapshot {
-    pub submesh_transforms: Vec<Vec<SRT>>,
+    pub model_transform: SRT,
+    pub animation: Option<AnimationSnapshot>,
     pub dirty: bool,
 }
 
@@ -303,10 +297,7 @@ impl MeshDrawSnapshot {
             let node = scene.nodes.get((*node_id).into()).unwrap();
             let model_handle = match &node.render_data {
                 RenderDataType::Model(static_model) => &static_model.handle,
-                RenderDataType::AnimatedModel(animated_model) => {
-                    println!("Warning: animator on a static model");
-                    &animated_model.model
-                }
+                RenderDataType::AnimatedModel(animated_model) => &animated_model.model,
                 RenderDataType::None => panic!(),
             };
             if let (GameState::Ready(model_game_id), RenderState::Ready(model_render_id)) = (

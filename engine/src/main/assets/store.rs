@@ -1,9 +1,12 @@
 use std::ops::Range;
+use std::sync::Arc;
 
 use generational_arena::{Arena, Index};
-use glam::Mat4;
 
-use crate::main::{wgpu_context::WgpuContext, world::bindgroups::material::MaterialBinding};
+use crate::main::{
+    assets::io::asset_formats::rigfile::Rig, wgpu_context::WgpuContext,
+    world::bindgroups::material::MaterialBinding,
+};
 
 #[derive(Hash, Eq, PartialEq, Clone, Copy, Debug)]
 pub struct ModelRenderId(pub Index);
@@ -59,6 +62,7 @@ pub struct PlaceholderTextureIds {
 }
 
 pub struct SubMesh {
+    pub instance_nodes: Vec<u32>,
     pub index_range: Range<u32>,
     pub base_vertex: u32,
     pub material: MaterialRenderId,
@@ -68,8 +72,7 @@ pub struct ModelRenderData {
     pub vertex_buffer_start_offset: u32,
     pub mesh_id: MeshRenderId,
     pub submeshes: Vec<SubMesh>,
-    pub joint_nodes: Vec<u32>,
-    pub inverse_bind_matrices: Vec<Mat4>,
+    pub rig: Arc<Rig>,
 }
 
 pub struct RenderAssetStore {
