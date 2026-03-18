@@ -177,7 +177,6 @@ pub fn load_animation(
     };
 
     let duration = header.duration;
-    let primitive_groups = header.primitive_groups;
     let tracks: Vec<animation::Track> = header.tracks.iter().map(|track| {
         let target = track.target;
         let shared_times = track.shared_times.as_ref().map(read_f32_ref);
@@ -213,7 +212,6 @@ pub fn load_animation(
     Ok(animation::AnimationClip {
         duration,
         tracks,
-        primitive_groups,
     })
 }
 

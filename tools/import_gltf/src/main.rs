@@ -40,7 +40,7 @@ fn bake(
     let json_path = format!("{}/{}.json", directory_path, model_name);
 
     let rigfile_path = format!("assets/local/{}/{}.rig.json", model_name, model_name);
-    let joint_reindex = bake_rigfile(gltf, buffers, &rigfile_path)?;
+    let reindex = bake_rigfile(gltf, buffers, &rigfile_path)?;
 
     // (mesh, skin)
     let mut meshes_and_skins = vec![];
@@ -156,14 +156,18 @@ fn bake(
                                 let joints: Vec<_> = skins[i].joints().collect();
                                 joints[skin_joint_idx as usize].index()
                             });
-                            *maybe_node_idx.and_then(|node_idx| joint_reindex.get(&(node_idx as u32))).unwrap_or(&0u32) as u8
+                            *maybe_node_idx
+                                .and_then(|node_idx| reindex.joint_reindex.get(&(node_idx as u32)))
+                                .unwrap_or(&0u32) as u8
                         }),
                         JointsBuffer::U16(buffer) => buffer[i].map(|skin_joint_idx| {
                             let maybe_node_idx = maybe_skin_idx.map(|i| {
                                 let joints: Vec<_> = skins[i].joints().collect();
                                 joints[skin_joint_idx as usize].index()
                             });
-                            *maybe_node_idx.and_then(|node_idx| joint_reindex.get(&(node_idx as u32))).unwrap_or(&0u32) as u8
+                            *maybe_node_idx
+                                .and_then(|node_idx| reindex.joint_reindex.get(&(node_idx as u32)))
+                                .unwrap_or(&0u32) as u8
                         }),
                     },
                     base_color_tex_coords: base_color_texcoord_buffer[i],
@@ -236,7 +240,13 @@ fn bake(
         .map(|(idx, anim)| -> Result<String, Box<dyn std::error::Error>> {
             let anim_json_path = format!("assets/local/{}/{}_{}.animation.json", model_name, model_name, idx);
             let anim_bin_path  = format!("assets/local/{}/{}_{}.animation.bin",  model_name, model_name, idx);
-            bake_animation(&anim, buffers, &joint_reindex, &anim_json_path, &anim_bin_path)?;
+            bake_animation(
+                &anim,
+                buffers,
+                &reindex.node_reindex,
+                &anim_json_path,
+                &anim_bin_path,
+            )?;
             Ok(anim_json_path)
         })
         .collect();

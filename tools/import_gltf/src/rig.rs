@@ -8,12 +8,18 @@ use gltf::{Document, Node};
 use super::gltf_utils::read_mat4;
 use super::utils::ensure_parent_dir_exists;
 
-/// Returns a joint reindexing map (old -> new)
+pub struct RigReindex {
+    /// old glTF node index -> joint index in `Rig::joint_nodes`
+    pub joint_reindex: HashMap<u32, u32>,
+    /// old glTF node index -> node index in `Rig::nodes`
+    pub node_reindex: HashMap<u32, u32>,
+}
+
 pub fn bake_rigfile(
     gltf: &Document,
     buffers: &Vec<gltf::buffer::Data>,
     output_path: &str,
-) -> Result<HashMap<u32, u32>, Box<dyn std::error::Error>> {
+) -> Result<RigReindex, Box<dyn std::error::Error>> {
     ensure_parent_dir_exists(Path::new(output_path))?;
 
     let nodes: Vec<Node> = gltf.nodes().collect();
@@ -192,5 +198,8 @@ pub fn bake_rigfile(
     let json = serde_json::to_string_pretty(&rig)?;
     std::fs::write(output_path, json)?;
 
-    Ok(joint_reindex)
+    Ok(RigReindex {
+        joint_reindex,
+        node_reindex: old_node_idx_to_new_node_idx,
+    })
 }

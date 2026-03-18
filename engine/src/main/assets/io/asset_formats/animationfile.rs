@@ -2,8 +2,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Target {
-    PrimitiveGroup(u32),
-    SkeletonJoint(u32),
+    RigNode(u32),
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]
@@ -15,7 +14,6 @@ pub enum Interpolation {
 pub struct AnimationClip {
     pub duration: f32,
     pub tracks: Vec<Track>,
-    pub primitive_groups: Vec<Vec<u32>>,
     pub binary_path: String,
 }
 

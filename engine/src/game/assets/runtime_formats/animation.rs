@@ -7,7 +7,6 @@ use crate::main::assets::io::asset_formats::animationfile::{Interpolation, Targe
 pub struct AnimationClip {
     pub duration: f32,
     pub tracks: Vec<Track>,
-    pub primitive_groups: Vec<Vec<u32>>,
 }
 
 pub struct Track {

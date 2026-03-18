@@ -1,6 +1,5 @@
 use std::{collections::HashMap, fs::File, io::Write as _, path::Path};
 
-use gltf::{Accessor, Document};
 use engine::main::assets::io::asset_formats::animationfile::{self, BinRef, Interpolation, Sampler3, SamplerQuat, Target, Track};
 
 use crate::{gltf_utils::{read3f32, read4f32}, utils::ensure_parent_dir_exists};
@@ -24,7 +23,7 @@ pub struct TempTargetSamplers<'a> {
 pub fn bake_animation(
     animation: &gltf::Animation,
     buffers: &Vec<gltf::buffer::Data>,
-    joint_reindex: &HashMap<u32, u32>,
+    node_reindex: &HashMap<u32, u32>,
     json_path: &str,
     binary_path: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -39,16 +38,16 @@ pub fn bake_animation(
     let mut current_binary_offset = 0u32;
 
     let mut targets = HashMap::<Target, TempTargetSamplers>::new();
-    'a: for channel in animation.channels() {
+    for channel in animation.channels() {
         let target_node = channel.target().node();
-        let target = if let Some(joint_idx) = joint_reindex.get(&(target_node.index() as u32)) {
-            Target::SkeletonJoint(*joint_idx)
+        let target = if let Some(node_idx) = node_reindex.get(&(target_node.index() as u32)) {
+            Target::RigNode(*node_idx)
         } else {
-            // TODO primitive groups... does this make sense?
-            // need to also implement re evaluation of all animation values if a non-bone node is moved
-            println!("WARNING: animation is targetting a non-joint node... TODO");
-            continue 'a;
-            Target::PrimitiveGroup(target_node.mesh().map(|m| m.index()).unwrap_or(target_node.index()) as u32)
+            println!(
+                "WARNING: animation targets glTF node {} which is not present in baked rig; skipping channel",
+                target_node.index()
+            );
+            continue;
         };
 
         let entry = targets.entry(target).or_insert(TempTargetSamplers {
@@ -210,7 +209,6 @@ pub fn bake_animation(
     let animation_clip = animationfile::AnimationClip {
         duration,
         tracks,
-        primitive_groups: vec![], // TODO
         binary_path: binary_path.to_string(),
     };
 

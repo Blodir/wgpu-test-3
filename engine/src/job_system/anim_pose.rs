@@ -78,8 +78,7 @@ fn compute_animated_pose(animation: &AnimationClip, skeleton: &rigfile::Rig, bas
         let scale = track.scale.as_ref().map(|channel| interpolate_channel_value_vec3(track, channel, t));
 
         match track.target {
-            animationfile::Target::PrimitiveGroup(_) => todo!(),
-            animationfile::Target::SkeletonJoint(idx) => {
+            animationfile::Target::RigNode(idx) => {
                 let base = base_locals[idx as usize];
                 joints[idx as usize] = Some(
                     (
