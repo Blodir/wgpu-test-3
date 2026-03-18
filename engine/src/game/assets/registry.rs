@@ -1,10 +1,15 @@
-use std::{cell::RefCell, collections::HashMap, marker::PhantomData, rc::{Rc, Weak}};
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    marker::PhantomData,
+    rc::{Rc, Weak},
+};
 
 use generational_arena::{Arena, Index};
 
+use super::store::{AnimationClipGameId, AnimationGameId, MaterialGameId, ModelGameId, RigGameId};
 use crate::main::assets::io::asset_formats::animationfile;
 use crate::main::assets::store::{MaterialRenderId, MeshRenderId, ModelRenderId, TextureRenderId};
-use super::{store::{AnimationClipGameId, AnimationGameId, MaterialGameId, ModelGameId, RigGameId}};
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum ResourceKind {
@@ -87,13 +92,27 @@ pub struct _Animation;
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
 pub struct _Texture;
 
-impl ResourceTag for _Model { const KIND: ResourceKind = ResourceKind::Model; }
-impl ResourceTag for _Mesh { const KIND: ResourceKind = ResourceKind::Mesh; }
-impl ResourceTag for _Material { const KIND: ResourceKind = ResourceKind::Material; }
-impl ResourceTag for _Rig { const KIND: ResourceKind = ResourceKind::Rig; }
-impl ResourceTag for _AnimationClip { const KIND: ResourceKind = ResourceKind::AnimationClip; }
-impl ResourceTag for _Animation { const KIND: ResourceKind = ResourceKind::Animation; }
-impl ResourceTag for _Texture { const KIND: ResourceKind = ResourceKind::Texture; }
+impl ResourceTag for _Model {
+    const KIND: ResourceKind = ResourceKind::Model;
+}
+impl ResourceTag for _Mesh {
+    const KIND: ResourceKind = ResourceKind::Mesh;
+}
+impl ResourceTag for _Material {
+    const KIND: ResourceKind = ResourceKind::Material;
+}
+impl ResourceTag for _Rig {
+    const KIND: ResourceKind = ResourceKind::Rig;
+}
+impl ResourceTag for _AnimationClip {
+    const KIND: ResourceKind = ResourceKind::AnimationClip;
+}
+impl ResourceTag for _Animation {
+    const KIND: ResourceKind = ResourceKind::Animation;
+}
+impl ResourceTag for _Texture {
+    const KIND: ResourceKind = ResourceKind::Texture;
+}
 
 pub type ModelHandle = Handle<_Model>;
 pub type MeshHandle = Handle<_Mesh>;
@@ -112,31 +131,82 @@ pub type AnimationId = HandleId<_Animation>;
 pub type TextureId = HandleId<_Texture>;
 
 pub enum GameState {
-    Absent, Loading, Ready(Index)
+    Absent,
+    Loading,
+    Ready(Index),
 }
 
 pub enum RenderState {
-    Absent, Queued, Uploading(Index), Ready(Index)
+    Absent,
+    Queued,
+    Uploading(Index),
+    Ready(Index),
 }
 
 pub enum ResourceRequest {
-    LoadModel { id: ModelId, path: String },
-    LoadMesh { id: MeshId, path: String },
-    LoadMaterial { id: MaterialId, path: Option<String> },
-    LoadRig { id: RigId, path: String },
-    LoadAnimationClip { id: AnimationClipId, path: String },
-    LoadAnimation { id: AnimationId, path: String, header: animationfile::AnimationClip },
-    LoadTexture { id: TextureId, path: String, srgb: bool },
+    LoadModel {
+        id: ModelId,
+        path: String,
+    },
+    LoadMesh {
+        id: MeshId,
+        path: String,
+    },
+    LoadMaterial {
+        id: MaterialId,
+        path: Option<String>,
+    },
+    LoadRig {
+        id: RigId,
+        path: String,
+    },
+    LoadAnimationClip {
+        id: AnimationClipId,
+        path: String,
+    },
+    LoadAnimation {
+        id: AnimationId,
+        path: String,
+        header: animationfile::AnimationClip,
+    },
+    LoadTexture {
+        id: TextureId,
+        path: String,
+        srgb: bool,
+    },
 }
 
 pub enum ResourceResult {
-    ModelResult { id: ModelId, game_id: ModelGameId, render_id: ModelRenderId },
-    MeshResult { id: MeshId, render_id: MeshRenderId },
-    RigResult { id: RigId, game_id: RigGameId },
-    AnimationResult { id: AnimationId, game_id: AnimationGameId },
-    AnimationClipResult { id: AnimationClipId, game_id: AnimationClipGameId },
-    TextureResult { id: TextureId, render_id: TextureRenderId },
-    MaterialResult { id: MaterialId, game_id: MaterialGameId, render_id: MaterialRenderId },
+    ModelResult {
+        id: ModelId,
+        game_id: ModelGameId,
+        render_id: ModelRenderId,
+    },
+    MeshResult {
+        id: MeshId,
+        render_id: MeshRenderId,
+    },
+    RigResult {
+        id: RigId,
+        game_id: RigGameId,
+    },
+    AnimationResult {
+        id: AnimationId,
+        game_id: AnimationGameId,
+    },
+    AnimationClipResult {
+        id: AnimationClipId,
+        game_id: AnimationClipGameId,
+    },
+    TextureResult {
+        id: TextureId,
+        render_id: TextureRenderId,
+    },
+    MaterialResult {
+        id: MaterialId,
+        game_id: MaterialGameId,
+        render_id: MaterialRenderId,
+    },
 }
 
 pub struct Entry {
@@ -183,10 +253,7 @@ impl ResourceRegistry {
         self.entries.get(id.idx)
     }
 
-    fn resource_request(
-        &mut self,
-        request: ResourceRequest,
-    ) {
+    fn resource_request(&mut self, request: ResourceRequest) {
         if self.req_tx.send(request).is_err() {
             todo!()
         }
@@ -201,7 +268,11 @@ pub trait RegistryExt {
     fn request_material(&self, path: Option<&str>) -> MaterialHandle;
     fn request_rig(&self, path: &str) -> RigHandle;
     fn request_animation_clip(&self, path: &str) -> AnimationClipHandle;
-    fn request_animation(&self, path: &str, header: &animationfile::AnimationClip) -> AnimationHandle;
+    fn request_animation(
+        &self,
+        path: &str,
+        header: &animationfile::AnimationClip,
+    ) -> AnimationHandle;
     fn request_texture(&self, path: &str, srgb: bool) -> TextureHandle;
     fn process_responses(&self);
 }
@@ -225,14 +296,10 @@ impl RegistryExt for Rc<RefCell<ResourceRegistry>> {
 
         debug_assert_eq!(entry.kind, kind);
 
-        entry.ref_count = entry.ref_count.checked_sub(1)
-            .expect("refcount underflow");
+        entry.ref_count = entry.ref_count.checked_sub(1).expect("refcount underflow");
     }
 
-    fn request_model(
-        &self,
-        path: &str,
-    ) -> ModelHandle {
+    fn request_model(&self, path: &str) -> ModelHandle {
         let mut reg = self.borrow_mut();
         if let Some(&idx) = reg.by_path.get(path) {
             let entry = reg.entries.get_mut(idx).unwrap();
@@ -240,25 +307,23 @@ impl RegistryExt for Rc<RefCell<ResourceRegistry>> {
             return ModelHandle::new(idx, self);
         }
 
-        let idx = reg.entries.insert(
-            Entry {
-                kind: ResourceKind::Model,
-                ref_count: 1u32,
-                game_state: GameState::Loading,
-                render_state: RenderState::Absent,
-            }
-        );
+        let idx = reg.entries.insert(Entry {
+            kind: ResourceKind::Model,
+            ref_count: 1u32,
+            game_state: GameState::Loading,
+            render_state: RenderState::Absent,
+        });
         reg.by_path.insert(path.to_string(), idx);
 
         let handle = ModelHandle::new(idx, self);
-        reg.resource_request(ResourceRequest::LoadModel { id: handle.id(), path: path.to_string() });
+        reg.resource_request(ResourceRequest::LoadModel {
+            id: handle.id(),
+            path: path.to_string(),
+        });
         handle
     }
 
-    fn request_mesh(
-        &self,
-        path: &str,
-    ) -> MeshHandle {
+    fn request_mesh(&self, path: &str) -> MeshHandle {
         let mut reg = self.borrow_mut();
         if let Some(&idx) = reg.by_path.get(path) {
             let entry = reg.entries.get_mut(idx).unwrap();
@@ -266,25 +331,23 @@ impl RegistryExt for Rc<RefCell<ResourceRegistry>> {
             return MeshHandle::new(idx, self);
         }
 
-        let idx = reg.entries.insert(
-            Entry {
-                kind: ResourceKind::Mesh,
-                ref_count: 1u32,
-                game_state: GameState::Loading,
-                render_state: RenderState::Absent,
-            }
-        );
+        let idx = reg.entries.insert(Entry {
+            kind: ResourceKind::Mesh,
+            ref_count: 1u32,
+            game_state: GameState::Loading,
+            render_state: RenderState::Absent,
+        });
         reg.by_path.insert(path.to_string(), idx);
 
         let handle = MeshHandle::new(idx, self);
-        reg.resource_request(ResourceRequest::LoadMesh { id: handle.id(), path: path.to_string() });
+        reg.resource_request(ResourceRequest::LoadMesh {
+            id: handle.id(),
+            path: path.to_string(),
+        });
         handle
     }
 
-    fn request_material(
-        &self,
-        path: Option<&str>,
-    ) -> MaterialHandle {
+    fn request_material(&self, path: Option<&str>) -> MaterialHandle {
         let mut reg = self.borrow_mut();
         if let Some(path) = path {
             if let Some(&idx) = reg.by_path.get(path) {
@@ -293,38 +356,37 @@ impl RegistryExt for Rc<RefCell<ResourceRegistry>> {
                 return MaterialHandle::new(idx, self);
             }
 
-            let idx = reg.entries.insert(
-                Entry {
-                    kind: ResourceKind::Material,
-                    ref_count: 1u32,
-                    game_state: GameState::Loading,
-                    render_state: RenderState::Absent,
-                }
-            );
+            let idx = reg.entries.insert(Entry {
+                kind: ResourceKind::Material,
+                ref_count: 1u32,
+                game_state: GameState::Loading,
+                render_state: RenderState::Absent,
+            });
             reg.by_path.insert(path.to_string(), idx);
 
             let handle = MaterialHandle::new(idx, self);
-            reg.resource_request(ResourceRequest::LoadMaterial { id: handle.id(), path: Some(path.to_string()) });
+            reg.resource_request(ResourceRequest::LoadMaterial {
+                id: handle.id(),
+                path: Some(path.to_string()),
+            });
             handle
         } else {
-            let idx = reg.entries.insert(
-                Entry {
-                    kind: ResourceKind::Material,
-                    ref_count: 1u32,
-                    game_state: GameState::Loading,
-                    render_state: RenderState::Absent,
-                }
-            );
+            let idx = reg.entries.insert(Entry {
+                kind: ResourceKind::Material,
+                ref_count: 1u32,
+                game_state: GameState::Loading,
+                render_state: RenderState::Absent,
+            });
             let handle = MaterialHandle::new(idx, self);
-            reg.resource_request(ResourceRequest::LoadMaterial { id: handle.id(), path: None });
+            reg.resource_request(ResourceRequest::LoadMaterial {
+                id: handle.id(),
+                path: None,
+            });
             handle
         }
     }
 
-    fn request_rig(
-        &self,
-        path: &str,
-    ) -> RigHandle {
+    fn request_rig(&self, path: &str) -> RigHandle {
         let mut reg = self.borrow_mut();
         if let Some(&idx) = reg.by_path.get(path) {
             let entry = reg.entries.get_mut(idx).unwrap();
@@ -332,25 +394,23 @@ impl RegistryExt for Rc<RefCell<ResourceRegistry>> {
             return RigHandle::new(idx, self);
         }
 
-        let idx = reg.entries.insert(
-            Entry {
-                kind: ResourceKind::Rig,
-                ref_count: 1u32,
-                game_state: GameState::Loading,
-                render_state: RenderState::Absent,
-            }
-        );
+        let idx = reg.entries.insert(Entry {
+            kind: ResourceKind::Rig,
+            ref_count: 1u32,
+            game_state: GameState::Loading,
+            render_state: RenderState::Absent,
+        });
         reg.by_path.insert(path.to_string(), idx);
 
         let handle = RigHandle::new(idx, self);
-        reg.resource_request(ResourceRequest::LoadRig { id: handle.id(), path: path.to_string() });
+        reg.resource_request(ResourceRequest::LoadRig {
+            id: handle.id(),
+            path: path.to_string(),
+        });
         handle
     }
 
-    fn request_animation_clip(
-        &self,
-        path: &str,
-    ) -> AnimationClipHandle {
+    fn request_animation_clip(&self, path: &str) -> AnimationClipHandle {
         let mut reg = self.borrow_mut();
         if let Some(&idx) = reg.by_path.get(path) {
             let entry = reg.entries.get_mut(idx).unwrap();
@@ -358,18 +418,19 @@ impl RegistryExt for Rc<RefCell<ResourceRegistry>> {
             return AnimationClipHandle::new(idx, self);
         }
 
-        let idx = reg.entries.insert(
-            Entry {
-                kind: ResourceKind::AnimationClip,
-                ref_count: 1u32,
-                game_state: GameState::Loading,
-                render_state: RenderState::Absent,
-            }
-        );
+        let idx = reg.entries.insert(Entry {
+            kind: ResourceKind::AnimationClip,
+            ref_count: 1u32,
+            game_state: GameState::Loading,
+            render_state: RenderState::Absent,
+        });
         reg.by_path.insert(path.to_string(), idx);
 
         let handle = AnimationClipHandle::new(idx, self);
-        reg.resource_request(ResourceRequest::LoadAnimationClip { id: handle.id(), path: path.to_string() });
+        reg.resource_request(ResourceRequest::LoadAnimationClip {
+            id: handle.id(),
+            path: path.to_string(),
+        });
         handle
     }
 
@@ -385,26 +446,24 @@ impl RegistryExt for Rc<RefCell<ResourceRegistry>> {
             return AnimationHandle::new(idx, self);
         }
 
-        let idx = reg.entries.insert(
-            Entry {
-                kind: ResourceKind::Animation,
-                ref_count: 1u32,
-                game_state: GameState::Loading,
-                render_state: RenderState::Absent,
-            }
-        );
+        let idx = reg.entries.insert(Entry {
+            kind: ResourceKind::Animation,
+            ref_count: 1u32,
+            game_state: GameState::Loading,
+            render_state: RenderState::Absent,
+        });
         reg.by_path.insert(path.to_string(), idx);
 
         let handle = AnimationHandle::new(idx, self);
-        reg.resource_request(ResourceRequest::LoadAnimation { id: handle.id(), path: path.to_string(), header: header.clone() });
+        reg.resource_request(ResourceRequest::LoadAnimation {
+            id: handle.id(),
+            path: path.to_string(),
+            header: header.clone(),
+        });
         handle
     }
 
-    fn request_texture(
-        &self,
-        path: &str,
-        srgb: bool,
-    ) -> TextureHandle {
+    fn request_texture(&self, path: &str, srgb: bool) -> TextureHandle {
         let mut reg = self.borrow_mut();
         if let Some(&idx) = reg.by_path.get(path) {
             let entry = reg.entries.get_mut(idx).unwrap();
@@ -412,18 +471,20 @@ impl RegistryExt for Rc<RefCell<ResourceRegistry>> {
             return TextureHandle::new(idx, self);
         }
 
-        let idx = reg.entries.insert(
-            Entry {
-                kind: ResourceKind::Texture,
-                ref_count: 1u32,
-                game_state: GameState::Loading,
-                render_state: RenderState::Absent,
-            }
-        );
+        let idx = reg.entries.insert(Entry {
+            kind: ResourceKind::Texture,
+            ref_count: 1u32,
+            game_state: GameState::Loading,
+            render_state: RenderState::Absent,
+        });
         reg.by_path.insert(path.to_string(), idx);
 
         let handle = TextureHandle::new(idx, self);
-        reg.resource_request(ResourceRequest::LoadTexture { id: handle.id(), path: path.to_string(), srgb });
+        reg.resource_request(ResourceRequest::LoadTexture {
+            id: handle.id(),
+            path: path.to_string(),
+            srgb,
+        });
         handle
     }
 
@@ -431,7 +492,11 @@ impl RegistryExt for Rc<RefCell<ResourceRegistry>> {
         let mut reg = self.borrow_mut();
         while let Ok(msg) = reg.res_rx.try_recv() {
             match msg {
-                ResourceResult::ModelResult { id, game_id, render_id } => {
+                ResourceResult::ModelResult {
+                    id,
+                    game_id,
+                    render_id,
+                } => {
                     let entry = reg.entries.get_mut(id.idx).unwrap();
                     entry.game_state = GameState::Ready(game_id.into());
                     entry.render_state = RenderState::Ready(render_id.into());
@@ -439,28 +504,32 @@ impl RegistryExt for Rc<RefCell<ResourceRegistry>> {
                 ResourceResult::MeshResult { id, render_id } => {
                     let entry = reg.entries.get_mut(id.idx).unwrap();
                     entry.render_state = RenderState::Ready(render_id.into());
-                },
+                }
                 ResourceResult::RigResult { id, game_id } => {
                     let entry = reg.entries.get_mut(id.idx).unwrap();
                     entry.game_state = GameState::Ready(game_id.into());
-                },
+                }
                 ResourceResult::AnimationResult { id, game_id } => {
                     let entry = reg.entries.get_mut(id.idx).unwrap();
                     entry.game_state = GameState::Ready(game_id.into());
-                },
+                }
                 ResourceResult::AnimationClipResult { id, game_id } => {
                     let entry = reg.entries.get_mut(id.idx).unwrap();
                     entry.game_state = GameState::Ready(game_id.into());
-                },
+                }
                 ResourceResult::TextureResult { id, render_id } => {
                     let entry = reg.entries.get_mut(id.idx).unwrap();
                     entry.render_state = RenderState::Ready(render_id.into());
-                },
-                ResourceResult::MaterialResult { id, game_id, render_id } => {
+                }
+                ResourceResult::MaterialResult {
+                    id,
+                    game_id,
+                    render_id,
+                } => {
                     let entry = reg.entries.get_mut(id.idx).unwrap();
                     entry.game_state = GameState::Ready(game_id.into());
                     entry.render_state = RenderState::Ready(render_id.into());
-                },
+                }
             }
         }
     }

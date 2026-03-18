@@ -7,7 +7,10 @@ use crate::game::sim::GameTrait;
 use super::assets::registry::{ModelHandle, RegistryExt as _, ResourceRegistry, TextureHandle};
 use generational_arena::{Arena, Index};
 
-use super::{animator::{self, AnimationGraph, Animator}, camera::Camera};
+use super::{
+    animator::{self, AnimationGraph, Animator},
+    camera::Camera,
+};
 
 #[derive(Hash, Eq, PartialEq, Clone, Copy)]
 pub struct SceneNodeId(pub Index);
@@ -59,8 +62,12 @@ impl Environment {
     pub fn init(resource_registry: &Rc<RefCell<ResourceRegistry>>) -> Self {
         Self {
             sun: Sun::default(),
-            prefiltered: resource_registry.request_texture("assets/kloofendal_overcast_puresky_8k.prefiltered.dds", true),
-            di: resource_registry.request_texture("assets/kloofendal_overcast_puresky_8k.di.dds", true),
+            prefiltered: resource_registry.request_texture(
+                "assets/kloofendal_overcast_puresky_8k.prefiltered.dds",
+                true,
+            ),
+            di: resource_registry
+                .request_texture("assets/kloofendal_overcast_puresky_8k.di.dds", true),
             brdf: resource_registry.request_texture("assets/brdf_lut.png", false),
         }
     }
@@ -92,7 +99,14 @@ pub struct Scene {
     pub global_time_sec: f32,
 }
 impl Scene {
-    pub fn update(&mut self, resource_registry: &Rc<RefCell<ResourceRegistry>>, animation_graphs: &Vec<AnimationGraph>, node: SceneNodeId, dt: f32, game: &mut impl GameTrait) {
+    pub fn update(
+        &mut self,
+        resource_registry: &Rc<RefCell<ResourceRegistry>>,
+        animation_graphs: &Vec<AnimationGraph>,
+        node: SceneNodeId,
+        dt: f32,
+        game: &mut impl GameTrait,
+    ) {
         game.update(self, resource_registry, animation_graphs, node, dt);
         let node = self.nodes.get_mut(node.into()).unwrap();
         for child_idx in node.children.clone() {

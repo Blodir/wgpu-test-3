@@ -17,13 +17,17 @@ fn read_fallback_shaders() -> std::io::Result<String> {
 pub fn create_shader_module(device: &wgpu::Device, path: &str) -> wgpu::ShaderModule {
     device.push_error_scope(wgpu::ErrorFilter::Validation);
     {
-        let source = wgpu::ShaderSource::Wgsl(read_shaders(path).unwrap_or_else(|e| {
-            println!("Error reading shader: {}", e);
-            read_fallback_shaders().unwrap()
-        }).into());
+        let source = wgpu::ShaderSource::Wgsl(
+            read_shaders(path)
+                .unwrap_or_else(|e| {
+                    println!("Error reading shader: {}", e);
+                    read_fallback_shaders().unwrap()
+                })
+                .into(),
+        );
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Shader"),
-            source
+            source,
         });
 
         device.poll(wgpu::Maintain::Wait);
@@ -32,12 +36,13 @@ pub fn create_shader_module(device: &wgpu::Device, path: &str) -> wgpu::ShaderMo
             Some(e) => Err(e),
             None => Ok(shader),
         }
-    }.unwrap_or_else(|e| {
+    }
+    .unwrap_or_else(|e| {
         println!("Shader compilation failed: {}", e);
         let source = wgpu::ShaderSource::Wgsl(read_fallback_shaders().unwrap().into());
         device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Shader"),
-            source
+            source,
         })
     })
 }

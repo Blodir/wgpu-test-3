@@ -1,12 +1,19 @@
 use std::{collections::HashMap, fs::File, io::Write as _, path::Path};
 
-use engine::main::assets::io::asset_formats::animationfile::{self, BinRef, Interpolation, Sampler3, SamplerQuat, Target, Track};
+use engine::main::assets::io::asset_formats::animationfile::{
+    self, BinRef, Interpolation, Sampler3, SamplerQuat, Target, Track,
+};
 
-use crate::{gltf_utils::{read3f32, read4f32}, utils::ensure_parent_dir_exists};
+use crate::{
+    gltf_utils::{read3f32, read4f32},
+    utils::ensure_parent_dir_exists,
+};
 
 use super::gltf_utils::readf32;
 
-fn gltf_interpolation_to_engine_interpolation(value: gltf::animation::Interpolation) -> Interpolation {
+fn gltf_interpolation_to_engine_interpolation(
+    value: gltf::animation::Interpolation,
+) -> Interpolation {
     match value {
         gltf::animation::Interpolation::Linear => Interpolation::Linear,
         gltf::animation::Interpolation::Step => Interpolation::Step,
@@ -103,21 +110,26 @@ pub fn bake_animation(
             }
         }
 
-        let shared_times_data = shared_inputs
-            .map(|i| readf32(&i, buffers));
-        let translation_times_data = translation_inputs
-            .map(|i| readf32(&i, buffers));
-        let rotation_times_data = rotation_inputs
-            .map(|i| readf32(&i, buffers));
-        let scale_times_data = scale_inputs
-            .map(|i| readf32(&i, buffers));
+        let shared_times_data = shared_inputs.map(|i| readf32(&i, buffers));
+        let translation_times_data = translation_inputs.map(|i| readf32(&i, buffers));
+        let rotation_times_data = rotation_inputs.map(|i| readf32(&i, buffers));
+        let scale_times_data = scale_inputs.map(|i| readf32(&i, buffers));
 
-        let translation_values_data = samplers.translation.as_ref()
-            .map(|s| s.output()).map(|i| read3f32(&i, buffers));
-        let rotation_values_data = samplers.rotation.as_ref()
-            .map(|s| s.output()).map(|i| read4f32(&i, buffers));
-        let scale_values_data = samplers.scale.as_ref()
-            .map(|s| s.output()).map(|i| read3f32(&i, buffers));
+        let translation_values_data = samplers
+            .translation
+            .as_ref()
+            .map(|s| s.output())
+            .map(|i| read3f32(&i, buffers));
+        let rotation_values_data = samplers
+            .rotation
+            .as_ref()
+            .map(|s| s.output())
+            .map(|i| read4f32(&i, buffers));
+        let scale_values_data = samplers
+            .scale
+            .as_ref()
+            .map(|s| s.output())
+            .map(|i| read3f32(&i, buffers));
 
         // construct binary refs
         // times first, then values
@@ -158,7 +170,9 @@ pub fn bake_animation(
 
         let translation = translation_values_data.map(|values_data| {
             let times = translation_times;
-            let interpolation = gltf_interpolation_to_engine_interpolation(samplers.translation.unwrap().interpolation());
+            let interpolation = gltf_interpolation_to_engine_interpolation(
+                samplers.translation.unwrap().interpolation(),
+            );
 
             let offset = current_binary_offset;
             let count = values_data.len() as u32;
@@ -166,12 +180,18 @@ pub fn bake_animation(
             current_binary_offset = binary_data.len() as u32;
             let values = BinRef { offset, count };
 
-            Sampler3 { times, values, interpolation }
+            Sampler3 {
+                times,
+                values,
+                interpolation,
+            }
         });
 
         let rotation = rotation_values_data.map(|values_data| {
             let times = rotation_times;
-            let interpolation = gltf_interpolation_to_engine_interpolation(samplers.rotation.unwrap().interpolation());
+            let interpolation = gltf_interpolation_to_engine_interpolation(
+                samplers.rotation.unwrap().interpolation(),
+            );
 
             let offset = current_binary_offset;
             let count = values_data.len() as u32;
@@ -179,12 +199,17 @@ pub fn bake_animation(
             current_binary_offset = binary_data.len() as u32;
             let values = BinRef { offset, count };
 
-            SamplerQuat { times, values, interpolation }
+            SamplerQuat {
+                times,
+                values,
+                interpolation,
+            }
         });
 
         let scale = scale_values_data.map(|values_data| {
             let times = scale_times;
-            let interpolation = gltf_interpolation_to_engine_interpolation(samplers.scale.unwrap().interpolation());
+            let interpolation =
+                gltf_interpolation_to_engine_interpolation(samplers.scale.unwrap().interpolation());
 
             let offset = current_binary_offset;
             assert_eq!(current_binary_offset, binary_data.len() as u32);
@@ -193,7 +218,11 @@ pub fn bake_animation(
             current_binary_offset = binary_data.len() as u32;
             let values = BinRef { offset, count };
 
-            Sampler3 { times, values, interpolation }
+            Sampler3 {
+                times,
+                values,
+                interpolation,
+            }
         });
 
         let track = animationfile::Track {

@@ -8,6 +8,14 @@ impl SRT {
     pub fn new(scale: Vec3, rotation: Quat, translation: Vec3) -> Self {
         Self(scale, rotation, translation)
     }
+
+    pub fn to_scale_rotation_translation(&self) -> (Vec3, Quat, Vec3) {
+        (self.0, self.1, self.2)
+    }
+
+    pub fn to_mat4(&self) -> Mat4 {
+        Mat4::from_scale_rotation_translation(self.0, self.1, self.2)
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug)]

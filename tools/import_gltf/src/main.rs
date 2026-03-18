@@ -1,32 +1,32 @@
 use aabb::{calculate_aabb, fold_aabb};
 use animations::bake_animation;
-use glam::Mat4;
-use gltf::Document;
-use materials::bake_material;
+use engine::main::assets::io::asset_formats::modelfile::{self, Deformation};
 use engine::main::world::buffers::skinned_vertex::SkinnedVertex;
 use engine::main::world::buffers::static_vertex::StaticVertex;
-use std::fs;
-use std::{collections::HashMap, env, fs::File, io::Write};
-use tangents::generate_tangents_for_mesh;
+use glam::Mat4;
+use gltf::Document;
 use gltf_utils::{
     accumulate_primitive_instances, filename_without_extension, read_base_color_texcoord_buffer,
     read_emissive_texcoord_buffer, read_index_buffer, read_joints_buffer,
     read_metallic_roughness_texcoord_buffer, read_normal_buffer, read_normals_texcoord_buffer,
-    read_occlusion_texcoord_buffer, read_position_buffer, read_tangents_buffer, read_weights_buffer,
-    JointsBuffer,
+    read_occlusion_texcoord_buffer, read_position_buffer, read_tangents_buffer,
+    read_weights_buffer, JointsBuffer,
 };
-use engine::main::assets::io::asset_formats::modelfile::{self, Deformation};
+use materials::bake_material;
+use std::fs;
+use std::{collections::HashMap, env, fs::File, io::Write};
+use tangents::generate_tangents_for_mesh;
 
 mod aabb;
-mod tangents;
-mod normals;
-mod gltf_utils;
-mod rig;
-mod utils;
 mod animations;
+mod gltf_utils;
 mod materials;
-use rig::bake_rigfile;
+mod normals;
+mod rig;
+mod tangents;
+mod utils;
 use normals::generate_flat_normals_for_mesh;
+use rig::bake_rigfile;
 
 fn bake(
     gltf: &Document,
@@ -52,7 +52,10 @@ fn bake(
     // (mesh index, skin index, primitive)
     let mut primitives = vec![];
     for (mesh, skin) in meshes_and_skins {
-        primitives.extend(mesh.primitives().map(|p| (mesh.index(), skin.as_ref().map(|s| s.index()), p)));
+        primitives.extend(
+            mesh.primitives()
+                .map(|p| (mesh.index(), skin.as_ref().map(|s| s.index()), p)),
+        );
     }
     primitives.sort_by(|(_, _, a), (_, _, b)| {
         a.material()
@@ -64,7 +67,10 @@ fn bake(
     let mut primitive_instances_map = HashMap::<(usize, usize), Vec<Mat4>>::new();
     // TODO multi scene support
     if gltf.scenes().len() > 1 {
-        println!("WARNING: gltf has {} scenes, importing only the first one", gltf.scenes().len());
+        println!(
+            "WARNING: gltf has {} scenes, importing only the first one",
+            gltf.scenes().len()
+        );
     }
     for node in gltf.scenes().next().unwrap().nodes() {
         accumulate_primitive_instances(&node, &Mat4::IDENTITY, &mut primitive_instances_map);
@@ -226,7 +232,10 @@ fn bake(
 
     let mut material_paths: Vec<String> = vec![];
     for (idx, material) in gltf.materials().enumerate() {
-        let name = material.name().map(|n| n.to_string()).unwrap_or(model_name.to_string() + &idx.to_string());
+        let name = material
+            .name()
+            .map(|n| n.to_string())
+            .unwrap_or(model_name.to_string() + &idx.to_string());
         let json_path = format!("assets/local/{}/{}.material.json", model_name, name);
         bake_material(&material, buffers, images, model_name, &json_path)?;
         material_paths.push(json_path);
@@ -234,21 +243,34 @@ fn bake(
 
     let aabb = fold_aabb(&aabbs);
 
-    let deformation = if gltf.skins().len() > 0 { Deformation::Skinned } else { Deformation::None };
-    let animations: Result<Vec<_>, _> = gltf.animations()
+    let deformation = if gltf.skins().len() > 0 {
+        Deformation::Skinned
+    } else {
+        Deformation::None
+    };
+    let animations: Result<Vec<_>, _> = gltf
+        .animations()
         .enumerate()
-        .map(|(idx, anim)| -> Result<String, Box<dyn std::error::Error>> {
-            let anim_json_path = format!("assets/local/{}/{}_{}.animation.json", model_name, model_name, idx);
-            let anim_bin_path  = format!("assets/local/{}/{}_{}.animation.bin",  model_name, model_name, idx);
-            bake_animation(
-                &anim,
-                buffers,
-                &reindex.node_reindex,
-                &anim_json_path,
-                &anim_bin_path,
-            )?;
-            Ok(anim_json_path)
-        })
+        .map(
+            |(idx, anim)| -> Result<String, Box<dyn std::error::Error>> {
+                let anim_json_path = format!(
+                    "assets/local/{}/{}_{}.animation.json",
+                    model_name, model_name, idx
+                );
+                let anim_bin_path = format!(
+                    "assets/local/{}/{}_{}.animation.bin",
+                    model_name, model_name, idx
+                );
+                bake_animation(
+                    &anim,
+                    buffers,
+                    &reindex.node_reindex,
+                    &anim_json_path,
+                    &anim_bin_path,
+                )?;
+                Ok(anim_json_path)
+            },
+        )
         .collect();
     let animations = animations?;
 

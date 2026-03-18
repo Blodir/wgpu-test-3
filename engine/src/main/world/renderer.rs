@@ -1,6 +1,10 @@
 use std::sync::Arc;
 use std::time::Instant;
 
+use super::super::sampler_cache::SamplerCache;
+use super::super::shader_cache::ShaderCache;
+use super::super::wgpu_context::WgpuContext;
+use super::anim_pose_store::AnimPoseStore;
 use super::attachments::depth::DepthTexture;
 use super::attachments::msaa::MSAATextures;
 use super::attachments::skybox::SkyboxOutputTexture;
@@ -12,19 +16,15 @@ use super::buffers::skinned_instance::SkinnedInstances;
 use super::pipelines::post_processing::PostProcessingPipeline;
 use super::pipelines::skinned_pbr::SkinnedPbrPipeline;
 use super::pipelines::skybox::SkyboxPipeline;
-use super::anim_pose_store::AnimPoseStore;
 use super::prepare::camera::prepare_camera;
 use super::prepare::lights::prepare_lights;
 use super::prepare::mesh::resolve_skinned_draw;
-use super::super::sampler_cache::SamplerCache;
-use super::super::shader_cache::ShaderCache;
-use super::super::wgpu_context::WgpuContext;
 
+use crate::main::assets::io::asset_formats::materialfile;
+use crate::main::assets::store::{PlaceholderTextureIds, RenderAssetStore, TextureRenderId};
 use crate::main::world::buffers::static_instance::StaticInstances;
 use crate::main::world::pipelines::static_pbr::StaticPbrPipeline;
 use crate::main::world::prepare::mesh::resolve_static_draw;
-use crate::main::assets::io::asset_formats::materialfile;
-use crate::main::assets::store::{PlaceholderTextureIds, RenderAssetStore, TextureRenderId};
 use crate::snapshot_handoff::SnapshotHandoff;
 
 pub struct Layouts {
@@ -99,10 +99,7 @@ impl Renderer {
             &layouts.lights,
         );
 
-        let camera = CameraBinding::new(
-            &wgpu_context.device,
-            &layouts.camera,
-        );
+        let camera = CameraBinding::new(&wgpu_context.device, &layouts.camera);
         let bones = BonesBinding::new(&layouts.bones, &wgpu_context.device);
         let skinned_instances = SkinnedInstances::new(wgpu_context);
         let static_instances = StaticInstances::new(wgpu_context);
@@ -180,7 +177,14 @@ impl Renderer {
             &wgpu_context.queue,
             &wgpu_context.surface_config,
         );
-        prepare_lights(&snaps, &mut self.lights, render_resources, &mut self.sampler_cache, wgpu_context, &self.layouts.lights);
+        prepare_lights(
+            &snaps,
+            &mut self.lights,
+            render_resources,
+            &mut self.sampler_cache,
+            wgpu_context,
+            &self.layouts.lights,
+        );
 
         let mut encoder =
             wgpu_context
@@ -196,8 +200,25 @@ impl Renderer {
             &self.lights.bind_group,
         );
 
-        let skinned_draw_context = resolve_skinned_draw(&mut self.bones, &self.layouts.bones, &mut self.skinned_instances, &snaps, t, &wgpu_context.device, &wgpu_context.queue, pose_storage, frame_idx);
-        let static_draw_context = resolve_static_draw(&mut self.static_instances, &snaps, t, &wgpu_context.device, &wgpu_context.queue);
+        let skinned_draw_context = resolve_skinned_draw(
+            &mut self.bones,
+            &self.layouts.bones,
+            &mut self.skinned_instances,
+            render_resources,
+            &snaps,
+            t,
+            &wgpu_context.device,
+            &wgpu_context.queue,
+            pose_storage,
+            frame_idx,
+        );
+        let static_draw_context = resolve_static_draw(
+            &mut self.static_instances,
+            &snaps,
+            t,
+            &wgpu_context.device,
+            &wgpu_context.queue,
+        );
 
         self.skinned_pipeline.render(
             skinned_draw_context,
@@ -248,15 +269,64 @@ impl Renderer {
         );
     }
 
-    pub fn upload_material(&mut self, manifest: &materialfile::Material, normal_texture: &Option<TextureRenderId>, occlusion_texture: &Option<TextureRenderId>, emissive_texture: &Option<TextureRenderId>, base_color_texture: &Option<TextureRenderId>, metallic_roughness_texture: &Option<TextureRenderId>, render_resources: &RenderAssetStore, wgpu_context: &WgpuContext) -> Result<MaterialBinding, ()> {
+    pub fn upload_material(
+        &mut self,
+        manifest: &materialfile::Material,
+        normal_texture: &Option<TextureRenderId>,
+        occlusion_texture: &Option<TextureRenderId>,
+        emissive_texture: &Option<TextureRenderId>,
+        base_color_texture: &Option<TextureRenderId>,
+        metallic_roughness_texture: &Option<TextureRenderId>,
+        render_resources: &RenderAssetStore,
+        wgpu_context: &WgpuContext,
+    ) -> Result<MaterialBinding, ()> {
         let textures_gpu = &render_resources.textures;
-        let base_color_view = &textures_gpu.get(base_color_texture.unwrap_or(self.placeholders.base_color).into()).unwrap().texture_view;
-        let emissive_view = &textures_gpu.get(emissive_texture.unwrap_or(self.placeholders.emissive).into()).unwrap().texture_view;
-        let metallic_roughness_view = &textures_gpu.get(metallic_roughness_texture.unwrap_or(self.placeholders.metallic_roughness).into()).unwrap().texture_view;
-        let normal_view = &textures_gpu.get(normal_texture.unwrap_or(self.placeholders.normals).into()).unwrap().texture_view;
-        let occlusion_view = &textures_gpu.get(occlusion_texture.unwrap_or(self.placeholders.occlusion).into()).unwrap().texture_view;
-        Ok(
-            MaterialBinding::upload(manifest, base_color_view, emissive_view, metallic_roughness_view, normal_view, occlusion_view, &self.layouts.material, wgpu_context, &mut self.sampler_cache)
-        )
+        let base_color_view = &textures_gpu
+            .get(
+                base_color_texture
+                    .unwrap_or(self.placeholders.base_color)
+                    .into(),
+            )
+            .unwrap()
+            .texture_view;
+        let emissive_view = &textures_gpu
+            .get(
+                emissive_texture
+                    .unwrap_or(self.placeholders.emissive)
+                    .into(),
+            )
+            .unwrap()
+            .texture_view;
+        let metallic_roughness_view = &textures_gpu
+            .get(
+                metallic_roughness_texture
+                    .unwrap_or(self.placeholders.metallic_roughness)
+                    .into(),
+            )
+            .unwrap()
+            .texture_view;
+        let normal_view = &textures_gpu
+            .get(normal_texture.unwrap_or(self.placeholders.normals).into())
+            .unwrap()
+            .texture_view;
+        let occlusion_view = &textures_gpu
+            .get(
+                occlusion_texture
+                    .unwrap_or(self.placeholders.occlusion)
+                    .into(),
+            )
+            .unwrap()
+            .texture_view;
+        Ok(MaterialBinding::upload(
+            manifest,
+            base_color_view,
+            emissive_view,
+            metallic_roughness_view,
+            normal_view,
+            occlusion_view,
+            &self.layouts.material,
+            wgpu_context,
+            &mut self.sampler_cache,
+        ))
     }
 }

@@ -1,19 +1,14 @@
 use std::collections::HashMap;
 
 use generational_arena::{Arena, Index};
-use glam::{Quat, Vec3};
 
-use crate::{job_system::worker_pool::{AnimPoseTaskResult}, game::scene_tree::SceneNodeId};
-
-#[derive(Clone, Copy, Debug)]
-pub struct TRS {
-    pub t: Vec3,
-    pub r: Quat,
-    pub s: Vec3,
-}
+use crate::{
+    game::scene_tree::SceneNodeId, job_system::worker_pool::AnimPoseTaskResult,
+    main::assets::io::asset_formats::rigfile::SRT,
+};
 
 pub struct PoseData {
-    pub joints: Vec<TRS>,
+    pub nodes: Vec<SRT>,
     pub time: u64,
 }
 
@@ -34,44 +29,41 @@ pub const POSE_STORAGE_BUFFER_SIZE: usize = 6;
 const POSE_GC_GRACE_FRAMES: u32 = 120;
 
 pub enum GetPoseResponse<'a> {
-    One(&'a [TRS]), // only one pose ready, use that
-    Two(u64, &'a [TRS], u64, &'a [TRS]), // 2+ poses ready, interpolate
-    Nothing, // no poses ready yet, skip or use bind pose
+    One(&'a [SRT]),                      // only one pose ready, use that
+    Two(u64, &'a [SRT], u64, &'a [SRT]), // 2+ poses ready, interpolate
+    Nothing,                             // no poses ready yet, skip or use bind pose
 }
 
 struct PoseBuffer {
     times: Vec<u64>,
-    joints: Vec<TRS>,
-    joints_count: usize,
+    nodes: Vec<SRT>,
+    nodes_count: usize,
 }
 impl PoseBuffer {
     fn new(first_pose: PoseData) -> Self {
-        let joints_count = first_pose.joints.len();
+        let nodes_count = first_pose.nodes.len();
         let times = Vec::with_capacity(POSE_STORAGE_BUFFER_SIZE);
-        let joints = Vec::with_capacity(joints_count * POSE_STORAGE_BUFFER_SIZE);
+        let nodes = Vec::with_capacity(nodes_count * POSE_STORAGE_BUFFER_SIZE);
 
         let mut this = Self {
             times,
-            joints,
-            joints_count,
+            nodes,
+            nodes_count,
         };
         this.insert_one(first_pose);
 
         this
     }
 
-    fn evict_first_n(
-        &mut self,
-        n_poses: usize,
-    ) {
-        // evict joints
-        let joints_n = n_poses * self.joints_count;
-        let joints_len = self.joints.len();
+    fn evict_first_n(&mut self, n_poses: usize) {
+        // evict nodes
+        let nodes_n = n_poses * self.nodes_count;
+        let nodes_len = self.nodes.len();
 
-        debug_assert!(joints_n <= joints_len);
+        debug_assert!(nodes_n <= nodes_len);
 
-        self.joints.copy_within(joints_n..joints_len, 0);
-        self.joints.truncate(joints_len - joints_n);
+        self.nodes.copy_within(nodes_n..nodes_len, 0);
+        self.nodes.truncate(nodes_len - nodes_n);
 
         // evict times
         let times_len = self.times.len();
@@ -92,7 +84,7 @@ impl PoseBuffer {
         // fast path
         if times_len == 0 || self.times[times_len - 1] <= data.time {
             self.times.push(data.time);
-            self.joints.extend_from_slice(&data.joints);
+            self.nodes.extend_from_slice(&data.nodes);
             return;
         }
 
@@ -109,18 +101,18 @@ impl PoseBuffer {
         self.times.copy_within(insert_i..times_len, insert_i + 1);
         self.times[insert_i] = data.time;
 
-        let jc = self.joints_count;
-        let old_joint_len = times_len * jc;
+        let nc = self.nodes_count;
+        let old_node_len = times_len * nc;
 
         unsafe {
-            self.joints.set_len(old_joint_len + jc);
+            self.nodes.set_len(old_node_len + nc);
         }
 
-        let src = insert_i * jc;
-        let dst = (insert_i + 1) * jc;
+        let src = insert_i * nc;
+        let dst = (insert_i + 1) * nc;
 
-        self.joints.copy_within(src..old_joint_len, dst);
-        self.joints[src..src + jc].copy_from_slice(&data.joints);
+        self.nodes.copy_within(src..old_node_len, dst);
+        self.nodes[src..src + nc].copy_from_slice(&data.nodes);
     }
 
     fn get<'a>(&'a self, query_time: u64) -> GetPoseResponse<'a> {
@@ -131,7 +123,7 @@ impl PoseBuffer {
         }
 
         if len == 1 {
-            return GetPoseResponse::One(&self.joints[0..self.joints_count]);
+            return GetPoseResponse::One(&self.nodes[0..self.nodes_count]);
         }
 
         let mut best_idx = None;
@@ -147,20 +139,18 @@ impl PoseBuffer {
         let idx = match best_idx {
             Some(i) => i,
             None => {
-                return GetPoseResponse::One(
-                    &self.joints[0..self.joints_count],
-                );
+                return GetPoseResponse::One(&self.nodes[0..self.nodes_count]);
             }
         };
 
         if idx == len - 1 {
-            GetPoseResponse::One(&self.joints[idx * self.joints_count..(idx + 1) * self.joints_count])
+            GetPoseResponse::One(&self.nodes[idx * self.nodes_count..(idx + 1) * self.nodes_count])
         } else {
             GetPoseResponse::Two(
                 self.times[idx],
-                &self.joints[idx * self.joints_count..(idx + 1) * self.joints_count],
+                &self.nodes[idx * self.nodes_count..(idx + 1) * self.nodes_count],
                 self.times[idx + 1],
-                &self.joints[(idx + 1) * self.joints_count..(idx + 2) * self.joints_count],
+                &self.nodes[(idx + 1) * self.nodes_count..(idx + 2) * self.nodes_count],
             )
         }
     }
@@ -186,7 +176,7 @@ impl AnimPoseStore {
                 for d in res.data {
                     entry.buffer.insert_one(d);
                 }
-            },
+            }
             None => {
                 let mut data = res.data.into_iter();
                 let mut entry = PoseEntry::new(data.next().unwrap());
@@ -195,21 +185,24 @@ impl AnimPoseStore {
                 }
                 let idx = self.pose_data.insert(entry);
                 self.scene_to_pose_id.insert(res.node_id, idx);
-            },
+            }
         }
     }
 
     // TODO this is never called
     pub fn run_gc(&mut self, frame_idx: u32) {
-        self.pose_data.retain(|_idx, entry| {
-            frame_idx.saturating_sub(entry.last_seen) < POSE_GC_GRACE_FRAMES
-        });
-        self.scene_to_pose_id.retain(|_node_id, pose_id| {
-            self.pose_data.contains(*pose_id)
-        });
+        self.pose_data
+            .retain(|_idx, entry| frame_idx.saturating_sub(entry.last_seen) < POSE_GC_GRACE_FRAMES);
+        self.scene_to_pose_id
+            .retain(|_node_id, pose_id| self.pose_data.contains(*pose_id));
     }
 
-    pub fn get<'a>(&'a mut self, id: &SceneNodeId, query_time: u64, frame_idx: u32) -> GetPoseResponse<'a> {
+    pub fn get<'a>(
+        &'a mut self,
+        id: &SceneNodeId,
+        query_time: u64,
+        frame_idx: u32,
+    ) -> GetPoseResponse<'a> {
         if let Some(idx) = self.scene_to_pose_id.get(id) {
             let entry = self.pose_data.get_mut(*idx).unwrap();
             entry.last_seen = frame_idx;

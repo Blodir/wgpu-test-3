@@ -1,6 +1,8 @@
 use wgpu::{util::DeviceExt as _, BindGroupLayout};
 
-use crate::main::{assets::io::asset_formats::materialfile, sampler_cache::SamplerCache, wgpu_context::WgpuContext};
+use crate::main::{
+    assets::io::asset_formats::materialfile, sampler_cache::SamplerCache, wgpu_context::WgpuContext,
+};
 
 pub struct MaterialBinding {
     pub bind_group: wgpu::BindGroup,
@@ -216,11 +218,41 @@ impl MaterialBinding {
                     usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
                 });
 
-        let normal_sampler = sampler_cache.get(&mat.normal_texture.as_ref().map(|t| &t.sampler).unwrap_or(&materialfile::Sampler::default()), wgpu_context);
-        let occlusion_sampler = sampler_cache.get(&mat.occlusion_texture.as_ref().map(|t| &t.sampler).unwrap_or(&materialfile::Sampler::default()), wgpu_context);
-        let emissive_sampler = sampler_cache.get(&mat.emissive_texture.as_ref().map(|t| &t.sampler).unwrap_or(&materialfile::Sampler::default()), wgpu_context);
-        let base_color_sampler = sampler_cache.get(&mat.base_color_texture.as_ref().map(|t| &t.sampler).unwrap_or(&materialfile::Sampler::default()), wgpu_context);
-        let metallic_roughness_sampler = sampler_cache.get(&mat.metallic_roughness_texture.as_ref().map(|t| &t.sampler).unwrap_or(&materialfile::Sampler::default()), wgpu_context);
+        let normal_sampler = sampler_cache.get(
+            &mat.normal_texture
+                .as_ref()
+                .map(|t| &t.sampler)
+                .unwrap_or(&materialfile::Sampler::default()),
+            wgpu_context,
+        );
+        let occlusion_sampler = sampler_cache.get(
+            &mat.occlusion_texture
+                .as_ref()
+                .map(|t| &t.sampler)
+                .unwrap_or(&materialfile::Sampler::default()),
+            wgpu_context,
+        );
+        let emissive_sampler = sampler_cache.get(
+            &mat.emissive_texture
+                .as_ref()
+                .map(|t| &t.sampler)
+                .unwrap_or(&materialfile::Sampler::default()),
+            wgpu_context,
+        );
+        let base_color_sampler = sampler_cache.get(
+            &mat.base_color_texture
+                .as_ref()
+                .map(|t| &t.sampler)
+                .unwrap_or(&materialfile::Sampler::default()),
+            wgpu_context,
+        );
+        let metallic_roughness_sampler = sampler_cache.get(
+            &mat.metallic_roughness_texture
+                .as_ref()
+                .map(|t| &t.sampler)
+                .unwrap_or(&materialfile::Sampler::default()),
+            wgpu_context,
+        );
         let bind_group = wgpu_context
             .device
             .create_bind_group(&wgpu::BindGroupDescriptor {

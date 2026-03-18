@@ -68,10 +68,8 @@ impl MipmapPipeline {
                 bind_group_layouts,
                 push_constant_ranges: &[],
             });
-        let shader_module = engine::main::utils::create_shader_module(
-            device,
-            "tools/import_env/src/mipmap.wgsl",
-        );
+        let shader_module =
+            engine::main::utils::create_shader_module(device, "tools/import_env/src/mipmap.wgsl");
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Mipmap Render Pipeline"),
             layout: Some(&render_pipeline_layout),

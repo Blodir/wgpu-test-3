@@ -18,7 +18,10 @@ pub fn calculate_aabb(positions: &Vec<[f32; 3]>) -> modelfile::Aabb {
         min_z = min_z.min(position[2]);
         max_z = max_z.max(position[2]);
     }
-    modelfile::Aabb { min: [min_x, min_y, min_z], max: [max_x, max_y, max_z] }
+    modelfile::Aabb {
+        min: [min_x, min_y, min_z],
+        max: [max_x, max_y, max_z],
+    }
 }
 
 pub fn fold_aabb(aabbs: &Vec<modelfile::Aabb>) -> modelfile::Aabb {
@@ -36,5 +39,8 @@ pub fn fold_aabb(aabbs: &Vec<modelfile::Aabb>) -> modelfile::Aabb {
         min_z = min_z.min(aabb.min[2]);
         max_z = max_z.max(aabb.max[2]);
     }
-    modelfile::Aabb { min: [min_x, min_y, min_z], max: [max_x, max_y, max_z] }
+    modelfile::Aabb {
+        min: [min_x, min_y, min_z],
+        max: [max_x, max_y, max_z],
+    }
 }

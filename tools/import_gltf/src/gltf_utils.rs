@@ -190,7 +190,10 @@ pub fn read4f32(accessor: &gltf::Accessor, buffers: &Vec<gltf::buffer::Data>) ->
     output
 }
 
-pub fn read_mat4(accessor: &gltf::Accessor, buffers: &Vec<gltf::buffer::Data>) -> Vec<[[f32; 4]; 4]> {
+pub fn read_mat4(
+    accessor: &gltf::Accessor,
+    buffers: &Vec<gltf::buffer::Data>,
+) -> Vec<[[f32; 4]; 4]> {
     assert_eq!(accessor.data_type(), gltf::accessor::DataType::F32);
     assert_eq!(accessor.dimensions(), gltf::accessor::Dimensions::Mat4);
 
@@ -263,7 +266,10 @@ pub fn read4u16(accessor: &gltf::Accessor, buffers: &Vec<gltf::buffer::Data>) ->
     output
 }
 
-pub fn read_index_buffer(primitive: &gltf::Primitive, buffers: &Vec<gltf::buffer::Data>) -> Vec<u32> {
+pub fn read_index_buffer(
+    primitive: &gltf::Primitive,
+    buffers: &Vec<gltf::buffer::Data>,
+) -> Vec<u32> {
     if primitive.indices().is_none() {
         println!(
             "WARNING: primitive {} has no index buffer, so we generate it",
@@ -523,7 +529,9 @@ pub fn read_emissive_texcoord_buffer(
 }
 
 pub fn filename_without_extension(path: &str) -> Option<&str> {
-    std::path::Path::new(path).file_stem().and_then(|s| s.to_str())
+    std::path::Path::new(path)
+        .file_stem()
+        .and_then(|s| s.to_str())
 }
 
 pub fn col_major_to_row_major(m: [[f32; 4]; 4]) -> [[f32; 4]; 4] {

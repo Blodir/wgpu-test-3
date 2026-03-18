@@ -14,10 +14,7 @@ pub struct CameraBinding {
     pub bind_group: wgpu::BindGroup,
 }
 impl CameraBinding {
-    pub fn new(
-        device: &wgpu::Device,
-        bind_group_layout: &wgpu::BindGroupLayout,
-    ) -> Self {
+    pub fn new(device: &wgpu::Device, bind_group_layout: &wgpu::BindGroupLayout) -> Self {
         let view_proj_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("View Projection Buffer"),
             contents: bytemuck::cast_slice(&Mat4::IDENTITY.to_cols_array()),
@@ -106,16 +103,8 @@ impl CameraBinding {
         inverse_view_proj_rot: &[f32; 16],
         queue: &wgpu::Queue,
     ) {
-        queue.write_buffer(
-            &self.view_proj_buffer,
-            0,
-            bytemuck::cast_slice(view_proj),
-        );
-        queue.write_buffer(
-            &self.position_buffer,
-            0,
-            bytemuck::cast_slice(position),
-        );
+        queue.write_buffer(&self.view_proj_buffer, 0, bytemuck::cast_slice(view_proj));
+        queue.write_buffer(&self.position_buffer, 0, bytemuck::cast_slice(position));
         queue.write_buffer(
             &self.inverse_view_proj_rot_buffer,
             0,

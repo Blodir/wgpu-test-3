@@ -4,8 +4,9 @@ use generational_arena::{Arena, Index};
 use glam::Mat4;
 
 use super::registry::{
-    AnimationClipHandle, AnimationClipId, AnimationHandle, AnimationId, MaterialHandle, MaterialId,
-    MeshHandle, ModelId, RenderState, ResourceRegistry, RigHandle, RigId, TextureHandle,
+    AnimationClipHandle, AnimationClipId, AnimationHandle, AnimationId, GameState, MaterialHandle,
+    MaterialId, MeshHandle, ModelId, RenderState, ResourceRegistry, RigHandle, RigId,
+    TextureHandle,
 };
 use super::runtime_formats::animation::{self, AnimationClip};
 use crate::main::assets::io::asset_formats::{
@@ -116,6 +117,8 @@ pub enum CreateGameResourceResponse {
         mesh: MeshRenderId,
         submeshes: Vec<SubMesh>,
         vertex_buffer_start_offset: u32,
+        joint_nodes: Vec<u32>,
+        inverse_bind_matrices: Vec<Mat4>,
     },
     Material {
         id: MaterialId,
@@ -304,6 +307,13 @@ impl GameAssetStore {
                         staging.push(StagedData::Model(id, model_game_data));
                         continue 'staging_loop;
                     };
+                    let rig_game_id =
+                        if let GameState::Ready(index) = reg.get(&model_game_data.rig).game_state {
+                            index
+                        } else {
+                            staging.push(StagedData::Model(id, model_game_data));
+                            continue 'staging_loop;
+                        };
 
                     let mut material_render_ids = vec![];
                     for mat_handle in &model_game_data.materials {
@@ -338,6 +348,10 @@ impl GameAssetStore {
                             material,
                         })
                     }
+                    let (joint_nodes, inverse_bind_matrices) = {
+                        let rig = self.rigs.get(rig_game_id).unwrap();
+                        (rig.joint_nodes.clone(), rig.inverse_bind_matrices.clone())
+                    };
                     let game_id = self.models.insert(model_game_data);
                     let res = CreateGameResourceResponse::Model {
                         id,
@@ -345,6 +359,8 @@ impl GameAssetStore {
                         mesh: mesh_render_id,
                         submeshes,
                         vertex_buffer_start_offset,
+                        joint_nodes,
+                        inverse_bind_matrices,
                     };
                     if self.res_tx.send(res).is_err() {
                         todo!();

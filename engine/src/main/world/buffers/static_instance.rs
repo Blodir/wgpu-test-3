@@ -81,7 +81,7 @@ impl StaticInstance {
     pub fn from(mat4: Mat4, itr: Mat3) -> Self {
         Self {
             m4: mat4.to_cols_array_2d(),
-            itr: itr.to_cols_array_2d()
+            itr: itr.to_cols_array_2d(),
         }
     }
 }
@@ -91,19 +91,25 @@ pub struct StaticInstances {
 }
 impl StaticInstances {
     pub fn new(wgpu_context: &WgpuContext) -> Self {
-        let instance_buffer = wgpu_context
-            .device
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Instance buffer"),
-                contents: bytemuck::cast_slice(&vec![Mat4::IDENTITY]),
-                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            });
+        let instance_buffer =
+            wgpu_context
+                .device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("Instance buffer"),
+                    contents: bytemuck::cast_slice(&vec![Mat4::IDENTITY]),
+                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                });
         Self {
             buffer: instance_buffer,
         }
     }
 
-    pub fn update(&mut self, data: Vec<StaticInstance>, queue: &wgpu::Queue, device: &wgpu::Device) {
+    pub fn update(
+        &mut self,
+        data: Vec<StaticInstance>,
+        queue: &wgpu::Queue,
+        device: &wgpu::Device,
+    ) {
         let instance_bytes: &[u8] = bytemuck::cast_slice(&data);
         if self.buffer.size() >= instance_bytes.len() as u64 {
             queue.write_buffer(&self.buffer, 0, instance_bytes);

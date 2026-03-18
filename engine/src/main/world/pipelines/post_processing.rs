@@ -1,11 +1,10 @@
 use wgpu::util::DeviceExt;
 
-use crate::main::{
-    shader_cache::ShaderCache, wgpu_context::WgpuContext
-};
 use crate::main::world::{
-    attachments::{msaa::MSAATextures, skybox::SkyboxOutputTexture}, bindgroups::post_processing::{PostProcessingInputs, PostProcessingInputsBinding}
+    attachments::{msaa::MSAATextures, skybox::SkyboxOutputTexture},
+    bindgroups::post_processing::{PostProcessingInputs, PostProcessingInputsBinding},
 };
+use crate::main::{shader_cache::ShaderCache, wgpu_context::WgpuContext};
 
 const INDICES: &[u16] = &[0, 2, 1, 3, 2, 0];
 
@@ -22,50 +21,62 @@ impl PostProcessingPipeline {
         skybox_texture: &SkyboxOutputTexture,
         msaa_textures: &MSAATextures,
     ) -> Self {
-        let inputs_bind_group_layout =
-            wgpu_context.device.create_bind_group_layout(&PostProcessingInputs::desc());
+        let inputs_bind_group_layout = wgpu_context
+            .device
+            .create_bind_group_layout(&PostProcessingInputs::desc());
         let bind_group_layouts = &[&inputs_bind_group_layout];
         let render_pipeline_layout =
-            wgpu_context.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("Post Processing Pipeline Layout"),
-                bind_group_layouts,
-                push_constant_ranges: &[],
-            });
-        let shader_module = shader_cache.get("engine/src/main/world/shaders/post_processing.wgsl".to_string(), wgpu_context);
-        let render_pipeline = wgpu_context.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Post Processing Render Pipeline"),
-            layout: Some(&render_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader_module,
-                entry_point: "vs_main",
-                buffers: &[],
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader_module,
-                entry_point: "fs_main",
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: wgpu_context.surface_config.format,
-                    blend: None,
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: Some(wgpu::Face::Back),
-                ..Default::default()
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            multiview: None,
-        });
+            wgpu_context
+                .device
+                .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some("Post Processing Pipeline Layout"),
+                    bind_group_layouts,
+                    push_constant_ranges: &[],
+                });
+        let shader_module = shader_cache.get(
+            "engine/src/main/world/shaders/post_processing.wgsl".to_string(),
+            wgpu_context,
+        );
+        let render_pipeline =
+            wgpu_context
+                .device
+                .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                    label: Some("Post Processing Render Pipeline"),
+                    layout: Some(&render_pipeline_layout),
+                    vertex: wgpu::VertexState {
+                        module: &shader_module,
+                        entry_point: "vs_main",
+                        buffers: &[],
+                    },
+                    fragment: Some(wgpu::FragmentState {
+                        module: &shader_module,
+                        entry_point: "fs_main",
+                        targets: &[Some(wgpu::ColorTargetState {
+                            format: wgpu_context.surface_config.format,
+                            blend: None,
+                            write_mask: wgpu::ColorWrites::ALL,
+                        })],
+                    }),
+                    primitive: wgpu::PrimitiveState {
+                        topology: wgpu::PrimitiveTopology::TriangleList,
+                        strip_index_format: None,
+                        front_face: wgpu::FrontFace::Ccw,
+                        cull_mode: Some(wgpu::Face::Back),
+                        ..Default::default()
+                    },
+                    depth_stencil: None,
+                    multisample: wgpu::MultisampleState::default(),
+                    multiview: None,
+                });
 
-        let index_buffer = wgpu_context.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Index Buffer"),
-            contents: bytemuck::cast_slice(INDICES),
-            usage: wgpu::BufferUsages::INDEX,
-        });
+        let index_buffer =
+            wgpu_context
+                .device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("Index Buffer"),
+                    contents: bytemuck::cast_slice(INDICES),
+                    usage: wgpu::BufferUsages::INDEX,
+                });
 
         let inputs_binding = PostProcessingInputs::upload(
             &wgpu_context.device,

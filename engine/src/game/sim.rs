@@ -1,5 +1,9 @@
 use std::{
-    cell::RefCell, rc::Rc, sync::Arc, thread, time::{Duration, Instant}
+    cell::RefCell,
+    rc::Rc,
+    sync::Arc,
+    thread,
+    time::{Duration, Instant},
 };
 
 use crossbeam_queue::SegQueue;
@@ -10,14 +14,30 @@ use winit::{
 
 use super::assets::registry::{RegistryExt, ResourceRegistry, ResourceRequest, ResourceResult};
 use super::assets::store::{CreateGameResourceRequest, CreateGameResourceResponse, GameAssetStore};
+use super::scene_tree::RenderDataType;
 use crate::{
-    game::{animator::AnimationGraph, build_snapshot::RenderSnapshot, scene_tree::{Scene, SceneNodeId}}, job_system::worker_pool::Task, snapshot_handoff::SnapshotHandoff
+    game::{
+        animator::AnimationGraph,
+        build_snapshot::RenderSnapshot,
+        scene_tree::{Scene, SceneNodeId},
+    },
+    job_system::worker_pool::Task,
+    snapshot_handoff::SnapshotHandoff,
 };
-use super::scene_tree::{RenderDataType};
 
 pub trait GameTrait: Send + Sync {
-    fn init(&mut self, resource_registry: &Rc<RefCell<ResourceRegistry>>) -> (Scene, Vec<AnimationGraph>);
-    fn update(&mut self, scene: &mut Scene, resource_registry: &Rc<RefCell<ResourceRegistry>>, animation_graphs: &Vec<AnimationGraph>, node: SceneNodeId, dt: f32);
+    fn init(
+        &mut self,
+        resource_registry: &Rc<RefCell<ResourceRegistry>>,
+    ) -> (Scene, Vec<AnimationGraph>);
+    fn update(
+        &mut self,
+        scene: &mut Scene,
+        resource_registry: &Rc<RefCell<ResourceRegistry>>,
+        animation_graphs: &Vec<AnimationGraph>,
+        node: SceneNodeId,
+        dt: f32,
+    );
     fn consume_input(&mut self, scene: &mut Scene, event: InputEvent);
 }
 
@@ -40,11 +60,12 @@ pub fn spawn_sim(
     game_req_rx: crossbeam::channel::Receiver<CreateGameResourceRequest>,
     game_res_tx: crossbeam::channel::Sender<CreateGameResourceResponse>,
     job_task_tx: crossbeam::channel::Sender<Task>,
-    game: impl GameTrait + 'static
+    game: impl GameTrait + 'static,
 ) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
         let mut game = game;
-        let resource_registry = Rc::new(RefCell::new(ResourceRegistry::new(reg_req_tx, reg_res_rx)));
+        let resource_registry =
+            Rc::new(RefCell::new(ResourceRegistry::new(reg_req_tx, reg_res_rx)));
         let mut game_resources = GameAssetStore::new(game_req_rx, game_res_tx, &resource_registry);
         let (mut scene, animation_graphs) = game.init(&resource_registry);
         let mut next = Instant::now() + TICK;
@@ -68,20 +89,38 @@ pub fn spawn_sim(
                 }
             }
 
-            scene.update(&resource_registry, &animation_graphs, scene.root, dt, &mut game);
+            scene.update(
+                &resource_registry,
+                &animation_graphs,
+                scene.root,
+                dt,
+                &mut game,
+            );
 
-            let snap = RenderSnapshot::build(&mut scene, &resource_registry, &animation_graphs, &game_resources, frame_index);
+            let snap = RenderSnapshot::build(
+                &mut scene,
+                &resource_registry,
+                &animation_graphs,
+                &game_resources,
+                frame_index,
+            );
 
             // schedule animation jobs
             for (node_id, _) in &snap.mesh_draw_snapshot.skinned_instances {
                 match &mut scene.nodes.get_mut((*node_id).into()).unwrap().render_data {
                     RenderDataType::Model(_static_model) => (),
                     RenderDataType::AnimatedModel(animated_model) => {
-                        let job = animated_model.animator.build_job(dt, &animation_graphs, &animated_model.model, &game_resources, &resource_registry);
+                        let job = animated_model.animator.build_job(
+                            dt,
+                            &animation_graphs,
+                            &animated_model.model,
+                            &game_resources,
+                            &resource_registry,
+                        );
                         if job_task_tx.send(Task::Pose(*node_id, job)).is_err() {
                             todo!();
                         }
-                    },
+                    }
                     RenderDataType::None => (),
                 }
             }
@@ -92,8 +131,12 @@ pub fn spawn_sim(
 
             // sleep most of the remaining time, then spin the last bit
             if let Some(remain) = next.checked_duration_since(Instant::now()) {
-                if remain > SPIN { thread::sleep(remain - SPIN); }
-                while Instant::now() < next { std::hint::spin_loop(); }
+                if remain > SPIN {
+                    thread::sleep(remain - SPIN);
+                }
+                while Instant::now() < next {
+                    std::hint::spin_loop();
+                }
             } else {
                 // if we fell behind, resync the schedule
                 next = Instant::now() + TICK;

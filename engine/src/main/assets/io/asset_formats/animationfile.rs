@@ -7,7 +7,9 @@ pub enum Target {
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]
 pub enum Interpolation {
-    Linear, Step, CubicSpline
+    Linear,
+    Step,
+    CubicSpline,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

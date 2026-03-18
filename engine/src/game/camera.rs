@@ -1,6 +1,9 @@
 use glam::{Mat3, Mat4, Quat, Vec3, Vec4};
 
-use crate::{game::build_snapshot::CameraSnapshot, main::{assets::io::asset_formats::modelfile::Aabb, wgpu_context}};
+use crate::{
+    game::build_snapshot::CameraSnapshot,
+    main::{assets::io::asset_formats::modelfile::Aabb, wgpu_context},
+};
 
 fn look_at_rotation(eye: Vec3, target: Vec3, world_up: Vec3) -> Quat {
     let forward = (target - eye).normalize();
@@ -8,11 +11,7 @@ fn look_at_rotation(eye: Vec3, target: Vec3, world_up: Vec3) -> Quat {
     let right = forward.cross(up);
 
     // Camera looks down -Z
-    Quat::from_mat3(&Mat3::from_cols(
-        right,
-        up,
-        -forward,
-    ))
+    Quat::from_mat3(&Mat3::from_cols(right, up, -forward))
 }
 
 #[derive(Clone, Copy)]
@@ -44,8 +43,8 @@ pub struct Camera {
     pub znear: f32,
     pub zfar: f32,
     pub aspect: f32, // needed for frustum culling
-    pub rot_x: f32, // deg, temporary orbit camera
-    pub rot_y: f32, // deg
+    pub rot_x: f32,  // deg, temporary orbit camera
+    pub rot_y: f32,  // deg
 }
 impl Default for Camera {
     fn default() -> Self {
@@ -87,9 +86,7 @@ impl Camera {
         }
     }
 
-    pub fn build_frustum(
-        &self,
-    ) -> Frustum {
+    pub fn build_frustum(&self) -> Frustum {
         let rot = Quat::from_rotation_y((self.rot_x).to_radians())
             * Quat::from_rotation_x((self.rot_y).to_radians());
         let position: Vec3 = rot * self.eye;
@@ -141,11 +138,7 @@ fn transform_aabb(aabb: &Aabb, model: &Mat4) -> (Vec3, Vec3) {
 }
 
 #[inline]
-pub fn frustum_intersects_aabb_world(
-    frustum: &Frustum,
-    aabb: &Aabb,
-    model: &Mat4,
-) -> bool {
+pub fn frustum_intersects_aabb_world(frustum: &Frustum, aabb: &Aabb, model: &Mat4) -> bool {
     let (min, max) = transform_aabb(aabb, model);
 
     for plane in &frustum.planes {

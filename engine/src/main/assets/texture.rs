@@ -13,25 +13,23 @@ fn align_to_256(n: usize) -> usize {
     (n + 255) & !255
 }
 
-pub fn upload_texture(
-    data: &TextureLoadData,
-    wgpu_context: &WgpuContext,
-) -> wgpu::Texture {
-
-    let texture = wgpu_context.device.create_texture(&wgpu::TextureDescriptor {
-        label: None,
-        size: wgpu::Extent3d {
-            width: data.base_width,
-            height: data.base_height,
-            depth_or_array_layers: data.layers,
-        },
-        mip_level_count: data.mips,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format: data.format,
-        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-        view_formats: &[],
-    });
+pub fn upload_texture(data: &TextureLoadData, wgpu_context: &WgpuContext) -> wgpu::Texture {
+    let texture = wgpu_context
+        .device
+        .create_texture(&wgpu::TextureDescriptor {
+            label: None,
+            size: wgpu::Extent3d {
+                width: data.base_width,
+                height: data.base_height,
+                depth_or_array_layers: data.layers,
+            },
+            mip_level_count: data.mips,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: data.format,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
 
     let mut current_offset = 0usize;
 

@@ -3,30 +3,79 @@ use std::{fs::File, io::Read as _};
 use ddsfile::{Caps2, Dds};
 use glam::{Quat, Vec3};
 
-use crate::game::assets::runtime_formats::animation;
-use crate::game::assets::registry::{AnimationClipId, AnimationId, MaterialId, MeshId, ModelId, RigId, TextureId};
-use super::{asset_formats::{animationfile, dds, materialfile, modelfile, rigfile}};
 use super::super::texture::TextureLoadData;
+use super::asset_formats::{animationfile, dds, materialfile, modelfile, rigfile};
+use crate::game::assets::registry::{
+    AnimationClipId, AnimationId, MaterialId, MeshId, ModelId, RigId, TextureId,
+};
+use crate::game::assets::runtime_formats::animation;
 
 pub enum IoRequest {
-    LoadModel { id: ModelId, path: String },
-    LoadMesh { id: MeshId, path: String },
-    LoadMaterial { id: MaterialId, path: String },
-    LoadRig { id: RigId, path: String },
-    LoadAnimationClip { id: AnimationClipId, path: String },
-    LoadAnimation { id: AnimationId, path: String, header: animationfile::AnimationClip },
-    LoadTexture { id: TextureId, path: String, srgb: bool },
+    LoadModel {
+        id: ModelId,
+        path: String,
+    },
+    LoadMesh {
+        id: MeshId,
+        path: String,
+    },
+    LoadMaterial {
+        id: MaterialId,
+        path: String,
+    },
+    LoadRig {
+        id: RigId,
+        path: String,
+    },
+    LoadAnimationClip {
+        id: AnimationClipId,
+        path: String,
+    },
+    LoadAnimation {
+        id: AnimationId,
+        path: String,
+        header: animationfile::AnimationClip,
+    },
+    LoadTexture {
+        id: TextureId,
+        path: String,
+        srgb: bool,
+    },
 }
 
 pub enum IoResponse {
-    ModelLoaded { id: ModelId, model: modelfile::Model },
-    MeshLoaded { id: MeshId, data: Vec<u8> },
-    MaterialLoaded { id: MaterialId, material: materialfile::Material },
-    RigLoaded { id: RigId, rig: rigfile::Rig },
-    AnimationClipLoaded { id: AnimationClipId, clip: animationfile::AnimationClip },
-    AnimationLoaded { id: AnimationId, parsed_clip: animation::AnimationClip },
-    TextureLoaded { id: TextureId, data: TextureLoadData },
-    Error { path: String, message: String },
+    ModelLoaded {
+        id: ModelId,
+        model: modelfile::Model,
+    },
+    MeshLoaded {
+        id: MeshId,
+        data: Vec<u8>,
+    },
+    MaterialLoaded {
+        id: MaterialId,
+        material: materialfile::Material,
+    },
+    RigLoaded {
+        id: RigId,
+        rig: rigfile::Rig,
+    },
+    AnimationClipLoaded {
+        id: AnimationClipId,
+        clip: animationfile::AnimationClip,
+    },
+    AnimationLoaded {
+        id: AnimationId,
+        parsed_clip: animation::AnimationClip,
+    },
+    TextureLoaded {
+        id: TextureId,
+        data: TextureLoadData,
+    },
+    Error {
+        path: String,
+        message: String,
+    },
 }
 
 fn load_json<T>(path: &str) -> Result<T, Box<dyn std::error::Error>>
@@ -51,14 +100,15 @@ fn load_dds(bytes: &mut [u8]) -> TextureLoadData {
         dds.get_dxgi_format()
             .expect("Dds doesn't have a DXGI format."),
     );
-    let is_cubemap = dds
-        .header
-        .caps2
-        .contains(Caps2::CUBEMAP);
+    let is_cubemap = dds.header.caps2.contains(Caps2::CUBEMAP);
     let base_width = dds.get_width();
     let base_height = dds.get_height();
     let mips = dds.get_num_mipmap_levels();
-    let layers = if is_cubemap { 6 } else { dds.get_num_array_layers() };
+    let layers = if is_cubemap {
+        6
+    } else {
+        dds.get_num_array_layers()
+    };
 
     TextureLoadData {
         data: dds.data,
@@ -145,13 +195,11 @@ pub fn load_animation(
 
         for i in 0..count {
             let idx = r.offset as usize + i * stride;
-            output.push(
-                Vec3::from_array([
-                    bytemuck::cast::<[u8; 4], f32>(bytes[idx..idx + 4].try_into().unwrap()),
-                    bytemuck::cast::<[u8; 4], f32>(bytes[idx + 4..idx + 8].try_into().unwrap()),
-                    bytemuck::cast::<[u8; 4], f32>(bytes[idx + 8..idx + 12].try_into().unwrap()),
-                ])
-            );
+            output.push(Vec3::from_array([
+                bytemuck::cast::<[u8; 4], f32>(bytes[idx..idx + 4].try_into().unwrap()),
+                bytemuck::cast::<[u8; 4], f32>(bytes[idx + 4..idx + 8].try_into().unwrap()),
+                bytemuck::cast::<[u8; 4], f32>(bytes[idx + 8..idx + 12].try_into().unwrap()),
+            ]));
         }
 
         output.into_boxed_slice()
@@ -163,56 +211,65 @@ pub fn load_animation(
 
         for i in 0..count {
             let idx = r.offset as usize + i * stride;
-            output.push(
-                Quat::from_array([
-                    bytemuck::cast::<[u8; 4], f32>(bytes[idx..idx + 4].try_into().unwrap()),
-                    bytemuck::cast::<[u8; 4], f32>(bytes[idx + 4..idx + 8].try_into().unwrap()),
-                    bytemuck::cast::<[u8; 4], f32>(bytes[idx + 8..idx + 12].try_into().unwrap()),
-                    bytemuck::cast::<[u8; 4], f32>(bytes[idx + 12..idx + 16].try_into().unwrap()),
-                ])
-            );
+            output.push(Quat::from_array([
+                bytemuck::cast::<[u8; 4], f32>(bytes[idx..idx + 4].try_into().unwrap()),
+                bytemuck::cast::<[u8; 4], f32>(bytes[idx + 4..idx + 8].try_into().unwrap()),
+                bytemuck::cast::<[u8; 4], f32>(bytes[idx + 8..idx + 12].try_into().unwrap()),
+                bytemuck::cast::<[u8; 4], f32>(bytes[idx + 12..idx + 16].try_into().unwrap()),
+            ]));
         }
 
         output.into_boxed_slice()
     };
 
     let duration = header.duration;
-    let tracks: Vec<animation::Track> = header.tracks.iter().map(|track| {
-        let target = track.target;
-        let shared_times = track.shared_times.as_ref().map(read_f32_ref);
-        let translation = track.translation.as_ref().map(|s| {
-            let interpolation = s.interpolation;
-            let times = s.times.as_ref().map(read_f32_ref);
-            let values = read_vec3_ref(&s.values);
-            animation::Channel::<Vec3> {
-                interpolation, times, values
+    let tracks: Vec<animation::Track> = header
+        .tracks
+        .iter()
+        .map(|track| {
+            let target = track.target;
+            let shared_times = track.shared_times.as_ref().map(read_f32_ref);
+            let translation = track.translation.as_ref().map(|s| {
+                let interpolation = s.interpolation;
+                let times = s.times.as_ref().map(read_f32_ref);
+                let values = read_vec3_ref(&s.values);
+                animation::Channel::<Vec3> {
+                    interpolation,
+                    times,
+                    values,
+                }
+            });
+            let rotation = track.rotation.as_ref().map(|s| {
+                let interpolation = s.interpolation;
+                let times = s.times.as_ref().map(read_f32_ref);
+                let values = read_quat_ref(&s.values);
+                animation::Channel::<Quat> {
+                    interpolation,
+                    times,
+                    values,
+                }
+            });
+            let scale = track.scale.as_ref().map(|s| {
+                let interpolation = s.interpolation;
+                let times = s.times.as_ref().map(read_f32_ref);
+                let values = read_vec3_ref(&s.values);
+                animation::Channel::<Vec3> {
+                    interpolation,
+                    times,
+                    values,
+                }
+            });
+            animation::Track {
+                target,
+                shared_times,
+                translation,
+                rotation,
+                scale,
             }
-        });
-        let rotation = track.rotation.as_ref().map(|s| {
-            let interpolation = s.interpolation;
-            let times = s.times.as_ref().map(read_f32_ref);
-            let values = read_quat_ref(&s.values);
-            animation::Channel::<Quat> {
-                interpolation, times, values
-            }
-        });
-        let scale = track.scale.as_ref().map(|s| {
-            let interpolation = s.interpolation;
-            let times = s.times.as_ref().map(read_f32_ref);
-            let values = read_vec3_ref(&s.values);
-            animation::Channel::<Vec3> {
-                interpolation, times, values
-            }
-        });
-        animation::Track {
-            target, shared_times, translation, rotation, scale
-        }
-    }).collect();
+        })
+        .collect();
 
-    Ok(animation::AnimationClip {
-        duration,
-        tracks,
-    })
+    Ok(animation::AnimationClip { duration, tracks })
 }
 
 fn io_worker_loop(
@@ -221,41 +278,62 @@ fn io_worker_loop(
 ) {
     while let Ok(req) = rx.recv() {
         let result = match req {
-            IoRequest::LoadModel { id, path } => load_json::<modelfile::Model>(&path)
-                .map_or_else(
-                    |e| IoResponse::Error { path: path.clone(), message: e.to_string() },
-                    |model| IoResponse::ModelLoaded { id, model },
-                ),
-            IoRequest::LoadMesh { id, path } => load_bin(&path)
-                .map_or_else(
-                    |e| IoResponse::Error { path: path.clone(), message: e.to_string() },
-                    |data| IoResponse::MeshLoaded { id, data },
-                ),
+            IoRequest::LoadModel { id, path } => load_json::<modelfile::Model>(&path).map_or_else(
+                |e| IoResponse::Error {
+                    path: path.clone(),
+                    message: e.to_string(),
+                },
+                |model| IoResponse::ModelLoaded { id, model },
+            ),
+            IoRequest::LoadMesh { id, path } => load_bin(&path).map_or_else(
+                |e| IoResponse::Error {
+                    path: path.clone(),
+                    message: e.to_string(),
+                },
+                |data| IoResponse::MeshLoaded { id, data },
+            ),
             IoRequest::LoadMaterial { id, path } => load_json::<materialfile::Material>(&path)
                 .map_or_else(
-                    |e| IoResponse::Error { path: path.clone(), message: e.to_string() },
+                    |e| IoResponse::Error {
+                        path: path.clone(),
+                        message: e.to_string(),
+                    },
                     |material| IoResponse::MaterialLoaded { id, material },
                 ),
-            IoRequest::LoadRig { id, path } => load_json::<rigfile::Rig>(&path)
-                .map_or_else(
-                    |e| IoResponse::Error { path: path.clone(), message: e.to_string() },
-                    |rig| IoResponse::RigLoaded { id, rig },
-                ),
-            IoRequest::LoadAnimationClip { id, path } => load_json::<animationfile::AnimationClip>(&path)
-                .map_or_else(
-                    |e| IoResponse::Error { path: path.clone(), message: e.to_string() },
+            IoRequest::LoadRig { id, path } => load_json::<rigfile::Rig>(&path).map_or_else(
+                |e| IoResponse::Error {
+                    path: path.clone(),
+                    message: e.to_string(),
+                },
+                |rig| IoResponse::RigLoaded { id, rig },
+            ),
+            IoRequest::LoadAnimationClip { id, path } => {
+                load_json::<animationfile::AnimationClip>(&path).map_or_else(
+                    |e| IoResponse::Error {
+                        path: path.clone(),
+                        message: e.to_string(),
+                    },
                     |clip| IoResponse::AnimationClipLoaded { id, clip },
-                ),
+                )
+            }
             IoRequest::LoadAnimation { id, path, header } => load_animation(&path, header)
                 .map_or_else(
-                    |e| IoResponse::Error { path: path.clone(), message: e.to_string() },
-                    |data| IoResponse::AnimationLoaded { id, parsed_clip: data },
+                    |e| IoResponse::Error {
+                        path: path.clone(),
+                        message: e.to_string(),
+                    },
+                    |data| IoResponse::AnimationLoaded {
+                        id,
+                        parsed_clip: data,
+                    },
                 ),
-            IoRequest::LoadTexture { id, path, srgb } => load_texture(&path, srgb)
-                .map_or_else(
-                    |e| IoResponse::Error { path: path.clone(), message: e.to_string() },
-                    |data| IoResponse::TextureLoaded { id, data },
-                ),
+            IoRequest::LoadTexture { id, path, srgb } => load_texture(&path, srgb).map_or_else(
+                |e| IoResponse::Error {
+                    path: path.clone(),
+                    message: e.to_string(),
+                },
+                |data| IoResponse::TextureLoaded { id, data },
+            ),
         };
 
         // ignore send errors on shutdown
@@ -284,7 +362,9 @@ impl IoWorkerPool {
             .collect();
 
         Self {
-            req_tx, res_rx, workers
+            req_tx,
+            res_rx,
+            workers,
         }
     }
 }

@@ -1,6 +1,6 @@
 use std::{fs::File, path::Path};
 
-use engine::main::assets::io::asset_formats::{dds::{create_dds}, materialfile};
+use engine::main::assets::io::asset_formats::{dds::create_dds, materialfile};
 
 pub fn gltf_img_to_dxgi_format(image: &gltf::image::Data, srgb: bool) -> ddsfile::DxgiFormat {
     let format = image.format;
@@ -42,7 +42,6 @@ pub fn gltf_img_to_dxgi_format(image: &gltf::image::Data, srgb: bool) -> ddsfile
         (gltf::image::Format::R32G32B32A32FLOAT, _, _) => ddsfile::DxgiFormat::R32G32B32A32_Float,
     }
 }
-
 
 use crate::utils::ensure_parent_dir_exists;
 
@@ -237,16 +236,14 @@ fn bake_base_color_tex(
     model_name: &str,
 ) -> Option<materialfile::SampledTexture> {
     if let Some(tex_info) = material.pbr_metallic_roughness().base_color_texture() {
-        Some(
-            bake_texture(
-                &tex_info.texture(),
-                images,
-                true,
-                material.alpha_mode(),
-                model_name,
-                "base_color",
-            )
-        )
+        Some(bake_texture(
+            &tex_info.texture(),
+            images,
+            true,
+            material.alpha_mode(),
+            model_name,
+            "base_color",
+        ))
     } else {
         None
         /*
@@ -271,16 +268,14 @@ fn bake_metallic_roughness_tex(
         .pbr_metallic_roughness()
         .metallic_roughness_texture()
     {
-        Some(
-            bake_texture(
-                &tex_info.texture(),
-                images,
-                false,
-                material.alpha_mode(),
-                model_name,
-                "metallic_roughness",
-            )
-        )
+        Some(bake_texture(
+            &tex_info.texture(),
+            images,
+            false,
+            material.alpha_mode(),
+            model_name,
+            "metallic_roughness",
+        ))
     } else {
         None
         /*
@@ -302,16 +297,14 @@ fn bake_normals_tex(
     model_name: &str,
 ) -> Option<materialfile::SampledTexture> {
     if let Some(tex_info) = material.normal_texture() {
-        Some(
-            bake_texture(
-                &tex_info.texture(),
-                images,
-                false,
-                material.alpha_mode(),
-                model_name,
-                "normals",
-            )
-        )
+        Some(bake_texture(
+            &tex_info.texture(),
+            images,
+            false,
+            material.alpha_mode(),
+            model_name,
+            "normals",
+        ))
     } else {
         None
         /*
@@ -333,16 +326,14 @@ fn bake_occlusion_tex(
     model_name: &str,
 ) -> Option<materialfile::SampledTexture> {
     if let Some(tex_info) = material.occlusion_texture() {
-        Some(
-            bake_texture(
-                &tex_info.texture(),
-                images,
-                false,
-                material.alpha_mode(),
-                model_name,
-                "occlusion",
-            )
-        )
+        Some(bake_texture(
+            &tex_info.texture(),
+            images,
+            false,
+            material.alpha_mode(),
+            model_name,
+            "occlusion",
+        ))
     } else {
         None
         /*
@@ -364,16 +355,14 @@ fn bake_emissive_tex(
     model_name: &str,
 ) -> Option<materialfile::SampledTexture> {
     if let Some(tex_info) = material.emissive_texture() {
-        Some(
-            bake_texture(
-                &tex_info.texture(),
-                images,
-                false,
-                material.alpha_mode(),
-                model_name,
-                "emissive",
-            )
-        )
+        Some(bake_texture(
+            &tex_info.texture(),
+            images,
+            false,
+            material.alpha_mode(),
+            model_name,
+            "emissive",
+        ))
     } else {
         None
         /*
@@ -407,7 +396,10 @@ pub fn bake_material(
         roughness_factor: material.pbr_metallic_roughness().roughness_factor(),
         emissive_factor: material.emissive_factor(),
         normal_texture_scale: material.normal_texture().map(|n| n.scale()).unwrap_or(1f32),
-        occlusion_strength: material.occlusion_texture().map(|o| o.strength()).unwrap_or(1f32),
+        occlusion_strength: material
+            .occlusion_texture()
+            .map(|o| o.strength())
+            .unwrap_or(1f32),
         alpha_mode: match material.alpha_mode() {
             gltf::material::AlphaMode::Blend => materialfile::AlphaMode::Blend,
             gltf::material::AlphaMode::Mask => materialfile::AlphaMode::Mask,

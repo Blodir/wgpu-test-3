@@ -1,13 +1,18 @@
-
 use wgpu::util::{BufferInitDescriptor, DeviceExt as _};
 
-use crate::{main::{world::Renderer, wgpu_context::WgpuContext}};
 use super::io::asset_formats::materialfile;
+use crate::main::{wgpu_context::WgpuContext, world::Renderer};
 
+use super::io::worker_pool::{IoRequest, IoResponse, IoWorkerPool};
+use super::{
+    store::{
+        MaterialRenderId, MeshGpuData, MeshRenderId, ModelRenderData, ModelRenderId,
+        RenderAssetStore, TextureGpuData, TextureRenderId,
+    },
+    texture::upload_texture,
+};
 use crate::game::assets::registry::{ResourceRequest, ResourceResult};
 use crate::game::assets::store::{CreateGameResourceRequest, CreateGameResourceResponse};
-use super::{store::{MaterialRenderId, MeshGpuData, MeshRenderId, ModelRenderData, ModelRenderId, RenderAssetStore, TextureGpuData, TextureRenderId}, texture::upload_texture};
-use super::io::worker_pool::{IoWorkerPool, IoRequest, IoResponse};
 
 pub struct RenderAssetManager {
     io: IoWorkerPool,
@@ -32,13 +37,15 @@ impl RenderAssetManager {
         }
     }
 
-    pub fn process_reg_requests(
-        &mut self,
-    ) {
+    pub fn process_reg_requests(&mut self) {
         for msg in self.registry_req_rx.try_iter() {
             match msg {
-                ResourceRequest::LoadModel { id, path } => self.make_io_request(IoRequest::LoadModel { id, path }),
-                ResourceRequest::LoadMesh { id, path } => self.make_io_request(IoRequest::LoadMesh { id, path }),
+                ResourceRequest::LoadModel { id, path } => {
+                    self.make_io_request(IoRequest::LoadModel { id, path })
+                }
+                ResourceRequest::LoadMesh { id, path } => {
+                    self.make_io_request(IoRequest::LoadMesh { id, path })
+                }
                 ResourceRequest::LoadMaterial { id, path } => {
                     if let Some(path) = path {
                         self.make_io_request(IoRequest::LoadMaterial { id, path });
@@ -59,71 +66,143 @@ impl RenderAssetManager {
                             base_color_texture: None,
                             metallic_roughness_texture: None,
                         };
-                        if self.game_req_tx.send(CreateGameResourceRequest::Material { id, manifest }).is_err() {
+                        if self
+                            .game_req_tx
+                            .send(CreateGameResourceRequest::Material { id, manifest })
+                            .is_err()
+                        {
                             todo!();
                         }
                     }
-                },
-                ResourceRequest::LoadRig { id, path } => self.make_io_request(IoRequest::LoadRig { id, path }),
-                ResourceRequest::LoadAnimationClip { id, path } => self.make_io_request(IoRequest::LoadAnimationClip { id, path }),
-                ResourceRequest::LoadAnimation { id, path, header } => self.make_io_request(IoRequest::LoadAnimation { id, path, header }),
-                ResourceRequest::LoadTexture { id, path, srgb } => self.make_io_request(IoRequest::LoadTexture { id, path, srgb }),
+                }
+                ResourceRequest::LoadRig { id, path } => {
+                    self.make_io_request(IoRequest::LoadRig { id, path })
+                }
+                ResourceRequest::LoadAnimationClip { id, path } => {
+                    self.make_io_request(IoRequest::LoadAnimationClip { id, path })
+                }
+                ResourceRequest::LoadAnimation { id, path, header } => {
+                    self.make_io_request(IoRequest::LoadAnimation { id, path, header })
+                }
+                ResourceRequest::LoadTexture { id, path, srgb } => {
+                    self.make_io_request(IoRequest::LoadTexture { id, path, srgb })
+                }
             }
         }
     }
 
-    pub fn process_game_responses(&self, renderer: &mut Renderer, render_resources: &mut RenderAssetStore, wgpu_context: &WgpuContext) {
+    pub fn process_game_responses(
+        &self,
+        renderer: &mut Renderer,
+        render_resources: &mut RenderAssetStore,
+        wgpu_context: &WgpuContext,
+    ) {
         while !self.game_res_rx.is_empty() {
             let res = match self.game_res_rx.recv() {
                 Ok(r) => r,
                 Err(err) => {
                     println!("Recv Error: {}", err);
-                    break
-                },
+                    break;
+                }
             };
 
             match res {
-                CreateGameResourceResponse::Model { id, game_id, mesh, submeshes, vertex_buffer_start_offset } => {
+                CreateGameResourceResponse::Model {
+                    id,
+                    game_id,
+                    mesh,
+                    submeshes,
+                    vertex_buffer_start_offset,
+                    joint_nodes,
+                    inverse_bind_matrices,
+                } => {
                     let model_render = ModelRenderData {
                         vertex_buffer_start_offset,
                         mesh_id: mesh,
                         submeshes,
+                        joint_nodes,
+                        inverse_bind_matrices,
                     };
                     let render_idx = render_resources.models.insert(model_render);
-                    if self.registry_res_tx.send(ResourceResult::ModelResult { id, game_id, render_id: ModelRenderId(render_idx) }).is_err() {
+                    if self
+                        .registry_res_tx
+                        .send(ResourceResult::ModelResult {
+                            id,
+                            game_id,
+                            render_id: ModelRenderId(render_idx),
+                        })
+                        .is_err()
+                    {
                         todo!();
                     }
-                },
-                CreateGameResourceResponse::Material { id, game_id, manifest, normal_texture, occlusion_texture, emissive_texture, base_color_texture, metallic_roughness_texture } => {
-                    let material_binding = match renderer.upload_material(&manifest, &normal_texture, &occlusion_texture, &emissive_texture, &base_color_texture, &metallic_roughness_texture, render_resources, wgpu_context) {
+                }
+                CreateGameResourceResponse::Material {
+                    id,
+                    game_id,
+                    manifest,
+                    normal_texture,
+                    occlusion_texture,
+                    emissive_texture,
+                    base_color_texture,
+                    metallic_roughness_texture,
+                } => {
+                    let material_binding = match renderer.upload_material(
+                        &manifest,
+                        &normal_texture,
+                        &occlusion_texture,
+                        &emissive_texture,
+                        &base_color_texture,
+                        &metallic_roughness_texture,
+                        render_resources,
+                        wgpu_context,
+                    ) {
                         Ok(mat) => mat,
                         Err(_) => {
                             todo!()
                         }
                     };
                     let render_id = render_resources.materials.insert(material_binding);
-                    if self.registry_res_tx.send(ResourceResult::MaterialResult { id, game_id, render_id: MaterialRenderId(render_id) }).is_err() {
+                    if self
+                        .registry_res_tx
+                        .send(ResourceResult::MaterialResult {
+                            id,
+                            game_id,
+                            render_id: MaterialRenderId(render_id),
+                        })
+                        .is_err()
+                    {
                         todo!();
                     }
-                },
+                }
                 CreateGameResourceResponse::AnimationClip { id, game_id } => {
-                    if self.registry_res_tx.send(ResourceResult::AnimationClipResult { id, game_id }).is_err() {
+                    if self
+                        .registry_res_tx
+                        .send(ResourceResult::AnimationClipResult { id, game_id })
+                        .is_err()
+                    {
                         todo!();
                     }
                 }
                 CreateGameResourceResponse::Rig { id, game_id } => {
-                    if self.registry_res_tx.send(ResourceResult::RigResult { id, game_id }).is_err() {
+                    if self
+                        .registry_res_tx
+                        .send(ResourceResult::RigResult { id, game_id })
+                        .is_err()
+                    {
                         todo!();
                     }
-                },
+                }
                 CreateGameResourceResponse::Animation { id, game_id } => {
-                    if self.registry_res_tx.send(ResourceResult::AnimationResult { id, game_id }).is_err() {
+                    if self
+                        .registry_res_tx
+                        .send(ResourceResult::AnimationResult { id, game_id })
+                        .is_err()
+                    {
                         todo!();
                     }
-                },
+                }
             }
         }
-
     }
 
     pub fn process_io_responses(
@@ -136,53 +215,88 @@ impl RenderAssetManager {
                 Ok(r) => r,
                 Err(err) => {
                     println!("Recv Error: {}", err);
-                    break
-                },
+                    break;
+                }
             };
             match res {
                 IoResponse::ModelLoaded { id, model } => {
-                    if self.game_req_tx.send(CreateGameResourceRequest::Model { id, manifest: model }).is_err() {
+                    if self
+                        .game_req_tx
+                        .send(CreateGameResourceRequest::Model {
+                            id,
+                            manifest: model,
+                        })
+                        .is_err()
+                    {
                         todo!()
                     }
-                },
+                }
                 IoResponse::MeshLoaded { id, data } => {
-                    let buffer = wgpu_context.device.create_buffer_init(&BufferInitDescriptor {
-                        label: Some("Index/vertex buffer"),
-                        contents: bytemuck::cast_slice(&data),
-                        usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::INDEX,
-                    });
+                    let buffer = wgpu_context
+                        .device
+                        .create_buffer_init(&BufferInitDescriptor {
+                            label: Some("Index/vertex buffer"),
+                            contents: bytemuck::cast_slice(&data),
+                            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::INDEX,
+                        });
                     let mesh_gpu = MeshGpuData { buffer };
                     let idx = render_resources.meshes.insert(mesh_gpu);
-                    if self.registry_res_tx.send(ResourceResult::MeshResult { id, render_id: MeshRenderId(idx) }).is_err() {
+                    if self
+                        .registry_res_tx
+                        .send(ResourceResult::MeshResult {
+                            id,
+                            render_id: MeshRenderId(idx),
+                        })
+                        .is_err()
+                    {
                         todo!();
                     };
-                },
+                }
                 IoResponse::MaterialLoaded { id, material } => {
-                    if self.game_req_tx.send(CreateGameResourceRequest::Material { id, manifest: material }).is_err() {
+                    if self
+                        .game_req_tx
+                        .send(CreateGameResourceRequest::Material {
+                            id,
+                            manifest: material,
+                        })
+                        .is_err()
+                    {
                         todo!();
                     }
-                },
+                }
                 IoResponse::RigLoaded { id, rig } => {
-                    if self.game_req_tx.send(CreateGameResourceRequest::Rig { id, manifest: rig }).is_err() {
+                    if self
+                        .game_req_tx
+                        .send(CreateGameResourceRequest::Rig { id, manifest: rig })
+                        .is_err()
+                    {
                         todo!();
                     }
-                },
+                }
                 IoResponse::AnimationClipLoaded { id, clip } => {
-                    if self.game_req_tx.send(CreateGameResourceRequest::AnimationClip { id, manifest: clip }).is_err() {
+                    if self
+                        .game_req_tx
+                        .send(CreateGameResourceRequest::AnimationClip { id, manifest: clip })
+                        .is_err()
+                    {
                         todo!();
                     }
-                },
+                }
                 IoResponse::AnimationLoaded { id, parsed_clip } => {
-                    if self.game_req_tx.send(CreateGameResourceRequest::Animation { id, anim: parsed_clip }).is_err() {
+                    if self
+                        .game_req_tx
+                        .send(CreateGameResourceRequest::Animation {
+                            id,
+                            anim: parsed_clip,
+                        })
+                        .is_err()
+                    {
                         todo!();
                     }
-                },
+                }
                 IoResponse::TextureLoaded { id, data } => {
                     // TODO move this function away from dds module, also it should probs just take the cpudata directly
-                    let texture = upload_texture(
-                        &data,
-                        &wgpu_context,
-                    );
+                    let texture = upload_texture(&data, &wgpu_context);
                     // TODO probably should have a is_cubemap flag?
                     let texture_view = if data.layers == 6 {
                         texture.create_view(&wgpu::TextureViewDescriptor {
@@ -192,22 +306,30 @@ impl RenderAssetManager {
                     } else {
                         texture.create_view(&wgpu::TextureViewDescriptor::default())
                     };
-                    let texture_gpu = TextureGpuData { texture, texture_view };
+                    let texture_gpu = TextureGpuData {
+                        texture,
+                        texture_view,
+                    };
                     let idx = render_resources.textures.insert(texture_gpu);
-                    if self.registry_res_tx.send(ResourceResult::TextureResult { id, render_id: TextureRenderId(idx) }).is_err() {
+                    if self
+                        .registry_res_tx
+                        .send(ResourceResult::TextureResult {
+                            id,
+                            render_id: TextureRenderId(idx),
+                        })
+                        .is_err()
+                    {
                         todo!();
                     }
-                },
+                }
                 IoResponse::Error { path, message } => {
                     println!("IO Error: path: {}, message: {}", path, message);
-                },
+                }
             }
         }
     }
 
-    pub fn run_gc(
-        self: &std::sync::Arc<Self>,
-    ) {
+    pub fn run_gc(self: &std::sync::Arc<Self>) {
         // registry sends evict messages?
         todo!();
     }

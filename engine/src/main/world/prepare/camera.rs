@@ -1,6 +1,9 @@
 use glam::{Mat3, Mat4, Vec4};
 
-use crate::{snapshot_handoff::SnapshotGuard, main::{world::bindgroups::camera::CameraBinding, utils::lerpf32, wgpu_context}};
+use crate::{
+    main::{utils::lerpf32, wgpu_context, world::bindgroups::camera::CameraBinding},
+    snapshot_handoff::SnapshotGuard,
+};
 
 pub fn prepare_camera(
     camera: &mut CameraBinding,
@@ -35,5 +38,10 @@ pub fn prepare_camera(
         Vec4::ZERO,
     );
 
-    camera.update(&view_proj.to_cols_array(), &position.to_array(), &inverse_view_proj_rot.to_cols_array(), queue);
+    camera.update(
+        &view_proj.to_cols_array(),
+        &position.to_array(),
+        &inverse_view_proj_rot.to_cols_array(),
+        queue,
+    );
 }

@@ -12,7 +12,7 @@ impl Default for BoneMat34 {
                 [1f32, 0f32, 0f32, 0f32],
                 [0f32, 1f32, 0f32, 0f32],
                 [0f32, 0f32, 1f32, 0f32],
-            ]
+            ],
         }
     }
 }
@@ -24,29 +24,31 @@ pub struct BonesBinding {
 impl BonesBinding {
     pub fn desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
         wgpu::BindGroupLayoutDescriptor {
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
                 },
-            ],
+                count: None,
+            }],
             label: Some("Bones Bind Group Layout"),
         }
     }
-    fn create_bind_group(buffer: &wgpu::Buffer, layout: &wgpu::BindGroupLayout, device: &wgpu::Device) -> wgpu::BindGroup {
+    fn create_bind_group(
+        buffer: &wgpu::Buffer,
+        layout: &wgpu::BindGroupLayout,
+        device: &wgpu::Device,
+    ) -> wgpu::BindGroup {
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Bones Bind Group"),
             layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
                 resource: buffer.as_entire_binding(),
-            }]
+            }],
         })
     }
     pub fn new(layout: &wgpu::BindGroupLayout, device: &wgpu::Device) -> Self {
@@ -62,7 +64,13 @@ impl BonesBinding {
             buffer: storage_buffer,
         }
     }
-    pub fn update(&mut self, data: Vec<BoneMat34>, layout: &wgpu::BindGroupLayout, device: &wgpu::Device, queue: &wgpu::Queue) {
+    pub fn update(
+        &mut self,
+        data: Vec<BoneMat34>,
+        layout: &wgpu::BindGroupLayout,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+    ) {
         let bytes: &[u8] = bytemuck::cast_slice(&data);
         if self.buffer.size() >= bytes.len() as u64 {
             queue.write_buffer(&self.buffer, 0, bytes);
