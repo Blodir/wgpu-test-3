@@ -3,11 +3,16 @@ use std::{cell::RefCell, rc::Rc, sync::Arc};
 use generational_arena::{Arena, Index};
 use glam::Mat4;
 
+use super::registry::{
+    AnimationClipHandle, AnimationClipId, AnimationHandle, AnimationId, MaterialHandle, MaterialId,
+    MeshHandle, ModelId, RenderState, ResourceRegistry, RigHandle, RigId, TextureHandle,
+};
 use super::runtime_formats::animation::{self, AnimationClip};
-use crate::main::assets::io::asset_formats::{animationfile, materialfile, modelfile, rigfile::{self, Rig}};
+use crate::main::assets::io::asset_formats::{
+    animationfile, materialfile, modelfile,
+    rigfile::{self, Rig},
+};
 use crate::main::assets::store::{MaterialRenderId, MeshRenderId, SubMesh, TextureRenderId};
-use super::{registry::{AnimationClipHandle, AnimationClipId, AnimationHandle, AnimationId, MaterialHandle, MaterialId, MeshHandle, ModelId,
-        RenderState, ResourceRegistry, SkeletonHandle, SkeletonId, TextureHandle}};
 
 use super::registry::RegistryExt;
 
@@ -44,8 +49,8 @@ impl Into<Index> for AnimationGameId {
 }
 
 #[derive(Hash, Eq, PartialEq, Clone, Copy)]
-pub struct SkeletonGameId(pub Index);
-impl Into<Index> for SkeletonGameId {
+pub struct RigGameId(pub Index);
+impl Into<Index> for RigGameId {
     fn into(self) -> Index {
         self.0
     }
@@ -53,15 +58,14 @@ impl Into<Index> for SkeletonGameId {
 
 pub enum DeformationData {
     None,
-    Skinned {
-        skeleton: SkeletonHandle,
-        animation_clips: Vec<AnimationClipHandle>,
-    }
+    Skinned,
 }
 
 pub struct ModelGameData {
     pub manifest: modelfile::Model,
     pub mesh: MeshHandle,
+    pub rig: RigHandle,
+    pub animation_clips: Vec<AnimationClipHandle>,
     pub submesh_instances: Vec<Vec<Mat4>>,
     pub deformation: DeformationData,
     pub materials: Vec<MaterialHandle>,
@@ -83,11 +87,26 @@ pub struct AnimationClipGameData {
 }
 
 pub enum CreateGameResourceRequest {
-    Model { id: ModelId, manifest: modelfile::Model },
-    Material { id: MaterialId, manifest: materialfile::Material },
-    AnimationClip { id: AnimationClipId, manifest: animationfile::AnimationClip },
-    Skeleton { id: SkeletonId,  manifest: rigfile::Rig },
-    Animation { id: AnimationId, anim: animation::AnimationClip },
+    Model {
+        id: ModelId,
+        manifest: modelfile::Model,
+    },
+    Material {
+        id: MaterialId,
+        manifest: materialfile::Material,
+    },
+    AnimationClip {
+        id: AnimationClipId,
+        manifest: animationfile::AnimationClip,
+    },
+    Rig {
+        id: RigId,
+        manifest: rigfile::Rig,
+    },
+    Animation {
+        id: AnimationId,
+        anim: animation::AnimationClip,
+    },
 }
 
 pub enum CreateGameResourceResponse {
@@ -112,9 +131,9 @@ pub enum CreateGameResourceResponse {
         id: AnimationClipId,
         game_id: AnimationClipGameId,
     },
-    Skeleton {
-        id: SkeletonId,
-        game_id: SkeletonGameId,
+    Rig {
+        id: RigId,
+        game_id: RigGameId,
     },
     Animation {
         id: AnimationId,
@@ -137,7 +156,7 @@ pub struct GameAssetStore {
     pub materials: Arena<MaterialGameData>,
     pub animation_clips: Arena<AnimationClipGameData>,
     pub animations: Arena<Arc<AnimationClip>>,
-    pub skeletons: Arena<Arc<Rig>>,
+    pub rigs: Arena<Arc<Rig>>,
     pub staging: Vec<StagedData>,
     pub req_rx: crossbeam::channel::Receiver<CreateGameResourceRequest>,
     pub res_tx: crossbeam::channel::Sender<CreateGameResourceResponse>,
@@ -148,51 +167,82 @@ impl GameAssetStore {
         res_tx: crossbeam::channel::Sender<CreateGameResourceResponse>,
         registry: &Rc<RefCell<ResourceRegistry>>,
     ) -> Self {
-        let placeholders = Placeholders { material: registry.request_material(None) };
+        let placeholders = Placeholders {
+            material: registry.request_material(None),
+        };
         Self {
             placeholders,
             models: Arena::new(),
             materials: Arena::new(),
             animation_clips: Arena::new(),
             animations: Arena::new(),
-            skeletons: Arena::new(),
+            rigs: Arena::new(),
             staging: vec![],
             req_rx,
             res_tx,
         }
     }
 
-    pub fn process_requests(
-        &mut self,
-        registry: &Rc<RefCell<ResourceRegistry>>
-    ) {
+    pub fn process_requests(&mut self, registry: &Rc<RefCell<ResourceRegistry>>) {
         for req in self.req_rx.try_iter() {
             match req {
                 CreateGameResourceRequest::Model { id, manifest } => {
+                    let rig = registry.request_rig(&manifest.rig);
+                    let animation_clips = manifest
+                        .animations
+                        .iter()
+                        .map(|a| registry.request_animation_clip(a))
+                        .collect();
                     let data = ModelGameData {
                         mesh: registry.request_mesh(&manifest.buffer),
-                        deformation: match manifest.deformation {
+                        rig,
+                        animation_clips,
+                        deformation: match &manifest.deformation {
                             modelfile::Deformation::None => DeformationData::None,
-                            modelfile::Deformation::Skinned { ref skeleton, ref animations } => {
-                                DeformationData::Skinned {
-                                    skeleton: registry.request_skeleton(skeleton),
-                                    animation_clips: animations.iter().map(|a| registry.request_animation_clip(a)).collect(),
-                                }
-                            },
+                            modelfile::Deformation::Skinned => DeformationData::Skinned,
                         },
-                        materials: manifest.material_paths.iter().map(|a| registry.request_material(Some(a))).collect(),
+                        materials: manifest
+                            .material_paths
+                            .iter()
+                            .map(|a| registry.request_material(Some(a)))
+                            .collect(),
                         aabb: manifest.aabb.clone(),
-                        submesh_instances: manifest.submeshes.iter().map(|prim| prim.instances.iter().map(|m| Mat4::from_cols_array_2d(m)).collect()).collect(),
+                        submesh_instances: manifest
+                            .submeshes
+                            .iter()
+                            .map(|prim| {
+                                prim.instances
+                                    .iter()
+                                    .map(|m| Mat4::from_cols_array_2d(m))
+                                    .collect()
+                            })
+                            .collect(),
                         manifest,
                     };
                     self.staging.push(StagedData::Model(id, data));
-                },
+                }
                 CreateGameResourceRequest::Material { id, manifest } => {
-                    let normal_texture = manifest.normal_texture.as_ref().map(|sampled_texture| registry.request_texture(&sampled_texture.source, false));
-                    let occlusion_texture = manifest.occlusion_texture.as_ref().map(|sampled_texture| registry.request_texture(&sampled_texture.source, false));
-                    let emissive_texture = manifest.emissive_texture.as_ref().map(|sampled_texture| registry.request_texture(&sampled_texture.source, true));
-                    let base_color_texture = manifest.base_color_texture.as_ref().map(|sampled_texture| registry.request_texture(&sampled_texture.source, true));
-                    let metallic_roughness_texture = manifest.metallic_roughness_texture.as_ref().map(|sampled_texture| registry.request_texture(&sampled_texture.source, false));
+                    let normal_texture = manifest.normal_texture.as_ref().map(|sampled_texture| {
+                        registry.request_texture(&sampled_texture.source, false)
+                    });
+                    let occlusion_texture =
+                        manifest.occlusion_texture.as_ref().map(|sampled_texture| {
+                            registry.request_texture(&sampled_texture.source, false)
+                        });
+                    let emissive_texture =
+                        manifest.emissive_texture.as_ref().map(|sampled_texture| {
+                            registry.request_texture(&sampled_texture.source, true)
+                        });
+                    let base_color_texture =
+                        manifest.base_color_texture.as_ref().map(|sampled_texture| {
+                            registry.request_texture(&sampled_texture.source, true)
+                        });
+                    let metallic_roughness_texture = manifest
+                        .metallic_roughness_texture
+                        .as_ref()
+                        .map(|sampled_texture| {
+                            registry.request_texture(&sampled_texture.source, false)
+                        });
                     let data = MaterialGameData {
                         manifest,
                         normal_texture,
@@ -202,10 +252,13 @@ impl GameAssetStore {
                         metallic_roughness_texture,
                     };
                     self.staging.push(StagedData::Material(id, data));
-                },
+                }
                 CreateGameResourceRequest::AnimationClip { id, manifest } => {
                     let animation = registry.request_animation(&manifest.binary_path, &manifest);
-                    let data = AnimationClipGameData { manifest, animation };
+                    let data = AnimationClipGameData {
+                        manifest,
+                        animation,
+                    };
                     let game_id = self.animation_clips.insert(data);
                     let res = CreateGameResourceResponse::AnimationClip {
                         id,
@@ -215,20 +268,26 @@ impl GameAssetStore {
                         todo!();
                     }
                 }
-                CreateGameResourceRequest::Skeleton { id, manifest } => {
-                    let game_id = self.skeletons.insert(Arc::new(manifest));
-                    let res = CreateGameResourceResponse::Skeleton { id, game_id: SkeletonGameId(game_id) };
+                CreateGameResourceRequest::Rig { id, manifest } => {
+                    let game_id = self.rigs.insert(Arc::new(manifest));
+                    let res = CreateGameResourceResponse::Rig {
+                        id,
+                        game_id: RigGameId(game_id),
+                    };
                     if self.res_tx.send(res).is_err() {
                         todo!();
                     }
-                },
+                }
                 CreateGameResourceRequest::Animation { id, anim } => {
                     let game_id = self.animations.insert(Arc::new(anim));
-                    let res = CreateGameResourceResponse::Animation { id, game_id: AnimationGameId(game_id) };
+                    let res = CreateGameResourceResponse::Animation {
+                        id,
+                        game_id: AnimationGameId(game_id),
+                    };
                     if self.res_tx.send(res).is_err() {
                         todo!();
                     }
-                },
+                }
             }
         }
 
@@ -237,7 +296,9 @@ impl GameAssetStore {
             match data {
                 StagedData::Model(id, model_game_data) => {
                     let reg = registry.borrow_mut();
-                    let mesh_render_id = if let RenderState::Ready(index) = reg.get(&model_game_data.mesh).render_state {
+                    let mesh_render_id = if let RenderState::Ready(index) =
+                        reg.get(&model_game_data.mesh).render_state
+                    {
                         MeshRenderId(index)
                     } else {
                         staging.push(StagedData::Model(id, model_game_data));
@@ -254,26 +315,28 @@ impl GameAssetStore {
                         };
                     }
 
-                    let vertex_buffer_start_offset = model_game_data.manifest.vertex_buffer_start_offset;
+                    let vertex_buffer_start_offset =
+                        model_game_data.manifest.vertex_buffer_start_offset;
                     let mut submeshes = vec![];
                     for submesh in &model_game_data.manifest.submeshes {
                         let material = if let Some(mat_idx) = submesh.material {
                             material_render_ids[mat_idx as usize]
                         } else {
-                            if let RenderState::Ready(index) = reg.get(&self.placeholders.material).render_state {
+                            if let RenderState::Ready(index) =
+                                reg.get(&self.placeholders.material).render_state
+                            {
                                 MaterialRenderId(index)
                             } else {
                                 staging.push(StagedData::Model(id, model_game_data));
                                 continue 'staging_loop;
                             }
                         };
-                        submeshes.push(
-                            SubMesh {
-                                index_range: submesh.index_byte_offset / 4..submesh.index_byte_offset / 4 + submesh.index_byte_length / 4,
-                                base_vertex: submesh.base_vertex,
-                                material,
-                            }
-                        )
+                        submeshes.push(SubMesh {
+                            index_range: submesh.index_byte_offset / 4
+                                ..submesh.index_byte_offset / 4 + submesh.index_byte_length / 4,
+                            base_vertex: submesh.base_vertex,
+                            material,
+                        })
                     }
                     let game_id = self.models.insert(model_game_data);
                     let res = CreateGameResourceResponse::Model {
@@ -286,54 +349,69 @@ impl GameAssetStore {
                     if self.res_tx.send(res).is_err() {
                         todo!();
                     };
-                },
+                }
                 StagedData::Material(id, material_game_data) => {
                     let reg = registry.borrow_mut();
 
-                    let normal_texture = if let Some(tex) = material_game_data.normal_texture.as_ref() {
-                        if let RenderState::Ready(index) = reg.get(tex).render_state {
-                            Some(TextureRenderId(index))
+                    let normal_texture =
+                        if let Some(tex) = material_game_data.normal_texture.as_ref() {
+                            if let RenderState::Ready(index) = reg.get(tex).render_state {
+                                Some(TextureRenderId(index))
+                            } else {
+                                staging.push(StagedData::Material(id, material_game_data));
+                                continue 'staging_loop;
+                            }
                         } else {
-                            staging.push(StagedData::Material(id, material_game_data));
-                            continue 'staging_loop;
-                        }
-                    } else { None };
+                            None
+                        };
 
-                    let occlusion_texture = if let Some(tex) = material_game_data.occlusion_texture.as_ref() {
-                        if let RenderState::Ready(index) = reg.get(tex).render_state {
-                            Some(TextureRenderId(index))
+                    let occlusion_texture =
+                        if let Some(tex) = material_game_data.occlusion_texture.as_ref() {
+                            if let RenderState::Ready(index) = reg.get(tex).render_state {
+                                Some(TextureRenderId(index))
+                            } else {
+                                staging.push(StagedData::Material(id, material_game_data));
+                                continue 'staging_loop;
+                            }
                         } else {
-                            staging.push(StagedData::Material(id, material_game_data));
-                            continue 'staging_loop;
-                        }
-                    } else { None };
+                            None
+                        };
 
-                    let emissive_texture = if let Some(tex) = material_game_data.emissive_texture.as_ref() {
-                        if let RenderState::Ready(index) = reg.get(tex).render_state {
-                            Some(TextureRenderId(index))
+                    let emissive_texture =
+                        if let Some(tex) = material_game_data.emissive_texture.as_ref() {
+                            if let RenderState::Ready(index) = reg.get(tex).render_state {
+                                Some(TextureRenderId(index))
+                            } else {
+                                staging.push(StagedData::Material(id, material_game_data));
+                                continue 'staging_loop;
+                            }
                         } else {
-                            staging.push(StagedData::Material(id, material_game_data));
-                            continue 'staging_loop;
-                        }
-                    } else { None };
+                            None
+                        };
 
-                    let base_color_texture = if let Some(tex) = material_game_data.base_color_texture.as_ref() {
-                        if let RenderState::Ready(index) = reg.get(tex).render_state {
-                            Some(TextureRenderId(index))
+                    let base_color_texture =
+                        if let Some(tex) = material_game_data.base_color_texture.as_ref() {
+                            if let RenderState::Ready(index) = reg.get(tex).render_state {
+                                Some(TextureRenderId(index))
+                            } else {
+                                staging.push(StagedData::Material(id, material_game_data));
+                                continue 'staging_loop;
+                            }
                         } else {
-                            staging.push(StagedData::Material(id, material_game_data));
-                            continue 'staging_loop;
-                        }
-                    } else { None };
+                            None
+                        };
 
-                    let metallic_roughness_texture = if let Some(tex) = material_game_data.metallic_roughness_texture.as_ref() {
-                        if let RenderState::Ready(index) = reg.get(tex).render_state {
-                            Some(TextureRenderId(index))
+                    let metallic_roughness_texture =
+                        if let Some(tex) = material_game_data.metallic_roughness_texture.as_ref() {
+                            if let RenderState::Ready(index) = reg.get(tex).render_state {
+                                Some(TextureRenderId(index))
+                            } else {
+                                staging.push(StagedData::Material(id, material_game_data));
+                                continue 'staging_loop;
+                            }
                         } else {
-                            staging.push(StagedData::Material(id, material_game_data));
-                            continue 'staging_loop;
-                        }
-                    } else { None };
+                            None
+                        };
 
                     let manifest = material_game_data.manifest.clone();
                     let game_id = self.materials.insert(material_game_data);
@@ -350,7 +428,7 @@ impl GameAssetStore {
                     if self.res_tx.send(res).is_err() {
                         todo!();
                     }
-                },
+                }
             }
         }
         self.staging = staging;

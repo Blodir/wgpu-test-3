@@ -4,7 +4,7 @@ use ddsfile::{Caps2, Dds};
 use glam::{Quat, Vec3};
 
 use crate::game::assets::runtime_formats::animation;
-use crate::game::assets::registry::{AnimationClipId, AnimationId, MaterialId, MeshId, ModelId, SkeletonId, TextureId};
+use crate::game::assets::registry::{AnimationClipId, AnimationId, MaterialId, MeshId, ModelId, RigId, TextureId};
 use super::{asset_formats::{animationfile, dds, materialfile, modelfile, rigfile}};
 use super::super::texture::TextureLoadData;
 
@@ -12,7 +12,7 @@ pub enum IoRequest {
     LoadModel { id: ModelId, path: String },
     LoadMesh { id: MeshId, path: String },
     LoadMaterial { id: MaterialId, path: String },
-    LoadSkeleton { id: SkeletonId, path: String },
+    LoadRig { id: RigId, path: String },
     LoadAnimationClip { id: AnimationClipId, path: String },
     LoadAnimation { id: AnimationId, path: String, header: animationfile::AnimationClip },
     LoadTexture { id: TextureId, path: String, srgb: bool },
@@ -22,7 +22,7 @@ pub enum IoResponse {
     ModelLoaded { id: ModelId, model: modelfile::Model },
     MeshLoaded { id: MeshId, data: Vec<u8> },
     MaterialLoaded { id: MaterialId, material: materialfile::Material },
-    SkeletonLoaded { id: SkeletonId, skeleton: rigfile::Rig },
+    RigLoaded { id: RigId, rig: rigfile::Rig },
     AnimationClipLoaded { id: AnimationClipId, clip: animationfile::AnimationClip },
     AnimationLoaded { id: AnimationId, parsed_clip: animation::AnimationClip },
     TextureLoaded { id: TextureId, data: TextureLoadData },
@@ -238,10 +238,10 @@ fn io_worker_loop(
                     |e| IoResponse::Error { path: path.clone(), message: e.to_string() },
                     |material| IoResponse::MaterialLoaded { id, material },
                 ),
-            IoRequest::LoadSkeleton { id, path } => load_json::<rigfile::Rig>(&path)
+            IoRequest::LoadRig { id, path } => load_json::<rigfile::Rig>(&path)
                 .map_or_else(
                     |e| IoResponse::Error { path: path.clone(), message: e.to_string() },
-                    |skeleton| IoResponse::SkeletonLoaded { id, skeleton },
+                    |rig| IoResponse::RigLoaded { id, rig },
                 ),
             IoRequest::LoadAnimationClip { id, path } => load_json::<animationfile::AnimationClip>(&path)
                 .map_or_else(

@@ -4,14 +4,14 @@ use generational_arena::{Arena, Index};
 
 use crate::main::assets::io::asset_formats::animationfile;
 use crate::main::assets::store::{MaterialRenderId, MeshRenderId, ModelRenderId, TextureRenderId};
-use super::{store::{AnimationClipGameId, AnimationGameId, MaterialGameId, ModelGameId, SkeletonGameId}};
+use super::{store::{AnimationClipGameId, AnimationGameId, MaterialGameId, ModelGameId, RigGameId}};
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum ResourceKind {
     Model,
     Mesh,
     Material,
-    Skeleton,
+    Rig,
     AnimationClip,
     Animation,
     Texture,
@@ -79,7 +79,7 @@ pub struct _Mesh;
 #[derive(Copy, Clone, Eq, PartialEq, Hash)]
 pub struct _Material;
 #[derive(Copy, Clone, Eq, PartialEq, Hash)]
-pub struct _Skeleton;
+pub struct _Rig;
 #[derive(Copy, Clone, Eq, PartialEq, Hash)]
 pub struct _AnimationClip;
 #[derive(Copy, Clone, Eq, PartialEq, Hash)]
@@ -90,7 +90,7 @@ pub struct _Texture;
 impl ResourceTag for _Model { const KIND: ResourceKind = ResourceKind::Model; }
 impl ResourceTag for _Mesh { const KIND: ResourceKind = ResourceKind::Mesh; }
 impl ResourceTag for _Material { const KIND: ResourceKind = ResourceKind::Material; }
-impl ResourceTag for _Skeleton { const KIND: ResourceKind = ResourceKind::Skeleton; }
+impl ResourceTag for _Rig { const KIND: ResourceKind = ResourceKind::Rig; }
 impl ResourceTag for _AnimationClip { const KIND: ResourceKind = ResourceKind::AnimationClip; }
 impl ResourceTag for _Animation { const KIND: ResourceKind = ResourceKind::Animation; }
 impl ResourceTag for _Texture { const KIND: ResourceKind = ResourceKind::Texture; }
@@ -98,7 +98,7 @@ impl ResourceTag for _Texture { const KIND: ResourceKind = ResourceKind::Texture
 pub type ModelHandle = Handle<_Model>;
 pub type MeshHandle = Handle<_Mesh>;
 pub type MaterialHandle = Handle<_Material>;
-pub type SkeletonHandle = Handle<_Skeleton>;
+pub type RigHandle = Handle<_Rig>;
 pub type AnimationClipHandle = Handle<_AnimationClip>;
 pub type AnimationHandle = Handle<_Animation>;
 pub type TextureHandle = Handle<_Texture>;
@@ -106,7 +106,7 @@ pub type TextureHandle = Handle<_Texture>;
 pub type ModelId = HandleId<_Model>;
 pub type MeshId = HandleId<_Mesh>;
 pub type MaterialId = HandleId<_Material>;
-pub type SkeletonId = HandleId<_Skeleton>;
+pub type RigId = HandleId<_Rig>;
 pub type AnimationClipId = HandleId<_AnimationClip>;
 pub type AnimationId = HandleId<_Animation>;
 pub type TextureId = HandleId<_Texture>;
@@ -123,7 +123,7 @@ pub enum ResourceRequest {
     LoadModel { id: ModelId, path: String },
     LoadMesh { id: MeshId, path: String },
     LoadMaterial { id: MaterialId, path: Option<String> },
-    LoadSkeleton { id: SkeletonId, path: String },
+    LoadRig { id: RigId, path: String },
     LoadAnimationClip { id: AnimationClipId, path: String },
     LoadAnimation { id: AnimationId, path: String, header: animationfile::AnimationClip },
     LoadTexture { id: TextureId, path: String, srgb: bool },
@@ -132,7 +132,7 @@ pub enum ResourceRequest {
 pub enum ResourceResult {
     ModelResult { id: ModelId, game_id: ModelGameId, render_id: ModelRenderId },
     MeshResult { id: MeshId, render_id: MeshRenderId },
-    SkeletonResult { id: SkeletonId, game_id: SkeletonGameId },
+    RigResult { id: RigId, game_id: RigGameId },
     AnimationResult { id: AnimationId, game_id: AnimationGameId },
     AnimationClipResult { id: AnimationClipId, game_id: AnimationClipGameId },
     TextureResult { id: TextureId, render_id: TextureRenderId },
@@ -199,7 +199,7 @@ pub trait RegistryExt {
     fn request_model(&self, path: &str) -> ModelHandle;
     fn request_mesh(&self, path: &str) -> MeshHandle;
     fn request_material(&self, path: Option<&str>) -> MaterialHandle;
-    fn request_skeleton(&self, path: &str) -> SkeletonHandle;
+    fn request_rig(&self, path: &str) -> RigHandle;
     fn request_animation_clip(&self, path: &str) -> AnimationClipHandle;
     fn request_animation(&self, path: &str, header: &animationfile::AnimationClip) -> AnimationHandle;
     fn request_texture(&self, path: &str, srgb: bool) -> TextureHandle;
@@ -321,20 +321,20 @@ impl RegistryExt for Rc<RefCell<ResourceRegistry>> {
         }
     }
 
-    fn request_skeleton(
+    fn request_rig(
         &self,
         path: &str,
-    ) -> SkeletonHandle {
+    ) -> RigHandle {
         let mut reg = self.borrow_mut();
         if let Some(&idx) = reg.by_path.get(path) {
             let entry = reg.entries.get_mut(idx).unwrap();
             entry.ref_count += 1;
-            return SkeletonHandle::new(idx, self);
+            return RigHandle::new(idx, self);
         }
 
         let idx = reg.entries.insert(
             Entry {
-                kind: ResourceKind::Skeleton,
+                kind: ResourceKind::Rig,
                 ref_count: 1u32,
                 game_state: GameState::Loading,
                 render_state: RenderState::Absent,
@@ -342,8 +342,8 @@ impl RegistryExt for Rc<RefCell<ResourceRegistry>> {
         );
         reg.by_path.insert(path.to_string(), idx);
 
-        let handle = SkeletonHandle::new(idx, self);
-        reg.resource_request(ResourceRequest::LoadSkeleton { id: handle.id(), path: path.to_string() });
+        let handle = RigHandle::new(idx, self);
+        reg.resource_request(ResourceRequest::LoadRig { id: handle.id(), path: path.to_string() });
         handle
     }
 
@@ -440,7 +440,7 @@ impl RegistryExt for Rc<RefCell<ResourceRegistry>> {
                     let entry = reg.entries.get_mut(id.idx).unwrap();
                     entry.render_state = RenderState::Ready(render_id.into());
                 },
-                ResourceResult::SkeletonResult { id, game_id } => {
+                ResourceResult::RigResult { id, game_id } => {
                     let entry = reg.entries.get_mut(id.idx).unwrap();
                     entry.game_state = GameState::Ready(game_id.into());
                 },

@@ -64,7 +64,7 @@ impl RenderAssetManager {
                         }
                     }
                 },
-                ResourceRequest::LoadSkeleton { id, path } => self.make_io_request(IoRequest::LoadSkeleton { id, path }),
+                ResourceRequest::LoadRig { id, path } => self.make_io_request(IoRequest::LoadRig { id, path }),
                 ResourceRequest::LoadAnimationClip { id, path } => self.make_io_request(IoRequest::LoadAnimationClip { id, path }),
                 ResourceRequest::LoadAnimation { id, path, header } => self.make_io_request(IoRequest::LoadAnimation { id, path, header }),
                 ResourceRequest::LoadTexture { id, path, srgb } => self.make_io_request(IoRequest::LoadTexture { id, path, srgb }),
@@ -111,8 +111,8 @@ impl RenderAssetManager {
                         todo!();
                     }
                 }
-                CreateGameResourceResponse::Skeleton { id, game_id } => {
-                    if self.registry_res_tx.send(ResourceResult::SkeletonResult { id, game_id }).is_err() {
+                CreateGameResourceResponse::Rig { id, game_id } => {
+                    if self.registry_res_tx.send(ResourceResult::RigResult { id, game_id }).is_err() {
                         todo!();
                     }
                 },
@@ -162,8 +162,8 @@ impl RenderAssetManager {
                         todo!();
                     }
                 },
-                IoResponse::SkeletonLoaded { id, skeleton } => {
-                    if self.game_req_tx.send(CreateGameResourceRequest::Skeleton { id, manifest: skeleton }).is_err() {
+                IoResponse::RigLoaded { id, rig } => {
+                    if self.game_req_tx.send(CreateGameResourceRequest::Rig { id, manifest: rig }).is_err() {
                         todo!();
                     }
                 },

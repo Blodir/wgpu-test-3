@@ -96,8 +96,8 @@ fn compute_animated_pose(animation: &AnimationClip, skeleton: &rigfile::Rig, bas
 
 fn compute_joint_trs<'a>(task: AnimPoseTask) -> Vec<TRS> {
     let skeleton = match task {
-        AnimPoseTask::Single(ref single_pose_task) => single_pose_task.skeleton.clone(),
-        AnimPoseTask::Blend(ref blend_pose_task) => blend_pose_task.skeleton.clone(),
+        AnimPoseTask::Single(ref single_pose_task) => single_pose_task.rig.clone(),
+        AnimPoseTask::Blend(ref blend_pose_task) => blend_pose_task.rig.clone(),
     };
     let joint_count = skeleton.joints.len();
     if joint_count == 0 {
@@ -129,19 +129,19 @@ fn compute_joint_trs<'a>(task: AnimPoseTask) -> Vec<TRS> {
 
     let mut joint_matrices: Vec<_> = skeleton.joints.iter().map(|joint| Mat4::from_cols_array_2d(&joint.trs)).collect();
     match task {
-        AnimPoseTask::Single(SinglePoseTask { skeleton, clip, time_wrap, local_time, .. }) => {
-            let pose = compute_animated_pose(&clip, &skeleton, &base_locals, local_time, &time_wrap);
+        AnimPoseTask::Single(SinglePoseTask { rig, clip, time_wrap, local_time, .. }) => {
+            let pose = compute_animated_pose(&clip, &rig, &base_locals, local_time, &time_wrap);
             for (idx, maybe_joint) in pose.iter().enumerate() {
                 if let Some(joint) = maybe_joint {
                     joint_matrices[idx] = Mat4::from_scale_rotation_translation(joint.0, joint.1, joint.2);
                 }
             }
         },
-        AnimPoseTask::Blend(BlendPoseTask { skeleton, from_clip, to_clip, blend_time, from_time, to_time, from_time_wrap, to_time_wrap, .. }) => {
-            let pose_1 = compute_animated_pose(&from_clip, &skeleton, &base_locals, from_time, &from_time_wrap);
-            let pose_2 = compute_animated_pose(&to_clip, &skeleton, &base_locals, to_time, &to_time_wrap);
+        AnimPoseTask::Blend(BlendPoseTask { rig, from_clip, to_clip, blend_time, from_time, to_time, from_time_wrap, to_time_wrap, .. }) => {
+            let pose_1 = compute_animated_pose(&from_clip, &rig, &base_locals, from_time, &from_time_wrap);
+            let pose_2 = compute_animated_pose(&to_clip, &rig, &base_locals, to_time, &to_time_wrap);
             let blend_t = (to_time / blend_time).min(1.0);
-            for idx in 0..skeleton.joints.len() {
+            for idx in 0..rig.joints.len() {
                 let maybe_joint_1 = pose_1[idx];
                 let maybe_joint_2 = pose_2[idx];
                 if let Some(joint_1) = maybe_joint_1 {

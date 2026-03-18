@@ -9,7 +9,7 @@ use super::anim_pose::execute_pose_tasks;
 
 pub struct SinglePoseTask {
     pub instance_time: u64,
-    pub skeleton: Arc<Rig>,
+    pub rig: Arc<Rig>,
     pub clip: Arc<AnimationClip>,
     pub time_wrap: TimeWrapMode,
     pub boundary_mode: BoundaryMode,
@@ -19,7 +19,7 @@ pub struct SinglePoseTask {
 
 pub struct BlendPoseTask {
     pub instance_time: u64,
-    pub skeleton: Arc<Rig>,
+    pub rig: Arc<Rig>,
     pub from_clip: Arc<AnimationClip>,
     pub to_clip: Arc<AnimationClip>,
     pub blend_time: f32,

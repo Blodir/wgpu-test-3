@@ -1,14 +1,19 @@
 use std::{cell::RefCell, rc::Rc};
 
 use super::assets::registry::{GameState, ModelHandle, ResourceRegistry};
-use super::assets::store::{self, GameAssetStore};
+use super::assets::store::GameAssetStore;
 use crate::game::build_snapshot::AnimationSnapshot;
-use crate::{job_system::worker_pool::{AnimPoseTask, BlendPoseTask, SinglePoseTask}, main::world::anim_pose_store::POSE_STORAGE_BUFFER_SIZE};
+use crate::{
+    job_system::worker_pool::{AnimPoseTask, BlendPoseTask, SinglePoseTask},
+    main::world::anim_pose_store::POSE_STORAGE_BUFFER_SIZE,
+};
 
 /// What happens when animation time leaves [0, duration)
 #[derive(Clone, Copy)]
 pub enum TimeWrapMode {
-    Clamp, Repeat, PingPong
+    Clamp,
+    Repeat,
+    PingPong,
 }
 
 // TODO: this does nothing atm
@@ -63,11 +68,11 @@ pub struct AnimatorStateState {
 pub enum AnimatorState {
     /// state idx
     State(AnimatorStateState),
-    Transition(AnimatorTransitionState)
+    Transition(AnimatorTransitionState),
 }
 
 pub enum AnimatorError {
-    AttemptedTransitionWhilePreviousTransitionStillPlaying
+    AttemptedTransitionWhilePreviousTransitionStillPlaying,
 }
 
 const ANIM_TICKS_PER_SEC: u64 = 1000;
@@ -83,7 +88,10 @@ impl Animator {
     pub fn new(animation_graph: usize, start_state: usize) -> Self {
         Self {
             animation_graph,
-            current_state: AnimatorState::State(AnimatorStateState { state_idx: start_state, start_instance_time: 0 }),
+            current_state: AnimatorState::State(AnimatorStateState {
+                state_idx: start_state,
+                start_instance_time: 0,
+            }),
             time: 0,
             last_scheduled_time: 0,
         }
@@ -97,41 +105,56 @@ impl Animator {
     pub fn transition(&mut self, transition_idx: usize) -> Result<(), AnimatorError> {
         let prev_state = match &self.current_state {
             AnimatorState::State(idx) => Ok(idx),
-            _ => Err(AnimatorError::AttemptedTransitionWhilePreviousTransitionStillPlaying)
+            _ => Err(AnimatorError::AttemptedTransitionWhilePreviousTransitionStillPlaying),
         }?;
-        self.current_state = AnimatorState::Transition(
-            AnimatorTransitionState {
-                from: prev_state.state_idx,
-                transition: transition_idx,
-                from_start_instance_time: prev_state.start_instance_time,
-                to_start_instance_time: self.time,
-            }
-        );
+        self.current_state = AnimatorState::Transition(AnimatorTransitionState {
+            from: prev_state.state_idx,
+            transition: transition_idx,
+            from_start_instance_time: prev_state.start_instance_time,
+            to_start_instance_time: self.time,
+        });
         Ok(())
     }
 
     pub fn update(&mut self, animation_graphs: &Vec<AnimationGraph>, dt: f32) {
         let maybe_updated_state = match &self.current_state {
             AnimatorState::State(_state_idx) => None,
-            AnimatorState::Transition(AnimatorTransitionState { transition, to_start_instance_time, .. }) => {
+            AnimatorState::Transition(AnimatorTransitionState {
+                transition,
+                to_start_instance_time,
+                ..
+            }) => {
                 let ags = &animation_graphs[self.animation_graph];
                 let tr = &ags.transitions[*transition as usize];
-                if ((self.time - *to_start_instance_time) / ANIM_TICKS_PER_SEC) as f32 > tr.blend_time {
-                    Some(AnimatorState::State(AnimatorStateState { state_idx: tr.to, start_instance_time: *to_start_instance_time }))
-                } else { None }
-            },
+                if ((self.time - *to_start_instance_time) / ANIM_TICKS_PER_SEC) as f32
+                    > tr.blend_time
+                {
+                    Some(AnimatorState::State(AnimatorStateState {
+                        state_idx: tr.to,
+                        start_instance_time: *to_start_instance_time,
+                    }))
+                } else {
+                    None
+                }
+            }
         };
         if let Some(state) = maybe_updated_state {
             self.current_state = state;
         }
 
-        let delta_ticks =
-            (dt * ANIM_TICKS_PER_SEC as f32).round() as u64;
+        let delta_ticks = (dt * ANIM_TICKS_PER_SEC as f32).round() as u64;
 
         self.time += delta_ticks;
     }
 
-    pub fn build_job(&mut self, dt: f32, animation_graphs: &Vec<AnimationGraph>, model_handle: &ModelHandle, game_resources: &GameAssetStore, resource_registry: &Rc<RefCell<ResourceRegistry>>) -> Vec<AnimPoseTask> {
+    pub fn build_job(
+        &mut self,
+        dt: f32,
+        animation_graphs: &Vec<AnimationGraph>,
+        model_handle: &ModelHandle,
+        game_resources: &GameAssetStore,
+        resource_registry: &Rc<RefCell<ResourceRegistry>>,
+    ) -> Vec<AnimPoseTask> {
         let mut job = vec![];
 
         let model_game_idx = match resource_registry.borrow().get(model_handle).game_state {
@@ -142,19 +165,16 @@ impl Animator {
 
         let model = game_resources.models.get(model_game_idx).unwrap();
 
-        let skeleton_handle = match model.deformation {
-            store::DeformationData::None => panic!(),
-            store::DeformationData::Skinned { ref skeleton, .. } => skeleton,
-        };
-        let skeleton_game_idx = match resource_registry.borrow().get(skeleton_handle).game_state {
+        let rig_handle = &model.rig;
+        let rig_game_idx = match resource_registry.borrow().get(rig_handle).game_state {
             GameState::Ready(index) => index,
             _ => return job,
         };
-        let skeleton = game_resources.skeletons.get(skeleton_game_idx).unwrap();
+        let rig = game_resources.rigs.get(rig_game_idx).unwrap();
+        let animation_clips = &model.animation_clips;
 
         // make sure that the last pose covers the next snapshot interval
-        let delta_ticks =
-            (dt * ANIM_TICKS_PER_SEC as f32).round() as u64;
+        let delta_ticks = (dt * ANIM_TICKS_PER_SEC as f32).round() as u64;
         while self.last_scheduled_time < self.time {
             // at worst there may be one pose ahead and one behind the snapshot interval
             let min_sample_length = delta_ticks / (POSE_STORAGE_BUFFER_SIZE as u64 - 2);
@@ -162,85 +182,112 @@ impl Animator {
             let delta = 4 * min_sample_length;
             let next_instance_time = self.last_scheduled_time + delta;
             let task = match &self.current_state {
-                AnimatorState::State(animator_state_state) => AnimPoseTask::Single(
+                AnimatorState::State(animator_state_state) => AnimPoseTask::Single({
+                    let state = &animation_graphs[self.animation_graph].states
+                        [animator_state_state.state_idx as usize];
+                    let clip_handle = match animation_clips.get(state.clip_idx as usize) {
+                        Some(handle) => handle,
+                        None => return job,
+                    };
+                    let clip_game_idx = match resource_registry.borrow().get(clip_handle).game_state
                     {
-                        let state = &animation_graphs[self.animation_graph].states[animator_state_state.state_idx as usize];
-                        let animation_clips = match model.deformation {
-                            store::DeformationData::None => panic!(),
-                            store::DeformationData::Skinned { ref animation_clips, .. } => animation_clips,
-                        };
-                        let clip_handle = &animation_clips[state.clip_idx as usize];
-                        let clip_game_idx = match resource_registry.borrow().get(clip_handle).game_state {
-                            GameState::Ready(index) => index,
-                            _ => return job,
-                        };
-                        let anim_clip = game_resources.animation_clips.get(clip_game_idx).unwrap();
-                        let anim_game_idx = match resource_registry.borrow().get(&anim_clip.animation).game_state {
-                            GameState::Ready(index) => index,
-                            _ => return job,
-                        };
-                        let anim = game_resources.animations.get(anim_game_idx).unwrap();
-                        SinglePoseTask {
-                            instance_time: next_instance_time,
-                            skeleton: skeleton.clone(),
-                            clip: anim.clone(),
-                            time_wrap: state.time_wrap,
-                            boundary_mode: state.boundary_mode,
-                            local_time: ((next_instance_time.saturating_sub(animator_state_state.start_instance_time)) as f32 / ANIM_TICKS_PER_SEC as f32) * state.speed,
-                        }
-                    }
-                ),
-                AnimatorState::Transition(animator_transition_state) => AnimPoseTask::Blend(
+                        GameState::Ready(index) => index,
+                        _ => return job,
+                    };
+                    let anim_clip = game_resources.animation_clips.get(clip_game_idx).unwrap();
+                    let anim_game_idx = match resource_registry
+                        .borrow()
+                        .get(&anim_clip.animation)
+                        .game_state
                     {
-                        let from_state = &animation_graphs[self.animation_graph].states[animator_transition_state.from as usize];
-                        let transition = &animation_graphs[self.animation_graph].transitions[animator_transition_state.transition as usize];
-                        let to_state = &animation_graphs[self.animation_graph].states[transition.to as usize];
-
-                        let animation_clips = match model.deformation {
-                            store::DeformationData::None => panic!(),
-                            store::DeformationData::Skinned { ref animation_clips, .. } => animation_clips,
-                        };
-                        let from_handle = &animation_clips[from_state.clip_idx as usize];
-                        let to_handle = &animation_clips[to_state.clip_idx as usize];
-                        let from_game_idx = match resource_registry.borrow().get(from_handle).game_state {
-                            GameState::Ready(index) => index,
-                            _ => return job,
-                        };
-                        let to_game_idx = match resource_registry.borrow().get(to_handle).game_state {
-                            GameState::Ready(index) => index,
-                            _ => return job,
-                        };
-
-                        let from_clip = game_resources.animation_clips.get(from_game_idx).unwrap();
-                        let from_anim_game_idx = match resource_registry.borrow().get(&from_clip.animation).game_state {
-                            GameState::Ready(index) => index,
-                            _ => return job,
-                        };
-                        let from_anim = game_resources.animations.get(from_anim_game_idx).unwrap();
-
-                        let to_clip = game_resources.animation_clips.get(to_game_idx).unwrap();
-                        let to_anim_game_idx = match resource_registry.borrow().get(&to_clip.animation).game_state {
-                            GameState::Ready(index) => index,
-                            _ => return job,
-                        };
-                        let to_anim = game_resources.animations.get(to_anim_game_idx).unwrap();
-
-                        let from_time = ((next_instance_time.saturating_sub(animator_transition_state.from_start_instance_time)) as f32 / ANIM_TICKS_PER_SEC as f32) * from_state.speed;
-                        let to_time = ((next_instance_time.saturating_sub(animator_transition_state.to_start_instance_time)) as f32 / ANIM_TICKS_PER_SEC as f32) * to_state.speed;
-
-                        BlendPoseTask {
-                            instance_time: next_instance_time,
-                            skeleton: skeleton.clone(),
-                            from_clip: from_anim.clone(),
-                            to_clip: to_anim.clone(),
-                            blend_time: transition.blend_time,
-                            from_time,
-                            to_time,
-                            from_time_wrap: from_state.time_wrap,
-                            to_time_wrap: to_state.time_wrap,
-                        }
+                        GameState::Ready(index) => index,
+                        _ => return job,
+                    };
+                    let anim = game_resources.animations.get(anim_game_idx).unwrap();
+                    SinglePoseTask {
+                        instance_time: next_instance_time,
+                        rig: rig.clone(),
+                        clip: anim.clone(),
+                        time_wrap: state.time_wrap,
+                        boundary_mode: state.boundary_mode,
+                        local_time: ((next_instance_time
+                            .saturating_sub(animator_state_state.start_instance_time))
+                            as f32
+                            / ANIM_TICKS_PER_SEC as f32)
+                            * state.speed,
                     }
-                ),
+                }),
+                AnimatorState::Transition(animator_transition_state) => AnimPoseTask::Blend({
+                    let from_state = &animation_graphs[self.animation_graph].states
+                        [animator_transition_state.from as usize];
+                    let transition = &animation_graphs[self.animation_graph].transitions
+                        [animator_transition_state.transition as usize];
+                    let to_state =
+                        &animation_graphs[self.animation_graph].states[transition.to as usize];
+
+                    let from_handle = match animation_clips.get(from_state.clip_idx as usize) {
+                        Some(handle) => handle,
+                        None => return job,
+                    };
+                    let to_handle = match animation_clips.get(to_state.clip_idx as usize) {
+                        Some(handle) => handle,
+                        None => return job,
+                    };
+                    let from_game_idx = match resource_registry.borrow().get(from_handle).game_state
+                    {
+                        GameState::Ready(index) => index,
+                        _ => return job,
+                    };
+                    let to_game_idx = match resource_registry.borrow().get(to_handle).game_state {
+                        GameState::Ready(index) => index,
+                        _ => return job,
+                    };
+
+                    let from_clip = game_resources.animation_clips.get(from_game_idx).unwrap();
+                    let from_anim_game_idx = match resource_registry
+                        .borrow()
+                        .get(&from_clip.animation)
+                        .game_state
+                    {
+                        GameState::Ready(index) => index,
+                        _ => return job,
+                    };
+                    let from_anim = game_resources.animations.get(from_anim_game_idx).unwrap();
+
+                    let to_clip = game_resources.animation_clips.get(to_game_idx).unwrap();
+                    let to_anim_game_idx = match resource_registry
+                        .borrow()
+                        .get(&to_clip.animation)
+                        .game_state
+                    {
+                        GameState::Ready(index) => index,
+                        _ => return job,
+                    };
+                    let to_anim = game_resources.animations.get(to_anim_game_idx).unwrap();
+
+                    let from_time = ((next_instance_time
+                        .saturating_sub(animator_transition_state.from_start_instance_time))
+                        as f32
+                        / ANIM_TICKS_PER_SEC as f32)
+                        * from_state.speed;
+                    let to_time = ((next_instance_time
+                        .saturating_sub(animator_transition_state.to_start_instance_time))
+                        as f32
+                        / ANIM_TICKS_PER_SEC as f32)
+                        * to_state.speed;
+
+                    BlendPoseTask {
+                        instance_time: next_instance_time,
+                        rig: rig.clone(),
+                        from_clip: from_anim.clone(),
+                        to_clip: to_anim.clone(),
+                        blend_time: transition.blend_time,
+                        from_time,
+                        to_time,
+                        from_time_wrap: from_state.time_wrap,
+                        to_time_wrap: to_state.time_wrap,
+                    }
+                }),
             };
             job.push(task);
             self.last_scheduled_time = next_instance_time;
