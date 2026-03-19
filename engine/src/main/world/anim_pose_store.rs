@@ -169,6 +169,9 @@ impl AnimPoseStore {
     }
 
     pub fn receive_poses(&mut self, res: AnimPoseTaskResult) {
+        if res.data.len() == 0 {
+            return;
+        }
         match self.scene_to_pose_id.get(&res.node_id) {
             Some(pose_idx) => {
                 let entry = self.pose_data.get_mut(*pose_idx).unwrap();
