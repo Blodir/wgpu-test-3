@@ -74,8 +74,12 @@ impl Renderer {
         self.gui_renderer.resize(wgpu_context);
     }
 
-    pub fn handle_window_event(&mut self, event: &WindowEvent) {
-        self.gui_renderer.handle_window_event(event);
+    pub fn handle_window_event(&mut self, event: &WindowEvent) -> bool {
+        self.gui_renderer.handle_window_event(event)
+    }
+
+    pub fn wants_pointer_input(&self) -> bool {
+        self.gui_renderer.wants_pointer_input()
     }
 
     pub fn receive_poses(&mut self, anim_pose_task_results: AnimPoseTaskResult) {

@@ -2,12 +2,8 @@ use crossbeam_queue::SegQueue;
 use game::sim::{spawn_sim, InputEvent};
 use job_system::worker_pool::WorkerPool;
 use main::assets::manager::RenderAssetManager;
-use std::sync::{Arc, Mutex};
-use winit::{
-    application::ApplicationHandler,
-    event::Event,
-    event_loop::{ControlFlow, EventLoop},
-};
+use std::sync::Arc;
+use winit::event_loop::{ControlFlow, EventLoop};
 
 use crate::{
     game::{build_snapshot::RenderSnapshot, sim::GameTrait},

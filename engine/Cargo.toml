@@ -5,8 +5,8 @@ edition = "2021"
 
 [dependencies]
 bytemuck = { version = "1.15.0", features = ["derive"] }
-winit = "0.30.0"
-wgpu = "0.19.1"
+winit = { version = "0.30.12", features = ["rwh_06"] }
+wgpu = "25.0.2"
 notify = "6.1.1"
 pollster = "0.3.0"
 serde = { version = "1.0.203", features = ["derive"] }
@@ -20,5 +20,6 @@ generational-arena = "0.2.9"
 arc-swap = "1.7.1"
 crossbeam-queue = "0.3.12"
 crossbeam = "0.8.4"
-egui = "0.27.2"
-egui-wgpu = "0.27.2"
+egui = "0.32.3"
+egui-wgpu = "0.32.3"
+egui-winit = "0.32.3"

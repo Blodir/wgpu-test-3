@@ -36,17 +36,19 @@ impl SkyboxPipeline {
                     layout: Some(&render_pipeline_layout),
                     vertex: wgpu::VertexState {
                         module: &shader_module,
-                        entry_point: "vs_main",
+                        entry_point: Some("vs_main"),
                         buffers: &[],
+                        compilation_options: wgpu::PipelineCompilationOptions::default(),
                     },
                     fragment: Some(wgpu::FragmentState {
                         module: &shader_module,
-                        entry_point: "fs_main",
+                        entry_point: Some("fs_main"),
                         targets: &[Some(wgpu::ColorTargetState {
                             format: wgpu::TextureFormat::Rgba16Float,
                             blend: None,
                             write_mask: wgpu::ColorWrites::ALL,
                         })],
+                        compilation_options: wgpu::PipelineCompilationOptions::default(),
                     }),
                     primitive: wgpu::PrimitiveState {
                         topology: wgpu::PrimitiveTopology::TriangleList,
@@ -58,6 +60,7 @@ impl SkyboxPipeline {
                     depth_stencil: None,
                     multisample: wgpu::MultisampleState::default(),
                     multiview: None,
+                    cache: None,
                 });
 
         let index_buffer =
@@ -104,7 +107,7 @@ impl SkyboxPipeline {
 
         render_pass.set_pipeline(&self.render_pipeline);
         render_pass.set_bind_group(0u32, camera_bind_group, &[]);
-        render_pass.set_bind_group(1u32, &lights_bind_group, &[]);
+        render_pass.set_bind_group(1u32, lights_bind_group, &[]);
         render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
         render_pass.draw_indexed(0..INDICES.len() as u32, 0, 0..1);
     }

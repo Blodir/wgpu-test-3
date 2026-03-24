@@ -23,7 +23,7 @@ impl WgpuContext<'_> {
     pub async fn new(window: Arc<Window>) -> Self {
         let size = window.inner_size();
 
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
             backends: wgpu::Backends::VULKAN,
             ..Default::default()
         });
@@ -40,15 +40,14 @@ impl WgpuContext<'_> {
             .unwrap();
 
         let (device, queue) = adapter
-            .request_device(
-                &wgpu::DeviceDescriptor {
-                    label: None,
-                    required_features: wgpu::Features::TEXTURE_COMPRESSION_BC,
-                    required_limits: wgpu::Limits::downlevel_defaults()
-                        .using_resolution(adapter.limits()),
-                },
-                None,
-            )
+            .request_device(&wgpu::DeviceDescriptor {
+                label: None,
+                required_features: wgpu::Features::TEXTURE_COMPRESSION_BC,
+                required_limits: wgpu::Limits::downlevel_defaults()
+                    .using_resolution(adapter.limits()),
+                memory_hints: wgpu::MemoryHints::Performance,
+                trace: wgpu::Trace::Off,
+            })
             .await
             .unwrap();
 

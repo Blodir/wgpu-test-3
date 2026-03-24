@@ -92,9 +92,10 @@ impl<'surface> ApplicationHandler for MainWindow<'surface> {
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
+        let mut gui_consumed = false;
         if let Some(ref mut render_context) = self.render_context {
             let mut renderer = render_context.renderer.lock().unwrap();
-            renderer.handle_window_event(&event);
+            gui_consumed = renderer.handle_window_event(&event);
         }
 
         match event {
@@ -160,7 +161,9 @@ impl<'surface> ApplicationHandler for MainWindow<'surface> {
             WindowEvent::MouseWheel { .. }
             | WindowEvent::MouseInput { .. }
             | WindowEvent::KeyboardInput { .. } => {
-                self.sim_inputs.push(InputEvent::WindowEvent(event))
+                if !gui_consumed {
+                    self.sim_inputs.push(InputEvent::WindowEvent(event))
+                }
             }
             _ => (),
         }
@@ -181,7 +184,15 @@ impl<'surface> ApplicationHandler for MainWindow<'surface> {
         event: DeviceEvent,
     ) {
         match event {
-            DeviceEvent::MouseMotion { .. } => self.sim_inputs.push(InputEvent::DeviceEvent(event)),
+            DeviceEvent::MouseMotion { .. } => {
+                if let Some(ref render_context) = self.render_context {
+                    let renderer = render_context.renderer.lock().unwrap();
+                    if renderer.wants_pointer_input() {
+                        return;
+                    }
+                }
+                self.sim_inputs.push(InputEvent::DeviceEvent(event))
+            }
             _ => (),
         }
     }

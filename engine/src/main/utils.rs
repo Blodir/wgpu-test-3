@@ -30,7 +30,7 @@ pub fn create_shader_module(device: &wgpu::Device, path: &str) -> wgpu::ShaderMo
             source,
         });
 
-        device.poll(wgpu::Maintain::Wait);
+        let _ = device.poll(wgpu::PollType::Wait);
         let error = pollster::FutureExt::block_on(device.pop_error_scope());
         match error {
             Some(e) => Err(e),

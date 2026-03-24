@@ -69,17 +69,19 @@ impl SkinnedPbrPipeline {
                 layout: Some(&render_pipeline_layout),
                 vertex: wgpu::VertexState {
                     module: &vertex_shader_module,
-                    entry_point: "vs_main",
+                    entry_point: Some("vs_main"),
                     buffers: vertex_buffer_layouts,
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
                 },
                 fragment: Some(wgpu::FragmentState {
                     module: &fragment_shader_module,
-                    entry_point: "fs_main",
+                    entry_point: Some("fs_main"),
                     targets: &[Some(wgpu::ColorTargetState {
                         format: wgpu_context.surface_config.format,
                         blend: Some(wgpu::BlendState::REPLACE),
                         write_mask: wgpu::ColorWrites::ALL,
                     })],
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
                 }),
                 primitive: wgpu::PrimitiveState {
                     topology: wgpu::PrimitiveTopology::TriangleList,
@@ -103,6 +105,7 @@ impl SkinnedPbrPipeline {
                     alpha_to_coverage_enabled: false,
                 },
                 multiview: None,
+                cache: None,
             })
     }
 

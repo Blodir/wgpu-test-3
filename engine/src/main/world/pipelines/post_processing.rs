@@ -45,17 +45,19 @@ impl PostProcessingPipeline {
                     layout: Some(&render_pipeline_layout),
                     vertex: wgpu::VertexState {
                         module: &shader_module,
-                        entry_point: "vs_main",
+                        entry_point: Some("vs_main"),
                         buffers: &[],
+                        compilation_options: wgpu::PipelineCompilationOptions::default(),
                     },
                     fragment: Some(wgpu::FragmentState {
                         module: &shader_module,
-                        entry_point: "fs_main",
+                        entry_point: Some("fs_main"),
                         targets: &[Some(wgpu::ColorTargetState {
                             format: wgpu_context.surface_config.format,
                             blend: None,
                             write_mask: wgpu::ColorWrites::ALL,
                         })],
+                        compilation_options: wgpu::PipelineCompilationOptions::default(),
                     }),
                     primitive: wgpu::PrimitiveState {
                         topology: wgpu::PrimitiveTopology::TriangleList,
@@ -67,6 +69,7 @@ impl PostProcessingPipeline {
                     depth_stencil: None,
                     multisample: wgpu::MultisampleState::default(),
                     multiview: None,
+                    cache: None,
                 });
 
         let index_buffer =
