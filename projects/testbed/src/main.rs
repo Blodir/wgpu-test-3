@@ -8,8 +8,9 @@ use engine::{
         scene_tree::{
             AnimatedModel, Environment, Node, RenderDataType, Scene, SceneNodeId, StaticModel, Sun,
         },
-        sim::{GameTrait, InputEvent},
+        sim::InputEvent,
     },
+    game_trait::GameTrait,
     run,
 };
 use generational_arena::Arena;
@@ -219,7 +220,7 @@ impl GameTrait for Game {
         }
     }
 
-    fn consume_input(&mut self, scene: &mut Scene, event: engine::game::sim::InputEvent) {
+    fn consume_input(&mut self, scene: &mut Scene, event: InputEvent) {
         match event {
             InputEvent::Exit => return (),
             InputEvent::AspectChange(aspect) => scene.camera.aspect = aspect,
@@ -285,6 +286,13 @@ impl GameTrait for Game {
                 _ => (),
             },
         }
+    }
+
+    fn build_ui(ctx: &egui::Context, frame_idx: u32) {
+        egui::Window::new("Renderer UI").show(ctx, |ui| {
+            ui.label("egui boilerplate wired through main renderer");
+            ui.label(format!("frame index: {}", frame_idx));
+        });
     }
 }
 

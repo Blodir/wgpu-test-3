@@ -7,6 +7,7 @@ use super::gui::GuiRenderer;
 use super::wgpu_context::WgpuContext;
 use super::world::bindgroups::material::MaterialBinding;
 use super::world::WorldRenderer;
+use crate::game_trait::BuildUiFn;
 use crate::job_system::worker_pool::AnimPoseTaskResult;
 pub use crate::main::world::UploadMaterialRequest;
 use crate::snapshot_handoff::SnapshotHandoff;
@@ -22,6 +23,7 @@ impl Renderer {
         snapshot_handoff: Arc<SnapshotHandoff>,
         placeholders: PlaceholderTextureIds,
         render_resources: &RenderAssetStore,
+        build_ui_fn: BuildUiFn,
     ) -> Self {
         let world_renderer = WorldRenderer::new(
             wgpu_context,
@@ -29,7 +31,7 @@ impl Renderer {
             placeholders,
             render_resources,
         );
-        let gui_renderer = GuiRenderer::new(wgpu_context);
+        let gui_renderer = GuiRenderer::new(wgpu_context, build_ui_fn);
         Self {
             world_renderer,
             gui_renderer,

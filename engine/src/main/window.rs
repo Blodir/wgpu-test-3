@@ -12,6 +12,7 @@ use winit::{
 
 use crate::{
     game::sim::InputEvent,
+    game_trait::BuildUiFn,
     job_system::worker_pool::RenderResponse,
     main::assets::{manager::RenderAssetManager, store::RenderAssetStore},
     main::{renderer::Renderer, wgpu_context::WgpuContext},
@@ -47,6 +48,7 @@ pub struct MainWindow<'surface> {
     sim_inputs: Arc<SegQueue<InputEvent>>,
     resource_manager: RenderAssetManager,
     task_res_rx: crossbeam::channel::Receiver<RenderResponse>,
+    build_ui_fn: BuildUiFn,
 }
 
 impl MainWindow<'_> {
@@ -55,6 +57,7 @@ impl MainWindow<'_> {
         snap_handoff: Arc<SnapshotHandoff>,
         resource_manager: RenderAssetManager,
         task_res_rx: crossbeam::channel::Receiver<RenderResponse>,
+        build_ui_fn: BuildUiFn,
     ) -> Self {
         Self {
             render_context: None,
@@ -62,6 +65,7 @@ impl MainWindow<'_> {
             sim_inputs,
             resource_manager,
             task_res_rx,
+            build_ui_fn,
         }
     }
 }
@@ -81,6 +85,7 @@ impl<'surface> ApplicationHandler for MainWindow<'surface> {
             self.snap_handoff.clone(),
             placeholders,
             &render_resources,
+            self.build_ui_fn,
         )));
         self.render_context = Some(RenderContext {
             window,

@@ -7,39 +7,14 @@ use std::{
 };
 
 use crossbeam_queue::SegQueue;
-use winit::{
-    event::{DeviceEvent, ElementState, KeyEvent, MouseScrollDelta, WindowEvent},
-    keyboard::{KeyCode, PhysicalKey},
-};
 
 use super::assets::registry::{RegistryExt, ResourceRegistry, ResourceRequest, ResourceResult};
 use super::assets::store::{CreateGameResourceRequest, CreateGameResourceResponse, GameAssetStore};
 use super::scene_tree::RenderDataType;
 use crate::{
-    game::{
-        animator::AnimationGraph,
-        build_snapshot::RenderSnapshot,
-        scene_tree::{Scene, SceneNodeId},
-    },
-    job_system::worker_pool::Task,
+    game::build_snapshot::RenderSnapshot, game_trait::GameTrait, job_system::worker_pool::Task,
     snapshot_handoff::SnapshotHandoff,
 };
-
-pub trait GameTrait: Send + Sync {
-    fn init(
-        &mut self,
-        resource_registry: &Rc<RefCell<ResourceRegistry>>,
-    ) -> (Scene, Vec<AnimationGraph>);
-    fn update(
-        &mut self,
-        scene: &mut Scene,
-        resource_registry: &Rc<RefCell<ResourceRegistry>>,
-        animation_graphs: &Vec<AnimationGraph>,
-        node: SceneNodeId,
-        dt: f32,
-    );
-    fn consume_input(&mut self, scene: &mut Scene, event: InputEvent);
-}
 
 #[derive(Debug)]
 pub enum InputEvent {

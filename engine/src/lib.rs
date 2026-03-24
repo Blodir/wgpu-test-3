@@ -6,17 +6,17 @@ use std::sync::Arc;
 use winit::event_loop::{ControlFlow, EventLoop};
 
 use crate::{
-    game::{build_snapshot::RenderSnapshot, sim::GameTrait},
-    main::window,
+    game::build_snapshot::RenderSnapshot, game_trait::GameTrait, main::window,
     snapshot_handoff::SnapshotHandoff,
 };
 
 pub mod game;
+pub mod game_trait;
 pub mod job_system;
 pub mod main;
 pub mod snapshot_handoff;
 
-pub fn run(game: impl GameTrait + 'static) {
+pub fn run<G: GameTrait + 'static>(game: G) {
     let (game_req_tx, game_req_rx) = crossbeam::channel::unbounded();
     let (game_res_tx, game_res_rx) = crossbeam::channel::unbounded();
     let (registry_req_tx, registry_req_rx) = crossbeam::channel::unbounded();
@@ -44,6 +44,7 @@ pub fn run(game: impl GameTrait + 'static) {
         snap_handoff.clone(),
         resource_manager,
         render_rx,
+        G::build_ui,
     );
     let event_loop = EventLoop::new().unwrap();
     event_loop.set_control_flow(ControlFlow::Poll);

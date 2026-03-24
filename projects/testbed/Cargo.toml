@@ -8,6 +8,7 @@ engine = { path = "../../engine" }
 glam = { version = "0.30.5", features = ["bytemuck", "serde"] }
 generational-arena = "0.2.9"
 winit = "0.30.12"
+egui = "0.32.3"
 
 [profile.release]
 debug = true

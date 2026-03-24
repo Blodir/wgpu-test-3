@@ -3,10 +3,11 @@ use std::sync::Arc;
 use egui_wgpu::ScreenDescriptor;
 use winit::{event::WindowEvent, window::Window};
 
-use crate::main::wgpu_context::WgpuContext;
+use crate::{game_trait::BuildUiFn, main::wgpu_context::WgpuContext};
 
 pub struct GuiRenderer {
     window: Arc<Window>,
+    build_ui_fn: BuildUiFn,
     egui_context: egui::Context,
     egui_state: egui_winit::State,
     renderer: egui_wgpu::Renderer,
@@ -15,7 +16,7 @@ pub struct GuiRenderer {
 }
 
 impl GuiRenderer {
-    pub fn new(wgpu_context: &WgpuContext) -> Self {
+    pub fn new(wgpu_context: &WgpuContext, build_ui_fn: BuildUiFn) -> Self {
         let window = wgpu_context.window.clone();
         let egui_context = egui::Context::default();
         let egui_state = egui_winit::State::new(
@@ -36,6 +37,7 @@ impl GuiRenderer {
 
         Self {
             window,
+            build_ui_fn,
             egui_context,
             egui_state,
             renderer,
@@ -69,7 +71,7 @@ impl GuiRenderer {
 
         let raw_input = self.egui_state.take_egui_input(self.window.as_ref());
         let full_output = self.egui_context.run(raw_input, |ctx| {
-            self.build_ui(ctx, frame_idx);
+            (self.build_ui_fn)(ctx, frame_idx);
         });
         self.wants_pointer_input = self.egui_context.wants_pointer_input();
 
@@ -97,7 +99,7 @@ impl GuiRenderer {
         );
 
         {
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            let render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("GUI Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: output_view,
@@ -121,13 +123,6 @@ impl GuiRenderer {
         for id in &full_output.textures_delta.free {
             self.renderer.free_texture(id);
         }
-    }
-
-    fn build_ui(&self, ctx: &egui::Context, frame_idx: u32) {
-        egui::Window::new("Renderer UI").show(ctx, |ui| {
-            ui.label("egui boilerplate wired through main renderer");
-            ui.label(format!("frame index: {}", frame_idx));
-        });
     }
 }
 
