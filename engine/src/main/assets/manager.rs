@@ -1,7 +1,7 @@
 use wgpu::util::{BufferInitDescriptor, DeviceExt as _};
 
 use super::io::asset_formats::materialfile;
-use crate::main::{wgpu_context::WgpuContext, world::Renderer};
+use crate::main::{renderer::Renderer, wgpu_context::WgpuContext};
 
 use super::io::worker_pool::{IoRequest, IoResponse, IoWorkerPool};
 use super::{

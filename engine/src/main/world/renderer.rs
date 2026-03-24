@@ -62,7 +62,7 @@ impl Layouts {
     }
 }
 
-pub struct Renderer {
+pub struct WorldRenderer {
     skybox_output: SkyboxOutputTexture,
     depth_texture: DepthTexture,
     msaa_textures: MSAATextures,
@@ -81,7 +81,7 @@ pub struct Renderer {
     skinned_instances: SkinnedInstances,
     static_instances: StaticInstances,
 }
-impl Renderer {
+impl WorldRenderer {
     pub fn new(
         wgpu_context: &WgpuContext,
         snapshot_handoff: Arc<SnapshotHandoff>,
@@ -164,7 +164,9 @@ impl Renderer {
         render_resources: &RenderAssetStore,
         pose_storage: &mut AnimPoseStore,
         frame_idx: u32,
-    ) -> Result<(), wgpu::SurfaceError> {
+        encoder: &mut wgpu::CommandEncoder,
+        output_view: &wgpu::TextureView,
+    ) {
         let snaps = self.snapshot_handoff.load();
         let now = Instant::now();
         let t = (now - snaps.curr_timestamp)
@@ -186,15 +188,8 @@ impl Renderer {
             &self.layouts.lights,
         );
 
-        let mut encoder =
-            wgpu_context
-                .device
-                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("Render Encoder"),
-                });
-
         self.skybox_pipeline.render(
-            &mut encoder,
+            encoder,
             &self.skybox_output.view,
             &self.camera.bind_group,
             &self.lights.bind_group,
@@ -226,7 +221,7 @@ impl Renderer {
         self.skinned_pipeline.render(
             skinned_draw_context,
             &self.skinned_instances.buffer,
-            &mut encoder,
+            encoder,
             &self.msaa_textures.msaa_texture_view,
             &self.depth_texture.view,
             &self.camera.bind_group,
@@ -238,7 +233,7 @@ impl Renderer {
         self.static_pipeline.render(
             static_draw_context,
             &self.static_instances.buffer,
-            &mut encoder,
+            encoder,
             &self.msaa_textures.msaa_texture_view,
             &self.msaa_textures.resolve_texture_view,
             &self.depth_texture.view,
@@ -247,17 +242,7 @@ impl Renderer {
             render_resources,
         );
 
-        let output_surface_texture = wgpu_context.surface.get_current_texture()?;
-        let output_view = output_surface_texture
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
-
-        self.post_pipeline.render(&mut encoder, &output_view)?;
-
-        wgpu_context.queue.submit(Some(encoder.finish()));
-        output_surface_texture.present();
-
-        Ok(())
+        self.post_pipeline.render(encoder, output_view);
     }
 
     pub fn resize(&mut self, wgpu_context: &WgpuContext) {

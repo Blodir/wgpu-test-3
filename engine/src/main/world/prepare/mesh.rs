@@ -7,10 +7,7 @@ use crate::snapshot_handoff::SnapshotGuard;
 use crate::{
     game::scene_tree::SceneNodeId,
     main::{
-        assets::{
-            io::asset_formats::rigfile::SRT,
-            store::RenderAssetStore,
-        },
+        assets::{io::asset_formats::rigfile::SRT, store::RenderAssetStore},
         utils::{lerpu64, QuatExt},
         world::{
             anim_pose_store::{self, AnimPoseStore},
@@ -114,7 +111,8 @@ pub fn resolve_skinned_draw<'a>(
                 .get(mesh_batch.model_id.into())
                 .unwrap();
             for submesh_batch_idx in mesh_batch.submesh_range.clone() {
-                let submesh_batch = &snaps.curr.mesh_draw_snapshot.submesh_batches[submesh_batch_idx];
+                let submesh_batch =
+                    &snaps.curr.mesh_draw_snapshot.submesh_batches[submesh_batch_idx];
                 let instance_data_start_idx = instance_data.len();
                 for node_id in &submesh_batch.instances {
                     let curr_inst_snap = snaps
@@ -183,7 +181,8 @@ pub fn resolve_skinned_draw<'a>(
                     }
                 }
 
-                instance_ranges[submesh_batch_idx] = instance_data_start_idx as u32..instance_data.len() as u32;
+                instance_ranges[submesh_batch_idx] =
+                    instance_data_start_idx as u32..instance_data.len() as u32;
             }
         }
     }

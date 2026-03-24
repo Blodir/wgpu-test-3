@@ -1,6 +1,5 @@
 use std::{cell::RefCell, rc::Rc, sync::Arc};
 
-use generational_arena::{Arena, Index};
 use super::registry::{
     AnimationClipHandle, AnimationClipId, AnimationHandle, AnimationId, GameState, MaterialHandle,
     MaterialId, MeshHandle, ModelId, RenderState, ResourceRegistry, RigHandle, RigId,
@@ -12,6 +11,7 @@ use crate::main::assets::io::asset_formats::{
     rigfile::{self, Rig},
 };
 use crate::main::assets::store::{MaterialRenderId, MeshRenderId, SubMesh, TextureRenderId};
+use generational_arena::{Arena, Index};
 
 use super::registry::RegistryExt;
 

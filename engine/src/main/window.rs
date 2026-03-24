@@ -14,7 +14,7 @@ use crate::{
     game::sim::InputEvent,
     job_system::worker_pool::RenderResponse,
     main::assets::{manager::RenderAssetManager, store::RenderAssetStore},
-    main::{wgpu_context::WgpuContext, world::anim_pose_store::AnimPoseStore, world::Renderer},
+    main::{renderer::Renderer, wgpu_context::WgpuContext, world::anim_pose_store::AnimPoseStore},
     snapshot_handoff::SnapshotHandoff,
 };
 
@@ -95,6 +95,11 @@ impl<'surface> ApplicationHandler for MainWindow<'surface> {
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
+        if let Some(ref mut render_context) = self.render_context {
+            let mut renderer = render_context.renderer.lock().unwrap();
+            renderer.handle_window_event(&event);
+        }
+
         match event {
             WindowEvent::CloseRequested => {
                 event_loop.exit();
