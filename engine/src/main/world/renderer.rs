@@ -62,6 +62,15 @@ impl Layouts {
     }
 }
 
+pub struct UploadMaterialRequest<'a> {
+    pub manifest: &'a materialfile::Material,
+    pub normal_texture: &'a Option<TextureRenderId>,
+    pub occlusion_texture: &'a Option<TextureRenderId>,
+    pub emissive_texture: &'a Option<TextureRenderId>,
+    pub base_color_texture: &'a Option<TextureRenderId>,
+    pub metallic_roughness_texture: &'a Option<TextureRenderId>,
+}
+
 pub struct WorldRenderer {
     skybox_output: SkyboxOutputTexture,
     depth_texture: DepthTexture,
@@ -80,6 +89,7 @@ pub struct WorldRenderer {
     lights: LightsBinding,
     skinned_instances: SkinnedInstances,
     static_instances: StaticInstances,
+    pose_storage: AnimPoseStore,
 }
 impl WorldRenderer {
     pub fn new(
@@ -103,6 +113,7 @@ impl WorldRenderer {
         let bones = BonesBinding::new(&layouts.bones, &wgpu_context.device);
         let skinned_instances = SkinnedInstances::new(wgpu_context);
         let static_instances = StaticInstances::new(wgpu_context);
+        let pose_storage = AnimPoseStore::new();
 
         let skybox_output =
             SkyboxOutputTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
@@ -155,14 +166,21 @@ impl WorldRenderer {
             shader_cache,
             static_instances,
             static_pipeline,
+            pose_storage,
         }
+    }
+
+    pub fn receive_poses(
+        &mut self,
+        anim_pose_task_results: crate::job_system::worker_pool::AnimPoseTaskResult,
+    ) {
+        self.pose_storage.receive_poses(anim_pose_task_results);
     }
 
     pub fn render(
         &mut self,
         wgpu_context: &WgpuContext,
         render_resources: &RenderAssetStore,
-        pose_storage: &mut AnimPoseStore,
         frame_idx: u32,
         encoder: &mut wgpu::CommandEncoder,
         output_view: &wgpu::TextureView,
@@ -204,7 +222,7 @@ impl WorldRenderer {
             t,
             &wgpu_context.device,
             &wgpu_context.queue,
-            pose_storage,
+            &mut self.pose_storage,
             frame_idx,
         );
         let static_draw_context = resolve_static_draw(
@@ -214,7 +232,7 @@ impl WorldRenderer {
             t,
             &wgpu_context.device,
             &wgpu_context.queue,
-            pose_storage,
+            &mut self.pose_storage,
             frame_idx,
         );
 
@@ -259,19 +277,15 @@ impl WorldRenderer {
 
     pub fn upload_material(
         &mut self,
-        manifest: &materialfile::Material,
-        normal_texture: &Option<TextureRenderId>,
-        occlusion_texture: &Option<TextureRenderId>,
-        emissive_texture: &Option<TextureRenderId>,
-        base_color_texture: &Option<TextureRenderId>,
-        metallic_roughness_texture: &Option<TextureRenderId>,
+        request: UploadMaterialRequest<'_>,
         render_resources: &RenderAssetStore,
         wgpu_context: &WgpuContext,
     ) -> Result<MaterialBinding, ()> {
         let textures_gpu = &render_resources.textures;
         let base_color_view = &textures_gpu
             .get(
-                base_color_texture
+                request
+                    .base_color_texture
                     .unwrap_or(self.placeholders.base_color)
                     .into(),
             )
@@ -279,7 +293,8 @@ impl WorldRenderer {
             .texture_view;
         let emissive_view = &textures_gpu
             .get(
-                emissive_texture
+                request
+                    .emissive_texture
                     .unwrap_or(self.placeholders.emissive)
                     .into(),
             )
@@ -287,26 +302,33 @@ impl WorldRenderer {
             .texture_view;
         let metallic_roughness_view = &textures_gpu
             .get(
-                metallic_roughness_texture
+                request
+                    .metallic_roughness_texture
                     .unwrap_or(self.placeholders.metallic_roughness)
                     .into(),
             )
             .unwrap()
             .texture_view;
         let normal_view = &textures_gpu
-            .get(normal_texture.unwrap_or(self.placeholders.normals).into())
+            .get(
+                request
+                    .normal_texture
+                    .unwrap_or(self.placeholders.normals)
+                    .into(),
+            )
             .unwrap()
             .texture_view;
         let occlusion_view = &textures_gpu
             .get(
-                occlusion_texture
+                request
+                    .occlusion_texture
                     .unwrap_or(self.placeholders.occlusion)
                     .into(),
             )
             .unwrap()
             .texture_view;
         Ok(MaterialBinding::upload(
-            manifest,
+            request.manifest,
             base_color_view,
             emissive_view,
             metallic_roughness_view,

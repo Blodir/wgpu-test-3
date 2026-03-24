@@ -14,7 +14,7 @@ use crate::{
     game::sim::InputEvent,
     job_system::worker_pool::RenderResponse,
     main::assets::{manager::RenderAssetManager, store::RenderAssetStore},
-    main::{renderer::Renderer, wgpu_context::WgpuContext, world::anim_pose_store::AnimPoseStore},
+    main::{renderer::Renderer, wgpu_context::WgpuContext},
     snapshot_handoff::SnapshotHandoff,
 };
 
@@ -36,7 +36,6 @@ fn resize(
 struct RenderContext<'surface> {
     renderer: Arc<Mutex<Renderer>>,
     render_resources: RenderAssetStore,
-    pose_storage: AnimPoseStore,
     window: Arc<Window>,
     wgpu_context: WgpuContext<'surface>,
     frame_idx: u32,
@@ -83,12 +82,10 @@ impl<'surface> ApplicationHandler for MainWindow<'surface> {
             placeholders,
             &render_resources,
         )));
-        let pose_storage = AnimPoseStore::new();
         self.render_context = Some(RenderContext {
             window,
             renderer,
             render_resources,
-            pose_storage,
             wgpu_context,
             frame_idx: 0u32,
         });
@@ -121,9 +118,7 @@ impl<'surface> ApplicationHandler for MainWindow<'surface> {
                     for res in self.task_res_rx.try_iter() {
                         match res {
                             RenderResponse::Pose(anim_pose_task_results) => {
-                                render_context
-                                    .pose_storage
-                                    .receive_poses(anim_pose_task_results);
+                                renderer.receive_poses(anim_pose_task_results);
                             }
                         }
                     }
@@ -132,7 +127,6 @@ impl<'surface> ApplicationHandler for MainWindow<'surface> {
                     match renderer.render(
                         &render_context.wgpu_context,
                         &render_context.render_resources,
-                        &mut render_context.pose_storage,
                         render_context.frame_idx,
                     ) {
                         Ok(_) => {}

@@ -2,13 +2,13 @@ use std::sync::Arc;
 
 use winit::event::WindowEvent;
 
-use super::assets::io::asset_formats::materialfile;
-use super::assets::store::{PlaceholderTextureIds, RenderAssetStore, TextureRenderId};
+use super::assets::store::{PlaceholderTextureIds, RenderAssetStore};
 use super::gui::GuiRenderer;
 use super::wgpu_context::WgpuContext;
-use super::world::anim_pose_store::AnimPoseStore;
 use super::world::bindgroups::material::MaterialBinding;
 use super::world::WorldRenderer;
+use crate::job_system::worker_pool::AnimPoseTaskResult;
+pub use crate::main::world::UploadMaterialRequest;
 use crate::snapshot_handoff::SnapshotHandoff;
 
 pub struct Renderer {
@@ -40,7 +40,6 @@ impl Renderer {
         &mut self,
         wgpu_context: &WgpuContext,
         render_resources: &RenderAssetStore,
-        pose_storage: &mut AnimPoseStore,
         frame_idx: u32,
     ) -> Result<(), wgpu::SurfaceError> {
         let output_surface_texture = wgpu_context.surface.get_current_texture()?;
@@ -58,7 +57,6 @@ impl Renderer {
         self.world_renderer.render(
             wgpu_context,
             render_resources,
-            pose_storage,
             frame_idx,
             &mut encoder,
             &output_view,
@@ -80,26 +78,17 @@ impl Renderer {
         self.gui_renderer.handle_window_event(event);
     }
 
+    pub fn receive_poses(&mut self, anim_pose_task_results: AnimPoseTaskResult) {
+        self.world_renderer.receive_poses(anim_pose_task_results);
+    }
+
     pub fn upload_material(
         &mut self,
-        manifest: &materialfile::Material,
-        normal_texture: &Option<TextureRenderId>,
-        occlusion_texture: &Option<TextureRenderId>,
-        emissive_texture: &Option<TextureRenderId>,
-        base_color_texture: &Option<TextureRenderId>,
-        metallic_roughness_texture: &Option<TextureRenderId>,
+        request: UploadMaterialRequest<'_>,
         render_resources: &RenderAssetStore,
         wgpu_context: &WgpuContext,
     ) -> Result<MaterialBinding, ()> {
-        self.world_renderer.upload_material(
-            manifest,
-            normal_texture,
-            occlusion_texture,
-            emissive_texture,
-            base_color_texture,
-            metallic_roughness_texture,
-            render_resources,
-            wgpu_context,
-        )
+        self.world_renderer
+            .upload_material(request, render_resources, wgpu_context)
     }
 }

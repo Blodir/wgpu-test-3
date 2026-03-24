@@ -1,7 +1,10 @@
 use wgpu::util::{BufferInitDescriptor, DeviceExt as _};
 
 use super::io::asset_formats::materialfile;
-use crate::main::{renderer::Renderer, wgpu_context::WgpuContext};
+use crate::main::{
+    renderer::{Renderer, UploadMaterialRequest},
+    wgpu_context::WgpuContext,
+};
 
 use super::io::worker_pool::{IoRequest, IoResponse, IoWorkerPool};
 use super::{
@@ -144,13 +147,16 @@ impl RenderAssetManager {
                     base_color_texture,
                     metallic_roughness_texture,
                 } => {
+                    let upload_request = UploadMaterialRequest {
+                        manifest: &manifest,
+                        normal_texture: &normal_texture,
+                        occlusion_texture: &occlusion_texture,
+                        emissive_texture: &emissive_texture,
+                        base_color_texture: &base_color_texture,
+                        metallic_roughness_texture: &metallic_roughness_texture,
+                    };
                     let material_binding = match renderer.upload_material(
-                        &manifest,
-                        &normal_texture,
-                        &occlusion_texture,
-                        &emissive_texture,
-                        &base_color_texture,
-                        &metallic_roughness_texture,
+                        upload_request,
                         render_resources,
                         wgpu_context,
                     ) {
