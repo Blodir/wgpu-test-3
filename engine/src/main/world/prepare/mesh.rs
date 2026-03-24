@@ -3,7 +3,7 @@ use std::{collections::HashMap, ops::Range};
 use glam::Mat4;
 
 use crate::game::build_snapshot::MeshDrawSnapshot;
-use crate::snapshot_handoff::SnapshotGuard;
+use crate::render_snapshot_handoff::RenderSnapshotGuard;
 use crate::{
     game::scene_tree::SceneNodeId,
     main::{
@@ -86,7 +86,7 @@ pub fn resolve_skinned_draw<'a>(
     bones_layout: &wgpu::BindGroupLayout,
     instances: &mut SkinnedInstances,
     render_resources: &RenderAssetStore,
-    snaps: &'a SnapshotGuard,
+    snaps: &'a RenderSnapshotGuard,
     t: f32,
     device: &wgpu::Device,
     queue: &wgpu::Queue,
@@ -199,7 +199,7 @@ pub fn resolve_skinned_draw<'a>(
 pub fn resolve_static_draw<'a>(
     instances: &mut StaticInstances,
     render_resources: &RenderAssetStore,
-    snaps: &'a SnapshotGuard,
+    snaps: &'a RenderSnapshotGuard,
     t: f32,
     device: &wgpu::Device,
     queue: &wgpu::Queue,

@@ -25,7 +25,7 @@ use crate::main::assets::store::{PlaceholderTextureIds, RenderAssetStore, Textur
 use crate::main::world::buffers::static_instance::StaticInstances;
 use crate::main::world::pipelines::static_pbr::StaticPbrPipeline;
 use crate::main::world::prepare::mesh::resolve_static_draw;
-use crate::snapshot_handoff::SnapshotHandoff;
+use crate::render_snapshot_handoff::RenderSnapshotHandoff;
 
 pub struct Layouts {
     pub camera: wgpu::BindGroupLayout,
@@ -79,7 +79,7 @@ pub struct WorldRenderer {
     skinned_pipeline: SkinnedPbrPipeline,
     static_pipeline: StaticPbrPipeline,
     post_pipeline: PostProcessingPipeline,
-    snapshot_handoff: Arc<SnapshotHandoff>,
+    snapshot_handoff: Arc<RenderSnapshotHandoff>,
     pub layouts: Layouts,
     pub placeholders: PlaceholderTextureIds,
     sampler_cache: SamplerCache,
@@ -94,7 +94,7 @@ pub struct WorldRenderer {
 impl WorldRenderer {
     pub fn new(
         wgpu_context: &WgpuContext,
-        snapshot_handoff: Arc<SnapshotHandoff>,
+        snapshot_handoff: Arc<RenderSnapshotHandoff>,
         placeholders: PlaceholderTextureIds,
         render_resources: &RenderAssetStore,
     ) -> Self {

@@ -10,20 +10,20 @@ use super::world::WorldRenderer;
 use crate::game_trait::BuildUiFn;
 use crate::job_system::worker_pool::AnimPoseTaskResult;
 pub use crate::main::world::UploadMaterialRequest;
-use crate::snapshot_handoff::SnapshotHandoff;
+use crate::render_snapshot_handoff::RenderSnapshotHandoff;
 
-pub struct Renderer {
+pub struct Renderer<S, C> {
     world_renderer: WorldRenderer,
-    gui_renderer: GuiRenderer,
+    gui_renderer: GuiRenderer<S, C>,
 }
 
-impl Renderer {
+impl<S, C> Renderer<S, C> {
     pub fn new(
         wgpu_context: &WgpuContext,
-        snapshot_handoff: Arc<SnapshotHandoff>,
+        snapshot_handoff: Arc<RenderSnapshotHandoff>,
         placeholders: PlaceholderTextureIds,
         render_resources: &RenderAssetStore,
-        build_ui_fn: BuildUiFn,
+        build_ui_fn: BuildUiFn<S, C>,
     ) -> Self {
         let world_renderer = WorldRenderer::new(
             wgpu_context,
@@ -36,6 +36,16 @@ impl Renderer {
             world_renderer,
             gui_renderer,
         }
+    }
+
+    pub fn run_ui(
+        &mut self,
+        wgpu_context: &WgpuContext,
+        frame_idx: u32,
+        ui_snapshot: Option<&S>,
+    ) -> Vec<C> {
+        self.gui_renderer
+            .run_ui(wgpu_context, frame_idx, ui_snapshot)
     }
 
     pub fn render(
@@ -64,7 +74,7 @@ impl Renderer {
             &output_view,
         );
         self.gui_renderer
-            .render(wgpu_context, &mut encoder, &output_view, frame_idx);
+            .render(wgpu_context, &mut encoder, &output_view);
 
         wgpu_context.queue.submit(Some(encoder.finish()));
         output_surface_texture.present();

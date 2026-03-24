@@ -8,9 +8,8 @@ use engine::{
         scene_tree::{
             AnimatedModel, Environment, Node, RenderDataType, Scene, SceneNodeId, StaticModel, Sun,
         },
-        sim::InputEvent,
     },
-    game_trait::GameTrait,
+    game_trait::{InputEvent, SimTrait, UiTrait},
     run,
 };
 use generational_arena::Arena;
@@ -24,6 +23,17 @@ struct Game {
     shift_is_pressed: bool,
     mouse_btn_is_pressed: bool,
 }
+
+struct UiSnapshot {
+    global_time_sec: f32,
+    camera_distance: f32,
+    shift_is_pressed: bool,
+}
+
+enum UiCommand {
+    SetCameraDistance(f32),
+}
+
 impl Game {
     fn new() -> Self {
         Self {
@@ -32,7 +42,10 @@ impl Game {
         }
     }
 }
-impl GameTrait for Game {
+impl SimTrait for Game {
+    type UiSnapshot = UiSnapshot;
+    type UiCommand = UiCommand;
+
     fn init(
         &mut self,
         resource_registry: &std::rc::Rc<
@@ -220,10 +233,15 @@ impl GameTrait for Game {
         }
     }
 
-    fn consume_input(&mut self, scene: &mut Scene, event: InputEvent) {
+    fn consume_input(&mut self, scene: &mut Scene, event: InputEvent<Self::UiCommand>) {
         match event {
             InputEvent::Exit => return (),
             InputEvent::AspectChange(aspect) => scene.camera.aspect = aspect,
+            InputEvent::Ui(command) => match command {
+                UiCommand::SetCameraDistance(distance) => {
+                    scene.camera.eye.z = distance.max(0.0);
+                }
+            },
             InputEvent::DeviceEvent(event) => match event {
                 DeviceEvent::MouseMotion { delta: (x, y) } => {
                     if !self.mouse_btn_is_pressed {
@@ -288,10 +306,40 @@ impl GameTrait for Game {
         }
     }
 
-    fn build_ui(ctx: &egui::Context, frame_idx: u32) {
+    fn build_ui_snapshot(&mut self, scene: &Scene, _tick: u64) -> Self::UiSnapshot {
+        UiSnapshot {
+            global_time_sec: scene.global_time_sec,
+            camera_distance: scene.camera.eye.z,
+            shift_is_pressed: self.shift_is_pressed,
+        }
+    }
+}
+
+impl UiTrait for Game {
+    type UiSnapshot = UiSnapshot;
+    type UiCommand = UiCommand;
+
+    fn build_ui(
+        ctx: &egui::Context,
+        frame_idx: u32,
+        snapshot: Option<&Self::UiSnapshot>,
+        emit: &mut dyn FnMut(Self::UiCommand),
+    ) {
         egui::Window::new("Renderer UI").show(ctx, |ui| {
-            ui.label("egui boilerplate wired through main renderer");
             ui.label(format!("frame index: {}", frame_idx));
+            if let Some(snapshot) = snapshot {
+                ui.label(format!("sim t: {:.2}", snapshot.global_time_sec));
+                ui.label(format!("shift pressed: {}", snapshot.shift_is_pressed));
+                let mut camera_distance = snapshot.camera_distance;
+                if ui
+                    .add(egui::Slider::new(&mut camera_distance, 0.0..=300.0).text("Camera Z"))
+                    .changed()
+                {
+                    emit(UiCommand::SetCameraDistance(camera_distance));
+                }
+            } else {
+                ui.label("waiting for sim ui snapshot...");
+            }
         });
     }
 }

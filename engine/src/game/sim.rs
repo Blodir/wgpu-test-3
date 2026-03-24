@@ -12,31 +12,32 @@ use super::assets::registry::{RegistryExt, ResourceRegistry, ResourceRequest, Re
 use super::assets::store::{CreateGameResourceRequest, CreateGameResourceResponse, GameAssetStore};
 use super::scene_tree::RenderDataType;
 use crate::{
-    game::build_snapshot::RenderSnapshot, game_trait::GameTrait, job_system::worker_pool::Task,
-    snapshot_handoff::SnapshotHandoff,
+    game::build_snapshot::RenderSnapshot,
+    game_trait::{InputEvent, SimTrait},
+    job_system::worker_pool::Task,
+    render_snapshot_handoff::RenderSnapshotHandoff,
+    ui_snapshot_handoff::UiSnapshotHandoff,
 };
-
-#[derive(Debug)]
-pub enum InputEvent {
-    DeviceEvent(winit::event::DeviceEvent),
-    WindowEvent(winit::event::WindowEvent),
-    AspectChange(f32),
-    Exit,
-}
 
 const TICK: Duration = Duration::from_millis(100);
 const SPIN: Duration = Duration::from_micros(200);
 
-pub fn spawn_sim(
-    inputs: Arc<SegQueue<InputEvent>>,
-    snap_handoff: Arc<SnapshotHandoff>,
+pub fn spawn_sim<G>(
+    inputs: Arc<SegQueue<InputEvent<G::UiCommand>>>,
+    snap_handoff: Arc<RenderSnapshotHandoff>,
+    ui_snapshot_handoff: Arc<UiSnapshotHandoff<G::UiSnapshot>>,
     reg_req_tx: crossbeam::channel::Sender<ResourceRequest>,
     reg_res_rx: crossbeam::channel::Receiver<ResourceResult>,
     game_req_rx: crossbeam::channel::Receiver<CreateGameResourceRequest>,
     game_res_tx: crossbeam::channel::Sender<CreateGameResourceResponse>,
     job_task_tx: crossbeam::channel::Sender<Task>,
-    game: impl GameTrait + 'static,
-) -> std::thread::JoinHandle<()> {
+    game: G,
+) -> std::thread::JoinHandle<()>
+where
+    G: SimTrait + Send + 'static,
+    G::UiCommand: Send + 'static,
+    G::UiSnapshot: Send + Sync + 'static,
+{
     std::thread::spawn(move || {
         let mut game = game;
         let resource_registry =
@@ -71,6 +72,8 @@ pub fn spawn_sim(
                 dt,
                 &mut game,
             );
+            let ui_snapshot = game.build_ui_snapshot(&scene, frame_index as u64);
+            ui_snapshot_handoff.publish(frame_index as u64, ui_snapshot);
 
             let snap = RenderSnapshot::build(
                 &mut scene,

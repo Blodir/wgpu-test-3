@@ -5,18 +5,24 @@ use winit::{event::WindowEvent, window::Window};
 
 use crate::{game_trait::BuildUiFn, main::wgpu_context::WgpuContext};
 
-pub struct GuiRenderer {
+struct PendingGuiFrame {
+    paint_jobs: Vec<egui::ClippedPrimitive>,
+    textures_to_free: Vec<egui::TextureId>,
+}
+
+pub struct GuiRenderer<S, C> {
     window: Arc<Window>,
-    build_ui_fn: BuildUiFn,
+    build_ui_fn: BuildUiFn<S, C>,
     egui_context: egui::Context,
     egui_state: egui_winit::State,
     renderer: egui_wgpu::Renderer,
     screen_descriptor: ScreenDescriptor,
     wants_pointer_input: bool,
+    pending_frame: Option<PendingGuiFrame>,
 }
 
-impl GuiRenderer {
-    pub fn new(wgpu_context: &WgpuContext, build_ui_fn: BuildUiFn) -> Self {
+impl<S, C> GuiRenderer<S, C> {
+    pub fn new(wgpu_context: &WgpuContext, build_ui_fn: BuildUiFn<S, C>) -> Self {
         let window = wgpu_context.window.clone();
         let egui_context = egui::Context::default();
         let egui_state = egui_winit::State::new(
@@ -43,6 +49,7 @@ impl GuiRenderer {
             renderer,
             screen_descriptor: screen_descriptor_from_context(wgpu_context),
             wants_pointer_input: false,
+            pending_frame: None,
         }
     }
 
@@ -60,18 +67,19 @@ impl GuiRenderer {
             .consumed
     }
 
-    pub fn render(
+    pub fn run_ui(
         &mut self,
         wgpu_context: &WgpuContext,
-        encoder: &mut wgpu::CommandEncoder,
-        output_view: &wgpu::TextureView,
         frame_idx: u32,
-    ) {
+        ui_snapshot: Option<&S>,
+    ) -> Vec<C> {
         self.screen_descriptor = screen_descriptor_from_context(wgpu_context);
+        let mut ui_commands = Vec::new();
 
         let raw_input = self.egui_state.take_egui_input(self.window.as_ref());
         let full_output = self.egui_context.run(raw_input, |ctx| {
-            (self.build_ui_fn)(ctx, frame_idx);
+            let mut emit = |cmd: C| ui_commands.push(cmd);
+            (self.build_ui_fn)(ctx, frame_idx, ui_snapshot, &mut emit);
         });
         self.wants_pointer_input = self.egui_context.wants_pointer_input();
 
@@ -90,14 +98,31 @@ impl GuiRenderer {
                 image_delta,
             );
         }
+        self.pending_frame = Some(PendingGuiFrame {
+            paint_jobs,
+            textures_to_free: full_output.textures_delta.free,
+        });
+
+        ui_commands
+    }
+
+    pub fn render(
+        &mut self,
+        wgpu_context: &WgpuContext,
+        encoder: &mut wgpu::CommandEncoder,
+        output_view: &wgpu::TextureView,
+    ) {
+        let Some(frame) = self.pending_frame.take() else {
+            return;
+        };
+
         self.renderer.update_buffers(
             &wgpu_context.device,
             &wgpu_context.queue,
             encoder,
-            &paint_jobs,
+            &frame.paint_jobs,
             &self.screen_descriptor,
         );
-
         {
             let render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("GUI Render Pass"),
@@ -115,13 +140,13 @@ impl GuiRenderer {
             });
 
             let mut render_pass = render_pass.forget_lifetime();
-            let _ = self
-                .renderer
-                .render(&mut render_pass, &paint_jobs, &self.screen_descriptor);
+            let _ =
+                self.renderer
+                    .render(&mut render_pass, &frame.paint_jobs, &self.screen_descriptor);
         }
 
-        for id in &full_output.textures_delta.free {
-            self.renderer.free_texture(id);
+        for texture_id in frame.textures_to_free {
+            self.renderer.free_texture(&texture_id);
         }
     }
 }

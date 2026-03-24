@@ -4,24 +4,24 @@ use arc_swap::{ArcSwap, Guard};
 
 use crate::game::build_snapshot::RenderSnapshot;
 
-pub type SnapshotGuard = Guard<Arc<SnapshotPair>>;
+pub type RenderSnapshotGuard = Guard<Arc<RenderSnapshotPair>>;
 
 #[derive(Clone)]
-pub struct SnapshotPair {
+pub struct RenderSnapshotPair {
     pub prev: Arc<RenderSnapshot>,
     pub prev_timestamp: Instant,
     pub curr: Arc<RenderSnapshot>,
     pub curr_timestamp: Instant,
 }
 
-pub struct SnapshotHandoff {
-    pair: ArcSwap<SnapshotPair>,
+pub struct RenderSnapshotHandoff {
+    pair: ArcSwap<RenderSnapshotPair>,
 }
 
-impl SnapshotHandoff {
+impl RenderSnapshotHandoff {
     pub fn new(init: RenderSnapshot) -> Self {
         let init = Arc::new(init);
-        let pair = SnapshotPair {
+        let pair = RenderSnapshotPair {
             prev: init.clone(),
             prev_timestamp: Instant::now(),
             curr: init,
@@ -34,7 +34,7 @@ impl SnapshotHandoff {
 
     pub fn publish(&self, snap: RenderSnapshot) {
         let old = self.pair.load();
-        let next = SnapshotPair {
+        let next = RenderSnapshotPair {
             prev: old.curr.clone(),
             prev_timestamp: old.curr_timestamp,
             curr: Arc::new(snap),
@@ -43,7 +43,7 @@ impl SnapshotHandoff {
         self.pair.store(Arc::new(next));
     }
 
-    pub fn load(&self) -> SnapshotGuard {
+    pub fn load(&self) -> RenderSnapshotGuard {
         self.pair.load()
     }
 }

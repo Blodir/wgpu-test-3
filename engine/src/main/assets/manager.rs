@@ -94,9 +94,9 @@ impl RenderAssetManager {
         }
     }
 
-    pub fn process_game_responses(
+    pub fn process_game_responses<S, C>(
         &self,
-        renderer: &mut Renderer,
+        renderer: &mut Renderer<S, C>,
         render_resources: &mut RenderAssetStore,
         wgpu_context: &WgpuContext,
     ) {

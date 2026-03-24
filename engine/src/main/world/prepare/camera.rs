@@ -2,12 +2,12 @@ use glam::{Mat3, Mat4, Vec4};
 
 use crate::{
     main::{utils::lerpf32, wgpu_context, world::bindgroups::camera::CameraBinding},
-    snapshot_handoff::SnapshotGuard,
+    render_snapshot_handoff::RenderSnapshotGuard,
 };
 
 pub fn prepare_camera(
     camera: &mut CameraBinding,
-    snaps: &SnapshotGuard,
+    snaps: &RenderSnapshotGuard,
     t: f32,
     queue: &wgpu::Queue,
     surface_config: &wgpu::SurfaceConfiguration,

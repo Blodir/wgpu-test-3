@@ -11,18 +11,18 @@ use winit::{
 };
 
 use crate::{
-    game::sim::InputEvent,
-    game_trait::BuildUiFn,
+    game_trait::{BuildUiFn, InputEvent},
     job_system::worker_pool::RenderResponse,
     main::assets::{manager::RenderAssetManager, store::RenderAssetStore},
     main::{renderer::Renderer, wgpu_context::WgpuContext},
-    snapshot_handoff::SnapshotHandoff,
+    render_snapshot_handoff::RenderSnapshotHandoff,
+    ui_snapshot_handoff::UiSnapshotHandoff,
 };
 
-fn resize(
+fn resize<S, C>(
     physical_size: PhysicalSize<u32>,
     wgpu_context: &mut WgpuContext,
-    renderer: &mut Renderer,
+    renderer: &mut Renderer<S, C>,
 ) {
     if physical_size.width > 0 && physical_size.height > 0 {
         wgpu_context.surface_config.width = physical_size.width;
@@ -34,34 +34,37 @@ fn resize(
     }
 }
 
-struct RenderContext<'surface> {
-    renderer: Arc<Mutex<Renderer>>,
+struct RenderContext<'surface, S, C> {
+    renderer: Arc<Mutex<Renderer<S, C>>>,
     render_resources: RenderAssetStore,
     window: Arc<Window>,
     wgpu_context: WgpuContext<'surface>,
     frame_idx: u32,
 }
 
-pub struct MainWindow<'surface> {
-    render_context: Option<RenderContext<'surface>>,
-    snap_handoff: Arc<SnapshotHandoff>,
-    sim_inputs: Arc<SegQueue<InputEvent>>,
+pub struct MainWindow<'surface, S, C> {
+    render_context: Option<RenderContext<'surface, S, C>>,
+    snap_handoff: Arc<RenderSnapshotHandoff>,
+    ui_snapshot_handoff: Arc<UiSnapshotHandoff<S>>,
+    sim_inputs: Arc<SegQueue<InputEvent<C>>>,
     resource_manager: RenderAssetManager,
     task_res_rx: crossbeam::channel::Receiver<RenderResponse>,
-    build_ui_fn: BuildUiFn,
+    build_ui_fn: BuildUiFn<S, C>,
 }
 
-impl MainWindow<'_> {
+impl<S, C> MainWindow<'_, S, C> {
     pub fn new(
-        sim_inputs: Arc<SegQueue<InputEvent>>,
-        snap_handoff: Arc<SnapshotHandoff>,
+        sim_inputs: Arc<SegQueue<InputEvent<C>>>,
+        snap_handoff: Arc<RenderSnapshotHandoff>,
         resource_manager: RenderAssetManager,
         task_res_rx: crossbeam::channel::Receiver<RenderResponse>,
-        build_ui_fn: BuildUiFn,
+        ui_snapshot_handoff: Arc<UiSnapshotHandoff<S>>,
+        build_ui_fn: BuildUiFn<S, C>,
     ) -> Self {
         Self {
             render_context: None,
             snap_handoff,
+            ui_snapshot_handoff,
             sim_inputs,
             resource_manager,
             task_res_rx,
@@ -70,7 +73,11 @@ impl MainWindow<'_> {
     }
 }
 
-impl<'surface> ApplicationHandler for MainWindow<'surface> {
+impl<'surface, S, C> ApplicationHandler for MainWindow<'surface, S, C>
+where
+    S: Send + Sync + 'static,
+    C: Send + 'static,
+{
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         let window = Arc::new(
             event_loop
@@ -130,6 +137,20 @@ impl<'surface> ApplicationHandler for MainWindow<'surface> {
                     }
 
                     // self.resource_manager.process_upload_queue(&mut renderer, &mut render_context.render_resources, &render_context.wgpu_context);
+                    let ui_snapshot_guard = self.ui_snapshot_handoff.load();
+                    let ui_snapshot = ui_snapshot_guard
+                        .as_ref()
+                        .map(|snapshot| &snapshot.snap);
+
+                    let ui_commands = renderer.run_ui(
+                        &render_context.wgpu_context,
+                        render_context.frame_idx,
+                        ui_snapshot,
+                    );
+                    for cmd in ui_commands {
+                        self.sim_inputs.push(InputEvent::Ui(cmd));
+                    }
+
                     match renderer.render(
                         &render_context.wgpu_context,
                         &render_context.render_resources,
