@@ -171,6 +171,20 @@ pub fn bake_rigfile(
         .into());
     }
 
+    let mut bind_matrices = vec![glam::Mat4::IDENTITY; output_nodes.len()];
+    for (node_idx, node) in output_nodes.iter().enumerate() {
+        let local = node.transform.to_mat4();
+        bind_matrices[node_idx] = if let Some(parent_idx) = node.parent {
+            bind_matrices
+                .get(parent_idx as usize)
+                .copied()
+                .map(|parent_world| parent_world * local)
+                .unwrap_or(local)
+        } else {
+            local
+        };
+    }
+
     let mut joint_nodes = Vec::<u32>::new();
     let mut inverse_bind_matrices = Vec::<glam::Mat4>::new();
     for old_idx in topo_old_node_order {
@@ -192,6 +206,7 @@ pub fn bake_rigfile(
 
     let rig = rigfile::Rig {
         nodes: output_nodes,
+        bind_matrices,
         joint_nodes,
         inverse_bind_matrices,
     };

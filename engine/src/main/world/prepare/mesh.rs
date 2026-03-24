@@ -8,8 +8,8 @@ use crate::{
     game::scene_tree::SceneNodeId,
     main::{
         assets::{
-            io::asset_formats::rigfile::{Rig, SRT},
-            store::{ModelRenderId, RenderAssetStore},
+            io::asset_formats::rigfile::SRT,
+            store::RenderAssetStore,
         },
         utils::{lerpu64, QuatExt},
         world::{
@@ -45,35 +45,13 @@ fn lerp_srt_to_mat4(from: &SRT, to: &SRT, t: f32) -> Mat4 {
     Mat4::from_scale_rotation_translation(s0.lerp(s1, t), r0.nlerp(r1, t), t0.lerp(t1, t))
 }
 
-fn resolve_model_transform(
-    curr: &SRT,
-    prev: Option<&SRT>,
-    dirty: bool,
-    t: f32,
-) -> Mat4 {
+fn resolve_model_transform(curr: &SRT, prev: Option<&SRT>, dirty: bool, t: f32) -> Mat4 {
     if dirty {
         if let Some(prev) = prev {
             return lerp_srt_to_mat4(prev, curr, t);
         }
     }
     curr.to_mat4()
-}
-
-fn evaluate_bind_pose_nodes(rig: &Rig) -> Vec<Mat4> {
-    let mut world_nodes = vec![Mat4::IDENTITY; rig.nodes.len()];
-    for (idx, node) in rig.nodes.iter().enumerate() {
-        let local = node.transform.to_mat4();
-        world_nodes[idx] = if let Some(parent_idx) = node.parent {
-            if let Some(parent_world) = world_nodes.get(parent_idx as usize) {
-                *parent_world * local
-            } else {
-                local
-            }
-        } else {
-            local
-        };
-    }
-    world_nodes
 }
 
 fn sample_pose_nodes(
@@ -122,45 +100,41 @@ pub fn resolve_skinned_draw<'a>(
     let mut instance_data = vec![];
     let mut instance_ranges = vec![0..0; snaps.curr.mesh_draw_snapshot.submesh_batches.len()];
 
-    let mut bind_pose_cache: HashMap<ModelRenderId, Vec<Mat4>> = HashMap::new();
     let mut node_world_cache: HashMap<SceneNodeId, Vec<Mat4>> = HashMap::new();
     let mut node_to_palette_offset: HashMap<SceneNodeId, u32> = HashMap::new();
 
-    for mat_batch in &snaps.curr.mesh_draw_snapshot.material_batches
-        [snaps.curr.mesh_draw_snapshot.skinned_batch.clone()]
-    {
-        for mesh_batch in &snaps.curr.mesh_draw_snapshot.mesh_batches[mat_batch.mesh_range.clone()]
-        {
+    let mat_batches = &snaps.curr.mesh_draw_snapshot.material_batches
+        [snaps.curr.mesh_draw_snapshot.skinned_batch.clone()];
+    for mat_batch in mat_batches {
+        let mesh_batches =
+            &snaps.curr.mesh_draw_snapshot.mesh_batches[mat_batch.mesh_range.clone()];
+        for mesh_batch in mesh_batches {
             let model = render_resources
                 .models
                 .get(mesh_batch.model_id.into())
                 .unwrap();
-            for draw_idx in mesh_batch.submesh_range.clone() {
-                let curr_draw = &snaps.curr.mesh_draw_snapshot.submesh_batches[draw_idx];
-                let inst_start = instance_data.len();
-                for node_id in &curr_draw.instances {
-                    let curr_node_inst = snaps
+            for submesh_batch_idx in mesh_batch.submesh_range.clone() {
+                let submesh_batch = &snaps.curr.mesh_draw_snapshot.submesh_batches[submesh_batch_idx];
+                let instance_data_start_idx = instance_data.len();
+                for node_id in &submesh_batch.instances {
+                    let curr_inst_snap = snaps
                         .curr
                         .mesh_draw_snapshot
                         .skinned_instances
                         .get(node_id)
                         .unwrap();
-                    let prev_node_inst = snaps.prev.mesh_draw_snapshot.skinned_instances.get(node_id);
+                    let maybe_prev_inst_snap =
+                        snaps.prev.mesh_draw_snapshot.skinned_instances.get(node_id);
 
                     if !node_world_cache.contains_key(node_id) {
-                        let maybe_nodes = if let Some(anim_snap) = curr_node_inst.animation {
-                            let snap_time = prev_node_inst
+                        let maybe_nodes = if let Some(anim_snap) = curr_inst_snap.animation {
+                            let snap_time = maybe_prev_inst_snap
                                 .and_then(|n| n.animation.as_ref())
                                 .map(|prev| lerpu64(prev.0, anim_snap.0, t))
                                 .unwrap_or(anim_snap.0);
                             sample_pose_nodes(pose_storage, node_id, snap_time, frame_idx)
                         } else {
-                            Some(
-                                bind_pose_cache
-                                    .entry(mesh_batch.model_id)
-                                    .or_insert_with(|| evaluate_bind_pose_nodes(&model.rig))
-                                    .clone(),
-                            )
+                            Some(model.rig.bind_matrices.clone())
                         };
                         if let Some(nodes) = maybe_nodes {
                             node_world_cache.insert(*node_id, nodes);
@@ -191,12 +165,13 @@ pub fn resolve_skinned_draw<'a>(
                     };
 
                     let model_transform = resolve_model_transform(
-                        &curr_node_inst.model_transform,
-                        prev_node_inst.map(|p| &p.model_transform),
-                        curr_node_inst.dirty,
+                        &curr_inst_snap.model_transform,
+                        maybe_prev_inst_snap.map(|p| &p.model_transform),
+                        curr_inst_snap.dirty,
                         t,
                     );
-                    for instance_node_idx in &model.submeshes[curr_draw.submesh_idx].instance_nodes {
+                    let instance_nodes = &model.submeshes[submesh_batch.submesh_idx].instance_nodes;
+                    for instance_node_idx in instance_nodes {
                         let node_mat = node_worlds
                             .get(*instance_node_idx as usize)
                             .copied()
@@ -208,7 +183,7 @@ pub fn resolve_skinned_draw<'a>(
                     }
                 }
 
-                instance_ranges[draw_idx] = inst_start as u32..instance_data.len() as u32;
+                instance_ranges[submesh_batch_idx] = instance_data_start_idx as u32..instance_data.len() as u32;
             }
         }
     }
@@ -234,14 +209,14 @@ pub fn resolve_static_draw<'a>(
 ) -> DrawContext<'a> {
     let mut instance_data = vec![];
     let mut instance_ranges = vec![0..0; snaps.curr.mesh_draw_snapshot.submesh_batches.len()];
-    let mut bind_pose_cache: HashMap<ModelRenderId, Vec<Mat4>> = HashMap::new();
     let mut node_world_cache: HashMap<SceneNodeId, Vec<Mat4>> = HashMap::new();
 
-    for mat_batch in &snaps.curr.mesh_draw_snapshot.material_batches
-        [snaps.curr.mesh_draw_snapshot.static_batch.clone()]
-    {
-        for mesh_batch in &snaps.curr.mesh_draw_snapshot.mesh_batches[mat_batch.mesh_range.clone()]
-        {
+    let mat_batches = &snaps.curr.mesh_draw_snapshot.material_batches
+        [snaps.curr.mesh_draw_snapshot.static_batch.clone()];
+    for mat_batch in mat_batches {
+        let mesh_batches =
+            &snaps.curr.mesh_draw_snapshot.mesh_batches[mat_batch.mesh_range.clone()];
+        for mesh_batch in mesh_batches {
             let model = render_resources
                 .models
                 .get(mesh_batch.model_id.into())
@@ -256,7 +231,8 @@ pub fn resolve_static_draw<'a>(
                         .static_instances
                         .get(node_id)
                         .unwrap();
-                    let prev_node_inst = snaps.prev.mesh_draw_snapshot.static_instances.get(node_id);
+                    let prev_node_inst =
+                        snaps.prev.mesh_draw_snapshot.static_instances.get(node_id);
 
                     if !node_world_cache.contains_key(node_id) {
                         let maybe_nodes = if let Some(anim_snap) = curr_node_inst.animation {
@@ -266,12 +242,7 @@ pub fn resolve_static_draw<'a>(
                                 .unwrap_or(anim_snap.0);
                             sample_pose_nodes(pose_storage, node_id, snap_time, frame_idx)
                         } else {
-                            Some(
-                                bind_pose_cache
-                                    .entry(mesh_batch.model_id)
-                                    .or_insert_with(|| evaluate_bind_pose_nodes(&model.rig))
-                                    .clone(),
-                            )
+                            Some(model.rig.bind_matrices.clone())
                         };
                         if let Some(nodes) = maybe_nodes {
                             node_world_cache.insert(*node_id, nodes);
@@ -287,7 +258,8 @@ pub fn resolve_static_draw<'a>(
                         curr_node_inst.dirty,
                         t,
                     );
-                    for instance_node_idx in &model.submeshes[curr_draw.submesh_idx].instance_nodes {
+                    let instance_nodes = &model.submeshes[curr_draw.submesh_idx].instance_nodes;
+                    for instance_node_idx in instance_nodes {
                         let node_mat = node_worlds
                             .get(*instance_node_idx as usize)
                             .copied()

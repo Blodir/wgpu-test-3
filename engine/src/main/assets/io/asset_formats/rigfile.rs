@@ -29,6 +29,8 @@ pub struct Node {
 pub struct Rig {
     /// sorted topologically
     pub nodes: Vec<Node>,
+    /// world-space bind-pose matrices for each node in `nodes`
+    pub bind_matrices: Vec<Mat4>,
     pub joint_nodes: Vec<u32>,
     pub inverse_bind_matrices: Vec<Mat4>,
 }
