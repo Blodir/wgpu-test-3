@@ -88,7 +88,7 @@ fn copy_texture_to_buffer(
             {
                 let buffer_slice = buffer.slice(..);
                 buffer_slice.map_async(wgpu::MapMode::Read, |_| {});
-                device.poll(wgpu::Maintain::Wait);
+                let _ = device.poll(wgpu::PollType::Wait);
                 let data = buffer_slice.get_mapped_range().to_vec();
                 mip_data.push(data);
                 drop(buffer_slice);
@@ -136,15 +136,13 @@ async fn run() {
     let instance = wgpu::Instance::default();
     let adapter = instance.request_adapter(&Default::default()).await.unwrap();
     let (device, queue) = adapter
-        .request_device(
-            &wgpu::DeviceDescriptor {
-                label: None,
-                required_features: wgpu::Features::empty(),
-                required_limits: wgpu::Limits::downlevel_defaults()
-                    .using_resolution(adapter.limits()),
-            },
-            None,
-        )
+        .request_device(&wgpu::DeviceDescriptor {
+            label: None,
+            required_features: wgpu::Features::empty(),
+            required_limits: wgpu::Limits::downlevel_defaults().using_resolution(adapter.limits()),
+            memory_hints: wgpu::MemoryHints::Performance,
+            trace: wgpu::Trace::Off,
+        })
         .await
         .unwrap();
 
