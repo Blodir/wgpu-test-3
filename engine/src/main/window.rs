@@ -11,12 +11,12 @@ use winit::{
 };
 
 use crate::{
+    fixed_snapshot_handoff::FixedSnapshotHandoff,
     game_trait::{BuildUiFn, InputEvent},
     job_system::worker_pool::RenderResponse,
     main::assets::{manager::RenderAssetManager, store::RenderAssetStore},
     main::{renderer::Renderer, wgpu_context::WgpuContext},
-    render_snapshot_handoff::RenderSnapshotHandoff,
-    ui_snapshot_handoff::UiSnapshotHandoff,
+    var_snapshot_handoff::VarSnapshotHandoff,
 };
 
 fn resize<S, C>(
@@ -44,8 +44,8 @@ struct RenderContext<'surface, S, C> {
 
 pub struct MainWindow<'surface, S, C> {
     render_context: Option<RenderContext<'surface, S, C>>,
-    snap_handoff: Arc<RenderSnapshotHandoff>,
-    ui_snapshot_handoff: Arc<UiSnapshotHandoff<S>>,
+    fixed_snapshot_handoff: Arc<FixedSnapshotHandoff>,
+    var_snapshot_handoff: Arc<VarSnapshotHandoff<S>>,
     sim_inputs: Arc<SegQueue<InputEvent<C>>>,
     resource_manager: RenderAssetManager,
     task_res_rx: crossbeam::channel::Receiver<RenderResponse>,
@@ -55,16 +55,16 @@ pub struct MainWindow<'surface, S, C> {
 impl<S, C> MainWindow<'_, S, C> {
     pub fn new(
         sim_inputs: Arc<SegQueue<InputEvent<C>>>,
-        snap_handoff: Arc<RenderSnapshotHandoff>,
+        fixed_snapshot_handoff: Arc<FixedSnapshotHandoff>,
         resource_manager: RenderAssetManager,
         task_res_rx: crossbeam::channel::Receiver<RenderResponse>,
-        ui_snapshot_handoff: Arc<UiSnapshotHandoff<S>>,
+        var_snapshot_handoff: Arc<VarSnapshotHandoff<S>>,
         build_ui_fn: BuildUiFn<S, C>,
     ) -> Self {
         Self {
             render_context: None,
-            snap_handoff,
-            ui_snapshot_handoff,
+            fixed_snapshot_handoff,
+            var_snapshot_handoff,
             sim_inputs,
             resource_manager,
             task_res_rx,
@@ -89,7 +89,7 @@ where
         let placeholders = render_resources.initialize_placeholders(&wgpu_context);
         let renderer = Arc::new(Mutex::new(Renderer::new(
             &wgpu_context,
-            self.snap_handoff.clone(),
+            self.fixed_snapshot_handoff.clone(),
             placeholders,
             &render_resources,
             self.build_ui_fn,
@@ -137,14 +137,17 @@ where
                     }
 
                     // self.resource_manager.process_upload_queue(&mut renderer, &mut render_context.render_resources, &render_context.wgpu_context);
-                    let ui_snapshot_guard = self.ui_snapshot_handoff.load();
-                    let ui_snapshot = ui_snapshot_guard.as_ref().map(|snapshot| &snapshot.snap);
+                    let var_snapshot_guard = self.var_snapshot_handoff.load();
+                    let var_snapshot = var_snapshot_guard.as_ref().map(|snapshot| &snapshot.snap);
+                    let camera_pair = var_snapshot_guard
+                        .as_ref()
+                        .map(|snapshot| &snapshot.camera_pair);
 
                     renderer.begin_frame();
                     let ui_commands = renderer.run_ui(
                         &render_context.wgpu_context,
                         render_context.frame_idx,
-                        ui_snapshot,
+                        var_snapshot,
                     );
                     for cmd in ui_commands {
                         self.sim_inputs.push(InputEvent::Ui(cmd));
@@ -154,6 +157,7 @@ where
                         &render_context.wgpu_context,
                         &render_context.render_resources,
                         render_context.frame_idx,
+                        camera_pair,
                     ) {
                         Ok(_) => {}
                         Err(e) => eprintln!("render error: {:?}", e),

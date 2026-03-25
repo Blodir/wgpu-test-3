@@ -7,10 +7,11 @@ use super::gui::GuiRenderer;
 use super::wgpu_context::WgpuContext;
 use super::world::bindgroups::material::MaterialBinding;
 use super::world::WorldRenderer;
+use crate::fixed_snapshot_handoff::FixedSnapshotHandoff;
 use crate::game_trait::{BuildUiFn, RenderDebugInfo};
 use crate::job_system::worker_pool::AnimPoseTaskResult;
 pub use crate::main::world::UploadMaterialRequest;
-use crate::render_snapshot_handoff::RenderSnapshotHandoff;
+use crate::var_snapshot_handoff::CameraSnapshotPair;
 
 pub struct Renderer<S, C> {
     world_renderer: WorldRenderer,
@@ -23,14 +24,14 @@ pub struct Renderer<S, C> {
 impl<S, C> Renderer<S, C> {
     pub fn new(
         wgpu_context: &WgpuContext,
-        snapshot_handoff: Arc<RenderSnapshotHandoff>,
+        fixed_snapshot_handoff: Arc<FixedSnapshotHandoff>,
         placeholders: PlaceholderTextureIds,
         render_resources: &RenderAssetStore,
         build_ui_fn: BuildUiFn<S, C>,
     ) -> Self {
         let world_renderer = WorldRenderer::new(
             wgpu_context,
-            snapshot_handoff,
+            fixed_snapshot_handoff,
             placeholders,
             render_resources,
         );
@@ -63,6 +64,7 @@ impl<S, C> Renderer<S, C> {
         wgpu_context: &WgpuContext,
         render_resources: &RenderAssetStore,
         frame_idx: u32,
+        camera_pair: Option<&CameraSnapshotPair>,
     ) -> Result<(), wgpu::SurfaceError> {
         let output_surface_texture = wgpu_context.surface.get_current_texture()?;
         let output_view = output_surface_texture
@@ -82,6 +84,7 @@ impl<S, C> Renderer<S, C> {
             frame_idx,
             &mut encoder,
             &output_view,
+            camera_pair,
         );
         self.gui_renderer
             .render(wgpu_context, &mut encoder, &output_view);

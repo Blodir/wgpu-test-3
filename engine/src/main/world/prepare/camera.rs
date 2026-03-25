@@ -1,19 +1,30 @@
+use std::time::Instant;
+
 use glam::{Mat3, Mat4, Vec4};
 
 use crate::{
     main::{utils::lerpf32, wgpu_context, world::bindgroups::camera::CameraBinding},
-    render_snapshot_handoff::RenderSnapshotGuard,
+    var_snapshot_handoff::CameraSnapshotPair,
 };
 
 pub fn prepare_camera(
     camera: &mut CameraBinding,
-    snaps: &RenderSnapshotGuard,
-    t: f32,
+    camera_pair: &CameraSnapshotPair,
+    now: Instant,
     queue: &wgpu::Queue,
     surface_config: &wgpu::SurfaceConfiguration,
 ) {
-    let prev = &snaps.prev.camera;
-    let curr = &snaps.curr.camera;
+    let prev = &camera_pair.prev;
+    let curr = &camera_pair.curr;
+    let elapsed = now.saturating_duration_since(camera_pair.curr_timestamp);
+    let interval = camera_pair
+        .curr_timestamp
+        .saturating_duration_since(camera_pair.prev_timestamp);
+    let t = if interval.is_zero() {
+        1.0
+    } else {
+        (elapsed.as_secs_f32() / interval.as_secs_f32()).clamp(0.0, 1.0)
+    };
 
     let position = prev.position.lerp(curr.position, t);
     let rotation = prev.rotation.slerp(curr.rotation, t);

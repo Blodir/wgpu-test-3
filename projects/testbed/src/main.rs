@@ -24,11 +24,7 @@ struct Game {
     mouse_btn_is_pressed: bool,
 }
 
-struct UiSnapshot {
-    global_time_sec: f32,
-    camera_distance: f32,
-    shift_is_pressed: bool,
-}
+struct VarSnapshot;
 
 enum UiCommand {
     SetCameraDistance(f32),
@@ -43,7 +39,7 @@ impl Game {
     }
 }
 impl SimTrait for Game {
-    type UiSnapshot = UiSnapshot;
+    type VarSnapshot = VarSnapshot;
     type UiCommand = UiCommand;
 
     fn init(
@@ -306,23 +302,19 @@ impl SimTrait for Game {
         }
     }
 
-    fn build_ui_snapshot(&mut self, scene: &Scene, _tick: u64) -> Self::UiSnapshot {
-        UiSnapshot {
-            global_time_sec: scene.global_time_sec,
-            camera_distance: scene.camera.eye.z,
-            shift_is_pressed: self.shift_is_pressed,
-        }
+    fn build_var_snapshot(&mut self, _scene: &Scene, _tick: u64) -> Self::VarSnapshot {
+        VarSnapshot
     }
 }
 
 impl UiTrait for Game {
-    type UiSnapshot = UiSnapshot;
+    type VarSnapshot = VarSnapshot;
     type UiCommand = UiCommand;
 
     fn build_ui(
         ctx: &egui::Context,
         _frame_idx: u32,
-        _snapshot: Option<&Self::UiSnapshot>,
+        _snapshot: Option<&Self::VarSnapshot>,
         render_debug: &RenderDebugInfo,
         _emit: &mut dyn FnMut(Self::UiCommand),
     ) {

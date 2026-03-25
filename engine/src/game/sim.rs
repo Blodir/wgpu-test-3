@@ -12,11 +12,11 @@ use super::assets::registry::{RegistryExt, ResourceRegistry, ResourceRequest, Re
 use super::assets::store::{CreateGameResourceRequest, CreateGameResourceResponse, GameAssetStore};
 use super::scene_tree::RenderDataType;
 use crate::{
-    game::build_snapshot::RenderSnapshot,
+    fixed_snapshot_handoff::FixedSnapshotHandoff,
+    game::build_snapshot::FixedSnapshot,
     game_trait::{InputEvent, SimTrait},
     job_system::worker_pool::Task,
-    render_snapshot_handoff::RenderSnapshotHandoff,
-    ui_snapshot_handoff::UiSnapshotHandoff,
+    var_snapshot_handoff::{CameraSnapshotPair, VarSnapshotHandoff},
 };
 
 const TICK: Duration = Duration::from_millis(100);
@@ -24,8 +24,8 @@ const SPIN: Duration = Duration::from_micros(200);
 
 pub fn spawn_sim<G>(
     inputs: Arc<SegQueue<InputEvent<G::UiCommand>>>,
-    snap_handoff: Arc<RenderSnapshotHandoff>,
-    ui_snapshot_handoff: Arc<UiSnapshotHandoff<G::UiSnapshot>>,
+    fixed_snapshot_handoff: Arc<FixedSnapshotHandoff>,
+    var_snapshot_handoff: Arc<VarSnapshotHandoff<G::VarSnapshot>>,
     reg_req_tx: crossbeam::channel::Sender<ResourceRequest>,
     reg_res_rx: crossbeam::channel::Receiver<ResourceResult>,
     game_req_rx: crossbeam::channel::Receiver<CreateGameResourceRequest>,
@@ -36,7 +36,7 @@ pub fn spawn_sim<G>(
 where
     G: SimTrait + Send + 'static,
     G::UiCommand: Send + 'static,
-    G::UiSnapshot: Send + Sync + 'static,
+    G::VarSnapshot: Send + Sync + 'static,
 {
     std::thread::spawn(move || {
         let mut game = game;
@@ -48,6 +48,8 @@ where
         let mut prev_tick = Instant::now();
         let mut frame_index = 0u32;
         let sim_start_time = Instant::now();
+        let mut prev_camera_snapshot = scene.camera.build_snapshot();
+        let mut prev_camera_timestamp = Instant::now();
         loop {
             let now = Instant::now();
             let dt = (now - prev_tick).as_secs_f32();
@@ -72,10 +74,23 @@ where
                 dt,
                 &mut game,
             );
-            let ui_snapshot = game.build_ui_snapshot(&scene, frame_index as u64);
-            ui_snapshot_handoff.publish(frame_index as u64, ui_snapshot);
+            let curr_camera_snapshot = scene.camera.build_snapshot();
+            let curr_camera_timestamp = Instant::now();
+            let var_snapshot = game.build_var_snapshot(&scene, frame_index as u64);
+            var_snapshot_handoff.publish(
+                frame_index as u64,
+                CameraSnapshotPair {
+                    prev: prev_camera_snapshot,
+                    prev_timestamp: prev_camera_timestamp,
+                    curr: curr_camera_snapshot,
+                    curr_timestamp: curr_camera_timestamp,
+                },
+                var_snapshot,
+            );
+            prev_camera_snapshot = curr_camera_snapshot;
+            prev_camera_timestamp = curr_camera_timestamp;
 
-            let snap = RenderSnapshot::build(
+            let fixed_snapshot = FixedSnapshot::build(
                 &mut scene,
                 &resource_registry,
                 &animation_graphs,
@@ -84,7 +99,7 @@ where
             );
 
             // schedule animation jobs for all visible animated models
-            for node_id in snap.mesh_draw_snapshot.skinned_instances.keys() {
+            for node_id in fixed_snapshot.mesh_draw_snapshot.skinned_instances.keys() {
                 match &mut scene.nodes.get_mut((*node_id).into()).unwrap().render_data {
                     RenderDataType::Model(_static_model) => (),
                     RenderDataType::AnimatedModel(animated_model) => {
@@ -102,7 +117,7 @@ where
                     RenderDataType::None => (),
                 }
             }
-            for node_id in snap.mesh_draw_snapshot.static_instances.keys() {
+            for node_id in fixed_snapshot.mesh_draw_snapshot.static_instances.keys() {
                 match &mut scene.nodes.get_mut((*node_id).into()).unwrap().render_data {
                     RenderDataType::Model(_static_model) => (),
                     RenderDataType::AnimatedModel(animated_model) => {
@@ -121,7 +136,7 @@ where
                 }
             }
 
-            snap_handoff.publish(snap);
+            fixed_snapshot_handoff.publish(fixed_snapshot);
 
             next += TICK;
 

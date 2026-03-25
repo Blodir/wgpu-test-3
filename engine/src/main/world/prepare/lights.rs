@@ -1,4 +1,4 @@
-use crate::render_snapshot_handoff::RenderSnapshotGuard;
+use crate::fixed_snapshot_handoff::FixedSnapshotGuard;
 use crate::{
     main::assets::{io::asset_formats::materialfile, store::RenderAssetStore},
     main::{
@@ -8,7 +8,7 @@ use crate::{
 };
 
 pub fn prepare_lights(
-    snaps: &RenderSnapshotGuard,
+    snaps: &FixedSnapshotGuard,
     lights_binding: &mut LightsBinding,
     render_resources: &RenderAssetStore,
     sampler_cache: &mut SamplerCache,

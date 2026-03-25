@@ -2,26 +2,26 @@ use std::{sync::Arc, time::Instant};
 
 use arc_swap::{ArcSwap, Guard};
 
-use crate::game::build_snapshot::RenderSnapshot;
+use crate::game::build_snapshot::FixedSnapshot;
 
-pub type RenderSnapshotGuard = Guard<Arc<RenderSnapshotPair>>;
+pub type FixedSnapshotGuard = Guard<Arc<FixedSnapshotPair>>;
 
 #[derive(Clone)]
-pub struct RenderSnapshotPair {
-    pub prev: Arc<RenderSnapshot>,
+pub struct FixedSnapshotPair {
+    pub prev: Arc<FixedSnapshot>,
     pub prev_timestamp: Instant,
-    pub curr: Arc<RenderSnapshot>,
+    pub curr: Arc<FixedSnapshot>,
     pub curr_timestamp: Instant,
 }
 
-pub struct RenderSnapshotHandoff {
-    pair: ArcSwap<RenderSnapshotPair>,
+pub struct FixedSnapshotHandoff {
+    pair: ArcSwap<FixedSnapshotPair>,
 }
 
-impl RenderSnapshotHandoff {
-    pub fn new(init: RenderSnapshot) -> Self {
+impl FixedSnapshotHandoff {
+    pub fn new(init: FixedSnapshot) -> Self {
         let init = Arc::new(init);
-        let pair = RenderSnapshotPair {
+        let pair = FixedSnapshotPair {
             prev: init.clone(),
             prev_timestamp: Instant::now(),
             curr: init,
@@ -32,9 +32,9 @@ impl RenderSnapshotHandoff {
         }
     }
 
-    pub fn publish(&self, snap: RenderSnapshot) {
+    pub fn publish(&self, snap: FixedSnapshot) {
         let old = self.pair.load();
-        let next = RenderSnapshotPair {
+        let next = FixedSnapshotPair {
             prev: old.curr.clone(),
             prev_timestamp: old.curr_timestamp,
             curr: Arc::new(snap),
@@ -43,7 +43,7 @@ impl RenderSnapshotHandoff {
         self.pair.store(Arc::new(next));
     }
 
-    pub fn load(&self) -> RenderSnapshotGuard {
+    pub fn load(&self) -> FixedSnapshotGuard {
         self.pair.load()
     }
 }

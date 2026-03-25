@@ -8,7 +8,7 @@ use crate::main::assets::io::asset_formats::{modelfile, rigfile::SRT};
 use crate::{
     game::{
         animator::AnimationGraph,
-        camera::{frustum_intersects_aabb_world, Camera, Frustum},
+        camera::{frustum_intersects_aabb_world, Frustum},
         scene_tree::{Environment, RenderDataType, Scene, SceneNodeId, Sun},
     },
     main::assets::store::{MaterialRenderId, ModelRenderId, TextureRenderId},
@@ -117,6 +117,7 @@ pub fn accumulate_instance_snapshots(
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct CameraSnapshot {
     pub position: Vec3,
     pub rotation: Quat,
@@ -390,12 +391,11 @@ impl MeshDrawSnapshot {
     }
 }
 
-pub struct RenderSnapshot {
+pub struct FixedSnapshot {
     pub mesh_draw_snapshot: MeshDrawSnapshot,
     pub lights: LightsSnapshot,
-    pub camera: CameraSnapshot,
 }
-impl RenderSnapshot {
+impl FixedSnapshot {
     pub fn build(
         scene: &mut Scene,
         resource_registry: &Rc<RefCell<ResourceRegistry>>,
@@ -412,11 +412,9 @@ impl RenderSnapshot {
         );
 
         let environment = LightsSnapshot::from(&scene.environment, resource_registry);
-        let camera = scene.camera.build_snapshot();
         Self {
             mesh_draw_snapshot,
             lights: environment,
-            camera,
         }
     }
 
@@ -426,7 +424,6 @@ impl RenderSnapshot {
                 sun: Sun::default(),
                 environment_map: None,
             },
-            camera: Camera::default().build_snapshot(),
             mesh_draw_snapshot: MeshDrawSnapshot::default(),
         }
     }

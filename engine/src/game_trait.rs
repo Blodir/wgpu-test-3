@@ -29,7 +29,7 @@ pub type BuildUiFn<S, C> = fn(
 );
 
 pub trait SimTrait {
-    type UiSnapshot;
+    type VarSnapshot;
     type UiCommand;
 
     fn init(
@@ -45,17 +45,17 @@ pub trait SimTrait {
         dt: f32,
     );
     fn consume_input(&mut self, scene: &mut Scene, event: InputEvent<Self::UiCommand>);
-    fn build_ui_snapshot(&mut self, scene: &Scene, tick: u64) -> Self::UiSnapshot;
+    fn build_var_snapshot(&mut self, scene: &Scene, tick: u64) -> Self::VarSnapshot;
 }
 
 pub trait UiTrait {
-    type UiSnapshot;
+    type VarSnapshot;
     type UiCommand;
 
     fn build_ui(
         _ctx: &egui::Context,
         _frame_idx: u32,
-        _snapshot: Option<&<Self as UiTrait>::UiSnapshot>,
+        _snapshot: Option<&<Self as UiTrait>::VarSnapshot>,
         _render_debug: &RenderDebugInfo,
         _emit: &mut dyn FnMut(<Self as UiTrait>::UiCommand),
     ) {

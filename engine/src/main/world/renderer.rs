@@ -25,7 +25,9 @@ use crate::main::assets::store::{PlaceholderTextureIds, RenderAssetStore, Textur
 use crate::main::world::buffers::static_instance::StaticInstances;
 use crate::main::world::pipelines::static_pbr::StaticPbrPipeline;
 use crate::main::world::prepare::mesh::resolve_static_draw;
-use crate::render_snapshot_handoff::RenderSnapshotHandoff;
+use crate::{
+    fixed_snapshot_handoff::FixedSnapshotHandoff, var_snapshot_handoff::CameraSnapshotPair,
+};
 
 pub struct Layouts {
     pub camera: wgpu::BindGroupLayout,
@@ -79,7 +81,7 @@ pub struct WorldRenderer {
     skinned_pipeline: SkinnedPbrPipeline,
     static_pipeline: StaticPbrPipeline,
     post_pipeline: PostProcessingPipeline,
-    snapshot_handoff: Arc<RenderSnapshotHandoff>,
+    fixed_snapshot_handoff: Arc<FixedSnapshotHandoff>,
     pub layouts: Layouts,
     pub placeholders: PlaceholderTextureIds,
     sampler_cache: SamplerCache,
@@ -94,7 +96,7 @@ pub struct WorldRenderer {
 impl WorldRenderer {
     pub fn new(
         wgpu_context: &WgpuContext,
-        snapshot_handoff: Arc<RenderSnapshotHandoff>,
+        fixed_snapshot_handoff: Arc<FixedSnapshotHandoff>,
         placeholders: PlaceholderTextureIds,
         render_resources: &RenderAssetStore,
     ) -> Self {
@@ -155,7 +157,7 @@ impl WorldRenderer {
             skybox_pipeline,
             skinned_pipeline,
             post_pipeline,
-            snapshot_handoff,
+            fixed_snapshot_handoff,
             layouts,
             bones,
             camera,
@@ -184,19 +186,28 @@ impl WorldRenderer {
         frame_idx: u32,
         encoder: &mut wgpu::CommandEncoder,
         output_view: &wgpu::TextureView,
+        camera_pair: Option<&CameraSnapshotPair>,
     ) {
-        let snaps = self.snapshot_handoff.load();
+        let snaps = self.fixed_snapshot_handoff.load();
         let now = Instant::now();
-        let t = (now - snaps.curr_timestamp)
-            .div_duration_f32(snaps.curr_timestamp - snaps.prev_timestamp);
-        //let t = ease_smoothstep(t_raw); // or ease_smootherstep / ease_in_out_sine
-        prepare_camera(
-            &mut self.camera,
-            &snaps,
-            t,
-            &wgpu_context.queue,
-            &wgpu_context.surface_config,
-        );
+        let elapsed = now.saturating_duration_since(snaps.curr_timestamp);
+        let interval = snaps
+            .curr_timestamp
+            .saturating_duration_since(snaps.prev_timestamp);
+        let t = if interval.is_zero() {
+            1.0
+        } else {
+            (elapsed.as_secs_f32() / interval.as_secs_f32()).clamp(0.0, 1.0)
+        };
+        if let Some(camera_pair) = camera_pair {
+            prepare_camera(
+                &mut self.camera,
+                camera_pair,
+                now,
+                &wgpu_context.queue,
+                &wgpu_context.surface_config,
+            );
+        }
         prepare_lights(
             &snaps,
             &mut self.lights,
