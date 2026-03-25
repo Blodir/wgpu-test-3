@@ -20,7 +20,7 @@ use crate::{
 };
 
 const TICK: Duration = Duration::from_millis(100);
-const VAR_IDLE_SLEEP: Duration = Duration::from_millis(1);
+const VAR_IDLE_SPIN: Duration = Duration::from_micros(200);
 const MAX_ACCUMULATED_TICKS: u32 = 5;
 
 pub fn spawn_sim<G>(
@@ -149,7 +149,16 @@ where
                 accumulated -= TICK;
             }
 
-            thread::sleep(VAR_IDLE_SLEEP);
+            let idle_start = Instant::now();
+            while idle_start.elapsed() < VAR_IDLE_SPIN {
+                if !inputs.is_empty() {
+                    break;
+                }
+                std::hint::spin_loop();
+            }
+            if inputs.is_empty() {
+                thread::yield_now();
+            }
         }
     })
 }
