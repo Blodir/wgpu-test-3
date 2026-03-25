@@ -32,12 +32,26 @@ struct Game {
     orbit_distance: f32,
     orbit_yaw_deg: f32,
     orbit_pitch_deg: f32,
+    sun_tint: [f32; 3],
+    sun_intensity: f32,
+    sun_altitude_deg: f32,
+    sun_direction_deg: f32,
 }
 
-struct VarSnapshot;
+struct VarSnapshot {
+    sun_tint: [f32; 3],
+    sun_intensity: f32,
+    sun_altitude_deg: f32,
+    sun_direction_deg: f32,
+}
 
 enum UiCommand {
-    SetCameraDistance(f32),
+    SetSunSettings {
+        tint: [f32; 3],
+        intensity: f32,
+        altitude_deg: f32,
+        direction_deg: f32,
+    },
 }
 
 impl Game {
@@ -55,6 +69,10 @@ impl Game {
             orbit_distance: 100.0,
             orbit_yaw_deg: 0.0,
             orbit_pitch_deg: 0.0,
+            sun_tint: [1.0, 1.0, 1.0],
+            sun_intensity: 10.0,
+            sun_altitude_deg: -35.0,
+            sun_direction_deg: 45.0,
         }
     }
 
@@ -127,6 +145,49 @@ impl Game {
         let move_speed = (self.orbit_distance * 1.5).max(2.0);
         self.orbit_target += move_dir * move_speed * dt;
         self.apply_orbit_camera(scene);
+    }
+
+    fn split_tint_intensity(color: [f32; 3]) -> ([f32; 3], f32) {
+        let intensity = color[0].max(color[1]).max(color[2]);
+        if intensity > 0.0 {
+            (
+                [
+                    color[0] / intensity,
+                    color[1] / intensity,
+                    color[2] / intensity,
+                ],
+                intensity,
+            )
+        } else {
+            ([1.0, 1.0, 1.0], 0.0)
+        }
+    }
+
+    fn direction_to_angles(direction: [f32; 3]) -> (f32, f32) {
+        let dir = Vec3::from(direction).normalize_or_zero();
+        if dir.length_squared() == 0.0 {
+            return (0.0, 0.0);
+        }
+        let altitude_deg = dir.y.asin().to_degrees();
+        let direction_deg = dir.z.atan2(dir.x).to_degrees().rem_euclid(360.0);
+        (altitude_deg, direction_deg)
+    }
+
+    fn angles_to_direction(altitude_deg: f32, direction_deg: f32) -> [f32; 3] {
+        let alt = altitude_deg.to_radians();
+        let az = direction_deg.to_radians();
+        let horizontal = alt.cos();
+        Vec3::new(horizontal * az.cos(), alt.sin(), horizontal * az.sin()).to_array()
+    }
+
+    fn apply_sun_settings(&self, scene: &mut Scene) {
+        scene.environment.sun.color = [
+            self.sun_tint[0] * self.sun_intensity,
+            self.sun_tint[1] * self.sun_intensity,
+            self.sun_tint[2] * self.sun_intensity,
+        ];
+        scene.environment.sun.direction =
+            Self::angles_to_direction(self.sun_altitude_deg, self.sun_direction_deg);
     }
 }
 impl SimTrait for Game {
@@ -248,6 +309,14 @@ impl SimTrait for Game {
             camera: Camera::default(),
             global_time_sec: 0.0,
         };
+        let (sun_tint, sun_intensity) = Self::split_tint_intensity(scene.environment.sun.color);
+        let (sun_altitude_deg, sun_direction_deg) =
+            Self::direction_to_angles(scene.environment.sun.direction);
+        self.sun_tint = sun_tint;
+        self.sun_intensity = sun_intensity;
+        self.sun_altitude_deg = sun_altitude_deg;
+        self.sun_direction_deg = sun_direction_deg;
+        self.apply_sun_settings(&mut scene);
         self.apply_orbit_camera(&mut scene);
 
         (scene, animation_graphs)
@@ -339,9 +408,18 @@ impl SimTrait for Game {
             InputEvent::Exit => return (),
             InputEvent::AspectChange(aspect) => scene.camera.aspect = aspect,
             InputEvent::Ui(command) => match command {
-                UiCommand::SetCameraDistance(distance) => {
-                    self.orbit_distance = distance.max(0.0);
-                    self.apply_orbit_camera(scene);
+                UiCommand::SetSunSettings {
+                    tint,
+                    intensity,
+                    altitude_deg,
+                    direction_deg,
+                } => {
+                    let intensity = intensity.max(0.0);
+                    self.sun_tint = tint;
+                    self.sun_intensity = intensity;
+                    self.sun_altitude_deg = altitude_deg.clamp(-89.0, 89.0);
+                    self.sun_direction_deg = direction_deg.rem_euclid(360.0);
+                    self.apply_sun_settings(scene);
                 }
             },
             InputEvent::DeviceEvent(event) => match event {
@@ -491,7 +569,12 @@ impl SimTrait for Game {
     }
 
     fn build_var_snapshot(&mut self, _scene: &Scene, _tick: u64) -> Self::VarSnapshot {
-        VarSnapshot
+        VarSnapshot {
+            sun_tint: self.sun_tint,
+            sun_intensity: self.sun_intensity,
+            sun_altitude_deg: self.sun_altitude_deg,
+            sun_direction_deg: self.sun_direction_deg,
+        }
     }
 }
 
@@ -501,9 +584,9 @@ impl UiTrait for Game {
 
     fn build_ui(
         ctx: &egui::Context,
-        _snapshot: Option<&Self::VarSnapshot>,
+        snapshot: Option<&Self::VarSnapshot>,
         debug_info: &DebugInfo,
-        _emit: &mut dyn FnMut(Self::UiCommand),
+        emit: &mut dyn FnMut(Self::UiCommand),
     ) {
         let line1 = format!("render fps: {:.1}", debug_info.render.fps);
         let line2 = format!("render frame: {:.2} ms", debug_info.render.frame_time_ms);
@@ -554,6 +637,52 @@ impl UiTrait for Game {
             galley4,
             text_color,
         );
+
+        if let Some(snapshot) = snapshot {
+            let mut tint = snapshot.sun_tint;
+            let mut intensity = snapshot.sun_intensity;
+            let mut altitude_deg = snapshot.sun_altitude_deg;
+            let mut direction_deg = snapshot.sun_direction_deg;
+            let mut changed = false;
+
+            egui::Window::new("Sun")
+                .default_pos(egui::pos2(12.0, rect.max.y + 10.0))
+                .resizable(false)
+                .show(ctx, |ui| {
+                    ui.label("Color");
+                    changed |= ui.color_edit_button_rgb(&mut tint).changed();
+                    changed |= ui
+                        .add(
+                            egui::Slider::new(&mut intensity, 0.0..=100.0)
+                                .text("Intensity")
+                                .clamping(egui::SliderClamping::Always),
+                        )
+                        .changed();
+                    changed |= ui
+                        .add(
+                            egui::Slider::new(&mut altitude_deg, -89.0..=89.0)
+                                .text("Altitude (deg)")
+                                .clamping(egui::SliderClamping::Always),
+                        )
+                        .changed();
+                    changed |= ui
+                        .add(
+                            egui::Slider::new(&mut direction_deg, 0.0..=360.0)
+                                .text("Direction (deg)")
+                                .clamping(egui::SliderClamping::Always),
+                        )
+                        .changed();
+                });
+
+            if changed {
+                emit(UiCommand::SetSunSettings {
+                    tint,
+                    intensity,
+                    altitude_deg,
+                    direction_deg,
+                });
+            }
+        }
     }
 }
 
