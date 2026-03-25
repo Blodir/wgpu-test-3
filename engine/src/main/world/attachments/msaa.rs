@@ -8,6 +8,7 @@ pub struct MSAATextures {
 
 impl MSAATextures {
     pub fn new(device: &wgpu::Device, surface_config: &wgpu::SurfaceConfiguration) -> Self {
+        let hdr_format = wgpu::TextureFormat::Rgba16Float;
         let msaa_texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("MSAA Texture"),
             size: wgpu::Extent3d {
@@ -18,7 +19,7 @@ impl MSAATextures {
             mip_level_count: 1,
             sample_count: 4,
             dimension: wgpu::TextureDimension::D2,
-            format: surface_config.format,
+            format: hdr_format,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             view_formats: &[],
         });
@@ -34,7 +35,7 @@ impl MSAATextures {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: surface_config.format,
+            format: hdr_format,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         });

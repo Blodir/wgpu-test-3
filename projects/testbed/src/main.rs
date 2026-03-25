@@ -202,7 +202,11 @@ impl Game {
         // Undo direction first, then read angle in the XY plane.
         let dir_rad = direction_deg.to_radians();
         let x_after_direction = (dir.x * dir_rad.cos()) + (dir.z * dir_rad.sin());
-        let altitude_deg = dir.y.atan2(x_after_direction).to_degrees().rem_euclid(360.0);
+        let altitude_deg = dir
+            .y
+            .atan2(x_after_direction)
+            .to_degrees()
+            .rem_euclid(360.0);
         (altitude_deg, direction_deg)
     }
 
