@@ -3,7 +3,7 @@ use std::{cell::RefCell, io};
 use engine::{
     game::{
         animator::{self, AnimationGraph, Animator},
-        assets::registry::RegistryExt as _,
+        assets::registry::{RegistryExt as _, TextureHandle},
         camera::Camera,
         scene_tree::{
             AnimatedModel, Environment, Node, RenderDataType, Scene, SceneNodeId, StaticModel, Sun,
@@ -18,6 +18,24 @@ use winit::{
     event::{DeviceEvent, ElementState, KeyEvent, MouseScrollDelta, WindowEvent},
     keyboard::{KeyCode, PhysicalKey},
 };
+
+const ENV_MAP_CHOICES: [(&str, &str, &str); 2] = [
+    (
+        "Kloofendal Overcast",
+        "assets/kloofendal_overcast_puresky_8k.prefiltered.dds",
+        "assets/kloofendal_overcast_puresky_8k.di.dds",
+    ),
+    (
+        "Steinbach Field",
+        "assets/steinbach_field_4k.prefiltered.dds",
+        "assets/steinbach_field_4k.di.dds",
+    ),
+];
+
+struct EnvironmentMapOption {
+    prefiltered: TextureHandle,
+    di: TextureHandle,
+}
 
 struct Game {
     shift_is_pressed: bool,
@@ -37,6 +55,8 @@ struct Game {
     environment_map_intensity: f32,
     sun_altitude_deg: f32,
     sun_direction_deg: f32,
+    environment_map_options: Vec<EnvironmentMapOption>,
+    selected_environment_map_idx: usize,
 }
 
 struct VarSnapshot {
@@ -45,6 +65,7 @@ struct VarSnapshot {
     environment_map_intensity: f32,
     sun_altitude_deg: f32,
     sun_direction_deg: f32,
+    selected_environment_map_idx: usize,
 }
 
 enum UiCommand {
@@ -54,6 +75,7 @@ enum UiCommand {
         environment_map_intensity: f32,
         altitude_deg: f32,
         direction_deg: f32,
+        environment_map_idx: usize,
     },
 }
 
@@ -77,6 +99,8 @@ impl Game {
             environment_map_intensity: 1.0,
             sun_altitude_deg: -35.0,
             sun_direction_deg: 45.0,
+            environment_map_options: vec![],
+            selected_environment_map_idx: 0,
         }
     }
 
@@ -194,6 +218,30 @@ impl Game {
         scene.environment.sun.direction =
             Self::angles_to_direction(self.sun_altitude_deg, self.sun_direction_deg);
     }
+
+    fn request_environment_map_options(
+        resource_registry: &std::rc::Rc<
+            std::cell::RefCell<engine::game::assets::registry::ResourceRegistry>,
+        >,
+    ) -> Vec<EnvironmentMapOption> {
+        ENV_MAP_CHOICES
+            .iter()
+            .map(|(_label, prefiltered, di)| EnvironmentMapOption {
+                prefiltered: resource_registry.request_texture(prefiltered, true),
+                di: resource_registry.request_texture(di, true),
+            })
+            .collect()
+    }
+
+    fn apply_environment_map_selection(&self, scene: &mut Scene) {
+        if let Some(selected) = self
+            .environment_map_options
+            .get(self.selected_environment_map_idx)
+        {
+            scene.environment.prefiltered = selected.prefiltered.clone();
+            scene.environment.di = selected.di.clone();
+        }
+    }
 }
 impl SimTrait for Game {
     type VarSnapshot = VarSnapshot;
@@ -296,15 +344,18 @@ impl SimTrait for Game {
             render_data: RenderDataType::None,
         });
 
+        self.environment_map_options = Self::request_environment_map_options(resource_registry);
+        self.selected_environment_map_idx = 0;
+
         let environment = Environment {
             sun: Sun::default(),
             environment_map_intensity: 1.0,
-            prefiltered: resource_registry.request_texture(
-                "assets/kloofendal_overcast_puresky_8k.prefiltered.dds",
-                true,
-            ),
-            di: resource_registry
-                .request_texture("assets/kloofendal_overcast_puresky_8k.di.dds", true),
+            prefiltered: self.environment_map_options[self.selected_environment_map_idx]
+                .prefiltered
+                .clone(),
+            di: self.environment_map_options[self.selected_environment_map_idx]
+                .di
+                .clone(),
             brdf: resource_registry.request_texture("assets/brdf_lut.png", false),
         };
 
@@ -324,6 +375,7 @@ impl SimTrait for Game {
         self.sun_altitude_deg = sun_altitude_deg;
         self.sun_direction_deg = sun_direction_deg;
         self.apply_sun_settings(&mut scene);
+        self.apply_environment_map_selection(&mut scene);
         self.apply_orbit_camera(&mut scene);
 
         (scene, animation_graphs)
@@ -421,6 +473,7 @@ impl SimTrait for Game {
                     environment_map_intensity,
                     altitude_deg,
                     direction_deg,
+                    environment_map_idx,
                 } => {
                     let intensity = intensity.max(0.0);
                     self.sun_tint = tint;
@@ -428,7 +481,10 @@ impl SimTrait for Game {
                     self.environment_map_intensity = environment_map_intensity.max(0.0);
                     self.sun_altitude_deg = altitude_deg.clamp(-89.0, 89.0);
                     self.sun_direction_deg = direction_deg.rem_euclid(360.0);
+                    self.selected_environment_map_idx = environment_map_idx
+                        .min(self.environment_map_options.len().saturating_sub(1));
                     self.apply_sun_settings(scene);
+                    self.apply_environment_map_selection(scene);
                 }
             },
             InputEvent::DeviceEvent(event) => match event {
@@ -584,6 +640,7 @@ impl SimTrait for Game {
             environment_map_intensity: self.environment_map_intensity,
             sun_altitude_deg: self.sun_altitude_deg,
             sun_direction_deg: self.sun_direction_deg,
+            selected_environment_map_idx: self.selected_environment_map_idx,
         }
     }
 }
@@ -654,6 +711,7 @@ impl UiTrait for Game {
             let mut environment_map_intensity = snapshot.environment_map_intensity;
             let mut altitude_deg = snapshot.sun_altitude_deg;
             let mut direction_deg = snapshot.sun_direction_deg;
+            let mut environment_map_idx = snapshot.selected_environment_map_idx;
             let mut changed = false;
 
             egui::Window::new("Sun")
@@ -662,6 +720,19 @@ impl UiTrait for Game {
                 .show(ctx, |ui| {
                     ui.label("Color");
                     changed |= ui.color_edit_button_rgb(&mut tint).changed();
+                    let selected_label = ENV_MAP_CHOICES
+                        .get(environment_map_idx)
+                        .map(|v| v.0)
+                        .unwrap_or("Unknown");
+                    egui::ComboBox::from_label("Environment Map")
+                        .selected_text(selected_label)
+                        .show_ui(ui, |ui| {
+                            for (idx, (label, _, _)) in ENV_MAP_CHOICES.iter().enumerate() {
+                                changed |= ui
+                                    .selectable_value(&mut environment_map_idx, idx, *label)
+                                    .changed();
+                            }
+                        });
                     changed |= ui
                         .add(
                             egui::Slider::new(&mut intensity, 0.0..=100.0)
@@ -699,6 +770,7 @@ impl UiTrait for Game {
                     environment_map_intensity,
                     altitude_deg,
                     direction_deg,
+                    environment_map_idx,
                 });
             }
         }
