@@ -321,29 +321,38 @@ impl UiTrait for Game {
 
     fn build_ui(
         ctx: &egui::Context,
-        frame_idx: u32,
-        snapshot: Option<&Self::UiSnapshot>,
+        _frame_idx: u32,
+        _snapshot: Option<&Self::UiSnapshot>,
         render_debug: &RenderDebugInfo,
-        emit: &mut dyn FnMut(Self::UiCommand),
+        _emit: &mut dyn FnMut(Self::UiCommand),
     ) {
-        egui::Window::new("Renderer UI").show(ctx, |ui| {
-            ui.label(format!("frame index: {}", frame_idx));
-            ui.label(format!("fps: {:.1}", render_debug.fps));
-            ui.label(format!("frame: {:.2} ms", render_debug.frame_time_ms));
-            if let Some(snapshot) = snapshot {
-                ui.label(format!("sim t: {:.2}", snapshot.global_time_sec));
-                ui.label(format!("shift pressed: {}", snapshot.shift_is_pressed));
-                let mut camera_distance = snapshot.camera_distance;
-                if ui
-                    .add(egui::Slider::new(&mut camera_distance, 0.0..=300.0).text("Camera Z"))
-                    .changed()
-                {
-                    emit(UiCommand::SetCameraDistance(camera_distance));
-                }
-            } else {
-                ui.label("waiting for sim ui snapshot...");
-            }
-        });
+        let line1 = format!("fps: {:.1}", render_debug.fps);
+        let line2 = format!("frame: {:.2} ms", render_debug.frame_time_ms);
+        let text_color = egui::Color32::WHITE;
+        let font = egui::FontId::proportional(22.0);
+        let padding = egui::vec2(10.0, 8.0);
+        let line_gap = 4.0;
+        let origin = egui::pos2(12.0, 12.0);
+        let painter = ctx.layer_painter(egui::LayerId::new(
+            egui::Order::Foreground,
+            egui::Id::new("renderer_stats_overlay"),
+        ));
+
+        let galley1 = painter.layout_no_wrap(line1, font.clone(), text_color);
+        let galley2 = painter.layout_no_wrap(line2, font, text_color);
+        let line1_h = galley1.size().y;
+        let line2_h = galley2.size().y;
+        let width = galley1.size().x.max(galley2.size().x) + (padding.x * 2.0);
+        let height = line1_h + line2_h + line_gap + (padding.y * 2.0);
+        let rect = egui::Rect::from_min_size(origin, egui::vec2(width, height));
+
+        painter.rect_filled(rect, 0.0, egui::Color32::from_black_alpha(160));
+        painter.galley(rect.min + padding, galley1, text_color);
+        painter.galley(
+            rect.min + padding + egui::vec2(0.0, line1_h + line_gap),
+            galley2,
+            text_color,
+        );
     }
 }
 
