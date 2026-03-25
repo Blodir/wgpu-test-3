@@ -9,7 +9,6 @@ struct VertexOutput {
 }
 
 const PI: f32 = 3.1415927;
-const MAX_TOTAL_RADIANCE: f32 = 50.0;
 
 @vertex
 fn vs_main(
@@ -48,9 +47,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
                 environment_texture_sampler,
                 sample_vec
             ).rgb;
-            let total_sample_radiance = sample_radiance.r + sample_radiance.g + sample_radiance.b;
-            let clamped_radiance = sample_radiance * (MAX_TOTAL_RADIANCE / max(total_sample_radiance, MAX_TOTAL_RADIANCE));
-            irradiance += clamped_radiance * cos(theta) * sin(theta);
+            irradiance += sample_radiance * cos(theta) * sin(theta);
             n_samples++;
         }
     }
@@ -58,4 +55,3 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     return vec4f(irradiance, 1.0);
 }
-

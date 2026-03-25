@@ -97,14 +97,12 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let V = normalize(camera_position - in.world_position.xyz);
     let R = reflect(-V, N);
 
+    // base_color_texture is sampled from an sRGB texture, so it is already linear here.
     let surface_color =
-        pow(
-            textureSample(
-                base_color_texture,
-                base_color_texture_sampler,
-                in.base_color_tex_coords
-            ),
-            vec4f(2.2)
+        textureSample(
+            base_color_texture,
+            base_color_texture_sampler,
+            in.base_color_tex_coords
         ) * base_color_factor;
     let metallic_roughness =
         textureSample(

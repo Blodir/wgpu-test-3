@@ -19,7 +19,7 @@ use winit::{
     keyboard::{KeyCode, PhysicalKey},
 };
 
-const ENV_MAP_CHOICES: [(&str, &str, &str); 2] = [
+const ENV_MAP_CHOICES: [(&str, &str, &str); 3] = [
     (
         "Kloofendal Overcast",
         "assets/kloofendal_overcast_puresky_8k.prefiltered.dds",
@@ -30,6 +30,11 @@ const ENV_MAP_CHOICES: [(&str, &str, &str); 2] = [
         "assets/steinbach_field_4k.prefiltered.dds",
         "assets/steinbach_field_4k.di.dds",
     ),
+    (
+        "indoor_pool_4k",
+        "assets/indoor_pool_4k.prefiltered.dds",
+        "assets/indoor_pool_4k.di.dds",
+    )
 ];
 
 struct EnvironmentMapOption {
