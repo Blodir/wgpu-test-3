@@ -25,7 +25,7 @@ pub fn accumulate_instance_snapshots(
     frustum: &Frustum,
     resource_registry: &Rc<RefCell<ResourceRegistry>>,
     game_resources: &GameAssetStore,
-    frame_index: u32,
+    tick_index: u32,
 ) {
     let node = scene.nodes.get(node_id.into()).unwrap();
     let transform = node.get_transform() * base_transform;
@@ -42,7 +42,7 @@ pub fn accumulate_instance_snapshots(
                     frustum,
                     resource_registry,
                     game_resources,
-                    frame_index,
+                    tick_index,
                 );
             }
             return;
@@ -64,16 +64,16 @@ pub fn accumulate_instance_snapshots(
     if let (GameState::Ready(model_game_id),) = (&entry.game_state,) {
         let model_game = game_resources.models.get(*model_game_id).unwrap();
         // render everything that was visible on the previous frame to reduce popping when the camera moves fast
-        let last_frame_visible = frame_index.wrapping_sub(last_visible_frame) <= 1;
+        let last_frame_visible = tick_index.wrapping_sub(last_visible_frame) <= 1;
         let intersect = frustum_intersects_aabb_world(frustum, &model_game.aabb, &transform);
         if last_frame_visible || intersect {
             if intersect {
                 match &scene.nodes.get(node_id.into()).unwrap().render_data {
                     RenderDataType::Model(static_model) => {
-                        static_model.last_visible_frame.replace(frame_index)
+                        static_model.last_visible_frame.replace(tick_index)
                     }
                     RenderDataType::AnimatedModel(animated_model) => {
-                        animated_model.last_visible_frame.replace(frame_index)
+                        animated_model.last_visible_frame.replace(tick_index)
                     }
                     RenderDataType::None => 0u32,
                 };
@@ -85,7 +85,7 @@ pub fn accumulate_instance_snapshots(
                     let inst = StaticInstanceSnapshot {
                         model_transform,
                         animation: maybe_animation_snapshot,
-                        dirty: node.transform_last_mut == frame_index,
+                        dirty: node.transform_last_mut == tick_index,
                     };
                     static_instances.insert(node_id, inst);
                 }
@@ -93,7 +93,7 @@ pub fn accumulate_instance_snapshots(
                     let inst = SkinnedInstanceSnapshot {
                         model_transform,
                         animation: maybe_animation_snapshot,
-                        dirty: node.transform_last_mut == frame_index,
+                        dirty: node.transform_last_mut == tick_index,
                     };
                     skinned_instances.insert(node_id, inst);
                 }
@@ -112,7 +112,7 @@ pub fn accumulate_instance_snapshots(
             frustum,
             resource_registry,
             game_resources,
-            frame_index,
+            tick_index,
         );
     }
 }
@@ -231,7 +231,7 @@ impl MeshDrawSnapshot {
         resource_registry: &Rc<RefCell<ResourceRegistry>>,
         game_resources: &GameAssetStore,
         animation_graphs: &Vec<AnimationGraph>,
-        frame_index: u32,
+        tick_index: u32,
     ) -> Self {
         let mut skinned_instances = HashMap::<SceneNodeId, SkinnedInstanceSnapshot>::new();
         let mut static_instances = HashMap::<SceneNodeId, StaticInstanceSnapshot>::new();
@@ -246,7 +246,7 @@ impl MeshDrawSnapshot {
             &frustum,
             resource_registry,
             game_resources,
-            frame_index,
+            tick_index,
         );
 
         let reg = resource_registry.borrow();
@@ -401,14 +401,14 @@ impl FixedSnapshot {
         resource_registry: &Rc<RefCell<ResourceRegistry>>,
         animation_graphs: &Vec<AnimationGraph>,
         game_resources: &GameAssetStore,
-        frame_index: u32,
+        tick_index: u32,
     ) -> Self {
         let mesh_draw_snapshot = MeshDrawSnapshot::build(
             scene,
             resource_registry,
             game_resources,
             animation_graphs,
-            frame_index,
+            tick_index,
         );
 
         let environment = LightsSnapshot::from(&scene.environment, resource_registry);

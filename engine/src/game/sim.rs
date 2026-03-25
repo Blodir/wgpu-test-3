@@ -20,7 +20,7 @@ use crate::{
     var_snapshot_handoff::{CameraSnapshotPair, VarSnapshotHandoff},
 };
 
-const TICK: Duration = Duration::from_millis(100);
+const FIXED_TICK: Duration = Duration::from_millis(100);
 const VAR_IDLE_SPIN: Duration = Duration::from_micros(200);
 const MAX_ACCUMULATED_TICKS: u32 = 5;
 
@@ -47,11 +47,11 @@ where
             Rc::new(RefCell::new(ResourceRegistry::new(reg_req_tx, reg_res_rx)));
         let mut game_resources = GameAssetStore::new(game_req_rx, game_res_tx, &resource_registry);
         let (mut scene, animation_graphs) = game.init(&resource_registry);
-        let fixed_dt = TICK.as_secs_f32();
-        let max_accumulated = TICK.saturating_mul(MAX_ACCUMULATED_TICKS);
+        let fixed_dt = FIXED_TICK.as_secs_f32();
+        let max_accumulated = FIXED_TICK.saturating_mul(MAX_ACCUMULATED_TICKS);
         let mut accumulated = Duration::ZERO;
         let mut prev_loop = Instant::now();
-        let mut fixed_frame_index = 0u32;
+        let mut fixed_tick = 0u32;
         let mut var_tick = 0u64;
         let sim_start_time = Instant::now();
         let mut sim_fps_smoothed = 0.0f32;
@@ -59,12 +59,11 @@ where
         let mut prev_camera_timestamp = Instant::now();
         loop {
             let now = Instant::now();
-            let frame_dt = now.saturating_duration_since(prev_loop);
-            prev_loop = now;
-            accumulated = (accumulated + frame_dt).min(max_accumulated);
-            let frame_dt_sec = frame_dt.as_secs_f32();
-            if frame_dt_sec > 0.0 {
-                let fps = 1.0 / frame_dt_sec;
+            let tick_dt = now.saturating_duration_since(prev_loop);
+            accumulated = (accumulated + tick_dt).min(max_accumulated);
+            let tick_dt_sec = tick_dt.as_secs_f32();
+            if tick_dt_sec > 0.0 {
+                let fps = 1.0 / tick_dt_sec;
                 sim_fps_smoothed = if sim_fps_smoothed <= 0.0 {
                     fps
                 } else {
@@ -110,7 +109,7 @@ where
             prev_camera_timestamp = curr_camera_timestamp;
             var_tick = var_tick.wrapping_add(1);
 
-            while accumulated >= TICK {
+            while accumulated >= FIXED_TICK {
                 scene.update(
                     &resource_registry,
                     &animation_graphs,
@@ -124,7 +123,7 @@ where
                     &resource_registry,
                     &animation_graphs,
                     &game_resources,
-                    fixed_frame_index,
+                    fixed_tick,
                 );
 
                 // schedule animation jobs for all visible animated models
@@ -166,10 +165,11 @@ where
                 }
 
                 fixed_snapshot_handoff.publish(fixed_snapshot);
-                fixed_frame_index = fixed_frame_index.wrapping_add(1);
-                accumulated -= TICK;
+                fixed_tick = fixed_tick.wrapping_add(1);
+                accumulated -= FIXED_TICK;
             }
 
+            // Spin for a little bit before yielding
             let idle_start = Instant::now();
             while idle_start.elapsed() < VAR_IDLE_SPIN {
                 if !inputs.is_empty() {
@@ -180,6 +180,8 @@ where
             if inputs.is_empty() {
                 thread::yield_now();
             }
+
+            prev_loop = now;
         }
     })
 }
