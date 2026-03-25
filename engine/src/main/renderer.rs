@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Instant};
 
 use winit::event::WindowEvent;
 
@@ -7,7 +7,7 @@ use super::gui::GuiRenderer;
 use super::wgpu_context::WgpuContext;
 use super::world::bindgroups::material::MaterialBinding;
 use super::world::WorldRenderer;
-use crate::game_trait::BuildUiFn;
+use crate::game_trait::{BuildUiFn, RenderDebugInfo};
 use crate::job_system::worker_pool::AnimPoseTaskResult;
 pub use crate::main::world::UploadMaterialRequest;
 use crate::render_snapshot_handoff::RenderSnapshotHandoff;
@@ -15,6 +15,9 @@ use crate::render_snapshot_handoff::RenderSnapshotHandoff;
 pub struct Renderer<S, C> {
     world_renderer: WorldRenderer,
     gui_renderer: GuiRenderer<S, C>,
+    last_frame_instant: Option<Instant>,
+    frame_fps_smoothed: f32,
+    render_debug: RenderDebugInfo,
 }
 
 impl<S, C> Renderer<S, C> {
@@ -35,6 +38,9 @@ impl<S, C> Renderer<S, C> {
         Self {
             world_renderer,
             gui_renderer,
+            last_frame_instant: None,
+            frame_fps_smoothed: 0.0,
+            render_debug: RenderDebugInfo::default(),
         }
     }
 
@@ -45,7 +51,11 @@ impl<S, C> Renderer<S, C> {
         ui_snapshot: Option<&S>,
     ) -> Vec<C> {
         self.gui_renderer
-            .run_ui(wgpu_context, frame_idx, ui_snapshot)
+            .run_ui(wgpu_context, frame_idx, ui_snapshot, &self.render_debug)
+    }
+
+    pub fn begin_frame(&mut self) {
+        self.update_render_debug();
     }
 
     pub fn render(
@@ -106,5 +116,29 @@ impl<S, C> Renderer<S, C> {
     ) -> Result<MaterialBinding, ()> {
         self.world_renderer
             .upload_material(request, render_resources, wgpu_context)
+    }
+
+    fn update_render_debug(&mut self) {
+        let now = Instant::now();
+        if let Some(prev) = self.last_frame_instant {
+            let dt = (now - prev).as_secs_f32();
+            if dt > 0.0 {
+                let fps = 1.0 / dt;
+                self.frame_fps_smoothed = if self.frame_fps_smoothed <= 0.0 {
+                    fps
+                } else {
+                    (self.frame_fps_smoothed * 0.9) + (fps * 0.1)
+                };
+            }
+        }
+        self.last_frame_instant = Some(now);
+        self.render_debug = RenderDebugInfo {
+            fps: self.frame_fps_smoothed,
+            frame_time_ms: if self.frame_fps_smoothed > 0.0 {
+                1000.0 / self.frame_fps_smoothed
+            } else {
+                0.0
+            },
+        };
     }
 }

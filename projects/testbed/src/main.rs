@@ -9,7 +9,7 @@ use engine::{
             AnimatedModel, Environment, Node, RenderDataType, Scene, SceneNodeId, StaticModel, Sun,
         },
     },
-    game_trait::{InputEvent, SimTrait, UiTrait},
+    game_trait::{InputEvent, RenderDebugInfo, SimTrait, UiTrait},
     run,
 };
 use generational_arena::Arena;
@@ -323,10 +323,13 @@ impl UiTrait for Game {
         ctx: &egui::Context,
         frame_idx: u32,
         snapshot: Option<&Self::UiSnapshot>,
+        render_debug: &RenderDebugInfo,
         emit: &mut dyn FnMut(Self::UiCommand),
     ) {
         egui::Window::new("Renderer UI").show(ctx, |ui| {
             ui.label(format!("frame index: {}", frame_idx));
+            ui.label(format!("fps: {:.1}", render_debug.fps));
+            ui.label(format!("frame: {:.2} ms", render_debug.frame_time_ms));
             if let Some(snapshot) = snapshot {
                 ui.label(format!("sim t: {:.2}", snapshot.global_time_sec));
                 ui.label(format!("shift pressed: {}", snapshot.shift_is_pressed));

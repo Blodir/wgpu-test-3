@@ -138,10 +138,9 @@ where
 
                     // self.resource_manager.process_upload_queue(&mut renderer, &mut render_context.render_resources, &render_context.wgpu_context);
                     let ui_snapshot_guard = self.ui_snapshot_handoff.load();
-                    let ui_snapshot = ui_snapshot_guard
-                        .as_ref()
-                        .map(|snapshot| &snapshot.snap);
+                    let ui_snapshot = ui_snapshot_guard.as_ref().map(|snapshot| &snapshot.snap);
 
+                    renderer.begin_frame();
                     let ui_commands = renderer.run_ui(
                         &render_context.wgpu_context,
                         render_context.frame_idx,
