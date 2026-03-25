@@ -23,6 +23,7 @@ use crate::{
 const FIXED_TICK: Duration = Duration::from_millis(100);
 const VAR_IDLE_SPIN: Duration = Duration::from_micros(200);
 const MAX_ACCUMULATED_TICKS: u32 = 5;
+const MAX_POSE_JOBS_PER_FIXED_TICK: usize = 2048;
 
 pub fn spawn_sim<G, F>(
     inputs: Arc<SegQueue<InputEvent<G::UiCommand>>>,
@@ -128,8 +129,12 @@ where
                     fixed_tick,
                 );
 
+                let mut pose_jobs_scheduled = 0usize;
                 // schedule animation jobs for all visible animated models
                 for node_id in fixed_snapshot.mesh_draw_snapshot.skinned_instances.keys() {
+                    if pose_jobs_scheduled >= MAX_POSE_JOBS_PER_FIXED_TICK {
+                        break;
+                    }
                     match &mut scene.nodes.get_mut((*node_id).into()).unwrap().render_data {
                         RenderDataType::Model(_static_model) => (),
                         RenderDataType::AnimatedModel(animated_model) => {
@@ -140,14 +145,20 @@ where
                                 &game_resources,
                                 &resource_registry,
                             );
-                            if job_task_tx.send(Task::Pose(*node_id, job)).is_err() {
-                                todo!();
+                            if !job.is_empty() {
+                                if job_task_tx.send(Task::Pose(*node_id, job)).is_err() {
+                                    todo!();
+                                }
+                                pose_jobs_scheduled += 1;
                             }
                         }
                         RenderDataType::None => (),
                     }
                 }
                 for node_id in fixed_snapshot.mesh_draw_snapshot.static_instances.keys() {
+                    if pose_jobs_scheduled >= MAX_POSE_JOBS_PER_FIXED_TICK {
+                        break;
+                    }
                     match &mut scene.nodes.get_mut((*node_id).into()).unwrap().render_data {
                         RenderDataType::Model(_static_model) => (),
                         RenderDataType::AnimatedModel(animated_model) => {
@@ -158,8 +169,11 @@ where
                                 &game_resources,
                                 &resource_registry,
                             );
-                            if job_task_tx.send(Task::Pose(*node_id, job)).is_err() {
-                                todo!();
+                            if !job.is_empty() {
+                                if job_task_tx.send(Task::Pose(*node_id, job)).is_err() {
+                                    todo!();
+                                }
+                                pose_jobs_scheduled += 1;
                             }
                         }
                         RenderDataType::None => (),

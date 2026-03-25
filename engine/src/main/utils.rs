@@ -52,7 +52,14 @@ pub fn lerpf32(a: f32, b: f32, t: f32) -> f32 {
 }
 
 pub fn lerpu64(a: u64, b: u64, t: f32) -> u64 {
-    a + ((b - a) as f32 * t).round() as u64
+    let t = t.clamp(0.0, 1.0) as f64;
+    if b >= a {
+        let delta = ((b - a) as f64 * t).round() as u64;
+        a.saturating_add(delta)
+    } else {
+        let delta = ((a - b) as f64 * t).round() as u64;
+        a.saturating_sub(delta)
+    }
 }
 
 pub trait QuatExt {

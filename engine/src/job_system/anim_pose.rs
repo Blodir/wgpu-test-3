@@ -237,6 +237,9 @@ pub fn execute_pose_tasks(
     tasks: Vec<AnimPoseTask>,
     render_tx: &mut cbch::Sender<RenderResponse>,
 ) {
+    if tasks.is_empty() {
+        return;
+    }
     if render_tx
         .send(RenderResponse::Pose(AnimPoseTaskResult {
             node_id,
