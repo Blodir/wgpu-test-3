@@ -273,10 +273,7 @@ pub fn load_animation(
     Ok(animation::AnimationClip { duration, tracks })
 }
 
-fn io_worker_loop(
-    rx: cbch::Receiver<IoRequest>,
-    tx: cbch::Sender<IoResponse>,
-) {
+fn io_worker_loop(rx: cbch::Receiver<IoRequest>, tx: cbch::Sender<IoResponse>) {
     while let Ok(req) = rx.recv() {
         let result = match req {
             IoRequest::LoadModel { id, path } => load_json::<modelfile::Model>(&path).map_or_else(

@@ -33,12 +33,8 @@ pub struct DebugInfo {
     pub sim: SimDebugInfo,
 }
 
-pub type BuildUiFn<S, C> = fn(
-    ctx: &egui::Context,
-    snapshot: Option<&S>,
-    debug_info: &DebugInfo,
-    emit: &mut dyn FnMut(C),
-);
+pub type BuildUiFn<S, C> =
+    fn(ctx: &egui::Context, snapshot: Option<&S>, debug_info: &DebugInfo, emit: &mut dyn FnMut(C));
 
 pub trait SimTrait {
     type VarSnapshot;

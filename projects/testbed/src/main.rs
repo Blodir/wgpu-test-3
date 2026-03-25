@@ -13,7 +13,7 @@ use engine::{
     run,
 };
 use generational_arena::Arena;
-use glam::{Mat4, Quat, Vec3};
+use glam::{Mat3, Mat4, Quat, Vec3};
 use winit::{
     event::{DeviceEvent, ElementState, KeyEvent, MouseScrollDelta, WindowEvent},
     keyboard::{KeyCode, PhysicalKey},
@@ -22,6 +22,11 @@ use winit::{
 struct Game {
     shift_is_pressed: bool,
     mouse_btn_is_pressed: bool,
+    orbit_target: Vec3,
+    orbit_up: Vec3,
+    orbit_distance: f32,
+    orbit_yaw_deg: f32,
+    orbit_pitch_deg: f32,
 }
 
 struct VarSnapshot;
@@ -35,7 +40,30 @@ impl Game {
         Self {
             shift_is_pressed: false,
             mouse_btn_is_pressed: false,
+            orbit_target: Vec3::ZERO,
+            orbit_up: Vec3::Y,
+            orbit_distance: 100.0,
+            orbit_yaw_deg: 0.0,
+            orbit_pitch_deg: 0.0,
         }
+    }
+
+    fn look_at_rotation(eye: Vec3, target: Vec3, world_up: Vec3) -> Quat {
+        let forward = (target - eye).normalize();
+        let up = (world_up - forward * world_up.dot(forward)).normalize();
+        let right = forward.cross(up);
+
+        // Camera looks down -Z
+        Quat::from_mat3(&Mat3::from_cols(right, up, -forward))
+    }
+
+    fn apply_orbit_camera(&self, scene: &mut Scene) {
+        let orbit_rot = Quat::from_rotation_y(self.orbit_yaw_deg.to_radians())
+            * Quat::from_rotation_x(self.orbit_pitch_deg.to_radians());
+        let position = self.orbit_target + (orbit_rot * Vec3::new(0.0, 0.0, self.orbit_distance));
+        let rotation = Self::look_at_rotation(position, self.orbit_target, self.orbit_up);
+        scene.camera.position = position;
+        scene.camera.rotation = rotation;
     }
 }
 impl SimTrait for Game {
@@ -150,13 +178,14 @@ impl SimTrait for Game {
             brdf: resource_registry.request_texture("assets/brdf_lut.png", false),
         };
 
-        let scene = Scene {
+        let mut scene = Scene {
             root: SceneNodeId(root_handle),
             nodes,
             environment,
             camera: Camera::default(),
             global_time_sec: 0.0,
         };
+        self.apply_orbit_camera(&mut scene);
 
         (scene, animation_graphs)
     }
@@ -235,7 +264,8 @@ impl SimTrait for Game {
             InputEvent::AspectChange(aspect) => scene.camera.aspect = aspect,
             InputEvent::Ui(command) => match command {
                 UiCommand::SetCameraDistance(distance) => {
-                    scene.camera.eye.z = distance.max(0.0);
+                    self.orbit_distance = distance.max(0.0);
+                    self.apply_orbit_camera(scene);
                 }
             },
             InputEvent::DeviceEvent(event) => match event {
@@ -243,30 +273,28 @@ impl SimTrait for Game {
                     if !self.mouse_btn_is_pressed {
                         return;
                     }
-                    let camera = &mut scene.camera;
                     let sensitivity = 5f32;
-                    camera.rot_x = camera.rot_x - (x as f32 / sensitivity);
-                    camera.rot_y = camera.rot_y - (y as f32 / sensitivity);
+                    self.orbit_yaw_deg -= x as f32 / sensitivity;
+                    self.orbit_pitch_deg -= y as f32 / sensitivity;
+                    self.apply_orbit_camera(scene);
                 }
                 _ => (),
             },
             InputEvent::WindowEvent(event) => match event {
-                WindowEvent::MouseWheel { delta, .. } => {
-                    let camera = &mut scene.camera;
-                    match delta {
-                        MouseScrollDelta::LineDelta(_x, y) => {
-                            let scroll_speed = 10f32;
-                            camera.eye.z = (camera.eye.z
-                                + ((if self.shift_is_pressed {
-                                    10f32 * scroll_speed
-                                } else {
-                                    scroll_speed
-                                }) * -y as f32))
-                                .max(0f32);
-                        }
-                        MouseScrollDelta::PixelDelta(_pos) => (),
+                WindowEvent::MouseWheel { delta, .. } => match delta {
+                    MouseScrollDelta::LineDelta(_x, y) => {
+                        let scroll_speed = 10f32;
+                        self.orbit_distance = (self.orbit_distance
+                            + ((if self.shift_is_pressed {
+                                10f32 * scroll_speed
+                            } else {
+                                scroll_speed
+                            }) * -y as f32))
+                            .max(0.0);
+                        self.apply_orbit_camera(scene);
                     }
-                }
+                    MouseScrollDelta::PixelDelta(_pos) => (),
+                },
                 WindowEvent::MouseInput { state, button, .. } => {
                     match button {
                         winit::event::MouseButton::Left => match state {
@@ -362,8 +390,7 @@ impl UiTrait for Game {
             text_color,
         );
         painter.galley(
-            rect.min + padding
-                + egui::vec2(0.0, line1_h + line2_h + line3_h + (line_gap * 3.0)),
+            rect.min + padding + egui::vec2(0.0, line1_h + line2_h + line3_h + (line_gap * 3.0)),
             galley4,
             text_color,
         );

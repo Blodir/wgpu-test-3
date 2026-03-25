@@ -143,7 +143,9 @@ where
                     let camera_pair = var_snapshot_guard
                         .as_ref()
                         .map(|snapshot| &snapshot.camera_pair);
-                    let sim_debug = var_snapshot_guard.as_ref().map(|snapshot| &snapshot.sim_debug);
+                    let sim_debug = var_snapshot_guard
+                        .as_ref()
+                        .map(|snapshot| &snapshot.sim_debug);
                     let default_sim_debug = crate::game_trait::SimDebugInfo::default();
 
                     renderer.begin_frame(render_context.frame_idx);
