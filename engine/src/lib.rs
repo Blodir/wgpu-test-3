@@ -21,15 +21,14 @@ pub mod job_system;
 pub mod main;
 pub mod var_snapshot_handoff;
 
-pub fn run<G>(game: G)
+pub fn run<G, F>(make_game: F)
 where
     G: SimTrait
         // UiTraits associated VarSnapshot and UiCommand types have to match with SimTrait
         + UiTrait<VarSnapshot = <G as SimTrait>::VarSnapshot, UiCommand = <G as SimTrait>::UiCommand>
-        // G needs to be send, because it runs on a different thread from initialization
-        + Send
-        // can't outlive the main thread
+        // built and owned entirely on the sim thread
         + 'static,
+    F: FnOnce() -> G + Send + 'static,
     <G as SimTrait>::VarSnapshot: Send + Sync + 'static,
     <G as SimTrait>::UiCommand: Send + 'static,
 {
@@ -54,7 +53,7 @@ where
         game_req_rx,
         game_res_tx,
         task_tx,
-        game,
+        make_game,
     );
 
     let mut main_window = window::MainWindow::new(

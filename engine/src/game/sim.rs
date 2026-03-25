@@ -24,7 +24,7 @@ const TICK: Duration = Duration::from_millis(100);
 const VAR_IDLE_SPIN: Duration = Duration::from_micros(200);
 const MAX_ACCUMULATED_TICKS: u32 = 5;
 
-pub fn spawn_sim<G>(
+pub fn spawn_sim<G, F>(
     inputs: Arc<SegQueue<InputEvent<G::UiCommand>>>,
     fixed_snapshot_handoff: Arc<FixedSnapshotHandoff>,
     var_snapshot_handoff: Arc<VarSnapshotHandoff<G::VarSnapshot>>,
@@ -33,15 +33,16 @@ pub fn spawn_sim<G>(
     game_req_rx: cbch::Receiver<CreateGameResourceRequest>,
     game_res_tx: cbch::Sender<CreateGameResourceResponse>,
     job_task_tx: cbch::Sender<Task>,
-    game: G,
+    make_game: F,
 ) -> std::thread::JoinHandle<()>
 where
-    G: SimTrait + Send + 'static,
+    G: SimTrait + 'static,
+    F: FnOnce() -> G + Send + 'static,
     G::UiCommand: Send + 'static,
     G::VarSnapshot: Send + Sync + 'static,
 {
     std::thread::spawn(move || {
-        let mut game = game;
+        let mut game = make_game();
         let resource_registry =
             Rc::new(RefCell::new(ResourceRegistry::new(reg_req_tx, reg_res_rx)));
         let mut game_resources = GameAssetStore::new(game_req_rx, game_res_tx, &resource_registry);

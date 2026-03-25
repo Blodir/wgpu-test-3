@@ -371,6 +371,6 @@ impl UiTrait for Game {
 }
 
 fn main() -> io::Result<()> {
-    run(Game::new());
+    run(Game::new);
     Ok(())
 }
