@@ -196,8 +196,13 @@ impl Game {
         if dir.length_squared() == 0.0 {
             return (0.0, 0.0);
         }
-        let altitude_deg = dir.y.asin().to_degrees();
+        // Direction: start at +X and rotate around +Y toward +Z.
         let direction_deg = dir.z.atan2(dir.x).to_degrees().rem_euclid(360.0);
+        // Altitude: start at ground-plane +X and rotate around +Z.
+        // Undo direction first, then read angle in the XY plane.
+        let dir_rad = direction_deg.to_radians();
+        let x_after_direction = (dir.x * dir_rad.cos()) + (dir.z * dir_rad.sin());
+        let altitude_deg = dir.y.atan2(x_after_direction).to_degrees().rem_euclid(360.0);
         (altitude_deg, direction_deg)
     }
 
@@ -205,6 +210,7 @@ impl Game {
         let alt = altitude_deg.to_radians();
         let az = direction_deg.to_radians();
         let horizontal = alt.cos();
+        // Equivalent to: Ry(direction) * Rz(altitude) * +X
         Vec3::new(horizontal * az.cos(), alt.sin(), horizontal * az.sin()).to_array()
     }
 
@@ -479,7 +485,7 @@ impl SimTrait for Game {
                     self.sun_tint = tint;
                     self.sun_intensity = intensity;
                     self.environment_map_intensity = environment_map_intensity.max(0.0);
-                    self.sun_altitude_deg = altitude_deg.clamp(-89.0, 89.0);
+                    self.sun_altitude_deg = altitude_deg.rem_euclid(360.0);
                     self.sun_direction_deg = direction_deg.rem_euclid(360.0);
                     self.selected_environment_map_idx = environment_map_idx
                         .min(self.environment_map_options.len().saturating_sub(1));
@@ -749,7 +755,7 @@ impl UiTrait for Game {
                         .changed();
                     changed |= ui
                         .add(
-                            egui::Slider::new(&mut altitude_deg, -89.0..=89.0)
+                            egui::Slider::new(&mut altitude_deg, 0.0..=360.0)
                                 .text("Altitude (deg)")
                                 .clamping(egui::SliderClamping::Always),
                         )
