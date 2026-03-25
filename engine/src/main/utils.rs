@@ -51,7 +51,7 @@ pub fn lerpf32(a: f32, b: f32, t: f32) -> f32 {
     a + (b - a) * t
 }
 
-pub fn lerpu64(a: u64, b: u64, t: f32) -> u64 {
+pub fn safe_lerpu64(a: u64, b: u64, t: f32) -> u64 {
     let t = t.clamp(0.0, 1.0) as f64;
     if b >= a {
         let delta = ((b - a) as f64 * t).round() as u64;

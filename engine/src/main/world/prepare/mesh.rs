@@ -8,7 +8,7 @@ use crate::{
     game::scene_tree::SceneNodeId,
     main::{
         assets::{io::asset_formats::rigfile::SRT, store::RenderAssetStore},
-        utils::{lerpu64, QuatExt},
+        utils::{safe_lerpu64, QuatExt},
         world::{
             anim_pose_store::{self, AnimPoseStore},
             bindgroups::bones::{BoneMat34, BonesBinding},
@@ -128,7 +128,7 @@ pub fn resolve_skinned_draw<'a>(
                         let maybe_nodes = if let Some(anim_snap) = curr_inst_snap.animation {
                             let snap_time = maybe_prev_inst_snap
                                 .and_then(|n| n.animation.as_ref())
-                                .map(|prev| lerpu64(prev.0, anim_snap.0, t))
+                                .map(|prev| safe_lerpu64(prev.0, anim_snap.0, t))
                                 .unwrap_or(anim_snap.0);
                             sample_pose_nodes(pose_storage, node_id, snap_time, frame_idx)
                         } else {
@@ -237,7 +237,7 @@ pub fn resolve_static_draw<'a>(
                         let maybe_nodes = if let Some(anim_snap) = curr_node_inst.animation {
                             let snap_time = prev_node_inst
                                 .and_then(|n| n.animation.as_ref())
-                                .map(|prev| lerpu64(prev.0, anim_snap.0, t))
+                                .map(|prev| safe_lerpu64(prev.0, anim_snap.0, t))
                                 .unwrap_or(anim_snap.0);
                             sample_pose_nodes(pose_storage, node_id, snap_time, frame_idx)
                         } else {

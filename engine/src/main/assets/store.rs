@@ -277,7 +277,8 @@ impl RenderAssetStore {
         );
         wgpu_context.queue.write_texture(
             normals_ict,
-            &bytemuck::cast_slice(&[0x0000u16, 0x0000u16, 0x3C00u16, 0x3C00u16]).to_vec(),
+            // Neutral tangent-space normal with alpha=0 disables normal mapping in shader.
+            &bytemuck::cast_slice(&[0x3800u16, 0x3800u16, 0x3C00u16, 0x0000u16]).to_vec(),
             wgpu::ImageDataLayout {
                 offset: 0,
                 bytes_per_row: Some(2 * 4),
