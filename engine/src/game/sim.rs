@@ -14,7 +14,7 @@ use super::scene_tree::RenderDataType;
 use crate::{
     fixed_snapshot_handoff::FixedSnapshotHandoff,
     game::build_snapshot::FixedSnapshot,
-    game_trait::{InputEvent, SimTrait},
+    game_trait::{InputEvent, SimDebugInfo, SimTrait},
     job_system::worker_pool::Task,
     var_snapshot_handoff::{CameraSnapshotPair, VarSnapshotHandoff},
 };
@@ -52,6 +52,7 @@ where
         let mut fixed_frame_index = 0u32;
         let mut var_tick = 0u64;
         let sim_start_time = Instant::now();
+        let mut sim_fps_smoothed = 0.0f32;
         let mut prev_camera_snapshot = scene.camera.build_snapshot();
         let mut prev_camera_timestamp = Instant::now();
         loop {
@@ -59,6 +60,23 @@ where
             let frame_dt = now.saturating_duration_since(prev_loop);
             prev_loop = now;
             accumulated = (accumulated + frame_dt).min(max_accumulated);
+            let frame_dt_sec = frame_dt.as_secs_f32();
+            if frame_dt_sec > 0.0 {
+                let fps = 1.0 / frame_dt_sec;
+                sim_fps_smoothed = if sim_fps_smoothed <= 0.0 {
+                    fps
+                } else {
+                    (sim_fps_smoothed * 0.9) + (fps * 0.1)
+                };
+            }
+            let sim_debug = SimDebugInfo {
+                fps: sim_fps_smoothed,
+                frame_time_ms: if sim_fps_smoothed > 0.0 {
+                    1000.0 / sim_fps_smoothed
+                } else {
+                    0.0
+                },
+            };
 
             scene.global_time_sec = (now - sim_start_time).as_secs_f32();
 
@@ -83,6 +101,7 @@ where
                     curr: curr_camera_snapshot,
                     curr_timestamp: curr_camera_timestamp,
                 },
+                sim_debug,
                 var_snapshot,
             );
             prev_camera_snapshot = curr_camera_snapshot;

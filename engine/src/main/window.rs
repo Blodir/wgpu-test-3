@@ -142,12 +142,14 @@ where
                     let camera_pair = var_snapshot_guard
                         .as_ref()
                         .map(|snapshot| &snapshot.camera_pair);
+                    let sim_debug = var_snapshot_guard.as_ref().map(|snapshot| &snapshot.sim_debug);
+                    let default_sim_debug = crate::game_trait::SimDebugInfo::default();
 
-                    renderer.begin_frame();
+                    renderer.begin_frame(render_context.frame_idx);
                     let ui_commands = renderer.run_ui(
                         &render_context.wgpu_context,
-                        render_context.frame_idx,
                         var_snapshot,
+                        sim_debug.unwrap_or(&default_sim_debug),
                     );
                     for cmd in ui_commands {
                         self.sim_inputs.push(InputEvent::Ui(cmd));

@@ -9,7 +9,7 @@ use engine::{
             AnimatedModel, Environment, Node, RenderDataType, Scene, SceneNodeId, StaticModel, Sun,
         },
     },
-    game_trait::{InputEvent, RenderDebugInfo, SimTrait, UiTrait},
+    game_trait::{DebugInfo, InputEvent, SimTrait, UiTrait},
     run,
 };
 use generational_arena::Arena;
@@ -313,13 +313,14 @@ impl UiTrait for Game {
 
     fn build_ui(
         ctx: &egui::Context,
-        _frame_idx: u32,
         _snapshot: Option<&Self::VarSnapshot>,
-        render_debug: &RenderDebugInfo,
+        debug_info: &DebugInfo,
         _emit: &mut dyn FnMut(Self::UiCommand),
     ) {
-        let line1 = format!("fps: {:.1}", render_debug.fps);
-        let line2 = format!("frame: {:.2} ms", render_debug.frame_time_ms);
+        let line1 = format!("render fps: {:.1}", debug_info.render.fps);
+        let line2 = format!("render frame: {:.2} ms", debug_info.render.frame_time_ms);
+        let line3 = format!("sim fps: {:.1}", debug_info.sim.fps);
+        let line4 = format!("sim frame: {:.2} ms", debug_info.sim.frame_time_ms);
         let text_color = egui::Color32::WHITE;
         let font = egui::FontId::proportional(22.0);
         let padding = egui::vec2(10.0, 8.0);
@@ -331,11 +332,21 @@ impl UiTrait for Game {
         ));
 
         let galley1 = painter.layout_no_wrap(line1, font.clone(), text_color);
-        let galley2 = painter.layout_no_wrap(line2, font, text_color);
+        let galley2 = painter.layout_no_wrap(line2, font.clone(), text_color);
+        let galley3 = painter.layout_no_wrap(line3, font.clone(), text_color);
+        let galley4 = painter.layout_no_wrap(line4, font, text_color);
         let line1_h = galley1.size().y;
         let line2_h = galley2.size().y;
-        let width = galley1.size().x.max(galley2.size().x) + (padding.x * 2.0);
-        let height = line1_h + line2_h + line_gap + (padding.y * 2.0);
+        let line3_h = galley3.size().y;
+        let line4_h = galley4.size().y;
+        let width = galley1
+            .size()
+            .x
+            .max(galley2.size().x)
+            .max(galley3.size().x)
+            .max(galley4.size().x)
+            + (padding.x * 2.0);
+        let height = line1_h + line2_h + line3_h + line4_h + (line_gap * 3.0) + (padding.y * 2.0);
         let rect = egui::Rect::from_min_size(origin, egui::vec2(width, height));
 
         painter.rect_filled(rect, 0.0, egui::Color32::from_black_alpha(160));
@@ -343,6 +354,17 @@ impl UiTrait for Game {
         painter.galley(
             rect.min + padding + egui::vec2(0.0, line1_h + line_gap),
             galley2,
+            text_color,
+        );
+        painter.galley(
+            rect.min + padding + egui::vec2(0.0, line1_h + line2_h + (line_gap * 2.0)),
+            galley3,
+            text_color,
+        );
+        painter.galley(
+            rect.min + padding
+                + egui::vec2(0.0, line1_h + line2_h + line3_h + (line_gap * 3.0)),
+            galley4,
             text_color,
         );
     }

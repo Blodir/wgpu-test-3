@@ -3,6 +3,7 @@ use std::{sync::Arc, time::Instant};
 use arc_swap::{ArcSwapOption, Guard};
 
 use crate::game::build_snapshot::CameraSnapshot;
+use crate::game_trait::SimDebugInfo;
 
 #[derive(Clone, Copy)]
 pub struct CameraSnapshotPair {
@@ -16,6 +17,7 @@ pub struct VarSnapshot<S> {
     pub tick: u64,
     pub timestamp: Instant,
     pub camera_pair: CameraSnapshotPair,
+    pub sim_debug: SimDebugInfo,
     pub snap: S,
 }
 
@@ -32,11 +34,18 @@ impl<S> VarSnapshotHandoff<S> {
         }
     }
 
-    pub fn publish(&self, tick: u64, camera_pair: CameraSnapshotPair, snapshot: S) {
+    pub fn publish(
+        &self,
+        tick: u64,
+        camera_pair: CameraSnapshotPair,
+        sim_debug: SimDebugInfo,
+        snapshot: S,
+    ) {
         self.latest.store(Some(Arc::new(VarSnapshot {
             tick,
             timestamp: Instant::now(),
             camera_pair,
+            sim_debug,
             snap: snapshot,
         })));
     }

@@ -16,15 +16,27 @@ pub enum InputEvent<C> {
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct RenderDebugInfo {
+    pub frame_index: u32,
     pub fps: f32,
     pub frame_time_ms: f32,
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SimDebugInfo {
+    pub fps: f32,
+    pub frame_time_ms: f32,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct DebugInfo {
+    pub render: RenderDebugInfo,
+    pub sim: SimDebugInfo,
+}
+
 pub type BuildUiFn<S, C> = fn(
     ctx: &egui::Context,
-    frame_idx: u32,
     snapshot: Option<&S>,
-    render_debug: &RenderDebugInfo,
+    debug_info: &DebugInfo,
     emit: &mut dyn FnMut(C),
 );
 
@@ -54,9 +66,8 @@ pub trait UiTrait {
 
     fn build_ui(
         _ctx: &egui::Context,
-        _frame_idx: u32,
         _snapshot: Option<&<Self as UiTrait>::VarSnapshot>,
-        _render_debug: &RenderDebugInfo,
+        _debug_info: &DebugInfo,
         _emit: &mut dyn FnMut(<Self as UiTrait>::UiCommand),
     ) {
     }

@@ -8,7 +8,7 @@ use super::wgpu_context::WgpuContext;
 use super::world::bindgroups::material::MaterialBinding;
 use super::world::WorldRenderer;
 use crate::fixed_snapshot_handoff::FixedSnapshotHandoff;
-use crate::game_trait::{BuildUiFn, RenderDebugInfo};
+use crate::game_trait::{BuildUiFn, DebugInfo, RenderDebugInfo, SimDebugInfo};
 use crate::job_system::worker_pool::AnimPoseTaskResult;
 pub use crate::main::world::UploadMaterialRequest;
 use crate::var_snapshot_handoff::CameraSnapshotPair;
@@ -48,15 +48,19 @@ impl<S, C> Renderer<S, C> {
     pub fn run_ui(
         &mut self,
         wgpu_context: &WgpuContext,
-        frame_idx: u32,
         ui_snapshot: Option<&S>,
+        sim_debug: &SimDebugInfo,
     ) -> Vec<C> {
+        let debug_info = DebugInfo {
+            render: self.render_debug,
+            sim: *sim_debug,
+        };
         self.gui_renderer
-            .run_ui(wgpu_context, frame_idx, ui_snapshot, &self.render_debug)
+            .run_ui(wgpu_context, ui_snapshot, &debug_info)
     }
 
-    pub fn begin_frame(&mut self) {
-        self.update_render_debug();
+    pub fn begin_frame(&mut self, frame_index: u32) {
+        self.update_render_debug(frame_index);
     }
 
     pub fn render(
@@ -121,7 +125,7 @@ impl<S, C> Renderer<S, C> {
             .upload_material(request, render_resources, wgpu_context)
     }
 
-    fn update_render_debug(&mut self) {
+    fn update_render_debug(&mut self, frame_index: u32) {
         let now = Instant::now();
         if let Some(prev) = self.last_frame_instant {
             let dt = (now - prev).as_secs_f32();
@@ -136,6 +140,7 @@ impl<S, C> Renderer<S, C> {
         }
         self.last_frame_instant = Some(now);
         self.render_debug = RenderDebugInfo {
+            frame_index,
             fps: self.frame_fps_smoothed,
             frame_time_ms: if self.frame_fps_smoothed > 0.0 {
                 1000.0 / self.frame_fps_smoothed

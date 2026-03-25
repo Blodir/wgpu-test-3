@@ -4,7 +4,7 @@ use egui_wgpu::ScreenDescriptor;
 use winit::{event::WindowEvent, window::Window};
 
 use crate::{
-    game_trait::{BuildUiFn, RenderDebugInfo},
+    game_trait::{BuildUiFn, DebugInfo},
     main::wgpu_context::WgpuContext,
 };
 
@@ -73,9 +73,8 @@ impl<S, C> GuiRenderer<S, C> {
     pub fn run_ui(
         &mut self,
         wgpu_context: &WgpuContext,
-        frame_idx: u32,
         ui_snapshot: Option<&S>,
-        render_debug: &RenderDebugInfo,
+        debug_info: &DebugInfo,
     ) -> Vec<C> {
         self.screen_descriptor = screen_descriptor_from_context(wgpu_context);
         let mut ui_commands = Vec::new();
@@ -83,7 +82,7 @@ impl<S, C> GuiRenderer<S, C> {
         let raw_input = self.egui_state.take_egui_input(self.window.as_ref());
         let full_output = self.egui_context.run(raw_input, |ctx| {
             let mut emit = |cmd: C| ui_commands.push(cmd);
-            (self.build_ui_fn)(ctx, frame_idx, ui_snapshot, render_debug, &mut emit);
+            (self.build_ui_fn)(ctx, ui_snapshot, debug_info, &mut emit);
         });
         self.wants_pointer_input = self.egui_context.wants_pointer_input();
 
