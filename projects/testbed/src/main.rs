@@ -21,7 +21,12 @@ use winit::{
 
 struct Game {
     shift_is_pressed: bool,
+    alt_is_pressed: bool,
     mouse_btn_is_pressed: bool,
+    move_forward_pressed: bool,
+    move_back_pressed: bool,
+    move_left_pressed: bool,
+    move_right_pressed: bool,
     orbit_target: Vec3,
     orbit_up: Vec3,
     orbit_distance: f32,
@@ -39,7 +44,12 @@ impl Game {
     fn new() -> Self {
         Self {
             shift_is_pressed: false,
+            alt_is_pressed: false,
             mouse_btn_is_pressed: false,
+            move_forward_pressed: false,
+            move_back_pressed: false,
+            move_left_pressed: false,
+            move_right_pressed: false,
             orbit_target: Vec3::ZERO,
             orbit_up: Vec3::Y,
             orbit_distance: 100.0,
@@ -64,6 +74,59 @@ impl Game {
         let rotation = Self::look_at_rotation(position, self.orbit_target, self.orbit_up);
         scene.camera.position = position;
         scene.camera.rotation = rotation;
+    }
+
+    fn pan_orbit_target(&mut self, scene: &mut Scene, dx: f32, dy: f32) {
+        let forward = (self.orbit_target - scene.camera.position).normalize_or_zero();
+        if forward.length_squared() == 0.0 {
+            return;
+        }
+        let right = forward.cross(self.orbit_up).normalize_or_zero();
+        let up = right.cross(forward).normalize_or_zero();
+
+        let pan_speed = (self.orbit_distance * 0.0025).max(0.001);
+        self.orbit_target += (-dx * pan_speed) * right + (dy * pan_speed) * up;
+        self.apply_orbit_camera(scene);
+    }
+
+    fn move_orbit_target_wasd(&mut self, scene: &mut Scene, dt: f32) {
+        if !self.mouse_btn_is_pressed {
+            return;
+        }
+
+        let mut forward_axis = 0.0f32;
+        if self.move_forward_pressed {
+            forward_axis += 1.0;
+        }
+        if self.move_back_pressed {
+            forward_axis -= 1.0;
+        }
+
+        let mut strafe_axis = 0.0f32;
+        if self.move_right_pressed {
+            strafe_axis += 1.0;
+        }
+        if self.move_left_pressed {
+            strafe_axis -= 1.0;
+        }
+
+        if forward_axis == 0.0 && strafe_axis == 0.0 {
+            return;
+        }
+
+        let forward = (scene.camera.rotation * Vec3::NEG_Z).normalize_or_zero();
+        let right = (scene.camera.rotation * Vec3::X).normalize_or_zero();
+        if forward.length_squared() == 0.0 || right.length_squared() == 0.0 {
+            return;
+        }
+        let move_dir = (forward * forward_axis + right * strafe_axis).normalize_or_zero();
+        if move_dir.length_squared() == 0.0 {
+            return;
+        }
+
+        let move_speed = (self.orbit_distance * 1.5).max(2.0);
+        self.orbit_target += move_dir * move_speed * dt;
+        self.apply_orbit_camera(scene);
     }
 }
 impl SimTrait for Game {
@@ -190,7 +253,7 @@ impl SimTrait for Game {
         (scene, animation_graphs)
     }
 
-    fn update(
+    fn fixed_update(
         &mut self,
         scene: &mut engine::game::scene_tree::Scene,
         resource_registry: &std::rc::Rc<
@@ -200,6 +263,11 @@ impl SimTrait for Game {
         node: engine::game::scene_tree::SceneNodeId,
         dt: f32,
     ) {
+        let children = scene
+            .nodes
+            .get(node.into())
+            .map(|n| n.children.clone())
+            .unwrap_or_default();
         let node = scene.nodes.get_mut(node.into()).unwrap();
         match &mut node.render_data {
             RenderDataType::None => (),
@@ -256,6 +324,14 @@ impl SimTrait for Game {
                 animated_model.animator.update(animation_graphs, dt);
             }
         }
+
+        for child in children {
+            self.fixed_update(scene, resource_registry, animation_graphs, child, dt);
+        }
+    }
+
+    fn variable_update(&mut self, scene: &mut Scene, dt: f32) {
+        self.move_orbit_target_wasd(scene, dt);
     }
 
     fn consume_input(&mut self, scene: &mut Scene, event: InputEvent<Self::UiCommand>) {
@@ -273,10 +349,14 @@ impl SimTrait for Game {
                     if !self.mouse_btn_is_pressed {
                         return;
                     }
-                    let sensitivity = 5f32;
-                    self.orbit_yaw_deg -= x as f32 / sensitivity;
-                    self.orbit_pitch_deg -= y as f32 / sensitivity;
-                    self.apply_orbit_camera(scene);
+                    if self.shift_is_pressed {
+                        self.pan_orbit_target(scene, x as f32, y as f32);
+                    } else {
+                        let sensitivity = 5f32;
+                        self.orbit_yaw_deg -= x as f32 / sensitivity;
+                        self.orbit_pitch_deg -= y as f32 / sensitivity;
+                        self.apply_orbit_camera(scene);
+                    }
                 }
                 _ => (),
             },
@@ -285,7 +365,7 @@ impl SimTrait for Game {
                     MouseScrollDelta::LineDelta(_x, y) => {
                         let scroll_speed = 10f32;
                         self.orbit_distance = (self.orbit_distance
-                            + ((if self.shift_is_pressed {
+                            + ((if self.alt_is_pressed {
                                 10f32 * scroll_speed
                             } else {
                                 scroll_speed
@@ -322,6 +402,86 @@ impl SimTrait for Game {
                         ..
                     } => {
                         self.shift_is_pressed = false;
+                    }
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::AltLeft),
+                        state: ElementState::Pressed,
+                        ..
+                    }
+                    | KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::AltRight),
+                        state: ElementState::Pressed,
+                        ..
+                    } => {
+                        self.alt_is_pressed = true;
+                    }
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::AltLeft),
+                        state: ElementState::Released,
+                        ..
+                    }
+                    | KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::AltRight),
+                        state: ElementState::Released,
+                        ..
+                    } => {
+                        self.alt_is_pressed = false;
+                    }
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::KeyW),
+                        state: ElementState::Pressed,
+                        ..
+                    } => {
+                        self.move_forward_pressed = true;
+                    }
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::KeyW),
+                        state: ElementState::Released,
+                        ..
+                    } => {
+                        self.move_forward_pressed = false;
+                    }
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::KeyS),
+                        state: ElementState::Pressed,
+                        ..
+                    } => {
+                        self.move_back_pressed = true;
+                    }
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::KeyS),
+                        state: ElementState::Released,
+                        ..
+                    } => {
+                        self.move_back_pressed = false;
+                    }
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::KeyA),
+                        state: ElementState::Pressed,
+                        ..
+                    } => {
+                        self.move_left_pressed = true;
+                    }
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::KeyA),
+                        state: ElementState::Released,
+                        ..
+                    } => {
+                        self.move_left_pressed = false;
+                    }
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::KeyD),
+                        state: ElementState::Pressed,
+                        ..
+                    } => {
+                        self.move_right_pressed = true;
+                    }
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::KeyD),
+                        state: ElementState::Released,
+                        ..
+                    } => {
+                        self.move_right_pressed = false;
                     }
                     _ => (),
                 },

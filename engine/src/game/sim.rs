@@ -90,6 +90,7 @@ where
                     _ => game.consume_input(&mut scene, event),
                 }
             }
+            game.variable_update(&mut scene, tick_dt_sec);
 
             let curr_camera_snapshot = scene.camera.build_snapshot();
             let curr_camera_timestamp = Instant::now();
@@ -110,12 +111,13 @@ where
             var_tick = var_tick.wrapping_add(1);
 
             while accumulated >= FIXED_TICK {
-                scene.update(
+                let root = scene.root;
+                game.fixed_update(
+                    &mut scene,
                     &resource_registry,
                     &animation_graphs,
-                    scene.root,
+                    root,
                     fixed_dt,
-                    &mut game,
                 );
 
                 let fixed_snapshot = FixedSnapshot::build(

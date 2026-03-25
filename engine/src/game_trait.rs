@@ -44,7 +44,7 @@ pub trait SimTrait {
         &mut self,
         resource_registry: &Rc<RefCell<ResourceRegistry>>,
     ) -> (Scene, Vec<AnimationGraph>);
-    fn update(
+    fn fixed_update(
         &mut self,
         scene: &mut Scene,
         resource_registry: &Rc<RefCell<ResourceRegistry>>,
@@ -52,6 +52,7 @@ pub trait SimTrait {
         node: SceneNodeId,
         dt: f32,
     );
+    fn variable_update(&mut self, _scene: &mut Scene, _dt: f32) {}
     fn consume_input(&mut self, scene: &mut Scene, event: InputEvent<Self::UiCommand>);
     fn build_var_snapshot(&mut self, scene: &Scene, tick: u64) -> Self::VarSnapshot;
 }

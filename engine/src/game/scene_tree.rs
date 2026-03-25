@@ -2,8 +2,6 @@ use std::{cell::RefCell, rc::Rc, u32};
 
 use glam::{Mat4, Quat, Vec3};
 
-use crate::game_trait::SimTrait;
-
 use super::assets::registry::{ModelHandle, RegistryExt as _, ResourceRegistry, TextureHandle};
 use generational_arena::{Arena, Index};
 
@@ -97,20 +95,4 @@ pub struct Scene {
     pub camera: Camera,
     pub environment: Environment,
     pub global_time_sec: f32,
-}
-impl Scene {
-    pub fn update(
-        &mut self,
-        resource_registry: &Rc<RefCell<ResourceRegistry>>,
-        animation_graphs: &Vec<AnimationGraph>,
-        node: SceneNodeId,
-        dt: f32,
-        game: &mut impl SimTrait,
-    ) {
-        game.update(self, resource_registry, animation_graphs, node, dt);
-        let node = self.nodes.get_mut(node.into()).unwrap();
-        for child_idx in node.children.clone() {
-            self.update(resource_registry, animation_graphs, child_idx, dt, game);
-        }
-    }
 }
