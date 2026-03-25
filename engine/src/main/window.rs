@@ -1,5 +1,6 @@
 use std::sync::{Arc, Mutex};
 
+use crossbeam::channel as cbch;
 use crossbeam_queue::SegQueue;
 use pollster::FutureExt as _;
 use winit::{
@@ -14,7 +15,7 @@ use crate::{
     fixed_snapshot_handoff::FixedSnapshotHandoff,
     game_trait::{BuildUiFn, InputEvent},
     job_system::worker_pool::RenderResponse,
-    main::assets::{manager::RenderAssetManager, store::RenderAssetStore},
+    main::assets::{manager::MainAssetManager, store::RenderAssetStore},
     main::{renderer::Renderer, wgpu_context::WgpuContext},
     var_snapshot_handoff::VarSnapshotHandoff,
 };
@@ -47,8 +48,8 @@ pub struct MainWindow<'surface, S, C> {
     fixed_snapshot_handoff: Arc<FixedSnapshotHandoff>,
     var_snapshot_handoff: Arc<VarSnapshotHandoff<S>>,
     sim_inputs: Arc<SegQueue<InputEvent<C>>>,
-    resource_manager: RenderAssetManager,
-    task_res_rx: crossbeam::channel::Receiver<RenderResponse>,
+    resource_manager: MainAssetManager,
+    task_res_rx: cbch::Receiver<RenderResponse>,
     build_ui_fn: BuildUiFn<S, C>,
 }
 
@@ -56,8 +57,8 @@ impl<S, C> MainWindow<'_, S, C> {
     pub fn new(
         sim_inputs: Arc<SegQueue<InputEvent<C>>>,
         fixed_snapshot_handoff: Arc<FixedSnapshotHandoff>,
-        resource_manager: RenderAssetManager,
-        task_res_rx: crossbeam::channel::Receiver<RenderResponse>,
+        resource_manager: MainAssetManager,
+        task_res_rx: cbch::Receiver<RenderResponse>,
         var_snapshot_handoff: Arc<VarSnapshotHandoff<S>>,
         build_ui_fn: BuildUiFn<S, C>,
     ) -> Self {

@@ -5,6 +5,7 @@ use std::{
     rc::{Rc, Weak},
 };
 
+use crossbeam::channel as cbch;
 use generational_arena::{Arena, Index};
 
 use super::store::{AnimationClipGameId, AnimationGameId, MaterialGameId, ModelGameId, RigGameId};
@@ -229,13 +230,13 @@ impl Entry {
 pub struct ResourceRegistry {
     pub entries: Arena<Entry>,
     pub by_path: HashMap<String, Index>,
-    pub req_tx: crossbeam::channel::Sender<ResourceRequest>,
-    pub res_rx: crossbeam::channel::Receiver<ResourceResult>,
+    pub req_tx: cbch::Sender<ResourceRequest>,
+    pub res_rx: cbch::Receiver<ResourceResult>,
 }
 impl ResourceRegistry {
     pub fn new(
-        req_tx: crossbeam::channel::Sender<ResourceRequest>,
-        res_rx: crossbeam::channel::Receiver<ResourceResult>,
+        req_tx: cbch::Sender<ResourceRequest>,
+        res_rx: cbch::Receiver<ResourceResult>,
     ) -> Self {
         Self {
             entries: Arena::new(),

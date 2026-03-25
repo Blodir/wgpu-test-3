@@ -1,3 +1,4 @@
+use crossbeam::channel as cbch;
 use wgpu::util::{BufferInitDescriptor, DeviceExt as _};
 
 use super::io::asset_formats::materialfile;
@@ -17,19 +18,19 @@ use super::{
 use crate::game::assets::registry::{ResourceRequest, ResourceResult};
 use crate::game::assets::store::{CreateGameResourceRequest, CreateGameResourceResponse};
 
-pub struct RenderAssetManager {
+pub struct MainAssetManager {
     io: IoWorkerPool,
-    game_res_rx: crossbeam::channel::Receiver<CreateGameResourceResponse>,
-    game_req_tx: crossbeam::channel::Sender<CreateGameResourceRequest>,
-    registry_req_rx: crossbeam::channel::Receiver<ResourceRequest>,
-    registry_res_tx: crossbeam::channel::Sender<ResourceResult>,
+    game_res_rx: cbch::Receiver<CreateGameResourceResponse>,
+    game_req_tx: cbch::Sender<CreateGameResourceRequest>,
+    registry_req_rx: cbch::Receiver<ResourceRequest>,
+    registry_res_tx: cbch::Sender<ResourceResult>,
 }
-impl RenderAssetManager {
+impl MainAssetManager {
     pub fn new(
-        registry_req_rx: crossbeam::channel::Receiver<ResourceRequest>,
-        registry_res_tx: crossbeam::channel::Sender<ResourceResult>,
-        game_res_rx: crossbeam::channel::Receiver<CreateGameResourceResponse>,
-        game_req_tx: crossbeam::channel::Sender<CreateGameResourceRequest>,
+        registry_req_rx: cbch::Receiver<ResourceRequest>,
+        registry_res_tx: cbch::Sender<ResourceResult>,
+        game_res_rx: cbch::Receiver<CreateGameResourceResponse>,
+        game_req_tx: cbch::Sender<CreateGameResourceRequest>,
     ) -> Self {
         Self {
             io: IoWorkerPool::new(),

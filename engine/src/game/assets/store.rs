@@ -1,5 +1,6 @@
 use std::{cell::RefCell, rc::Rc, sync::Arc};
 
+use crossbeam::channel as cbch;
 use super::registry::{
     AnimationClipHandle, AnimationClipId, AnimationHandle, AnimationId, GameState, MaterialHandle,
     MaterialId, MeshHandle, ModelId, RenderState, ResourceRegistry, RigHandle, RigId,
@@ -157,13 +158,13 @@ pub struct GameAssetStore {
     pub animations: Arena<Arc<AnimationClip>>,
     pub rigs: Arena<Arc<Rig>>,
     pub staging: Vec<StagedData>,
-    pub req_rx: crossbeam::channel::Receiver<CreateGameResourceRequest>,
-    pub res_tx: crossbeam::channel::Sender<CreateGameResourceResponse>,
+    pub req_rx: cbch::Receiver<CreateGameResourceRequest>,
+    pub res_tx: cbch::Sender<CreateGameResourceResponse>,
 }
 impl GameAssetStore {
     pub fn new(
-        req_rx: crossbeam::channel::Receiver<CreateGameResourceRequest>,
-        res_tx: crossbeam::channel::Sender<CreateGameResourceResponse>,
+        req_rx: cbch::Receiver<CreateGameResourceRequest>,
+        res_tx: cbch::Sender<CreateGameResourceResponse>,
         registry: &Rc<RefCell<ResourceRegistry>>,
     ) -> Self {
         let placeholders = Placeholders {

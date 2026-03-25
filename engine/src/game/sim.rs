@@ -6,6 +6,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use crossbeam::channel as cbch;
 use crossbeam_queue::SegQueue;
 
 use super::assets::registry::{RegistryExt, ResourceRegistry, ResourceRequest, ResourceResult};
@@ -27,11 +28,11 @@ pub fn spawn_sim<G>(
     inputs: Arc<SegQueue<InputEvent<G::UiCommand>>>,
     fixed_snapshot_handoff: Arc<FixedSnapshotHandoff>,
     var_snapshot_handoff: Arc<VarSnapshotHandoff<G::VarSnapshot>>,
-    reg_req_tx: crossbeam::channel::Sender<ResourceRequest>,
-    reg_res_rx: crossbeam::channel::Receiver<ResourceResult>,
-    game_req_rx: crossbeam::channel::Receiver<CreateGameResourceRequest>,
-    game_res_tx: crossbeam::channel::Sender<CreateGameResourceResponse>,
-    job_task_tx: crossbeam::channel::Sender<Task>,
+    reg_req_tx: cbch::Sender<ResourceRequest>,
+    reg_res_rx: cbch::Receiver<ResourceResult>,
+    game_req_rx: cbch::Receiver<CreateGameResourceRequest>,
+    game_res_tx: cbch::Sender<CreateGameResourceResponse>,
+    job_task_tx: cbch::Sender<Task>,
     game: G,
 ) -> std::thread::JoinHandle<()>
 where

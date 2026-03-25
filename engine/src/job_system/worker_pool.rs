@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crossbeam::channel::{Receiver, Sender};
+use crossbeam::channel as cbch;
 
 use crate::game::assets::runtime_formats::animation::AnimationClip;
 use crate::{
@@ -58,9 +58,9 @@ pub enum RenderResponse {
 pub enum GameResponse {}
 
 fn worker_loop(
-    rx: crossbeam::channel::Receiver<Task>,
-    render_tx: &mut crossbeam::channel::Sender<RenderResponse>,
-    _game_tx: crossbeam::channel::Sender<GameResponse>,
+    rx: cbch::Receiver<Task>,
+    render_tx: &mut cbch::Sender<RenderResponse>,
+    _game_tx: cbch::Sender<GameResponse>,
 ) {
     while let Ok(task) = rx.recv() {
         match task {
@@ -72,18 +72,18 @@ fn worker_loop(
 }
 
 pub struct WorkerPool {
-    workers: Vec<std::thread::JoinHandle<()>>,
+    pub workers: Vec<std::thread::JoinHandle<()>>,
 }
 impl WorkerPool {
     pub fn init() -> (
         Self,
-        Sender<Task>,
-        Receiver<RenderResponse>,
-        Receiver<GameResponse>,
+        cbch::Sender<Task>,
+        cbch::Receiver<RenderResponse>,
+        cbch::Receiver<GameResponse>,
     ) {
-        let (req_tx, req_rx) = crossbeam::channel::unbounded::<Task>();
-        let (render_res_tx, render_res_rx) = crossbeam::channel::unbounded::<RenderResponse>();
-        let (game_res_tx, game_res_rx) = crossbeam::channel::unbounded::<GameResponse>();
+        let (req_tx, req_rx) = cbch::unbounded::<Task>();
+        let (render_res_tx, render_res_rx) = cbch::unbounded::<RenderResponse>();
+        let (game_res_tx, game_res_rx) = cbch::unbounded::<GameResponse>();
 
         let workers = (0..8)
             .map(|_| {

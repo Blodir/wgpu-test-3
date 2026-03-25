@@ -1,5 +1,6 @@
 use std::cmp::Ordering;
 
+use crossbeam::channel as cbch;
 use glam::{Mat4, Quat, Vec3};
 
 use crate::game::assets::runtime_formats::animation::{AnimationClip, Channel, Track};
@@ -234,7 +235,7 @@ fn compute_node_srt(task: AnimPoseTask) -> Vec<rigfile::SRT> {
 pub fn execute_pose_tasks(
     node_id: SceneNodeId,
     tasks: Vec<AnimPoseTask>,
-    render_tx: &mut crossbeam::channel::Sender<RenderResponse>,
+    render_tx: &mut cbch::Sender<RenderResponse>,
 ) {
     if render_tx
         .send(RenderResponse::Pose(AnimPoseTaskResult {

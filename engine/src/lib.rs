@@ -1,7 +1,8 @@
+use crossbeam::channel as cbch;
 use crossbeam_queue::SegQueue;
 use game::sim::spawn_sim;
 use job_system::worker_pool::WorkerPool;
-use main::assets::manager::RenderAssetManager;
+use main::assets::manager::MainAssetManager;
 use std::sync::Arc;
 use winit::event_loop::{ControlFlow, EventLoop};
 
@@ -23,18 +24,21 @@ pub mod var_snapshot_handoff;
 pub fn run<G>(game: G)
 where
     G: SimTrait
+        // UiTraits associated VarSnapshot and UiCommand types have to match with SimTrait
         + UiTrait<VarSnapshot = <G as SimTrait>::VarSnapshot, UiCommand = <G as SimTrait>::UiCommand>
+        // G needs to be send, because it runs on a different thread from initialization
         + Send
+        // can't outlive the main thread
         + 'static,
     <G as SimTrait>::VarSnapshot: Send + Sync + 'static,
     <G as SimTrait>::UiCommand: Send + 'static,
 {
-    let (game_req_tx, game_req_rx) = crossbeam::channel::unbounded();
-    let (game_res_tx, game_res_rx) = crossbeam::channel::unbounded();
-    let (registry_req_tx, registry_req_rx) = crossbeam::channel::unbounded();
-    let (registry_res_tx, registry_res_rx) = crossbeam::channel::unbounded();
-    let resource_manager =
-        RenderAssetManager::new(registry_req_rx, registry_res_tx, game_res_rx, game_req_tx);
+    let (game_req_tx, game_req_rx) = cbch::unbounded();
+    let (game_res_tx, game_res_rx) = cbch::unbounded();
+    let (registry_req_tx, registry_req_rx) = cbch::unbounded();
+    let (registry_res_tx, registry_res_rx) = cbch::unbounded();
+    let asset_manager =
+        MainAssetManager::new(registry_req_rx, registry_res_tx, game_res_rx, game_req_tx);
     let initial_snap = FixedSnapshot::init();
     let fixed_snapshot_handoff = Arc::new(FixedSnapshotHandoff::new(initial_snap));
     let var_snapshot_handoff = Arc::new(VarSnapshotHandoff::<<G as SimTrait>::VarSnapshot>::new());
@@ -56,7 +60,7 @@ where
     let mut main_window = window::MainWindow::new(
         sim_inputs.clone(),
         fixed_snapshot_handoff.clone(),
-        resource_manager,
+        asset_manager,
         render_rx,
         var_snapshot_handoff,
         <G as UiTrait>::build_ui,
@@ -67,4 +71,7 @@ where
 
     sim_inputs.push(InputEvent::Exit);
     sim_handle.join().unwrap();
+    for worker in worker_pool.workers {
+        worker.join().unwrap();
+    }
 }

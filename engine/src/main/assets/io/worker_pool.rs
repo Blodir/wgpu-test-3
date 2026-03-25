@@ -1,5 +1,6 @@
 use std::{fs::File, io::Read as _};
 
+use crossbeam::channel as cbch;
 use ddsfile::{Caps2, Dds};
 use glam::{Quat, Vec3};
 
@@ -273,8 +274,8 @@ pub fn load_animation(
 }
 
 fn io_worker_loop(
-    rx: crossbeam::channel::Receiver<IoRequest>,
-    tx: crossbeam::channel::Sender<IoResponse>,
+    rx: cbch::Receiver<IoRequest>,
+    tx: cbch::Sender<IoResponse>,
 ) {
     while let Ok(req) = rx.recv() {
         let result = match req {
@@ -342,14 +343,14 @@ fn io_worker_loop(
 }
 
 pub struct IoWorkerPool {
-    pub req_tx: crossbeam::channel::Sender<IoRequest>,
-    pub res_rx: crossbeam::channel::Receiver<IoResponse>,
+    pub req_tx: cbch::Sender<IoRequest>,
+    pub res_rx: cbch::Receiver<IoResponse>,
     workers: Vec<std::thread::JoinHandle<()>>,
 }
 impl IoWorkerPool {
     pub fn new() -> Self {
-        let (req_tx, req_rx) = crossbeam::channel::unbounded();
-        let (res_tx, res_rx) = crossbeam::channel::unbounded();
+        let (req_tx, req_rx) = cbch::unbounded();
+        let (res_tx, res_rx) = cbch::unbounded();
 
         let workers = (0..2)
             .map(|_| {
