@@ -9,6 +9,7 @@
 @group(1) @binding(5) var diffuse_irradiance_texture_sampler: sampler;
 @group(1) @binding(6) var brdf_lut: texture_2d<f32>;
 @group(1) @binding(7) var brdf_lut_sampler: sampler;
+@group(1) @binding(8) var<uniform> environment_map_intensity: f32;
 
 @group(2) @binding(0) var<uniform> base_color_factor: vec4<f32>;
 @group(2) @binding(1) var<uniform> metallic_factor: f32;
@@ -168,7 +169,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // in opengl texture origin is at bottom-left so the y coordinate has to be flipped here (as opposed to learnopengl tutorial)
     let brdf = textureSample(brdf_lut, brdf_lut_sampler, vec2(max(dot(N, V), 0.0), 1 - surface_roughness)).rg;
     let specular_env = prefiltered_color * (F_env * brdf.x + brdf.y);
-    let ambient = (k_d2 * diffuse + specular_env) * ao.r;
+    let ambient = (k_d2 * diffuse + specular_env) * ao.r * environment_map_intensity;
 
     // ---------------- //
 

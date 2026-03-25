@@ -146,6 +146,7 @@ pub struct EnvironmentMapSnapshot {
 
 pub struct LightsSnapshot {
     pub sun: Sun,
+    pub environment_map_intensity: f32,
     pub environment_map: Option<EnvironmentMapSnapshot>,
 }
 impl LightsSnapshot {
@@ -170,6 +171,7 @@ impl LightsSnapshot {
         ) {
             Self {
                 sun: environment.sun.clone(),
+                environment_map_intensity: environment.environment_map_intensity,
                 environment_map: Some(EnvironmentMapSnapshot {
                     prefiltered: TextureRenderId(*prefiltered_render_id),
                     di: TextureRenderId(*di_render_id),
@@ -179,6 +181,7 @@ impl LightsSnapshot {
         } else {
             Self {
                 sun: environment.sun.clone(),
+                environment_map_intensity: environment.environment_map_intensity,
                 environment_map: None,
             }
         }
@@ -422,6 +425,7 @@ impl FixedSnapshot {
         Self {
             lights: LightsSnapshot {
                 sun: Sun::default(),
+                environment_map_intensity: 1.0,
                 environment_map: None,
             },
             mesh_draw_snapshot: MeshDrawSnapshot::default(),

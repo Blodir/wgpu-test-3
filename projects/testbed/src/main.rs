@@ -34,6 +34,7 @@ struct Game {
     orbit_pitch_deg: f32,
     sun_tint: [f32; 3],
     sun_intensity: f32,
+    environment_map_intensity: f32,
     sun_altitude_deg: f32,
     sun_direction_deg: f32,
 }
@@ -41,6 +42,7 @@ struct Game {
 struct VarSnapshot {
     sun_tint: [f32; 3],
     sun_intensity: f32,
+    environment_map_intensity: f32,
     sun_altitude_deg: f32,
     sun_direction_deg: f32,
 }
@@ -49,6 +51,7 @@ enum UiCommand {
     SetSunSettings {
         tint: [f32; 3],
         intensity: f32,
+        environment_map_intensity: f32,
         altitude_deg: f32,
         direction_deg: f32,
     },
@@ -71,6 +74,7 @@ impl Game {
             orbit_pitch_deg: 0.0,
             sun_tint: [1.0, 1.0, 1.0],
             sun_intensity: 10.0,
+            environment_map_intensity: 1.0,
             sun_altitude_deg: -35.0,
             sun_direction_deg: 45.0,
         }
@@ -186,6 +190,7 @@ impl Game {
             self.sun_tint[1] * self.sun_intensity,
             self.sun_tint[2] * self.sun_intensity,
         ];
+        scene.environment.environment_map_intensity = self.environment_map_intensity;
         scene.environment.sun.direction =
             Self::angles_to_direction(self.sun_altitude_deg, self.sun_direction_deg);
     }
@@ -293,6 +298,7 @@ impl SimTrait for Game {
 
         let environment = Environment {
             sun: Sun::default(),
+            environment_map_intensity: 1.0,
             prefiltered: resource_registry.request_texture(
                 "assets/kloofendal_overcast_puresky_8k.prefiltered.dds",
                 true,
@@ -314,6 +320,7 @@ impl SimTrait for Game {
             Self::direction_to_angles(scene.environment.sun.direction);
         self.sun_tint = sun_tint;
         self.sun_intensity = sun_intensity;
+        self.environment_map_intensity = scene.environment.environment_map_intensity;
         self.sun_altitude_deg = sun_altitude_deg;
         self.sun_direction_deg = sun_direction_deg;
         self.apply_sun_settings(&mut scene);
@@ -411,12 +418,14 @@ impl SimTrait for Game {
                 UiCommand::SetSunSettings {
                     tint,
                     intensity,
+                    environment_map_intensity,
                     altitude_deg,
                     direction_deg,
                 } => {
                     let intensity = intensity.max(0.0);
                     self.sun_tint = tint;
                     self.sun_intensity = intensity;
+                    self.environment_map_intensity = environment_map_intensity.max(0.0);
                     self.sun_altitude_deg = altitude_deg.clamp(-89.0, 89.0);
                     self.sun_direction_deg = direction_deg.rem_euclid(360.0);
                     self.apply_sun_settings(scene);
@@ -572,6 +581,7 @@ impl SimTrait for Game {
         VarSnapshot {
             sun_tint: self.sun_tint,
             sun_intensity: self.sun_intensity,
+            environment_map_intensity: self.environment_map_intensity,
             sun_altitude_deg: self.sun_altitude_deg,
             sun_direction_deg: self.sun_direction_deg,
         }
@@ -641,6 +651,7 @@ impl UiTrait for Game {
         if let Some(snapshot) = snapshot {
             let mut tint = snapshot.sun_tint;
             let mut intensity = snapshot.sun_intensity;
+            let mut environment_map_intensity = snapshot.environment_map_intensity;
             let mut altitude_deg = snapshot.sun_altitude_deg;
             let mut direction_deg = snapshot.sun_direction_deg;
             let mut changed = false;
@@ -655,6 +666,13 @@ impl UiTrait for Game {
                         .add(
                             egui::Slider::new(&mut intensity, 0.0..=100.0)
                                 .text("Intensity")
+                                .clamping(egui::SliderClamping::Always),
+                        )
+                        .changed();
+                    changed |= ui
+                        .add(
+                            egui::Slider::new(&mut environment_map_intensity, 0.0..=100.0)
+                                .text("Environment Intensity")
                                 .clamping(egui::SliderClamping::Always),
                         )
                         .changed();
@@ -678,6 +696,7 @@ impl UiTrait for Game {
                 emit(UiCommand::SetSunSettings {
                     tint,
                     intensity,
+                    environment_map_intensity,
                     altitude_deg,
                     direction_deg,
                 });

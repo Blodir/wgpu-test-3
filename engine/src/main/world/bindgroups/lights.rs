@@ -15,6 +15,7 @@ use crate::{
 pub struct LightsBinding {
     pub sun_direction_buffer: wgpu::Buffer,
     pub sun_color_buffer: wgpu::Buffer,
+    pub environment_map_intensity_buffer: wgpu::Buffer,
     pub curr_prefiltered_render_id: TextureRenderId,
     pub curr_di_render_id: TextureRenderId,
     pub curr_brdf_render_id: TextureRenderId,
@@ -97,6 +98,17 @@ impl LightsBinding {
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
+                // environment map intensity
+                wgpu::BindGroupLayoutEntry {
+                    binding: 8,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
             ],
             label: Some("Lights Group Layout"),
         }
@@ -124,6 +136,14 @@ impl LightsBinding {
                 .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                     label: Some("Sun Color Buffer"),
                     contents: bytemuck::cast_slice(&sun.color),
+                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                });
+        let environment_map_intensity_buffer =
+            wgpu_context
+                .device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("Environment Map Intensity Buffer"),
+                    contents: bytemuck::cast_slice(&[1.0f32]),
                     usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
                 });
         let textures = &render_resources.textures;
@@ -170,6 +190,10 @@ impl LightsBinding {
                         binding: 7,
                         resource: wgpu::BindingResource::Sampler(&default_sampler),
                     },
+                    wgpu::BindGroupEntry {
+                        binding: 8,
+                        resource: environment_map_intensity_buffer.as_entire_binding(),
+                    },
                 ],
                 label: Some("Lights Bind Group"),
             });
@@ -177,6 +201,7 @@ impl LightsBinding {
         Self {
             sun_direction_buffer: direction_buffer,
             sun_color_buffer: color_buffer,
+            environment_map_intensity_buffer,
             bind_group,
             curr_prefiltered_render_id: placeholders.prefiltered,
             curr_di_render_id: placeholders.di,
@@ -191,6 +216,14 @@ impl LightsBinding {
             bytemuck::cast_slice(&sun.direction),
         );
         queue.write_buffer(&self.sun_color_buffer, 0, bytemuck::cast_slice(&sun.color));
+    }
+
+    pub fn update_environment_map_intensity(&self, intensity: f32, queue: &wgpu::Queue) {
+        queue.write_buffer(
+            &self.environment_map_intensity_buffer,
+            0,
+            bytemuck::cast_slice(&[intensity]),
+        );
     }
 
     pub fn update_environment_map(
@@ -240,6 +273,10 @@ impl LightsBinding {
                     wgpu::BindGroupEntry {
                         binding: 7,
                         resource: wgpu::BindingResource::Sampler(&brdf_sampler),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 8,
+                        resource: self.environment_map_intensity_buffer.as_entire_binding(),
                     },
                 ],
                 label: Some("Lights Bind Group"),

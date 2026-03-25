@@ -16,6 +16,10 @@ pub fn prepare_lights(
     bind_group_layout: &wgpu::BindGroupLayout,
 ) {
     lights_binding.update_sun(&snaps.curr.lights.sun, &wgpu_context.queue);
+    lights_binding.update_environment_map_intensity(
+        snaps.curr.lights.environment_map_intensity,
+        &wgpu_context.queue,
+    );
 
     if let Some(e) = &snaps.curr.lights.environment_map {
         // if one of env maps has changed, we must rebuild the bindgroup entirely

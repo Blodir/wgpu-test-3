@@ -52,6 +52,7 @@ pub enum RenderDataType {
 #[derive(Debug)]
 pub struct Environment {
     pub sun: Sun,
+    pub environment_map_intensity: f32,
     pub prefiltered: TextureHandle,
     pub di: TextureHandle,
     pub brdf: TextureHandle,
@@ -60,6 +61,7 @@ impl Environment {
     pub fn init(resource_registry: &Rc<RefCell<ResourceRegistry>>) -> Self {
         Self {
             sun: Sun::default(),
+            environment_map_intensity: 1.0,
             prefiltered: resource_registry.request_texture(
                 "assets/kloofendal_overcast_puresky_8k.prefiltered.dds",
                 true,
