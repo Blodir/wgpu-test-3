@@ -1,6 +1,7 @@
 use wgpu::util::DeviceExt as _;
 
 use crate::{
+    game::build_snapshot::PointLightSnapshot,
     game::scene_tree,
     main::{
         assets::{
@@ -12,10 +13,15 @@ use crate::{
     },
 };
 
+pub const MAX_POINT_LIGHTS: usize = 64;
+
 pub struct LightsBinding {
     pub sun_direction_buffer: wgpu::Buffer,
     pub sun_color_buffer: wgpu::Buffer,
     pub environment_map_intensity_buffer: wgpu::Buffer,
+    pub point_light_count_buffer: wgpu::Buffer,
+    pub point_light_positions_ranges_buffer: wgpu::Buffer,
+    pub point_light_colors_intensities_buffer: wgpu::Buffer,
     pub curr_prefiltered_render_id: TextureRenderId,
     pub curr_di_render_id: TextureRenderId,
     pub curr_brdf_render_id: TextureRenderId,
@@ -109,6 +115,39 @@ impl LightsBinding {
                     },
                     count: None,
                 },
+                // point light count packed in x component
+                wgpu::BindGroupLayoutEntry {
+                    binding: 9,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                // point light positions.xyz + range.w
+                wgpu::BindGroupLayoutEntry {
+                    binding: 10,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                // point light colors.rgb + intensity.w
+                wgpu::BindGroupLayoutEntry {
+                    binding: 11,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
             ],
             label: Some("Lights Group Layout"),
         }
@@ -144,6 +183,30 @@ impl LightsBinding {
                 .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                     label: Some("Environment Map Intensity Buffer"),
                     contents: bytemuck::cast_slice(&[1.0f32]),
+                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                });
+        let point_light_count_buffer =
+            wgpu_context
+                .device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("Point Light Count Buffer"),
+                    contents: bytemuck::cast_slice(&[[0u32, 0u32, 0u32, 0u32]]),
+                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                });
+        let point_light_positions_ranges_buffer =
+            wgpu_context
+                .device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("Point Light Positions and Ranges Buffer"),
+                    contents: bytemuck::cast_slice(&[[0.0f32; 4]; MAX_POINT_LIGHTS]),
+                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                });
+        let point_light_colors_intensities_buffer =
+            wgpu_context
+                .device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("Point Light Colors and Intensities Buffer"),
+                    contents: bytemuck::cast_slice(&[[0.0f32; 4]; MAX_POINT_LIGHTS]),
                     usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
                 });
         let textures = &render_resources.textures;
@@ -194,6 +257,18 @@ impl LightsBinding {
                         binding: 8,
                         resource: environment_map_intensity_buffer.as_entire_binding(),
                     },
+                    wgpu::BindGroupEntry {
+                        binding: 9,
+                        resource: point_light_count_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 10,
+                        resource: point_light_positions_ranges_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 11,
+                        resource: point_light_colors_intensities_buffer.as_entire_binding(),
+                    },
                 ],
                 label: Some("Lights Bind Group"),
             });
@@ -202,6 +277,9 @@ impl LightsBinding {
             sun_direction_buffer: direction_buffer,
             sun_color_buffer: color_buffer,
             environment_map_intensity_buffer,
+            point_light_count_buffer,
+            point_light_positions_ranges_buffer,
+            point_light_colors_intensities_buffer,
             bind_group,
             curr_prefiltered_render_id: placeholders.prefiltered,
             curr_di_render_id: placeholders.di,
@@ -223,6 +301,41 @@ impl LightsBinding {
             &self.environment_map_intensity_buffer,
             0,
             bytemuck::cast_slice(&[intensity]),
+        );
+    }
+
+    pub fn update_point_lights(&self, point_lights: &[PointLightSnapshot], queue: &wgpu::Queue) {
+        let clamped_count = point_lights.len().min(MAX_POINT_LIGHTS);
+        let mut point_positions_ranges = [[0.0f32; 4]; MAX_POINT_LIGHTS];
+        let mut point_colors_intensities = [[0.0f32; 4]; MAX_POINT_LIGHTS];
+        for (idx, light) in point_lights.iter().take(clamped_count).enumerate() {
+            point_positions_ranges[idx] = [
+                light.position.x,
+                light.position.y,
+                light.position.z,
+                light.range,
+            ];
+            point_colors_intensities[idx] = [
+                light.color[0],
+                light.color[1],
+                light.color[2],
+                light.intensity,
+            ];
+        }
+        queue.write_buffer(
+            &self.point_light_count_buffer,
+            0,
+            bytemuck::cast_slice(&[[clamped_count as u32, 0u32, 0u32, 0u32]]),
+        );
+        queue.write_buffer(
+            &self.point_light_positions_ranges_buffer,
+            0,
+            bytemuck::cast_slice(&point_positions_ranges),
+        );
+        queue.write_buffer(
+            &self.point_light_colors_intensities_buffer,
+            0,
+            bytemuck::cast_slice(&point_colors_intensities),
         );
     }
 
@@ -277,6 +390,20 @@ impl LightsBinding {
                     wgpu::BindGroupEntry {
                         binding: 8,
                         resource: self.environment_map_intensity_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 9,
+                        resource: self.point_light_count_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 10,
+                        resource: self.point_light_positions_ranges_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 11,
+                        resource: self
+                            .point_light_colors_intensities_buffer
+                            .as_entire_binding(),
                     },
                 ],
                 label: Some("Lights Bind Group"),

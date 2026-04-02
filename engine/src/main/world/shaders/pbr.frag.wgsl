@@ -10,6 +10,9 @@
 @group(1) @binding(6) var brdf_lut: texture_2d<f32>;
 @group(1) @binding(7) var brdf_lut_sampler: sampler;
 @group(1) @binding(8) var<uniform> environment_map_intensity: f32;
+@group(1) @binding(9) var<uniform> point_light_count: vec4<u32>;
+@group(1) @binding(10) var<uniform> point_light_positions_ranges: array<vec4<f32>, 64>;
+@group(1) @binding(11) var<uniform> point_light_colors_intensities: array<vec4<f32>, 64>;
 
 @group(2) @binding(0) var<uniform> base_color_factor: vec4<f32>;
 @group(2) @binding(1) var<uniform> metallic_factor: f32;
@@ -45,6 +48,7 @@ struct VertexOutput {
 
 const PI: f32 = 3.1415927;
 const MAX_REFLECTION_LOD: f32 = 4.0;
+const MAX_POINT_LIGHTS: u32 = 64u;
 
 fn distribution_ggx(N: vec3f, H: vec3f, a: f32) -> f32 {
     let a2 = a*a;
@@ -130,26 +134,60 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let F0 = mix(vec3f(0.04), surface_color.xyz, surface_metallic);
 
     // ---------------- //
-    // For each light
+    // Lighting
     // ---------------- //
-    let L = normalize(-light_dir); // reverse light direction (pointing from surface toward light source)
-    let H = normalize(V + L);
-    let radiance = light_col; // * attenuation (but we assume no attenuation for sunlight)
+    var Lo = vec3f(0.0);
+    {
+        let L = normalize(-light_dir); // reverse light direction (pointing from surface toward light source)
+        let H = normalize(V + L);
+        let radiance = light_col;
 
-    let NDF = distribution_ggx(N, H, surface_roughness);
-    let G = geometry_smith(N, V, L, surface_roughness);
-    let F = fresnel_schlick(max(dot(H, V), 0.0), F0);
+        let NDF = distribution_ggx(N, H, surface_roughness);
+        let G = geometry_smith(N, V, L, surface_roughness);
+        let F = fresnel_schlick(max(dot(H, V), 0.0), F0);
 
-    let omega_0 = max(dot(N, V), 0.0);
-    let omega_i = max(dot(N, L), 0.0);
-    let num = NDF * G * F;
-    let denom = 4.0 * max(omega_0 * omega_i, 0.0001);
-    let specular = num / denom;
+        let omega_0 = max(dot(N, V), 0.0);
+        let omega_i = max(dot(N, L), 0.0);
+        let num = NDF * G * F;
+        let denom = 4.0 * max(omega_0 * omega_i, 0.0001);
+        let specular = num / denom;
 
-    let k_d = (vec3f(1.0) - F) * (1.0 - surface_metallic); // diffuse/refracted
+        let k_d = (vec3f(1.0) - F) * (1.0 - surface_metallic); // diffuse/refracted
 
-    let NdotL = max(dot(N, L), 0.0);
-    let Lo = (k_d * surface_color.xyz / PI + specular) * radiance * NdotL;
+        let NdotL = max(dot(N, L), 0.0);
+        Lo += (k_d * surface_color.xyz / PI + specular) * radiance * NdotL;
+    }
+
+    let clamped_point_light_count = min(point_light_count.x, MAX_POINT_LIGHTS);
+    for (var light_idx: u32 = 0u; light_idx < clamped_point_light_count; light_idx += 1u) {
+        let point_light_position_range = point_light_positions_ranges[light_idx];
+        let point_light_color_intensity = point_light_colors_intensities[light_idx];
+        let to_light = point_light_position_range.xyz - in.world_position.xyz;
+        let light_distance = length(to_light);
+        let light_range = max(point_light_position_range.w, 0.001);
+        if (light_distance >= light_range) {
+            continue;
+        }
+        let L = to_light / max(light_distance, 0.0001);
+        let H = normalize(V + L);
+        let range_falloff = 1.0 - clamp(light_distance / light_range, 0.0, 1.0);
+        let attenuation = (range_falloff * range_falloff) / max(light_distance * light_distance, 0.01);
+        let radiance = point_light_color_intensity.rgb * point_light_color_intensity.w * attenuation;
+
+        let NDF = distribution_ggx(N, H, surface_roughness);
+        let G = geometry_smith(N, V, L, surface_roughness);
+        let F = fresnel_schlick(max(dot(H, V), 0.0), F0);
+
+        let omega_0 = max(dot(N, V), 0.0);
+        let omega_i = max(dot(N, L), 0.0);
+        let num = NDF * G * F;
+        let denom = 4.0 * max(omega_0 * omega_i, 0.0001);
+        let specular = num / denom;
+
+        let k_d = (vec3f(1.0) - F) * (1.0 - surface_metallic); // diffuse/refracted
+        let NdotL = max(dot(N, L), 0.0);
+        Lo += (k_d * surface_color.xyz / PI + specular) * radiance * NdotL;
+    }
 
     // ---------------- //
     // IBL

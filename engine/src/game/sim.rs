@@ -153,6 +153,7 @@ where
                                 pose_jobs_scheduled += 1;
                             }
                         }
+                        RenderDataType::PointLight(_point_light) => (),
                         RenderDataType::None => (),
                     }
                 }
@@ -178,6 +179,7 @@ where
                                 pose_jobs_scheduled += 1;
                             }
                         }
+                        RenderDataType::PointLight(_point_light) => (),
                         RenderDataType::None => (),
                     }
                 }

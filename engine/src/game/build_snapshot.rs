@@ -20,6 +20,7 @@ pub fn accumulate_instance_snapshots(
     animation_graphs: &Vec<AnimationGraph>,
     skinned_instances: &mut Vec<SkinnedInstanceSnapshot>,
     static_instances: &mut Vec<StaticInstanceSnapshot>,
+    point_lights: &mut Vec<PointLightSnapshot>,
     base_transform: &Mat4,
     node_id: SceneNodeId,
     frustum: &Frustum,
@@ -37,6 +38,7 @@ pub fn accumulate_instance_snapshots(
                     animation_graphs,
                     skinned_instances,
                     static_instances,
+                    point_lights,
                     &transform,
                     *child,
                     frustum,
@@ -57,6 +59,31 @@ pub fn accumulate_instance_snapshots(
             *animated_model.last_visible_frame.borrow(),
             Some(animated_model.animator.build_snapshot()),
         ),
+        RenderDataType::PointLight(light) => {
+            let (_scale, _rotation, translation) = transform.to_scale_rotation_translation();
+            point_lights.push(PointLightSnapshot {
+                position: translation,
+                color: light.color,
+                intensity: light.intensity,
+                range: light.range,
+            });
+            for child in &node.children {
+                accumulate_instance_snapshots(
+                    scene,
+                    animation_graphs,
+                    skinned_instances,
+                    static_instances,
+                    point_lights,
+                    &transform,
+                    *child,
+                    frustum,
+                    resource_registry,
+                    game_resources,
+                    tick_index,
+                );
+            }
+            return;
+        }
     };
 
     let reg = resource_registry.borrow();
@@ -75,6 +102,7 @@ pub fn accumulate_instance_snapshots(
                     RenderDataType::AnimatedModel(animated_model) => {
                         animated_model.last_visible_frame.replace(tick_index)
                     }
+                    RenderDataType::PointLight(_point_light) => 0u32,
                     RenderDataType::None => 0u32,
                 };
             }
@@ -111,6 +139,7 @@ pub fn accumulate_instance_snapshots(
             animation_graphs,
             skinned_instances,
             static_instances,
+            point_lights,
             &transform,
             *child,
             frustum,
@@ -119,6 +148,14 @@ pub fn accumulate_instance_snapshots(
             tick_index,
         );
     }
+}
+
+#[derive(Clone, Copy)]
+pub struct PointLightSnapshot {
+    pub position: Vec3,
+    pub color: [f32; 3],
+    pub intensity: f32,
+    pub range: f32,
 }
 
 #[derive(Clone, Copy)]
@@ -151,12 +188,14 @@ pub struct EnvironmentMapSnapshot {
 pub struct LightsSnapshot {
     pub sun: Sun,
     pub environment_map_intensity: f32,
+    pub point_lights: Vec<PointLightSnapshot>,
     pub environment_map: Option<EnvironmentMapSnapshot>,
 }
 impl LightsSnapshot {
     pub fn from(
         environment: &Environment,
         resource_registry: &Rc<RefCell<ResourceRegistry>>,
+        point_lights: Vec<PointLightSnapshot>,
     ) -> Self {
         if let (
             RenderState::Ready(prefiltered_render_id),
@@ -176,6 +215,7 @@ impl LightsSnapshot {
             Self {
                 sun: environment.sun.clone(),
                 environment_map_intensity: environment.environment_map_intensity,
+                point_lights,
                 environment_map: Some(EnvironmentMapSnapshot {
                     prefiltered: TextureRenderId(*prefiltered_render_id),
                     di: TextureRenderId(*di_render_id),
@@ -186,6 +226,7 @@ impl LightsSnapshot {
             Self {
                 sun: environment.sun.clone(),
                 environment_map_intensity: environment.environment_map_intensity,
+                point_lights,
                 environment_map: None,
             }
         }
@@ -327,15 +368,17 @@ impl MeshDrawSnapshot {
         game_resources: &GameAssetStore,
         animation_graphs: &Vec<AnimationGraph>,
         tick_index: u32,
-    ) -> Self {
+    ) -> (Self, Vec<PointLightSnapshot>) {
         let mut skinned_instances = Vec::<SkinnedInstanceSnapshot>::new();
         let mut static_instances = Vec::<StaticInstanceSnapshot>::new();
+        let mut point_lights = Vec::<PointLightSnapshot>::new();
         let frustum = scene.camera.build_frustum();
         accumulate_instance_snapshots(
             scene,
             animation_graphs,
             &mut skinned_instances,
             &mut static_instances,
+            &mut point_lights,
             &Mat4::IDENTITY,
             scene.root,
             &frustum,
@@ -360,6 +403,7 @@ impl MeshDrawSnapshot {
             let model_handle = match &node.render_data {
                 RenderDataType::Model(_static_model) => panic!(),
                 RenderDataType::AnimatedModel(animated_model) => &animated_model.model,
+                RenderDataType::PointLight(_point_light) => panic!(),
                 RenderDataType::None => panic!(),
             };
             if let (GameState::Ready(model_game_id), RenderState::Ready(model_render_id)) = (
@@ -414,6 +458,7 @@ impl MeshDrawSnapshot {
             let model_handle = match &node.render_data {
                 RenderDataType::Model(static_model) => &static_model.handle,
                 RenderDataType::AnimatedModel(animated_model) => &animated_model.model,
+                RenderDataType::PointLight(_point_light) => panic!(),
                 RenderDataType::None => panic!(),
             };
             if let (GameState::Ready(model_game_id), RenderState::Ready(model_render_id)) = (
@@ -466,12 +511,15 @@ impl MeshDrawSnapshot {
         let opaque_batch = Self::build_pass_batches(&mut opaque_pipelines);
         let transparent_batch = Self::build_pass_batches(&mut transparent_pipelines);
 
-        Self {
-            opaque_batch,
-            transparent_batch,
-            skinned_instances,
-            static_instances,
-        }
+        (
+            Self {
+                opaque_batch,
+                transparent_batch,
+                skinned_instances,
+                static_instances,
+            },
+            point_lights,
+        )
     }
 }
 
@@ -487,7 +535,7 @@ impl FixedSnapshot {
         game_resources: &GameAssetStore,
         tick_index: u32,
     ) -> Self {
-        let mesh_draw_snapshot = MeshDrawSnapshot::build(
+        let (mesh_draw_snapshot, point_lights) = MeshDrawSnapshot::build(
             scene,
             resource_registry,
             game_resources,
@@ -495,7 +543,7 @@ impl FixedSnapshot {
             tick_index,
         );
 
-        let environment = LightsSnapshot::from(&scene.environment, resource_registry);
+        let environment = LightsSnapshot::from(&scene.environment, resource_registry, point_lights);
         Self {
             mesh_draw_snapshot,
             lights: environment,
@@ -507,6 +555,7 @@ impl FixedSnapshot {
             lights: LightsSnapshot {
                 sun: Sun::default(),
                 environment_map_intensity: 1.0,
+                point_lights: vec![],
                 environment_map: None,
             },
             mesh_draw_snapshot: MeshDrawSnapshot::default(),

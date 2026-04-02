@@ -6,7 +6,8 @@ use engine::{
         assets::registry::{ModelHandle, RegistryExt as _, TextureHandle},
         camera::Camera,
         scene_tree::{
-            AnimatedModel, Environment, Node, RenderDataType, Scene, SceneNodeId, StaticModel, Sun,
+            AnimatedModel, Environment, Node, PointLight, RenderDataType, Scene, SceneNodeId,
+            StaticModel, Sun,
         },
     },
     game_trait::{DebugInfo, InputEvent, SimTrait, UiTrait},
@@ -394,6 +395,20 @@ impl Game {
             }
         }
 
+        // TEMP: point light for validating point-light rendering in testbed.
+        let test_light = nodes.insert(Node {
+            parent: None,
+            children: vec![],
+            transform: Mat4::from_translation(Vec3::new(30.0, 40.0, 30.0)),
+            transform_last_mut: 0,
+            render_data: RenderDataType::PointLight(PointLight {
+                color: [1.0, 0.92, 0.75],
+                intensity: 30_000.0,
+                range: 220.0,
+            }),
+        });
+        children.push(SceneNodeId(test_light));
+
         let root_handle = nodes.insert(Node {
             parent: None,
             children: children.clone(),
@@ -499,6 +514,7 @@ impl SimTrait for Game {
         match &mut node.render_data {
             RenderDataType::None => (),
             RenderDataType::Model(_model_handle) => (),
+            RenderDataType::PointLight(_point_light) => (),
             RenderDataType::AnimatedModel(animated_model) => {
                 // TODO remove this after testing
                 // automatically transition for fun

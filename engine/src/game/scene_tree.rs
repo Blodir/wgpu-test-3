@@ -43,9 +43,26 @@ pub struct AnimatedModel {
     pub last_visible_frame: RefCell<u32>,
 }
 
+#[derive(Clone, Debug)]
+pub struct PointLight {
+    pub color: [f32; 3],
+    pub intensity: f32,
+    pub range: f32,
+}
+impl Default for PointLight {
+    fn default() -> Self {
+        Self {
+            color: [1.0, 1.0, 1.0],
+            intensity: 1.0,
+            range: 10.0,
+        }
+    }
+}
+
 pub enum RenderDataType {
     Model(StaticModel),
     AnimatedModel(AnimatedModel),
+    PointLight(PointLight),
     None,
 }
 
