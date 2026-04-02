@@ -89,6 +89,21 @@ fn bake(
             println!("Warning: skipping non-triangle topology!");
             continue;
         }
+        let vertex_color_sets: Vec<u32> = primitive
+            .attributes()
+            .filter_map(|(semantic, _)| match semantic {
+                gltf::Semantic::Colors(set_idx) => Some(set_idx),
+                _ => None,
+            })
+            .collect();
+        if !vertex_color_sets.is_empty() {
+            println!(
+                "Warning: primitive {} of mesh {} contains vertex colors (COLOR_{:?}), but vertex colors are unsupported and will be ignored.",
+                primitive.index(),
+                mesh_idx,
+                vertex_color_sets
+            );
+        }
         let indices = read_index_buffer(&primitive, buffers);
         if indices.len() % 3 != 0 {
             println!(
