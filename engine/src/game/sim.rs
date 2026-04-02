@@ -131,11 +131,12 @@ where
 
                 let mut pose_jobs_scheduled = 0usize;
                 // schedule animation jobs for all visible animated models
-                for node_id in fixed_snapshot.mesh_draw_snapshot.skinned_instances.keys() {
+                for inst in &fixed_snapshot.mesh_draw_snapshot.skinned_instances {
                     if pose_jobs_scheduled >= MAX_POSE_JOBS_PER_FIXED_TICK {
                         break;
                     }
-                    match &mut scene.nodes.get_mut((*node_id).into()).unwrap().render_data {
+                    let node_id = inst.node_id;
+                    match &mut scene.nodes.get_mut(node_id.into()).unwrap().render_data {
                         RenderDataType::Model(_static_model) => (),
                         RenderDataType::AnimatedModel(animated_model) => {
                             let job = animated_model.animator.build_job(
@@ -146,7 +147,7 @@ where
                                 &resource_registry,
                             );
                             if !job.is_empty() {
-                                if job_task_tx.send(Task::Pose(*node_id, job)).is_err() {
+                                if job_task_tx.send(Task::Pose(node_id, job)).is_err() {
                                     todo!();
                                 }
                                 pose_jobs_scheduled += 1;
@@ -155,11 +156,12 @@ where
                         RenderDataType::None => (),
                     }
                 }
-                for node_id in fixed_snapshot.mesh_draw_snapshot.static_instances.keys() {
+                for inst in &fixed_snapshot.mesh_draw_snapshot.static_instances {
                     if pose_jobs_scheduled >= MAX_POSE_JOBS_PER_FIXED_TICK {
                         break;
                     }
-                    match &mut scene.nodes.get_mut((*node_id).into()).unwrap().render_data {
+                    let node_id = inst.node_id;
+                    match &mut scene.nodes.get_mut(node_id.into()).unwrap().render_data {
                         RenderDataType::Model(_static_model) => (),
                         RenderDataType::AnimatedModel(animated_model) => {
                             let job = animated_model.animator.build_job(
@@ -170,7 +172,7 @@ where
                                 &resource_registry,
                             );
                             if !job.is_empty() {
-                                if job_task_tx.send(Task::Pose(*node_id, job)).is_err() {
+                                if job_task_tx.send(Task::Pose(node_id, job)).is_err() {
                                     todo!();
                                 }
                                 pose_jobs_scheduled += 1;

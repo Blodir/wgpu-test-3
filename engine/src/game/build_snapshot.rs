@@ -18,8 +18,8 @@ use crate::{
 pub fn accumulate_instance_snapshots(
     scene: &Scene,
     animation_graphs: &Vec<AnimationGraph>,
-    skinned_instances: &mut HashMap<SceneNodeId, SkinnedInstanceSnapshot>,
-    static_instances: &mut HashMap<SceneNodeId, StaticInstanceSnapshot>,
+    skinned_instances: &mut Vec<SkinnedInstanceSnapshot>,
+    static_instances: &mut Vec<StaticInstanceSnapshot>,
     base_transform: &Mat4,
     node_id: SceneNodeId,
     frustum: &Frustum,
@@ -83,19 +83,23 @@ pub fn accumulate_instance_snapshots(
             match model_game.manifest.deformation {
                 modelfile::Deformation::None => {
                     let inst = StaticInstanceSnapshot {
+                        node_id,
                         model_transform,
                         animation: maybe_animation_snapshot,
                         dirty: node.transform_last_mut == tick_index,
+                        prev_index: None,
                     };
-                    static_instances.insert(node_id, inst);
+                    static_instances.push(inst);
                 }
                 modelfile::Deformation::Skinned => {
                     let inst = SkinnedInstanceSnapshot {
+                        node_id,
                         model_transform,
                         animation: maybe_animation_snapshot,
                         dirty: node.transform_last_mut == tick_index,
+                        prev_index: None,
                     };
-                    skinned_instances.insert(node_id, inst);
+                    skinned_instances.push(inst);
                 }
             }
         }
@@ -192,19 +196,23 @@ impl LightsSnapshot {
 pub struct AnimationSnapshot(pub u64);
 
 pub struct SkinnedInstanceSnapshot {
+    pub node_id: SceneNodeId,
     pub model_transform: SRT,
     pub animation: Option<AnimationSnapshot>,
     pub dirty: bool,
+    pub prev_index: Option<u32>,
 }
 
 pub struct StaticInstanceSnapshot {
+    pub node_id: SceneNodeId,
     pub model_transform: SRT,
     pub animation: Option<AnimationSnapshot>,
     pub dirty: bool,
+    pub prev_index: Option<u32>,
 }
 
 pub struct SubmeshBatch {
-    pub instances: Vec<SceneNodeId>,
+    pub instances: Vec<u32>, // indexes into skinned_instances/static_instances
     pub submesh_idx: usize,
 }
 
@@ -225,10 +233,28 @@ pub struct MeshDrawSnapshot {
     pub mesh_batches: Vec<MeshBatch>,
     pub skinned_batch: std::ops::Range<usize>,
     pub static_batch: std::ops::Range<usize>,
-    pub skinned_instances: HashMap<SceneNodeId, SkinnedInstanceSnapshot>,
-    pub static_instances: HashMap<SceneNodeId, StaticInstanceSnapshot>,
+    pub skinned_instances: Vec<SkinnedInstanceSnapshot>,
+    pub static_instances: Vec<StaticInstanceSnapshot>,
 }
 impl MeshDrawSnapshot {
+    pub fn link_previous(&mut self, prev: &MeshDrawSnapshot) {
+        let mut prev_skinned_by_node = HashMap::new();
+        for (idx, inst) in prev.skinned_instances.iter().enumerate() {
+            prev_skinned_by_node.insert(inst.node_id, idx as u32);
+        }
+        for inst in &mut self.skinned_instances {
+            inst.prev_index = prev_skinned_by_node.get(&inst.node_id).copied();
+        }
+
+        let mut prev_static_by_node = HashMap::new();
+        for (idx, inst) in prev.static_instances.iter().enumerate() {
+            prev_static_by_node.insert(inst.node_id, idx as u32);
+        }
+        for inst in &mut self.static_instances {
+            inst.prev_index = prev_static_by_node.get(&inst.node_id).copied();
+        }
+    }
+
     fn build(
         scene: &Scene,
         resource_registry: &Rc<RefCell<ResourceRegistry>>,
@@ -236,8 +262,8 @@ impl MeshDrawSnapshot {
         animation_graphs: &Vec<AnimationGraph>,
         tick_index: u32,
     ) -> Self {
-        let mut skinned_instances = HashMap::<SceneNodeId, SkinnedInstanceSnapshot>::new();
-        let mut static_instances = HashMap::<SceneNodeId, StaticInstanceSnapshot>::new();
+        let mut skinned_instances = Vec::<SkinnedInstanceSnapshot>::new();
+        let mut static_instances = Vec::<StaticInstanceSnapshot>::new();
         let frustum = scene.camera.build_frustum();
         accumulate_instance_snapshots(
             scene,
@@ -255,12 +281,12 @@ impl MeshDrawSnapshot {
         let reg = resource_registry.borrow();
         let mut pipelines: HashMap<
             MeshPipelineKind,
-            HashMap<MaterialRenderId, HashMap<ModelRenderId, Vec<Vec<SceneNodeId>>>>,
+            HashMap<MaterialRenderId, HashMap<ModelRenderId, Vec<Vec<u32>>>>,
         > = HashMap::new();
 
         // collect rendered nodes in hashmaps
-        for (node_id, _snap) in &skinned_instances {
-            let node = scene.nodes.get((*node_id).into()).unwrap();
+        for (instance_idx, inst) in skinned_instances.iter().enumerate() {
+            let node = scene.nodes.get(inst.node_id.into()).unwrap();
             let model_handle = match &node.render_data {
                 RenderDataType::Model(_static_model) => panic!(),
                 RenderDataType::AnimatedModel(animated_model) => &animated_model.model,
@@ -291,14 +317,14 @@ impl MeshDrawSnapshot {
                         let submeshes = models
                             .entry(ModelRenderId(*model_render_id))
                             .or_insert(vec![vec![]; model_game_data.manifest.submeshes.len()]);
-                        submeshes[submesh_idx].push(*node_id);
+                        submeshes[submesh_idx].push(instance_idx as u32);
                     }
                 }
             }
         }
 
-        for (node_id, _snap) in &static_instances {
-            let node = scene.nodes.get((*node_id).into()).unwrap();
+        for (instance_idx, inst) in static_instances.iter().enumerate() {
+            let node = scene.nodes.get(inst.node_id.into()).unwrap();
             let model_handle = match &node.render_data {
                 RenderDataType::Model(static_model) => &static_model.handle,
                 RenderDataType::AnimatedModel(animated_model) => &animated_model.model,
@@ -329,7 +355,7 @@ impl MeshDrawSnapshot {
                         let submeshes = models
                             .entry(ModelRenderId(*model_render_id))
                             .or_insert(vec![vec![]; model_game_data.manifest.submeshes.len()]);
-                        submeshes[submesh_idx].push(*node_id);
+                        submeshes[submesh_idx].push(instance_idx as u32);
                     }
                 }
             }
@@ -430,5 +456,10 @@ impl FixedSnapshot {
             },
             mesh_draw_snapshot: MeshDrawSnapshot::default(),
         }
+    }
+
+    pub(crate) fn link_previous(&mut self, prev: &FixedSnapshot) {
+        self.mesh_draw_snapshot
+            .link_previous(&prev.mesh_draw_snapshot);
     }
 }

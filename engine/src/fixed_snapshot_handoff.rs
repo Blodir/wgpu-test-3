@@ -32,8 +32,9 @@ impl FixedSnapshotHandoff {
         }
     }
 
-    pub fn publish(&self, snap: FixedSnapshot) {
+    pub fn publish(&self, mut snap: FixedSnapshot) {
         let old = self.pair.load();
+        snap.link_previous(&old.curr);
         let next = FixedSnapshotPair {
             prev: old.curr.clone(),
             prev_timestamp: old.curr_timestamp,

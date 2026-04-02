@@ -114,35 +114,34 @@ pub fn resolve_skinned_draw<'a>(
                 let submesh_batch =
                     &snaps.curr.mesh_draw_snapshot.submesh_batches[submesh_batch_idx];
                 let instance_data_start_idx = instance_data.len();
-                for node_id in &submesh_batch.instances {
-                    let curr_inst_snap = snaps
-                        .curr
-                        .mesh_draw_snapshot
-                        .skinned_instances
-                        .get(node_id)
-                        .unwrap();
-                    let maybe_prev_inst_snap =
-                        snaps.prev.mesh_draw_snapshot.skinned_instances.get(node_id);
+                for instance_idx in &submesh_batch.instances {
+                    let curr_inst_snap =
+                        &snaps.curr.mesh_draw_snapshot.skinned_instances[*instance_idx as usize];
+                    let maybe_prev_inst_snap = curr_inst_snap.prev_index.map(|prev_idx| {
+                        &snaps.prev.mesh_draw_snapshot.skinned_instances[prev_idx as usize]
+                    });
+                    let node_id = curr_inst_snap.node_id;
 
-                    if !node_world_cache.contains_key(node_id) {
+                    if !node_world_cache.contains_key(&node_id) {
                         let maybe_nodes = if let Some(anim_snap) = curr_inst_snap.animation {
                             let snap_time = maybe_prev_inst_snap
                                 .and_then(|n| n.animation.as_ref())
                                 .map(|prev| safe_lerpu64(prev.0, anim_snap.0, t))
                                 .unwrap_or(anim_snap.0);
-                            sample_pose_nodes(pose_storage, node_id, snap_time, frame_idx)
+                            sample_pose_nodes(pose_storage, &node_id, snap_time, frame_idx)
                         } else {
                             Some(model.rig.bind_matrices.clone())
                         };
                         if let Some(nodes) = maybe_nodes {
-                            node_world_cache.insert(*node_id, nodes);
+                            node_world_cache.insert(node_id, nodes);
                         } else {
                             continue;
                         }
                     }
-                    let node_worlds = node_world_cache.get(node_id).unwrap();
+                    let node_worlds = node_world_cache.get(&node_id).unwrap();
 
-                    let palette_offset = if let Some(offset) = node_to_palette_offset.get(node_id) {
+                    let palette_offset = if let Some(offset) = node_to_palette_offset.get(&node_id)
+                    {
                         *offset
                     } else {
                         let offset = joint_palette.len() as u32;
@@ -158,7 +157,7 @@ pub fn resolve_skinned_draw<'a>(
                                 .unwrap_or(Mat4::IDENTITY);
                             joint_palette.push(mat4_to_bone_mat34(node_mat * *inverse_bind));
                         }
-                        node_to_palette_offset.insert(*node_id, offset);
+                        node_to_palette_offset.insert(node_id, offset);
                         offset
                     };
 
@@ -223,33 +222,31 @@ pub fn resolve_static_draw<'a>(
             for draw_idx in mesh_batch.submesh_range.clone() {
                 let curr_draw = &snaps.curr.mesh_draw_snapshot.submesh_batches[draw_idx];
                 let inst_start = instance_data.len();
-                for node_id in &curr_draw.instances {
-                    let curr_node_inst = snaps
-                        .curr
-                        .mesh_draw_snapshot
-                        .static_instances
-                        .get(node_id)
-                        .unwrap();
-                    let prev_node_inst =
-                        snaps.prev.mesh_draw_snapshot.static_instances.get(node_id);
+                for instance_idx in &curr_draw.instances {
+                    let curr_node_inst =
+                        &snaps.curr.mesh_draw_snapshot.static_instances[*instance_idx as usize];
+                    let prev_node_inst = curr_node_inst.prev_index.map(|prev_idx| {
+                        &snaps.prev.mesh_draw_snapshot.static_instances[prev_idx as usize]
+                    });
+                    let node_id = curr_node_inst.node_id;
 
-                    if !node_world_cache.contains_key(node_id) {
+                    if !node_world_cache.contains_key(&node_id) {
                         let maybe_nodes = if let Some(anim_snap) = curr_node_inst.animation {
                             let snap_time = prev_node_inst
                                 .and_then(|n| n.animation.as_ref())
                                 .map(|prev| safe_lerpu64(prev.0, anim_snap.0, t))
                                 .unwrap_or(anim_snap.0);
-                            sample_pose_nodes(pose_storage, node_id, snap_time, frame_idx)
+                            sample_pose_nodes(pose_storage, &node_id, snap_time, frame_idx)
                         } else {
                             Some(model.rig.bind_matrices.clone())
                         };
                         if let Some(nodes) = maybe_nodes {
-                            node_world_cache.insert(*node_id, nodes);
+                            node_world_cache.insert(node_id, nodes);
                         } else {
                             continue;
                         }
                     }
-                    let node_worlds = node_world_cache.get(node_id).unwrap();
+                    let node_worlds = node_world_cache.get(&node_id).unwrap();
 
                     let model_transform = resolve_model_transform(
                         &curr_node_inst.model_transform,
