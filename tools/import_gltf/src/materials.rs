@@ -390,6 +390,9 @@ pub fn bake_material(
     let metallic_roughness_texture = bake_metallic_roughness_tex(&material, images, model_name);
     let occlusion_texture = bake_occlusion_tex(&material, images, model_name);
     let emissive_texture = bake_emissive_tex(&material, images, model_name);
+    if material.double_sided() {
+        println!("Warning: double sided material");
+    }
     let material = materialfile::Material {
         base_color_factor: material.pbr_metallic_roughness().base_color_factor(),
         metallic_factor: material.pbr_metallic_roughness().metallic_factor(),

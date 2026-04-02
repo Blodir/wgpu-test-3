@@ -4,7 +4,7 @@ use glam::{Mat4, Quat, Vec3};
 
 use crate::game::assets::registry::{GameState, RenderState, ResourceRegistry};
 use crate::game::assets::store::GameAssetStore;
-use crate::main::assets::io::asset_formats::{modelfile, rigfile::SRT};
+use crate::main::assets::io::asset_formats::{materialfile, modelfile, rigfile::SRT};
 use crate::{
     game::{
         animator::AnimationGraph,
@@ -218,7 +218,7 @@ pub struct SubmeshBatch {
 
 pub struct MeshBatch {
     pub model_id: ModelRenderId,
-    pub submesh_range: std::ops::Range<usize>, // indexes into both draws and instance ranges arrays
+    pub submesh_range: std::ops::Range<usize>, // indexes into both submesh and instance ranges arrays
 }
 
 pub struct MaterialBatch {
@@ -227,16 +227,82 @@ pub struct MaterialBatch {
 }
 
 #[derive(Default)]
-pub struct MeshDrawSnapshot {
+pub struct PassBatches {
     pub submesh_batches: Vec<SubmeshBatch>,
-    pub material_batches: Vec<MaterialBatch>,
-    pub mesh_batches: Vec<MeshBatch>,
-    pub skinned_batch: std::ops::Range<usize>,
-    pub static_batch: std::ops::Range<usize>,
+    pub material_batches: Vec<MaterialBatch>, // indexes into mesh batches
+    pub mesh_batches: Vec<MeshBatch>,         // indexes into submesh batches
+    pub skinned_batch: std::ops::Range<usize>, // indexes into material batches
+    pub static_batch: std::ops::Range<usize>, // indexes into material batches
+}
+
+#[derive(Default)]
+pub struct MeshDrawSnapshot {
+    pub opaque_batch: PassBatches,
+    pub transparent_batch: PassBatches,
     pub skinned_instances: Vec<SkinnedInstanceSnapshot>,
     pub static_instances: Vec<StaticInstanceSnapshot>,
 }
 impl MeshDrawSnapshot {
+    fn build_pass_batches(
+        pipelines: &mut HashMap<
+            MeshPipelineKind,
+            HashMap<MaterialRenderId, HashMap<ModelRenderId, Vec<Vec<u32>>>>,
+        >,
+    ) -> PassBatches {
+        let mut mat_offset = 0usize;
+        let mut skinned_batch = 0..0;
+        let mut static_batch = 0..0;
+        let mut material_batches: Vec<MaterialBatch> = vec![];
+        let mut mesh_batches: Vec<MeshBatch> = vec![];
+        let mut submesh_batches: Vec<SubmeshBatch> = vec![];
+
+        for (pipeline_kind, materials) in pipelines.iter_mut() {
+            for (mat_render_id, models) in materials.iter_mut() {
+                let mesh_batches_len = mesh_batches.len();
+                let mat_batch = MaterialBatch {
+                    material_id: *mat_render_id,
+                    mesh_range: mesh_batches_len..mesh_batches_len + models.len(),
+                };
+                material_batches.push(mat_batch);
+                for (model_render_id, submeshes) in models.iter_mut() {
+                    let submesh_batches_len = submesh_batches.len();
+                    let mesh_batch = MeshBatch {
+                        model_id: *model_render_id,
+                        submesh_range: submesh_batches_len..submesh_batches_len + submeshes.len(),
+                    };
+                    mesh_batches.push(mesh_batch);
+                    let mut i = 0;
+                    for instances in submeshes.drain(..) {
+                        let submesh_batch = SubmeshBatch {
+                            instances,
+                            submesh_idx: i,
+                        };
+                        submesh_batches.push(submesh_batch);
+                        i += 1;
+                    }
+                }
+            }
+            match pipeline_kind {
+                MeshPipelineKind::StaticPbr => {
+                    static_batch = mat_offset..material_batches.len();
+                    mat_offset = material_batches.len();
+                }
+                MeshPipelineKind::SkinnedPbr => {
+                    skinned_batch = mat_offset..material_batches.len();
+                    mat_offset = material_batches.len();
+                }
+            }
+        }
+
+        PassBatches {
+            submesh_batches,
+            material_batches,
+            mesh_batches,
+            skinned_batch,
+            static_batch,
+        }
+    }
+
     pub fn link_previous(&mut self, prev: &MeshDrawSnapshot) {
         let mut prev_skinned_by_node = HashMap::new();
         for (idx, inst) in prev.skinned_instances.iter().enumerate() {
@@ -279,7 +345,11 @@ impl MeshDrawSnapshot {
         );
 
         let reg = resource_registry.borrow();
-        let mut pipelines: HashMap<
+        let mut opaque_pipelines: HashMap<
+            MeshPipelineKind,
+            HashMap<MaterialRenderId, HashMap<ModelRenderId, Vec<Vec<u32>>>>,
+        > = HashMap::new();
+        let mut transparent_pipelines: HashMap<
             MeshPipelineKind,
             HashMap<MaterialRenderId, HashMap<ModelRenderId, Vec<Vec<u32>>>>,
         > = HashMap::new();
@@ -305,9 +375,25 @@ impl MeshDrawSnapshot {
                         .as_ref()
                         .map(|m| &model_game_data.materials[*m as usize])
                         .unwrap_or(&game_resources.placeholders.material);
-                    if let RenderState::Ready(mat_render_id) =
-                        resource_registry.borrow().get(&mat_handle).render_state
-                    {
+                    if let RenderState::Ready(mat_render_id) = reg.get(&mat_handle).render_state {
+                        let is_transparent = match &reg.get(&mat_handle).game_state {
+                            GameState::Ready(mat_game_id) => game_resources
+                                .materials
+                                .get(*mat_game_id)
+                                .map(|mat_game_data| {
+                                    matches!(
+                                        mat_game_data.manifest.alpha_mode,
+                                        materialfile::AlphaMode::Blend
+                                    )
+                                })
+                                .unwrap_or(false),
+                            _ => false,
+                        };
+                        let pipelines = if is_transparent {
+                            &mut transparent_pipelines
+                        } else {
+                            &mut opaque_pipelines
+                        };
                         let materials = pipelines
                             .entry(MeshPipelineKind::SkinnedPbr)
                             .or_insert(HashMap::new());
@@ -343,9 +429,25 @@ impl MeshDrawSnapshot {
                         .as_ref()
                         .map(|m| &model_game_data.materials[*m as usize])
                         .unwrap_or(&game_resources.placeholders.material);
-                    if let RenderState::Ready(mat_render_id) =
-                        resource_registry.borrow().get(&mat_handle).render_state
-                    {
+                    if let RenderState::Ready(mat_render_id) = reg.get(&mat_handle).render_state {
+                        let is_transparent = match &reg.get(&mat_handle).game_state {
+                            GameState::Ready(mat_game_id) => game_resources
+                                .materials
+                                .get(*mat_game_id)
+                                .map(|mat_game_data| {
+                                    matches!(
+                                        mat_game_data.manifest.alpha_mode,
+                                        materialfile::AlphaMode::Blend
+                                    )
+                                })
+                                .unwrap_or(false),
+                            _ => false,
+                        };
+                        let pipelines = if is_transparent {
+                            &mut transparent_pipelines
+                        } else {
+                            &mut opaque_pipelines
+                        };
                         let materials = pipelines
                             .entry(MeshPipelineKind::StaticPbr)
                             .or_insert(HashMap::new());
@@ -361,59 +463,12 @@ impl MeshDrawSnapshot {
             }
         }
 
-        // build batches from hashmaps
-        let mut mat_offset = 0usize;
-        let mut skinned_batch = 0..0;
-        let mut static_batch = 0..0;
-        let mut material_batches: Vec<MaterialBatch> = vec![];
-        let mut mesh_batches: Vec<MeshBatch> = vec![];
-        let mut submesh_batches: Vec<SubmeshBatch> = vec![];
-
-        for (pipeline_kind, materials) in pipelines.iter_mut() {
-            for (mat_render_id, models) in materials.iter_mut() {
-                let mesh_batches_len = mesh_batches.len();
-                let mat_batch = MaterialBatch {
-                    material_id: *mat_render_id,
-                    mesh_range: mesh_batches_len..mesh_batches_len + models.len(),
-                };
-                material_batches.push(mat_batch);
-                for (model_render_id, submeshes) in models.iter_mut() {
-                    let submesh_batches_len = submesh_batches.len();
-                    let mesh_batch = MeshBatch {
-                        model_id: *model_render_id,
-                        submesh_range: submesh_batches_len..submesh_batches_len + submeshes.len(),
-                    };
-                    mesh_batches.push(mesh_batch);
-                    let mut i = 0;
-                    for instances in submeshes.drain(..) {
-                        let submesh_batch = SubmeshBatch {
-                            instances,
-                            submesh_idx: i,
-                        };
-                        submesh_batches.push(submesh_batch);
-
-                        i += 1;
-                    }
-                }
-            }
-            match pipeline_kind {
-                MeshPipelineKind::StaticPbr => {
-                    static_batch = mat_offset..material_batches.len();
-                    mat_offset = material_batches.len();
-                }
-                MeshPipelineKind::SkinnedPbr => {
-                    skinned_batch = mat_offset..material_batches.len();
-                    mat_offset = material_batches.len();
-                }
-            }
-        }
+        let opaque_batch = Self::build_pass_batches(&mut opaque_pipelines);
+        let transparent_batch = Self::build_pass_batches(&mut transparent_pipelines);
 
         Self {
-            submesh_batches,
-            material_batches,
-            mesh_batches,
-            skinned_batch,
-            static_batch,
+            opaque_batch,
+            transparent_batch,
             skinned_instances,
             static_instances,
         }

@@ -154,33 +154,35 @@ impl SkinnedPbrPipeline {
         render_pass.set_bind_group(1, lights_bind_group, &[]);
         render_pass.set_bind_group(3, bones_bind_group, &[]);
 
-        for material_batch in
-            &draw_context.snap.material_batches[draw_context.snap.skinned_batch.clone()]
-        {
-            let material = materials.get(material_batch.material_id.into()).unwrap();
-            render_pass.set_bind_group(2u32, &material.bind_group, &[]);
-            for mesh_batch in &draw_context.snap.mesh_batches[material_batch.mesh_range.clone()] {
-                let model = models.get(mesh_batch.model_id.into()).unwrap();
-                let mesh = meshes.get(model.mesh_id.into()).unwrap();
-                render_pass.set_index_buffer(
-                    mesh.buffer
-                        .slice(0..model.vertex_buffer_start_offset as u64),
-                    wgpu::IndexFormat::Uint32,
-                );
-                // apparently there's no performance benefit to not just taking the whole instace buffer slice
-                render_pass.set_vertex_buffer(0, instance_buffer.slice(..));
-                render_pass.set_vertex_buffer(
-                    1u32,
-                    mesh.buffer.slice(model.vertex_buffer_start_offset as u64..),
-                );
-                for draw_idx in mesh_batch.submesh_range.clone() {
-                    let submesh_batch = &draw_context.snap.submesh_batches[draw_idx];
-                    let submesh = &model.submeshes[submesh_batch.submesh_idx];
-                    render_pass.draw_indexed(
-                        submesh.index_range.clone(),
-                        submesh.base_vertex as i32,
-                        draw_context.instance_ranges[draw_idx].clone(),
+        for pass_draw in [&draw_context.opaque, &draw_context.transparent] {
+            for material_batch in
+                &pass_draw.batch.material_batches[pass_draw.batch.skinned_batch.clone()]
+            {
+                let material = materials.get(material_batch.material_id.into()).unwrap();
+                render_pass.set_bind_group(2u32, &material.bind_group, &[]);
+                for mesh_batch in &pass_draw.batch.mesh_batches[material_batch.mesh_range.clone()] {
+                    let model = models.get(mesh_batch.model_id.into()).unwrap();
+                    let mesh = meshes.get(model.mesh_id.into()).unwrap();
+                    render_pass.set_index_buffer(
+                        mesh.buffer
+                            .slice(0..model.vertex_buffer_start_offset as u64),
+                        wgpu::IndexFormat::Uint32,
                     );
+                    // apparently there's no performance benefit to not just taking the whole instace buffer slice
+                    render_pass.set_vertex_buffer(0, instance_buffer.slice(..));
+                    render_pass.set_vertex_buffer(
+                        1u32,
+                        mesh.buffer.slice(model.vertex_buffer_start_offset as u64..),
+                    );
+                    for draw_idx in mesh_batch.submesh_range.clone() {
+                        let submesh_batch = &pass_draw.batch.submesh_batches[draw_idx];
+                        let submesh = &model.submeshes[submesh_batch.submesh_idx];
+                        render_pass.draw_indexed(
+                            submesh.index_range.clone(),
+                            submesh.base_vertex as i32,
+                            pass_draw.instance_ranges[draw_idx].clone(),
+                        );
+                    }
                 }
             }
         }

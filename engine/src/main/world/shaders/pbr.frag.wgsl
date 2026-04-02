@@ -26,6 +26,8 @@
 @group(2) @binding(12) var metallic_roughness_texture: texture_2d<f32>;
 @group(2) @binding(13) var metallic_roughness_texture_sampler: sampler;
 @group(2) @binding(14) var<uniform> normal_texture_scale: f32;
+@group(2) @binding(15) var<uniform> alpha_mask_enabled: u32;
+@group(2) @binding(16) var<uniform> alpha_cutoff: f32;
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
@@ -104,6 +106,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
             base_color_texture_sampler,
             in.base_color_tex_coords
         ) * base_color_factor;
+    if (alpha_mask_enabled == 1u && surface_color.a < alpha_cutoff) {
+        discard;
+    }
     let metallic_roughness =
         textureSample(
             metallic_roughness_texture,

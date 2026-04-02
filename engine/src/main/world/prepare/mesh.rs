@@ -3,7 +3,7 @@ use std::ops::Range;
 use glam::Mat4;
 
 use crate::fixed_snapshot_handoff::FixedSnapshotGuard;
-use crate::game::build_snapshot::MeshDrawSnapshot;
+use crate::game::build_snapshot::{MeshDrawSnapshot, PassBatches};
 use crate::{
     game::scene_tree::SceneNodeId,
     main::{
@@ -22,6 +22,12 @@ use crate::{
 
 pub struct DrawContext<'a> {
     pub snap: &'a MeshDrawSnapshot,
+    pub opaque: PassDrawContext<'a>,
+    pub transparent: PassDrawContext<'a>,
+}
+
+pub struct PassDrawContext<'a> {
+    pub batch: &'a PassBatches,
     pub instance_ranges: Vec<Range<u32>>,
 }
 
@@ -87,40 +93,29 @@ fn sample_pose_nodes(
     }
 }
 
-pub fn resolve_skinned_draw<'a>(
-    bones: &mut BonesBinding,
-    bones_layout: &wgpu::BindGroupLayout,
-    instances: &mut SkinnedInstances,
+fn resolve_skinned_pass(
+    pass_batch: &PassBatches,
     render_resources: &RenderAssetStore,
-    snaps: &'a FixedSnapshotGuard,
+    snaps: &FixedSnapshotGuard,
     t: f32,
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
     pose_storage: &mut AnimPoseStore,
     frame_idx: u32,
-) -> DrawContext<'a> {
-    let mut joint_palette: Vec<BoneMat34> = vec![];
-    let mut instance_data = vec![];
-    let mut instance_ranges = vec![0..0; snaps.curr.mesh_draw_snapshot.submesh_batches.len()];
-
-    let skinned_instance_count = snaps.curr.mesh_draw_snapshot.skinned_instances.len();
-    let mut node_world_cache = Vec::with_capacity(skinned_instance_count);
-    node_world_cache.resize_with(skinned_instance_count, || PoseNodesCacheEntry::Pending);
-    let mut node_to_palette_offset = vec![None; skinned_instance_count];
-
-    let mat_batches = &snaps.curr.mesh_draw_snapshot.material_batches
-        [snaps.curr.mesh_draw_snapshot.skinned_batch.clone()];
+    instance_data: &mut Vec<SkinnedInstance>,
+    node_world_cache: &mut Vec<PoseNodesCacheEntry>,
+    node_to_palette_offset: &mut Vec<Option<u32>>,
+    joint_palette: &mut Vec<BoneMat34>,
+) -> Vec<Range<u32>> {
+    let mut instance_ranges = vec![0..0; pass_batch.submesh_batches.len()];
+    let mat_batches = &pass_batch.material_batches[pass_batch.skinned_batch.clone()];
     for mat_batch in mat_batches {
-        let mesh_batches =
-            &snaps.curr.mesh_draw_snapshot.mesh_batches[mat_batch.mesh_range.clone()];
+        let mesh_batches = &pass_batch.mesh_batches[mat_batch.mesh_range.clone()];
         for mesh_batch in mesh_batches {
             let model = render_resources
                 .models
                 .get(mesh_batch.model_id.into())
                 .unwrap();
             for submesh_batch_idx in mesh_batch.submesh_range.clone() {
-                let submesh_batch =
-                    &snaps.curr.mesh_draw_snapshot.submesh_batches[submesh_batch_idx];
+                let submesh_batch = &pass_batch.submesh_batches[submesh_batch_idx];
                 let instance_data_start_idx = instance_data.len();
                 for instance_idx in &submesh_batch.instances {
                     let instance_idx = *instance_idx as usize;
@@ -201,43 +196,30 @@ pub fn resolve_skinned_draw<'a>(
         }
     }
 
-    bones.update(joint_palette, bones_layout, device, queue);
-    instances.update(instance_data, queue, device);
-
-    DrawContext {
-        snap: &snaps.curr.mesh_draw_snapshot,
-        instance_ranges,
-    }
+    instance_ranges
 }
 
-pub fn resolve_static_draw<'a>(
-    instances: &mut StaticInstances,
+fn resolve_static_pass(
+    pass_batch: &PassBatches,
     render_resources: &RenderAssetStore,
-    snaps: &'a FixedSnapshotGuard,
+    snaps: &FixedSnapshotGuard,
     t: f32,
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
     pose_storage: &mut AnimPoseStore,
     frame_idx: u32,
-) -> DrawContext<'a> {
-    let mut instance_data = vec![];
-    let mut instance_ranges = vec![0..0; snaps.curr.mesh_draw_snapshot.submesh_batches.len()];
-    let static_instance_count = snaps.curr.mesh_draw_snapshot.static_instances.len();
-    let mut node_world_cache = Vec::with_capacity(static_instance_count);
-    node_world_cache.resize_with(static_instance_count, || PoseNodesCacheEntry::Pending);
-
-    let mat_batches = &snaps.curr.mesh_draw_snapshot.material_batches
-        [snaps.curr.mesh_draw_snapshot.static_batch.clone()];
+    instance_data: &mut Vec<StaticInstance>,
+    node_world_cache: &mut Vec<PoseNodesCacheEntry>,
+) -> Vec<Range<u32>> {
+    let mut instance_ranges = vec![0..0; pass_batch.submesh_batches.len()];
+    let mat_batches = &pass_batch.material_batches[pass_batch.static_batch.clone()];
     for mat_batch in mat_batches {
-        let mesh_batches =
-            &snaps.curr.mesh_draw_snapshot.mesh_batches[mat_batch.mesh_range.clone()];
+        let mesh_batches = &pass_batch.mesh_batches[mat_batch.mesh_range.clone()];
         for mesh_batch in mesh_batches {
             let model = render_resources
                 .models
                 .get(mesh_batch.model_id.into())
                 .unwrap();
             for draw_idx in mesh_batch.submesh_range.clone() {
-                let curr_draw = &snaps.curr.mesh_draw_snapshot.submesh_batches[draw_idx];
+                let curr_draw = &pass_batch.submesh_batches[draw_idx];
                 let inst_start = instance_data.len();
                 for instance_idx in &curr_draw.instances {
                     let instance_idx = *instance_idx as usize;
@@ -293,10 +275,114 @@ pub fn resolve_static_draw<'a>(
         }
     }
 
+    instance_ranges
+}
+
+pub fn resolve_skinned_draw<'a>(
+    bones: &mut BonesBinding,
+    bones_layout: &wgpu::BindGroupLayout,
+    instances: &mut SkinnedInstances,
+    render_resources: &RenderAssetStore,
+    snaps: &'a FixedSnapshotGuard,
+    t: f32,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    pose_storage: &mut AnimPoseStore,
+    frame_idx: u32,
+) -> DrawContext<'a> {
+    let mut joint_palette: Vec<BoneMat34> = vec![];
+    let mut instance_data = vec![];
+    let skinned_instance_count = snaps.curr.mesh_draw_snapshot.skinned_instances.len();
+    let mut node_world_cache = Vec::with_capacity(skinned_instance_count);
+    node_world_cache.resize_with(skinned_instance_count, || PoseNodesCacheEntry::Pending);
+    let mut node_to_palette_offset = vec![None; skinned_instance_count];
+    let opaque_instance_ranges = resolve_skinned_pass(
+        &snaps.curr.mesh_draw_snapshot.opaque_batch,
+        render_resources,
+        snaps,
+        t,
+        pose_storage,
+        frame_idx,
+        &mut instance_data,
+        &mut node_world_cache,
+        &mut node_to_palette_offset,
+        &mut joint_palette,
+    );
+    let transparent_instance_ranges = resolve_skinned_pass(
+        &snaps.curr.mesh_draw_snapshot.transparent_batch,
+        render_resources,
+        snaps,
+        t,
+        pose_storage,
+        frame_idx,
+        &mut instance_data,
+        &mut node_world_cache,
+        &mut node_to_palette_offset,
+        &mut joint_palette,
+    );
+
+    bones.update(joint_palette, bones_layout, device, queue);
     instances.update(instance_data, queue, device);
 
     DrawContext {
         snap: &snaps.curr.mesh_draw_snapshot,
-        instance_ranges,
+        opaque: PassDrawContext {
+            batch: &snaps.curr.mesh_draw_snapshot.opaque_batch,
+            instance_ranges: opaque_instance_ranges,
+        },
+        transparent: PassDrawContext {
+            batch: &snaps.curr.mesh_draw_snapshot.transparent_batch,
+            instance_ranges: transparent_instance_ranges,
+        },
+    }
+}
+
+pub fn resolve_static_draw<'a>(
+    instances: &mut StaticInstances,
+    render_resources: &RenderAssetStore,
+    snaps: &'a FixedSnapshotGuard,
+    t: f32,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    pose_storage: &mut AnimPoseStore,
+    frame_idx: u32,
+) -> DrawContext<'a> {
+    let mut instance_data = vec![];
+    let static_instance_count = snaps.curr.mesh_draw_snapshot.static_instances.len();
+    let mut node_world_cache = Vec::with_capacity(static_instance_count);
+    node_world_cache.resize_with(static_instance_count, || PoseNodesCacheEntry::Pending);
+    let opaque_instance_ranges = resolve_static_pass(
+        &snaps.curr.mesh_draw_snapshot.opaque_batch,
+        render_resources,
+        snaps,
+        t,
+        pose_storage,
+        frame_idx,
+        &mut instance_data,
+        &mut node_world_cache,
+    );
+    let transparent_instance_ranges = resolve_static_pass(
+        &snaps.curr.mesh_draw_snapshot.transparent_batch,
+        render_resources,
+        snaps,
+        t,
+        pose_storage,
+        frame_idx,
+        &mut instance_data,
+        &mut node_world_cache,
+    );
+
+    instances.update(instance_data, queue, device);
+
+    DrawContext {
+        snap: &snaps.curr.mesh_draw_snapshot,
+        opaque: PassDrawContext {
+            batch: &snaps.curr.mesh_draw_snapshot.opaque_batch,
+            instance_ranges: opaque_instance_ranges,
+        },
+        transparent: PassDrawContext {
+            batch: &snaps.curr.mesh_draw_snapshot.transparent_batch,
+            instance_ranges: transparent_instance_ranges,
+        },
     }
 }

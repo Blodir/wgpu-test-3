@@ -11,6 +11,8 @@ pub struct MaterialBinding {
     roughness_factor: wgpu::Buffer,
     emissive_factor: wgpu::Buffer,
     normal_texture_scale: wgpu::Buffer,
+    alpha_mask_enabled: wgpu::Buffer,
+    alpha_cutoff: wgpu::Buffer,
 }
 impl MaterialBinding {
     pub fn desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
@@ -161,6 +163,28 @@ impl MaterialBinding {
                     },
                     count: None,
                 },
+                // alpha mask enabled (1 = Mask, 0 = Opaque/Blend)
+                wgpu::BindGroupLayoutEntry {
+                    binding: 15,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                // alpha cutoff
+                wgpu::BindGroupLayoutEntry {
+                    binding: 16,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
             ],
             label: Some("Material Bind Group Layout"),
         }
@@ -215,6 +239,25 @@ impl MaterialBinding {
                 .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                     label: Some("Normal Texture Scale Buffer"),
                     contents: bytemuck::cast_slice(&[mat.normal_texture_scale]),
+                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                });
+        let alpha_mask_enabled =
+            wgpu_context
+                .device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("Alpha Mask Enabled Buffer"),
+                    contents: bytemuck::cast_slice(&[match mat.alpha_mode {
+                        materialfile::AlphaMode::Mask => 1u32,
+                        _ => 0u32,
+                    }]),
+                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                });
+        let alpha_cutoff =
+            wgpu_context
+                .device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("Alpha Cutoff Buffer"),
+                    contents: bytemuck::cast_slice(&[mat.alpha_cutoff]),
                     usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
                 });
 
@@ -318,6 +361,14 @@ impl MaterialBinding {
                         binding: 14,
                         resource: normal_texture_scale.as_entire_binding(),
                     },
+                    wgpu::BindGroupEntry {
+                        binding: 15,
+                        resource: alpha_mask_enabled.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 16,
+                        resource: alpha_cutoff.as_entire_binding(),
+                    },
                 ],
                 label: Some("Material Bind Group"),
             });
@@ -329,6 +380,8 @@ impl MaterialBinding {
             roughness_factor,
             emissive_factor,
             normal_texture_scale,
+            alpha_mask_enabled,
+            alpha_cutoff,
         }
     }
 }
