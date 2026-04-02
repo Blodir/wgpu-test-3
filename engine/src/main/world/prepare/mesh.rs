@@ -1,4 +1,4 @@
-use std::{collections::HashMap, ops::Range};
+use std::ops::Range;
 
 use glam::Mat4;
 
@@ -23,6 +23,12 @@ use crate::{
 pub struct DrawContext<'a> {
     pub snap: &'a MeshDrawSnapshot,
     pub instance_ranges: Vec<Range<u32>>,
+}
+
+enum PoseNodesCacheEntry {
+    Pending,
+    Missing,
+    Ready(Vec<Mat4>),
 }
 
 fn mat4_to_bone_mat34(m: Mat4) -> BoneMat34 {
@@ -97,8 +103,10 @@ pub fn resolve_skinned_draw<'a>(
     let mut instance_data = vec![];
     let mut instance_ranges = vec![0..0; snaps.curr.mesh_draw_snapshot.submesh_batches.len()];
 
-    let mut node_world_cache: HashMap<SceneNodeId, Vec<Mat4>> = HashMap::new();
-    let mut node_to_palette_offset: HashMap<SceneNodeId, u32> = HashMap::new();
+    let skinned_instance_count = snaps.curr.mesh_draw_snapshot.skinned_instances.len();
+    let mut node_world_cache = Vec::with_capacity(skinned_instance_count);
+    node_world_cache.resize_with(skinned_instance_count, || PoseNodesCacheEntry::Pending);
+    let mut node_to_palette_offset = vec![None; skinned_instance_count];
 
     let mat_batches = &snaps.curr.mesh_draw_snapshot.material_batches
         [snaps.curr.mesh_draw_snapshot.skinned_batch.clone()];
@@ -115,34 +123,41 @@ pub fn resolve_skinned_draw<'a>(
                     &snaps.curr.mesh_draw_snapshot.submesh_batches[submesh_batch_idx];
                 let instance_data_start_idx = instance_data.len();
                 for instance_idx in &submesh_batch.instances {
+                    let instance_idx = *instance_idx as usize;
                     let curr_inst_snap =
-                        &snaps.curr.mesh_draw_snapshot.skinned_instances[*instance_idx as usize];
+                        &snaps.curr.mesh_draw_snapshot.skinned_instances[instance_idx];
                     let maybe_prev_inst_snap = curr_inst_snap.prev_index.map(|prev_idx| {
                         &snaps.prev.mesh_draw_snapshot.skinned_instances[prev_idx as usize]
                     });
-                    let node_id = curr_inst_snap.node_id;
-
-                    if !node_world_cache.contains_key(&node_id) {
+                    if matches!(node_world_cache[instance_idx], PoseNodesCacheEntry::Pending) {
                         let maybe_nodes = if let Some(anim_snap) = curr_inst_snap.animation {
                             let snap_time = maybe_prev_inst_snap
                                 .and_then(|n| n.animation.as_ref())
                                 .map(|prev| safe_lerpu64(prev.0, anim_snap.0, t))
                                 .unwrap_or(anim_snap.0);
-                            sample_pose_nodes(pose_storage, &node_id, snap_time, frame_idx)
+                            sample_pose_nodes(
+                                pose_storage,
+                                &curr_inst_snap.node_id,
+                                snap_time,
+                                frame_idx,
+                            )
                         } else {
                             Some(model.rig.bind_matrices.clone())
                         };
-                        if let Some(nodes) = maybe_nodes {
-                            node_world_cache.insert(node_id, nodes);
-                        } else {
-                            continue;
-                        }
+                        node_world_cache[instance_idx] = match maybe_nodes {
+                            Some(nodes) => PoseNodesCacheEntry::Ready(nodes),
+                            None => PoseNodesCacheEntry::Missing,
+                        };
                     }
-                    let node_worlds = node_world_cache.get(&node_id).unwrap();
+                    let node_worlds = match &node_world_cache[instance_idx] {
+                        PoseNodesCacheEntry::Ready(nodes) => nodes,
+                        PoseNodesCacheEntry::Missing => continue,
+                        PoseNodesCacheEntry::Pending => unreachable!(),
+                    };
 
-                    let palette_offset = if let Some(offset) = node_to_palette_offset.get(&node_id)
+                    let palette_offset = if let Some(offset) = node_to_palette_offset[instance_idx]
                     {
-                        *offset
+                        offset
                     } else {
                         let offset = joint_palette.len() as u32;
                         for (joint_node_idx, inverse_bind) in model
@@ -157,7 +172,7 @@ pub fn resolve_skinned_draw<'a>(
                                 .unwrap_or(Mat4::IDENTITY);
                             joint_palette.push(mat4_to_bone_mat34(node_mat * *inverse_bind));
                         }
-                        node_to_palette_offset.insert(node_id, offset);
+                        node_to_palette_offset[instance_idx] = Some(offset);
                         offset
                     };
 
@@ -207,7 +222,9 @@ pub fn resolve_static_draw<'a>(
 ) -> DrawContext<'a> {
     let mut instance_data = vec![];
     let mut instance_ranges = vec![0..0; snaps.curr.mesh_draw_snapshot.submesh_batches.len()];
-    let mut node_world_cache: HashMap<SceneNodeId, Vec<Mat4>> = HashMap::new();
+    let static_instance_count = snaps.curr.mesh_draw_snapshot.static_instances.len();
+    let mut node_world_cache = Vec::with_capacity(static_instance_count);
+    node_world_cache.resize_with(static_instance_count, || PoseNodesCacheEntry::Pending);
 
     let mat_batches = &snaps.curr.mesh_draw_snapshot.material_batches
         [snaps.curr.mesh_draw_snapshot.static_batch.clone()];
@@ -223,30 +240,37 @@ pub fn resolve_static_draw<'a>(
                 let curr_draw = &snaps.curr.mesh_draw_snapshot.submesh_batches[draw_idx];
                 let inst_start = instance_data.len();
                 for instance_idx in &curr_draw.instances {
+                    let instance_idx = *instance_idx as usize;
                     let curr_node_inst =
-                        &snaps.curr.mesh_draw_snapshot.static_instances[*instance_idx as usize];
+                        &snaps.curr.mesh_draw_snapshot.static_instances[instance_idx];
                     let prev_node_inst = curr_node_inst.prev_index.map(|prev_idx| {
                         &snaps.prev.mesh_draw_snapshot.static_instances[prev_idx as usize]
                     });
-                    let node_id = curr_node_inst.node_id;
-
-                    if !node_world_cache.contains_key(&node_id) {
+                    if matches!(node_world_cache[instance_idx], PoseNodesCacheEntry::Pending) {
                         let maybe_nodes = if let Some(anim_snap) = curr_node_inst.animation {
                             let snap_time = prev_node_inst
                                 .and_then(|n| n.animation.as_ref())
                                 .map(|prev| safe_lerpu64(prev.0, anim_snap.0, t))
                                 .unwrap_or(anim_snap.0);
-                            sample_pose_nodes(pose_storage, &node_id, snap_time, frame_idx)
+                            sample_pose_nodes(
+                                pose_storage,
+                                &curr_node_inst.node_id,
+                                snap_time,
+                                frame_idx,
+                            )
                         } else {
                             Some(model.rig.bind_matrices.clone())
                         };
-                        if let Some(nodes) = maybe_nodes {
-                            node_world_cache.insert(node_id, nodes);
-                        } else {
-                            continue;
-                        }
+                        node_world_cache[instance_idx] = match maybe_nodes {
+                            Some(nodes) => PoseNodesCacheEntry::Ready(nodes),
+                            None => PoseNodesCacheEntry::Missing,
+                        };
                     }
-                    let node_worlds = node_world_cache.get(&node_id).unwrap();
+                    let node_worlds = match &node_world_cache[instance_idx] {
+                        PoseNodesCacheEntry::Ready(nodes) => nodes,
+                        PoseNodesCacheEntry::Missing => continue,
+                        PoseNodesCacheEntry::Pending => unreachable!(),
+                    };
 
                     let model_transform = resolve_model_transform(
                         &curr_node_inst.model_transform,
