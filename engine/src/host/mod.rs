@@ -1,9 +1,7 @@
 pub mod assets;
-pub mod gui;
 pub mod renderer;
-pub mod sampler_cache;
-pub mod shader_cache;
-pub mod utils;
 pub mod wgpu_context;
 pub mod window;
-pub mod world;
+
+pub use renderer::{DebugInfo, RenderDebugInfo, Renderer, UploadMaterialRequest};
+pub use renderer::{gui, sampler_cache, shader_cache, utils, world};

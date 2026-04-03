@@ -2,15 +2,15 @@ use std::{sync::Arc, time::Instant};
 
 use winit::event::WindowEvent;
 
-use super::assets::store::{PlaceholderTextureIds, RenderAssetStore, TextureRenderId};
 use super::gui::GuiRenderer;
-use super::wgpu_context::WgpuContext;
 use super::world::bindgroups::material::MaterialBinding;
 use super::world::WorldRenderer;
 use crate::fixed_snapshot_handoff::FixedSnapshotHandoff;
 use crate::game::sim::SimDebugInfo;
 use crate::game_trait::BuildUiFn;
-pub use crate::host::world::UploadMaterialRequest;
+use crate::host::assets::store::{PlaceholderTextureIds, RenderAssetStore, TextureRenderId};
+use crate::host::wgpu_context::WgpuContext;
+pub use crate::host::renderer::world::UploadMaterialRequest;
 use crate::var_snapshot_handoff::CameraSnapshotPair;
 use crate::workers::worker_pool::AnimPoseTaskResult;
 

@@ -3,7 +3,6 @@ use std::time::Instant;
 
 use super::super::sampler_cache::SamplerCache;
 use super::super::shader_cache::ShaderCache;
-use super::super::wgpu_context::WgpuContext;
 use super::anim_pose_store::AnimPoseStore;
 use super::attachments::depth::DepthTexture;
 use super::attachments::msaa::MSAATextures;
@@ -22,6 +21,7 @@ use super::prepare::mesh::resolve_skinned_draw;
 
 use crate::host::assets::io::asset_formats::materialfile;
 use crate::host::assets::store::{PlaceholderTextureIds, RenderAssetStore, TextureRenderId};
+use crate::host::wgpu_context::WgpuContext;
 use crate::host::world::buffers::static_instance::StaticInstances;
 use crate::host::world::pipelines::static_pbr::StaticPbrPipeline;
 use crate::host::world::prepare::mesh::resolve_static_draw;

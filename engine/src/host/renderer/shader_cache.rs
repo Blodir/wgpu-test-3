@@ -1,6 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
-use super::{utils, wgpu_context::WgpuContext};
+use super::utils;
+use crate::host::wgpu_context::WgpuContext;
 
 type ShaderId = String;
 
