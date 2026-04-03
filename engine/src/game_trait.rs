@@ -16,10 +16,10 @@ pub enum InputEvent<C> {
 }
 
 pub type BuildUiFn<S, C> =
-    fn(ctx: &egui::Context, snapshot: Option<&S>, debug_info: &DebugInfo, emit: &mut dyn FnMut(C));
+    fn(ctx: &egui::Context, snapshot: &S, debug_info: &DebugInfo, emit: &mut dyn FnMut(C));
 
 pub trait SimTrait {
-    type VarSnapshot;
+    type VarSnapshot: Default;
     type UiCommand;
 
     fn init(
@@ -45,7 +45,7 @@ pub trait UiTrait {
 
     fn build_ui(
         _ctx: &egui::Context,
-        _snapshot: Option<&<Self as UiTrait>::VarSnapshot>,
+        _snapshot: &<Self as UiTrait>::VarSnapshot,
         _debug_info: &DebugInfo,
         _emit: &mut dyn FnMut(<Self as UiTrait>::UiCommand),
     ) {

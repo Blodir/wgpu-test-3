@@ -28,7 +28,7 @@ where
         + UiTrait<VarSnapshot = <G as SimTrait>::VarSnapshot, UiCommand = <G as SimTrait>::UiCommand>
         + 'static,
     F: FnOnce() -> G + Send + 'static,
-    <G as SimTrait>::VarSnapshot: Send + Sync + 'static,
+    <G as SimTrait>::VarSnapshot: Send + Sync + Default + 'static,
     <G as SimTrait>::UiCommand: Send + 'static,
 {
     let (game_req_tx, game_req_rx) = cbch::unbounded();

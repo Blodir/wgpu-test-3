@@ -72,7 +72,7 @@ impl<S, C> Renderer<S, C> {
     pub fn run_ui(
         &mut self,
         wgpu_context: &WgpuContext,
-        ui_snapshot: Option<&S>,
+        ui_snapshot: &S,
         sim_debug: &SimDebugInfo,
     ) -> Vec<C> {
         let debug_info = DebugInfo {
@@ -93,7 +93,7 @@ impl<S, C> Renderer<S, C> {
         wgpu_context: &WgpuContext,
         render_resources: &RenderAssetStore,
         frame_idx: u32,
-        camera_pair: Option<&CameraSnapshotPair>,
+        camera_pair: &CameraSnapshotPair,
     ) -> Result<(), wgpu::SurfaceError> {
         let output_surface_texture = wgpu_context.surface.get_current_texture()?;
         let output_view = output_surface_texture

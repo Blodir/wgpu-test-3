@@ -85,7 +85,7 @@ impl<S, C> MainWindow<'_, S, C> {
 
 impl<'surface, S, C> ApplicationHandler for MainWindow<'surface, S, C>
 where
-    S: Send + Sync + 'static,
+    S: Send + Sync + Default + 'static,
     C: Send + 'static,
 {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
@@ -150,21 +150,13 @@ where
                     // self.resource_manager.process_upload_queue(&mut renderer, &mut render_context.render_resources, &render_context.wgpu_context);
                     let var_snapshot_guard = self.var_snapshot_handoff.load();
                     let fixed_snapshot_guard = self.fixed_snapshot_handoff.load();
-                    let var_snapshot = var_snapshot_guard.as_ref().map(|snapshot| &snapshot.snap);
-                    let camera_pair = var_snapshot_guard
-                        .as_ref()
-                        .map(|snapshot| &snapshot.camera_pair);
-                    let sim_debug = var_snapshot_guard
-                        .as_ref()
-                        .map(|snapshot| &snapshot.sim_debug);
-                    let default_sim_debug = crate::game::sim::SimDebugInfo::default();
+                    let var_snapshot = &var_snapshot_guard.snap;
+                    let camera_pair = &var_snapshot_guard.camera_pair;
+                    let sim_debug = &var_snapshot_guard.sim_debug;
 
                     renderer.begin_frame(render_context.frame_idx);
-                    let ui_commands = renderer.run_ui(
-                        &render_context.wgpu_context,
-                        var_snapshot,
-                        sim_debug.unwrap_or(&default_sim_debug),
-                    );
+                    let ui_commands =
+                        renderer.run_ui(&render_context.wgpu_context, var_snapshot, sim_debug);
                     for cmd in ui_commands {
                         self.sim_inputs.push(InputEvent::Ui(cmd));
                     }

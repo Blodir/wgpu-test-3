@@ -70,7 +70,7 @@ impl<S, C> GuiRenderer<S, C> {
     pub fn run_ui(
         &mut self,
         wgpu_context: &WgpuContext,
-        ui_snapshot: Option<&S>,
+        ui_snapshot: &S,
         debug_info: &DebugInfo,
     ) -> Vec<C> {
         self.screen_descriptor = screen_descriptor_from_context(wgpu_context);

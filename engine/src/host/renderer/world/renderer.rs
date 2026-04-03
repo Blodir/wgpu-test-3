@@ -182,7 +182,7 @@ impl WorldRenderer {
         frame_idx: u32,
         encoder: &mut wgpu::CommandEncoder,
         output_view: &wgpu::TextureView,
-        camera_pair: Option<&CameraSnapshotPair>,
+        camera_pair: &CameraSnapshotPair,
     ) {
         let now = Instant::now();
         let elapsed = now.saturating_duration_since(snaps.curr_timestamp);
@@ -194,15 +194,13 @@ impl WorldRenderer {
         } else {
             (elapsed.as_secs_f32() / interval.as_secs_f32()).clamp(0.0, 1.0)
         };
-        if let Some(camera_pair) = camera_pair {
-            prepare_camera(
-                &mut self.camera,
-                camera_pair,
-                now,
-                &wgpu_context.queue,
-                &wgpu_context.surface_config,
-            );
-        }
+        prepare_camera(
+            &mut self.camera,
+            camera_pair,
+            now,
+            &wgpu_context.queue,
+            &wgpu_context.surface_config,
+        );
         prepare_lights(
             &snaps,
             &mut self.lights,

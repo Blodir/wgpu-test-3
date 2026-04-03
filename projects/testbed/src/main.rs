@@ -92,6 +92,7 @@ struct Game {
     grid_spacing: f32,
 }
 
+#[derive(Default)]
 struct VarSnapshot {
     sun_tint: [f32; 3],
     sun_intensity: f32,
@@ -790,7 +791,7 @@ impl UiTrait for Game {
 
     fn build_ui(
         ctx: &egui::Context,
-        snapshot: Option<&Self::VarSnapshot>,
+        snapshot: &Self::VarSnapshot,
         debug_info: &DebugInfo,
         emit: &mut dyn FnMut(Self::UiCommand),
     ) {
@@ -844,117 +845,114 @@ impl UiTrait for Game {
             text_color,
         );
 
-        if let Some(snapshot) = snapshot {
-            let mut tint = snapshot.sun_tint;
-            let mut intensity = snapshot.sun_intensity;
-            let mut environment_map_intensity = snapshot.environment_map_intensity;
-            let mut altitude_deg = snapshot.sun_altitude_deg;
-            let mut direction_deg = snapshot.sun_direction_deg;
-            let mut environment_map_idx = snapshot.selected_environment_map_idx;
-            let mut sun_changed = false;
+        let mut tint = snapshot.sun_tint;
+        let mut intensity = snapshot.sun_intensity;
+        let mut environment_map_intensity = snapshot.environment_map_intensity;
+        let mut altitude_deg = snapshot.sun_altitude_deg;
+        let mut direction_deg = snapshot.sun_direction_deg;
+        let mut environment_map_idx = snapshot.selected_environment_map_idx;
+        let mut sun_changed = false;
 
-            egui::Window::new("Sun")
-                .default_pos(egui::pos2(12.0, rect.max.y + 10.0))
-                .resizable(false)
-                .show(ctx, |ui| {
-                    ui.label("Color");
-                    sun_changed |= ui.color_edit_button_rgb(&mut tint).changed();
-                    let selected_label = ENV_MAP_CHOICES
-                        .get(environment_map_idx)
-                        .map(|v| v.0)
-                        .unwrap_or("Unknown");
-                    egui::ComboBox::from_label("Environment Map")
-                        .selected_text(selected_label)
-                        .show_ui(ui, |ui| {
-                            for (idx, (label, _, _)) in ENV_MAP_CHOICES.iter().enumerate() {
-                                sun_changed |= ui
-                                    .selectable_value(&mut environment_map_idx, idx, *label)
-                                    .changed();
-                            }
-                        });
-                    sun_changed |= ui
-                        .add(
-                            egui::Slider::new(&mut intensity, 0.0..=100.0)
-                                .text("Intensity")
-                                .clamping(egui::SliderClamping::Always),
-                        )
-                        .changed();
-                    sun_changed |= ui
-                        .add(
-                            egui::Slider::new(&mut environment_map_intensity, 0.0..=100.0)
-                                .text("Environment Intensity")
-                                .clamping(egui::SliderClamping::Always),
-                        )
-                        .changed();
-                    sun_changed |= ui
-                        .add(
-                            egui::Slider::new(&mut altitude_deg, 0.0..=360.0)
-                                .text("Altitude (deg)")
-                                .clamping(egui::SliderClamping::Always),
-                        )
-                        .changed();
-                    sun_changed |= ui
-                        .add(
-                            egui::Slider::new(&mut direction_deg, 0.0..=360.0)
-                                .text("Direction (deg)")
-                                .clamping(egui::SliderClamping::Always),
-                        )
-                        .changed();
-                });
+        egui::Window::new("Sun")
+            .default_pos(egui::pos2(12.0, rect.max.y + 10.0))
+            .resizable(false)
+            .show(ctx, |ui| {
+                ui.label("Color");
+                sun_changed |= ui.color_edit_button_rgb(&mut tint).changed();
+                let selected_label = ENV_MAP_CHOICES
+                    .get(environment_map_idx)
+                    .map(|v| v.0)
+                    .unwrap_or("Unknown");
+                egui::ComboBox::from_label("Environment Map")
+                    .selected_text(selected_label)
+                    .show_ui(ui, |ui| {
+                        for (idx, (label, _, _)) in ENV_MAP_CHOICES.iter().enumerate() {
+                            sun_changed |= ui
+                                .selectable_value(&mut environment_map_idx, idx, *label)
+                                .changed();
+                        }
+                    });
+                sun_changed |= ui
+                    .add(
+                        egui::Slider::new(&mut intensity, 0.0..=100.0)
+                            .text("Intensity")
+                            .clamping(egui::SliderClamping::Always),
+                    )
+                    .changed();
+                sun_changed |= ui
+                    .add(
+                        egui::Slider::new(&mut environment_map_intensity, 0.0..=100.0)
+                            .text("Environment Intensity")
+                            .clamping(egui::SliderClamping::Always),
+                    )
+                    .changed();
+                sun_changed |= ui
+                    .add(
+                        egui::Slider::new(&mut altitude_deg, 0.0..=360.0)
+                            .text("Altitude (deg)")
+                            .clamping(egui::SliderClamping::Always),
+                    )
+                    .changed();
+                sun_changed |= ui
+                    .add(
+                        egui::Slider::new(&mut direction_deg, 0.0..=360.0)
+                            .text("Direction (deg)")
+                            .clamping(egui::SliderClamping::Always),
+                    )
+                    .changed();
+            });
 
-            if sun_changed {
-                emit(UiCommand::SetSunSettings {
-                    tint,
-                    intensity,
-                    environment_map_intensity,
-                    altitude_deg,
-                    direction_deg,
-                    environment_map_idx,
-                });
-            }
+        if sun_changed {
+            emit(UiCommand::SetSunSettings {
+                tint,
+                intensity,
+                environment_map_intensity,
+                altitude_deg,
+                direction_deg,
+                environment_map_idx,
+            });
+        }
 
-            let mut mesh_idx = snapshot.selected_mesh_idx;
-            let mut grid_size = snapshot.grid_size;
-            let mut grid_spacing = snapshot.grid_spacing;
-            let mut scene_changed = false;
+        let mut mesh_idx = snapshot.selected_mesh_idx;
+        let mut grid_size = snapshot.grid_size;
+        let mut grid_spacing = snapshot.grid_spacing;
+        let mut scene_changed = false;
 
-            egui::Window::new("Scene")
-                .default_pos(egui::pos2(260.0, rect.max.y + 10.0))
-                .resizable(false)
-                .show(ctx, |ui| {
-                    let selected_label =
-                        MESH_CHOICES.get(mesh_idx).map(|v| v.0).unwrap_or("Unknown");
-                    egui::ComboBox::from_label("Mesh")
-                        .selected_text(selected_label)
-                        .show_ui(ui, |ui| {
-                            for (idx, (label, _, _, _)) in MESH_CHOICES.iter().enumerate() {
-                                scene_changed |=
-                                    ui.selectable_value(&mut mesh_idx, idx, *label).changed();
-                            }
-                        });
-                    scene_changed |= ui
-                        .add(
-                            egui::Slider::new(&mut grid_size, 1..=100)
-                                .text("Grid Size")
-                                .clamping(egui::SliderClamping::Always),
-                        )
-                        .changed();
-                    scene_changed |= ui
-                        .add(
-                            egui::Slider::new(&mut grid_spacing, 1.0..=500.0)
-                                .text("Spacing")
-                                .clamping(egui::SliderClamping::Always),
-                        )
-                        .changed();
-                });
+        egui::Window::new("Scene")
+            .default_pos(egui::pos2(260.0, rect.max.y + 10.0))
+            .resizable(false)
+            .show(ctx, |ui| {
+                let selected_label = MESH_CHOICES.get(mesh_idx).map(|v| v.0).unwrap_or("Unknown");
+                egui::ComboBox::from_label("Mesh")
+                    .selected_text(selected_label)
+                    .show_ui(ui, |ui| {
+                        for (idx, (label, _, _, _)) in MESH_CHOICES.iter().enumerate() {
+                            scene_changed |=
+                                ui.selectable_value(&mut mesh_idx, idx, *label).changed();
+                        }
+                    });
+                scene_changed |= ui
+                    .add(
+                        egui::Slider::new(&mut grid_size, 1..=100)
+                            .text("Grid Size")
+                            .clamping(egui::SliderClamping::Always),
+                    )
+                    .changed();
+                scene_changed |= ui
+                    .add(
+                        egui::Slider::new(&mut grid_spacing, 1.0..=500.0)
+                            .text("Spacing")
+                            .clamping(egui::SliderClamping::Always),
+                    )
+                    .changed();
+            });
 
-            if scene_changed {
-                emit(UiCommand::SetSceneSettings {
-                    mesh_idx,
-                    grid_size,
-                    grid_spacing,
-                });
-            }
+        if scene_changed {
+            emit(UiCommand::SetSceneSettings {
+                mesh_idx,
+                grid_size,
+                grid_spacing,
+            });
         }
     }
 }

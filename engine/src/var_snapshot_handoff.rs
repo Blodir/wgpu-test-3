@@ -1,6 +1,6 @@
 use std::{sync::Arc, time::Instant};
 
-use arc_swap::{ArcSwapOption, Guard};
+use arc_swap::{ArcSwap, Guard};
 
 use crate::game::build_snapshot::CameraSnapshot;
 use crate::game::sim::SimDebugInfo;
@@ -12,6 +12,17 @@ pub struct CameraSnapshotPair {
     pub curr: CameraSnapshot,
     pub curr_timestamp: Instant,
 }
+impl Default for CameraSnapshotPair {
+    fn default() -> Self {
+        let now = Instant::now();
+        Self {
+            prev: CameraSnapshot::default(),
+            prev_timestamp: now,
+            curr: CameraSnapshot::default(),
+            curr_timestamp: now,
+        }
+    }
+}
 
 pub struct VarSnapshot<S> {
     pub tick: u64,
@@ -20,17 +31,28 @@ pub struct VarSnapshot<S> {
     pub sim_debug: SimDebugInfo,
     pub snap: S,
 }
-
-pub type VarSnapshotGuard<S> = Guard<Option<Arc<VarSnapshot<S>>>>;
-
-pub struct VarSnapshotHandoff<S> {
-    latest: ArcSwapOption<VarSnapshot<S>>,
+impl<S: Default> Default for VarSnapshot<S> {
+    fn default() -> Self {
+        Self {
+            tick: 0,
+            timestamp: Instant::now(),
+            camera_pair: CameraSnapshotPair::default(),
+            sim_debug: SimDebugInfo::default(),
+            snap: S::default(),
+        }
+    }
 }
 
-impl<S> VarSnapshotHandoff<S> {
+pub type VarSnapshotGuard<S> = Guard<Arc<VarSnapshot<S>>>;
+
+pub struct VarSnapshotHandoff<S> {
+    latest: ArcSwap<VarSnapshot<S>>,
+}
+
+impl<S: Default> VarSnapshotHandoff<S> {
     pub fn new() -> Self {
         Self {
-            latest: ArcSwapOption::from(None),
+            latest: ArcSwap::from(Arc::new(VarSnapshot::default())),
         }
     }
 
@@ -41,13 +63,13 @@ impl<S> VarSnapshotHandoff<S> {
         sim_debug: SimDebugInfo,
         snapshot: S,
     ) {
-        self.latest.store(Some(Arc::new(VarSnapshot {
+        self.latest.store(Arc::new(VarSnapshot {
             tick,
             timestamp: Instant::now(),
             camera_pair,
             sim_debug,
             snap: snapshot,
-        })));
+        }));
     }
 
     pub fn load(&self) -> VarSnapshotGuard<S> {

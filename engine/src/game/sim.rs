@@ -46,7 +46,7 @@ where
     G: SimTrait + 'static,
     F: FnOnce() -> G + Send + 'static,
     G::UiCommand: Send + 'static,
-    G::VarSnapshot: Send + Sync + 'static,
+    G::VarSnapshot: Send + Sync + Default + 'static,
 {
     std::thread::spawn(move || {
         let mut game = make_game();
