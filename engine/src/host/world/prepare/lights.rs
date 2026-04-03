@@ -1,7 +1,7 @@
 use crate::fixed_snapshot_handoff::FixedSnapshotGuard;
 use crate::{
-    main::assets::{io::asset_formats::materialfile, store::RenderAssetStore},
-    main::{
+    host::assets::{io::asset_formats::materialfile, store::RenderAssetStore},
+    host::{
         sampler_cache::SamplerCache, wgpu_context::WgpuContext,
         world::bindgroups::lights::LightsBinding,
     },

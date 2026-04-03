@@ -4,15 +4,15 @@ use glam::{Mat4, Quat, Vec3};
 
 use crate::game::assets::registry::{GameState, RenderState, ResourceRegistry};
 use crate::game::assets::store::GameAssetStore;
-use crate::main::assets::io::asset_formats::{materialfile, modelfile, rigfile::SRT};
+use crate::host::assets::io::asset_formats::{materialfile, modelfile, rigfile::SRT};
 use crate::{
     game::{
         animator::AnimationGraph,
         camera::{frustum_intersects_aabb_world, Frustum},
         scene_tree::{Environment, RenderDataType, Scene, SceneNodeId, Sun},
     },
-    main::assets::store::{MaterialRenderId, ModelRenderId, TextureRenderId},
-    main::world::pipelines::MeshPipelineKind,
+    host::assets::store::{MaterialRenderId, ModelRenderId, TextureRenderId},
+    host::world::pipelines::MeshPipelineKind,
 };
 
 pub fn accumulate_instance_snapshots(

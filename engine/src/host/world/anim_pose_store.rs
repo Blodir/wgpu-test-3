@@ -4,7 +4,7 @@ use generational_arena::{Arena, Index};
 
 use crate::{
     game::scene_tree::SceneNodeId, workers::worker_pool::AnimPoseTaskResult,
-    main::assets::io::asset_formats::rigfile::SRT,
+    host::assets::io::asset_formats::rigfile::SRT,
 };
 
 pub struct PoseData {

@@ -1,6 +1,6 @@
 use std::{fs::File, path::Path};
 
-use engine::main::assets::io::asset_formats::{dds::create_dds, materialfile};
+use engine::host::assets::io::asset_formats::{dds::create_dds, materialfile};
 
 pub fn gltf_img_to_dxgi_format(image: &gltf::image::Data, srgb: bool) -> ddsfile::DxgiFormat {
     let format = image.format;

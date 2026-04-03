@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
-use engine::main::assets::io::asset_formats::rigfile;
+use engine::host::assets::io::asset_formats::rigfile;
 use glam::{Quat, Vec3};
 use gltf::{Document, Node};
 

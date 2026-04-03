@@ -1,6 +1,6 @@
 use std::{collections::HashMap, fs::File, io::Write as _, path::Path};
 
-use engine::main::assets::io::asset_formats::animationfile::{
+use engine::host::assets::io::asset_formats::animationfile::{
     self, BinRef, Interpolation, Sampler3, SamplerQuat, Target, Track,
 };
 

@@ -2,7 +2,7 @@ use crossbeam::channel as cbch;
 use wgpu::util::{BufferInitDescriptor, DeviceExt as _};
 
 use super::io::asset_formats::materialfile;
-use crate::main::{
+use crate::host::{
     renderer::{Renderer, UploadMaterialRequest},
     wgpu_context::WgpuContext,
 };

@@ -11,7 +11,7 @@ use engine::{
         },
     },
     game_trait::{InputEvent, SimTrait, UiTrait},
-    main::renderer::DebugInfo,
+    host::renderer::DebugInfo,
     run,
 };
 use generational_arena::Arena;

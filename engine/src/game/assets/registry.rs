@@ -9,8 +9,8 @@ use crossbeam::channel as cbch;
 use generational_arena::{Arena, Index};
 
 use super::store::{AnimationClipGameId, AnimationGameId, MaterialGameId, ModelGameId, RigGameId};
-use crate::main::assets::io::asset_formats::animationfile;
-use crate::main::assets::store::{MaterialRenderId, MeshRenderId, ModelRenderId, TextureRenderId};
+use crate::host::assets::io::asset_formats::animationfile;
+use crate::host::assets::store::{MaterialRenderId, MeshRenderId, ModelRenderId, TextureRenderId};
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum ResourceKind {

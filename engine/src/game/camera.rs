@@ -2,7 +2,7 @@ use glam::{Mat3, Mat4, Quat, Vec3, Vec4};
 
 use crate::{
     game::build_snapshot::CameraSnapshot,
-    main::{assets::io::asset_formats::modelfile::Aabb, wgpu_context},
+    host::{assets::io::asset_formats::modelfile::Aabb, wgpu_context},
 };
 
 #[derive(Clone, Copy)]

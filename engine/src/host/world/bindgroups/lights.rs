@@ -3,7 +3,7 @@ use wgpu::util::DeviceExt as _;
 use crate::{
     game::build_snapshot::PointLightSnapshot,
     game::scene_tree,
-    main::{
+    host::{
         assets::{
             io::asset_formats::materialfile,
             store::{PlaceholderTextureIds, RenderAssetStore, TextureRenderId},

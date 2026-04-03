@@ -15,8 +15,8 @@ use crate::{
     fixed_snapshot_handoff::FixedSnapshotHandoff,
     game_trait::{BuildUiFn, InputEvent},
     workers::worker_pool::RenderResponse,
-    main::assets::{manager::MainAssetManager, store::RenderAssetStore},
-    main::{renderer::Renderer, wgpu_context::WgpuContext},
+    host::assets::{manager::MainAssetManager, store::RenderAssetStore},
+    host::{renderer::Renderer, wgpu_context::WgpuContext},
     var_snapshot_handoff::VarSnapshotHandoff,
 };
 

@@ -5,8 +5,8 @@ use winit::{event::WindowEvent, window::Window};
 
 use crate::{
     game_trait::BuildUiFn,
-    main::renderer::DebugInfo,
-    main::wgpu_context::WgpuContext,
+    host::renderer::DebugInfo,
+    host::wgpu_context::WgpuContext,
 };
 
 struct PendingGuiFrame {

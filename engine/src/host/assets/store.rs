@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use generational_arena::{Arena, Index};
 
-use crate::main::{
+use crate::host::{
     assets::io::asset_formats::rigfile::Rig, wgpu_context::WgpuContext,
     world::bindgroups::material::MaterialBinding,
 };

@@ -1,6 +1,6 @@
 use block_compression::BC6HSettings;
 use ddsfile::{Caps2, Dds, DxgiFormat, NewDxgiParams};
-use engine::main::assets::io::asset_formats::dds::create_dds;
+use engine::host::assets::io::asset_formats::dds::create_dds;
 use image::ImageReader;
 use pollster::FutureExt as _;
 use std::path::{Path, PathBuf};

@@ -6,11 +6,11 @@ use super::registry::{
     TextureHandle,
 };
 use super::runtime_formats::animation::{self, AnimationClip};
-use crate::main::assets::io::asset_formats::{
+use crate::host::assets::io::asset_formats::{
     animationfile, materialfile, modelfile,
     rigfile::{self, Rig},
 };
-use crate::main::assets::store::{MaterialRenderId, MeshRenderId, SubMesh, TextureRenderId};
+use crate::host::assets::store::{MaterialRenderId, MeshRenderId, SubMesh, TextureRenderId};
 use crossbeam::channel as cbch;
 use generational_arena::{Arena, Index};
 

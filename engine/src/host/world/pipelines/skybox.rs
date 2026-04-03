@@ -1,47 +1,38 @@
 use wgpu::util::DeviceExt;
 
-use crate::main::world::{
-    attachments::{msaa::MSAATextures, skybox::SkyboxOutputTexture},
-    bindgroups::post_processing::{PostProcessingInputs, PostProcessingInputsBinding},
-};
-use crate::main::{shader_cache::ShaderCache, wgpu_context::WgpuContext};
+use crate::host::{shader_cache::ShaderCache, wgpu_context::WgpuContext};
 
 const INDICES: &[u16] = &[0, 2, 1, 3, 2, 0];
 
-pub struct PostProcessingPipeline {
+pub struct SkyboxPipeline {
     render_pipeline: wgpu::RenderPipeline,
     index_buffer: wgpu::Buffer,
-    inputs_binding: PostProcessingInputsBinding,
-    inputs_bind_group_layout: wgpu::BindGroupLayout,
 }
-impl PostProcessingPipeline {
+impl SkyboxPipeline {
     pub fn new(
         wgpu_context: &WgpuContext,
         shader_cache: &mut ShaderCache,
-        skybox_texture: &SkyboxOutputTexture,
-        msaa_textures: &MSAATextures,
+        camera_bind_group_layout: &wgpu::BindGroupLayout,
+        lights_bind_group_layout: &wgpu::BindGroupLayout,
     ) -> Self {
-        let inputs_bind_group_layout = wgpu_context
-            .device
-            .create_bind_group_layout(&PostProcessingInputs::desc());
-        let bind_group_layouts = &[&inputs_bind_group_layout];
+        let bind_group_layouts = &[camera_bind_group_layout, lights_bind_group_layout];
         let render_pipeline_layout =
             wgpu_context
                 .device
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                    label: Some("Post Processing Pipeline Layout"),
+                    label: Some("Skybox Pipeline Layout"),
                     bind_group_layouts,
                     push_constant_ranges: &[],
                 });
         let shader_module = shader_cache.get(
-            "engine/src/main/world/shaders/post_processing.wgsl".to_string(),
+            "engine/src/host/world/shaders/skybox.wgsl".to_string(),
             wgpu_context,
         );
         let render_pipeline =
             wgpu_context
                 .device
                 .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                    label: Some("Post Processing Render Pipeline"),
+                    label: Some("Skybox Render Pipeline"),
                     layout: Some(&render_pipeline_layout),
                     vertex: wgpu::VertexState {
                         module: &shader_module,
@@ -53,7 +44,7 @@ impl PostProcessingPipeline {
                         module: &shader_module,
                         entry_point: Some("fs_main"),
                         targets: &[Some(wgpu::ColorTargetState {
-                            format: wgpu_context.surface_config.format,
+                            format: wgpu::TextureFormat::Rgba16Float,
                             blend: None,
                             write_mask: wgpu::ColorWrites::ALL,
                         })],
@@ -81,60 +72,43 @@ impl PostProcessingPipeline {
                     usage: wgpu::BufferUsages::INDEX,
                 });
 
-        let inputs_binding = PostProcessingInputs::upload(
-            &wgpu_context.device,
-            &inputs_bind_group_layout,
-            skybox_texture,
-            msaa_textures,
-        );
-
         Self {
             render_pipeline,
             index_buffer,
-            inputs_binding,
-            inputs_bind_group_layout,
         }
-    }
-
-    pub fn update_input_bindgroup(
-        &mut self,
-        device: &wgpu::Device,
-        skybox_texture: &SkyboxOutputTexture,
-        msaa_textures: &MSAATextures,
-    ) {
-        self.inputs_binding = PostProcessingInputs::upload(
-            device,
-            &self.inputs_bind_group_layout,
-            skybox_texture,
-            msaa_textures,
-        );
     }
 
     pub fn render(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         output_texture_view: &wgpu::TextureView,
+        camera_bind_group: &wgpu::BindGroup,
+        lights_bind_group: &wgpu::BindGroup,
     ) {
-        {
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Post Processing Render Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: output_texture_view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                occlusion_query_set: None,
-                timestamp_writes: None,
-            });
+        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Skybox Render Pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: output_texture_view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color {
+                        r: 0.1,
+                        g: 0.2,
+                        b: 0.3,
+                        a: 1.0,
+                    }),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            occlusion_query_set: None,
+            timestamp_writes: None,
+        });
 
-            render_pass.set_pipeline(&self.render_pipeline);
-            render_pass.set_bind_group(0u32, &self.inputs_binding.bind_group, &[]);
-            render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-            render_pass.draw_indexed(0..INDICES.len() as u32, 0, 0..1);
-        }
+        render_pass.set_pipeline(&self.render_pipeline);
+        render_pass.set_bind_group(0u32, camera_bind_group, &[]);
+        render_pass.set_bind_group(1u32, lights_bind_group, &[]);
+        render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+        render_pass.draw_indexed(0..INDICES.len() as u32, 0, 0..1);
     }
 }

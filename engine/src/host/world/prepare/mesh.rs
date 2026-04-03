@@ -6,7 +6,7 @@ use crate::fixed_snapshot_handoff::FixedSnapshotGuard;
 use crate::game::build_snapshot::{MeshDrawSnapshot, PassBatches};
 use crate::{
     game::scene_tree::SceneNodeId,
-    main::{
+    host::{
         assets::{io::asset_formats::rigfile::SRT, store::RenderAssetStore},
         utils::{safe_lerpu64, QuatExt},
         world::{

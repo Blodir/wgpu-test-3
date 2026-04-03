@@ -3,7 +3,7 @@ use std::time::Instant;
 use glam::{Mat3, Mat4, Vec4};
 
 use crate::{
-    main::{utils::lerpf32, wgpu_context, world::bindgroups::camera::CameraBinding},
+    host::{utils::lerpf32, wgpu_context, world::bindgroups::camera::CameraBinding},
     var_snapshot_handoff::CameraSnapshotPair,
 };
 

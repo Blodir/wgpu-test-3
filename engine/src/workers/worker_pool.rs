@@ -8,8 +8,8 @@ use crate::{
         animator::{BoundaryMode, TimeWrapMode},
         scene_tree::SceneNodeId,
     },
-    main::assets::io::asset_formats::rigfile::Rig,
-    main::world::anim_pose_store::PoseData,
+    host::assets::io::asset_formats::rigfile::Rig,
+    host::world::anim_pose_store::PoseData,
 };
 
 use super::anim_pose::execute_pose_tasks;

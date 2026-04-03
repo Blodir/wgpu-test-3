@@ -2,7 +2,7 @@
 
 use glam::{Quat, Vec3};
 
-use crate::main::assets::io::asset_formats::animationfile::{Interpolation, Target};
+use crate::host::assets::io::asset_formats::animationfile::{Interpolation, Target};
 
 pub struct AnimationClip {
     pub duration: f32,

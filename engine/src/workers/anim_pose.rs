@@ -9,7 +9,7 @@ use crate::{
     workers::worker_pool::{
         AnimPoseTask, AnimPoseTaskResult, BlendPoseTask, RenderResponse, SinglePoseTask,
     },
-    main::{
+    host::{
         assets::io::asset_formats::{animationfile, rigfile},
         utils::QuatExt,
         world::anim_pose_store::PoseData,

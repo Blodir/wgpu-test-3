@@ -1,6 +1,6 @@
 use wgpu::{util::DeviceExt as _, BindGroupLayout};
 
-use crate::main::{
+use crate::host::{
     assets::io::asset_formats::materialfile, sampler_cache::SamplerCache, wgpu_context::WgpuContext,
 };
 

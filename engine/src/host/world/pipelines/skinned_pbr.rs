@@ -1,10 +1,10 @@
-use crate::main::assets::store::RenderAssetStore;
-use crate::main::world::{
+use crate::host::assets::store::RenderAssetStore;
+use crate::host::world::{
     attachments::depth::DepthTexture,
     buffers::{skinned_instance::SkinnedInstance, skinned_vertex::SkinnedVertex},
     prepare::mesh::DrawContext,
 };
-use crate::main::{shader_cache::ShaderCache, wgpu_context::WgpuContext};
+use crate::host::{shader_cache::ShaderCache, wgpu_context::WgpuContext};
 
 pub struct SkinnedPbrPipeline {
     pub render_pipeline: wgpu::RenderPipeline,
@@ -55,11 +55,11 @@ impl SkinnedPbrPipeline {
                     push_constant_ranges: &[],
                 });
         let vertex_shader_module = shader_cache.get(
-            "engine/src/main/world/shaders/skinned_pbr.vert.wgsl".to_string(),
+            "engine/src/host/world/shaders/skinned_pbr.vert.wgsl".to_string(),
             wgpu_context,
         );
         let fragment_shader_module = shader_cache.get(
-            "engine/src/main/world/shaders/pbr.frag.wgsl".to_string(),
+            "engine/src/host/world/shaders/pbr.frag.wgsl".to_string(),
             wgpu_context,
         );
         wgpu_context

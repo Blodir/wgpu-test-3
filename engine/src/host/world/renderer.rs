@@ -20,11 +20,11 @@ use super::prepare::camera::prepare_camera;
 use super::prepare::lights::prepare_lights;
 use super::prepare::mesh::resolve_skinned_draw;
 
-use crate::main::assets::io::asset_formats::materialfile;
-use crate::main::assets::store::{PlaceholderTextureIds, RenderAssetStore, TextureRenderId};
-use crate::main::world::buffers::static_instance::StaticInstances;
-use crate::main::world::pipelines::static_pbr::StaticPbrPipeline;
-use crate::main::world::prepare::mesh::resolve_static_draw;
+use crate::host::assets::io::asset_formats::materialfile;
+use crate::host::assets::store::{PlaceholderTextureIds, RenderAssetStore, TextureRenderId};
+use crate::host::world::buffers::static_instance::StaticInstances;
+use crate::host::world::pipelines::static_pbr::StaticPbrPipeline;
+use crate::host::world::prepare::mesh::resolve_static_draw;
 use crate::{
     fixed_snapshot_handoff::FixedSnapshotHandoff, var_snapshot_handoff::CameraSnapshotPair,
 };
