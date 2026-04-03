@@ -39,7 +39,9 @@ pub struct BlendPoseTask {
     /// time in seconds since this transition started
     pub to_time: f32,
     pub from_time_wrap: TimeWrapMode,
+    pub from_boundary_mode: BoundaryMode,
     pub to_time_wrap: TimeWrapMode,
+    pub to_boundary_mode: BoundaryMode,
 }
 
 pub enum AnimPoseTask {
@@ -85,13 +87,71 @@ fn compute_keyframe_values<'a, T>(
     (v0, v1, alpha)
 }
 
-fn interpolate_channel_value_vec3(track: &Track, channel: &Channel<Vec3>, t: f32) -> Vec3 {
+fn compute_wrap_seam_alpha(t: f32, first_t: f32, last_t: f32, duration: f32) -> Option<f32> {
+    if t < first_t {
+        let seam_span = (duration - last_t) + first_t;
+        if seam_span <= f32::EPSILON {
+            return Some(1.0);
+        }
+        let seam_t = (duration - last_t) + t;
+        return Some((seam_t / seam_span).clamp(0.0, 1.0));
+    }
+    if t > last_t {
+        let seam_span = (duration - last_t) + first_t;
+        if seam_span <= f32::EPSILON {
+            return Some(1.0);
+        }
+        let seam_t = t - last_t;
+        return Some((seam_t / seam_span).clamp(0.0, 1.0));
+    }
+    None
+}
+
+fn interpolate_channel_value_vec3(
+    track: &Track,
+    channel: &Channel<Vec3>,
+    t: f32,
+    duration: f32,
+    time_wrap_mode: &TimeWrapMode,
+    boundary_mode: &BoundaryMode,
+) -> Vec3 {
     let times = channel
         .times
         .as_ref()
         .or(track.shared_times.as_ref())
         .unwrap();
     let values = &channel.values;
+    if values.is_empty() {
+        return Vec3::ZERO;
+    }
+    if values.len() == 1 {
+        return values[0];
+    }
+    if matches!(
+        time_wrap_mode,
+        animator::TimeWrapMode::Repeat | animator::TimeWrapMode::PingPong
+    ) {
+        let first_t = times[0];
+        let last_idx = values.len() - 1;
+        let last_t = times[last_idx];
+        if let Some(alpha) = compute_wrap_seam_alpha(t, first_t, last_t, duration) {
+            return match boundary_mode {
+                BoundaryMode::Open => {
+                    if t < first_t {
+                        values[0]
+                    } else {
+                        values[last_idx]
+                    }
+                }
+                BoundaryMode::Closed => values[0],
+                BoundaryMode::Interpolate => match channel.interpolation {
+                    animationfile::Interpolation::Linear => values[last_idx].lerp(values[0], alpha),
+                    animationfile::Interpolation::Step => values[last_idx],
+                    animationfile::Interpolation::CubicSpline => todo!(),
+                },
+            };
+        }
+    }
     let (v0, v1, alpha) = compute_keyframe_values(times, values, t);
     match channel.interpolation {
         animationfile::Interpolation::Linear => v0.lerp(*v1, alpha),
@@ -100,16 +160,56 @@ fn interpolate_channel_value_vec3(track: &Track, channel: &Channel<Vec3>, t: f32
     }
 }
 
-fn interpolate_channel_value_quat(track: &Track, channel: &Channel<Quat>, t: f32) -> Quat {
+fn interpolate_channel_value_quat(
+    track: &Track,
+    channel: &Channel<Quat>,
+    t: f32,
+    duration: f32,
+    time_wrap_mode: &TimeWrapMode,
+    boundary_mode: &BoundaryMode,
+) -> Quat {
     let times = channel
         .times
         .as_ref()
         .or(track.shared_times.as_ref())
         .unwrap();
     let values = &channel.values;
+    if values.is_empty() {
+        return Quat::IDENTITY;
+    }
+    if values.len() == 1 {
+        return values[0];
+    }
+    if matches!(
+        time_wrap_mode,
+        animator::TimeWrapMode::Repeat | animator::TimeWrapMode::PingPong
+    ) {
+        let first_t = times[0];
+        let last_idx = values.len() - 1;
+        let last_t = times[last_idx];
+        if let Some(alpha) = compute_wrap_seam_alpha(t, first_t, last_t, duration) {
+            return match boundary_mode {
+                BoundaryMode::Open => {
+                    if t < first_t {
+                        values[0]
+                    } else {
+                        values[last_idx]
+                    }
+                }
+                BoundaryMode::Closed => values[0],
+                BoundaryMode::Interpolate => match channel.interpolation {
+                    animationfile::Interpolation::Linear => {
+                        values[last_idx].nlerp(values[0], alpha)
+                    }
+                    animationfile::Interpolation::Step => values[last_idx],
+                    animationfile::Interpolation::CubicSpline => todo!(),
+                },
+            };
+        }
+    }
     let (v0, v1, alpha) = compute_keyframe_values(times, values, t);
     match channel.interpolation {
-        animationfile::Interpolation::Linear => v0.lerp(*v1, alpha),
+        animationfile::Interpolation::Linear => v0.nlerp(*v1, alpha),
         animationfile::Interpolation::Step => *v0,
         animationfile::Interpolation::CubicSpline => todo!(),
     }
@@ -121,6 +221,7 @@ fn compute_animated_locals(
     base_locals: &[(Vec3, Quat, Vec3)],
     animation_time: f32,
     time_wrap_mode: &animator::TimeWrapMode,
+    boundary_mode: &BoundaryMode,
 ) -> Vec<Option<(Vec3, Quat, Vec3)>> {
     let mut nodes: Vec<Option<(Vec3, Quat, Vec3)>> = vec![None; rig.nodes.len()];
     for track in &animation.tracks {
@@ -141,18 +242,36 @@ fn compute_animated_locals(
                 }
             }
         };
-        let translation = track
-            .translation
-            .as_ref()
-            .map(|channel| interpolate_channel_value_vec3(track, channel, t));
-        let rotation = track
-            .rotation
-            .as_ref()
-            .map(|channel| interpolate_channel_value_quat(track, channel, t));
-        let scale = track
-            .scale
-            .as_ref()
-            .map(|channel| interpolate_channel_value_vec3(track, channel, t));
+        let translation = track.translation.as_ref().map(|channel| {
+            interpolate_channel_value_vec3(
+                track,
+                channel,
+                t,
+                animation.duration,
+                time_wrap_mode,
+                boundary_mode,
+            )
+        });
+        let rotation = track.rotation.as_ref().map(|channel| {
+            interpolate_channel_value_quat(
+                track,
+                channel,
+                t,
+                animation.duration,
+                time_wrap_mode,
+                boundary_mode,
+            )
+        });
+        let scale = track.scale.as_ref().map(|channel| {
+            interpolate_channel_value_vec3(
+                track,
+                channel,
+                t,
+                animation.duration,
+                time_wrap_mode,
+                boundary_mode,
+            )
+        });
 
         match track.target {
             animationfile::Target::RigNode(idx) => {
@@ -195,10 +314,18 @@ fn compute_node_srt(task: AnimPoseTask) -> Vec<rigfile::SRT> {
             rig,
             clip,
             time_wrap,
+            boundary_mode,
             local_time,
             ..
         }) => {
-            let pose = compute_animated_locals(&clip, &rig, &base_locals, local_time, &time_wrap);
+            let pose = compute_animated_locals(
+                &clip,
+                &rig,
+                &base_locals,
+                local_time,
+                &time_wrap,
+                &boundary_mode,
+            );
             for (idx, maybe_node) in pose.iter().enumerate() {
                 if let Some(node) = maybe_node {
                     local_mats[idx] = Mat4::from_scale_rotation_translation(node.0, node.1, node.2);
@@ -213,13 +340,27 @@ fn compute_node_srt(task: AnimPoseTask) -> Vec<rigfile::SRT> {
             from_time,
             to_time,
             from_time_wrap,
+            from_boundary_mode,
             to_time_wrap,
+            to_boundary_mode,
             ..
         }) => {
-            let pose_1 =
-                compute_animated_locals(&from_clip, &rig, &base_locals, from_time, &from_time_wrap);
-            let pose_2 =
-                compute_animated_locals(&to_clip, &rig, &base_locals, to_time, &to_time_wrap);
+            let pose_1 = compute_animated_locals(
+                &from_clip,
+                &rig,
+                &base_locals,
+                from_time,
+                &from_time_wrap,
+                &from_boundary_mode,
+            );
+            let pose_2 = compute_animated_locals(
+                &to_clip,
+                &rig,
+                &base_locals,
+                to_time,
+                &to_time_wrap,
+                &to_boundary_mode,
+            );
             let blend_t = if blend_time <= f32::EPSILON {
                 1.0
             } else {

@@ -16,7 +16,6 @@ pub enum TimeWrapMode {
     PingPong,
 }
 
-// TODO: this does nothing atm
 /// What to do to with animation values at the wrap seam
 #[derive(Clone, Copy)]
 pub enum BoundaryMode {
@@ -285,7 +284,9 @@ impl Animator {
                         from_time,
                         to_time,
                         from_time_wrap: from_state.time_wrap,
+                        from_boundary_mode: from_state.boundary_mode,
                         to_time_wrap: to_state.time_wrap,
+                        to_boundary_mode: to_state.boundary_mode,
                     }
                 }),
             };
