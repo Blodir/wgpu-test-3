@@ -26,7 +26,6 @@ where
     G: SimTrait
         // UiTraits associated VarSnapshot and UiCommand types have to match with SimTrait
         + UiTrait<VarSnapshot = <G as SimTrait>::VarSnapshot, UiCommand = <G as SimTrait>::UiCommand>
-        // built and owned entirely on the sim thread
         + 'static,
     F: FnOnce() -> G + Send + 'static,
     <G as SimTrait>::VarSnapshot: Send + Sync + 'static,
