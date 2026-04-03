@@ -13,11 +13,11 @@ use super::assets::registry::{RegistryExt, ResourceRegistry, ResourceRequest, Re
 use super::assets::store::{CreateGameResourceRequest, CreateGameResourceResponse, GameAssetStore};
 use super::scene_tree::RenderDataType;
 use crate::{
+    api::GameTrait,
     fixed_snapshot_handoff::FixedSnapshotHandoff,
     game::build_snapshot::FixedSnapshot,
-    api::GameTrait,
     var_snapshot_handoff::{CameraSnapshotPair, VarSnapshotHandoff},
-    workers::worker_pool::Task,
+    workers::worker_pool::Job,
 };
 
 pub enum InputEvent<C> {
@@ -47,7 +47,7 @@ pub fn spawn_sim<G, F>(
     reg_res_rx: cbch::Receiver<ResourceResult>,
     game_req_rx: cbch::Receiver<CreateGameResourceRequest>,
     game_res_tx: cbch::Sender<CreateGameResourceResponse>,
-    job_task_tx: cbch::Sender<Task>,
+    job_task_tx: cbch::Sender<Job>,
     make_game: F,
 ) -> std::thread::JoinHandle<()>
 where
@@ -161,7 +161,7 @@ where
                                 &resource_registry,
                             );
                             if !job.is_empty() {
-                                if job_task_tx.send(Task::Pose(node_id, job)).is_err() {
+                                if job_task_tx.send(Job::Pose(node_id, job)).is_err() {
                                     todo!();
                                 }
                                 pose_jobs_scheduled += 1;
@@ -187,7 +187,7 @@ where
                                 &resource_registry,
                             );
                             if !job.is_empty() {
-                                if job_task_tx.send(Task::Pose(node_id, job)).is_err() {
+                                if job_task_tx.send(Job::Pose(node_id, job)).is_err() {
                                     todo!();
                                 }
                                 pose_jobs_scheduled += 1;

@@ -12,13 +12,13 @@ use winit::{
 };
 
 use crate::{
+    api::BuildUiFn,
     fixed_snapshot_handoff::FixedSnapshotHandoff,
     game::assets::{
         registry::{ResourceRequest, ResourceResult},
         store::{CreateGameResourceRequest, CreateGameResourceResponse},
     },
     game::sim::InputEvent,
-    api::BuildUiFn,
     host::assets::{manager::HostAssetManager, store::RenderAssetStore},
     host::{renderer::Renderer, wgpu_context::WgpuContext},
     var_snapshot_handoff::VarSnapshotHandoff,

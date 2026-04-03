@@ -168,7 +168,7 @@ impl WorldRenderer {
 
     pub fn receive_poses(
         &mut self,
-        anim_pose_task_results: crate::workers::worker_pool::AnimPoseTaskResult,
+        anim_pose_task_results: crate::workers::anim_pose::AnimPoseTaskResult,
     ) {
         self.pose_storage.receive_poses(anim_pose_task_results);
     }

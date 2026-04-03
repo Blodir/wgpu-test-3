@@ -1,6 +1,7 @@
 use std::{cell::RefCell, io};
 
 use engine::{
+    api::{GameTrait, UiTrait},
     game::{
         animator::{self, AnimationGraph, Animator},
         assets::registry::{ModelHandle, RegistryExt as _, TextureHandle},
@@ -11,7 +12,6 @@ use engine::{
         },
         sim::InputEvent,
     },
-    api::{GameTrait, UiTrait},
     host::renderer::DebugInfo,
     run,
 };

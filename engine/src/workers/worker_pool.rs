@@ -1,55 +1,11 @@
-use std::sync::Arc;
-
 use crossbeam::channel as cbch;
 
-use crate::game::assets::runtime_formats::animation::AnimationClip;
-use crate::{
-    game::{
-        animator::{BoundaryMode, TimeWrapMode},
-        scene_tree::SceneNodeId,
-    },
-    host::assets::io::asset_formats::rigfile::Rig,
-    host::world::anim_pose_store::PoseData,
-};
+use crate::game::scene_tree::SceneNodeId;
 
-use super::anim_pose::execute_pose_tasks;
+use super::anim_pose::{execute_pose_tasks, AnimPoseTask, AnimPoseTaskResult};
 
-pub struct SinglePoseTask {
-    pub instance_time: u64,
-    pub rig: Arc<Rig>,
-    pub clip: Arc<AnimationClip>,
-    pub time_wrap: TimeWrapMode,
-    pub boundary_mode: BoundaryMode,
-    /// time in seconds since the transition into this state started
-    pub local_time: f32,
-}
-
-pub struct BlendPoseTask {
-    pub instance_time: u64,
-    pub rig: Arc<Rig>,
-    pub from_clip: Arc<AnimationClip>,
-    pub to_clip: Arc<AnimationClip>,
-    pub blend_time: f32,
-    /// time in seconds since the transition to the previous state started
-    pub from_time: f32,
-    /// time in seconds since this transition started
-    pub to_time: f32,
-    pub from_time_wrap: TimeWrapMode,
-    pub to_time_wrap: TimeWrapMode,
-}
-
-pub enum AnimPoseTask {
-    Single(SinglePoseTask),
-    Blend(BlendPoseTask),
-}
-
-pub enum Task {
+pub enum Job {
     Pose(SceneNodeId, Vec<AnimPoseTask>),
-}
-
-pub struct AnimPoseTaskResult {
-    pub node_id: SceneNodeId,
-    pub data: Vec<PoseData>,
 }
 
 pub enum RenderResponse {
@@ -58,13 +14,13 @@ pub enum RenderResponse {
 pub enum GameResponse {}
 
 fn worker_loop(
-    rx: cbch::Receiver<Task>,
+    rx: cbch::Receiver<Job>,
     render_tx: &mut cbch::Sender<RenderResponse>,
     _game_tx: cbch::Sender<GameResponse>,
 ) {
     while let Ok(task) = rx.recv() {
         match task {
-            Task::Pose(node_id, tasks) => {
+            Job::Pose(node_id, tasks) => {
                 execute_pose_tasks(node_id, tasks, render_tx);
             }
         }
@@ -77,11 +33,11 @@ pub struct WorkerPool {
 impl WorkerPool {
     pub fn init() -> (
         Self,
-        cbch::Sender<Task>,
+        cbch::Sender<Job>,
         cbch::Receiver<RenderResponse>,
         cbch::Receiver<GameResponse>,
     ) {
-        let (req_tx, req_rx) = cbch::unbounded::<Task>();
+        let (req_tx, req_rx) = cbch::unbounded::<Job>();
         let (render_res_tx, render_res_rx) = cbch::unbounded::<RenderResponse>();
         let (game_res_tx, game_res_rx) = cbch::unbounded::<GameResponse>();
 

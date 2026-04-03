@@ -1,20 +1,56 @@
 use std::cmp::Ordering;
+use std::sync::Arc;
 
 use crossbeam::channel as cbch;
 use glam::{Mat4, Quat, Vec3};
 
 use crate::game::assets::runtime_formats::animation::{AnimationClip, Channel, Track};
 use crate::{
-    game::{animator, scene_tree::SceneNodeId},
+    game::{
+        animator::{self, BoundaryMode, TimeWrapMode},
+        scene_tree::SceneNodeId,
+    },
     host::{
         assets::io::asset_formats::{animationfile, rigfile},
         utils::QuatExt,
         world::anim_pose_store::PoseData,
     },
-    workers::worker_pool::{
-        AnimPoseTask, AnimPoseTaskResult, BlendPoseTask, RenderResponse, SinglePoseTask,
-    },
+    workers::worker_pool::RenderResponse,
 };
+
+pub struct SinglePoseTask {
+    pub instance_time: u64,
+    pub rig: Arc<rigfile::Rig>,
+    pub clip: Arc<AnimationClip>,
+    pub time_wrap: TimeWrapMode,
+    pub boundary_mode: BoundaryMode,
+    /// time in seconds since the transition into this state started
+    pub local_time: f32,
+}
+
+pub struct BlendPoseTask {
+    pub instance_time: u64,
+    pub rig: Arc<rigfile::Rig>,
+    pub from_clip: Arc<AnimationClip>,
+    pub to_clip: Arc<AnimationClip>,
+    pub blend_time: f32,
+    /// time in seconds since the transition to the previous state started
+    pub from_time: f32,
+    /// time in seconds since this transition started
+    pub to_time: f32,
+    pub from_time_wrap: TimeWrapMode,
+    pub to_time_wrap: TimeWrapMode,
+}
+
+pub enum AnimPoseTask {
+    Single(SinglePoseTask),
+    Blend(BlendPoseTask),
+}
+
+pub struct AnimPoseTaskResult {
+    pub node_id: SceneNodeId,
+    pub data: Vec<PoseData>,
+}
 
 fn bin_search_anim_indices(times: &[f32], val: f32) -> (usize, usize) {
     let n = times.len();

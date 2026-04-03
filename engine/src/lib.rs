@@ -6,17 +6,17 @@ use winit::event_loop::{ControlFlow, EventLoop};
 use workers::worker_pool::WorkerPool;
 
 use crate::{
+    api::{GameTrait, UiTrait},
     fixed_snapshot_handoff::FixedSnapshotHandoff,
     game::build_snapshot::FixedSnapshot,
     game::sim::InputEvent,
-    api::{GameTrait, UiTrait},
     host::window,
     var_snapshot_handoff::VarSnapshotHandoff,
 };
 
+pub mod api;
 pub mod fixed_snapshot_handoff;
 pub mod game;
-pub mod api;
 pub mod global_paths;
 pub mod host;
 pub mod var_snapshot_handoff;
@@ -26,8 +26,10 @@ pub fn run<G, F>(make_game: F)
 where
     G: GameTrait
         // UiTraits associated VarSnapshot and UiCommand types have to match with SimTrait
-        + UiTrait<VarSnapshot = <G as GameTrait>::VarSnapshot, UiCommand = <G as GameTrait>::UiCommand>
-        + 'static,
+        + UiTrait<
+            VarSnapshot = <G as GameTrait>::VarSnapshot,
+            UiCommand = <G as GameTrait>::UiCommand,
+        > + 'static,
     F: FnOnce() -> G + Send + 'static,
     <G as GameTrait>::VarSnapshot: Send + Sync + Default + 'static,
     <G as GameTrait>::UiCommand: Send + 'static,
