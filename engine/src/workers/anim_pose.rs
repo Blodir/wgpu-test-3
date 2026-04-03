@@ -6,13 +6,13 @@ use glam::{Mat4, Quat, Vec3};
 use crate::game::assets::runtime_formats::animation::{AnimationClip, Channel, Track};
 use crate::{
     game::{animator, scene_tree::SceneNodeId},
-    workers::worker_pool::{
-        AnimPoseTask, AnimPoseTaskResult, BlendPoseTask, RenderResponse, SinglePoseTask,
-    },
     host::{
         assets::io::asset_formats::{animationfile, rigfile},
         utils::QuatExt,
         world::anim_pose_store::PoseData,
+    },
+    workers::worker_pool::{
+        AnimPoseTask, AnimPoseTaskResult, BlendPoseTask, RenderResponse, SinglePoseTask,
     },
 };
 

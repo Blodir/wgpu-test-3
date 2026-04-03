@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use generational_arena::{Arena, Index};
 
 use crate::{
-    game::scene_tree::SceneNodeId, workers::worker_pool::AnimPoseTaskResult,
-    host::assets::io::asset_formats::rigfile::SRT,
+    game::scene_tree::SceneNodeId, host::assets::io::asset_formats::rigfile::SRT,
+    workers::worker_pool::AnimPoseTaskResult,
 };
 
 pub struct PoseData {

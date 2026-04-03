@@ -2,6 +2,8 @@ use std::{cell::RefCell, rc::Rc, u32};
 
 use glam::{Mat4, Quat, Vec3};
 
+use crate::global_paths::{BRDF_LUT_PNG, ENV_MAP_DI_DDS, ENV_MAP_PREFILTERED_DDS};
+
 use super::assets::registry::{ModelHandle, RegistryExt as _, ResourceRegistry, TextureHandle};
 use generational_arena::{Arena, Index};
 
@@ -79,13 +81,9 @@ impl Environment {
         Self {
             sun: Sun::default(),
             environment_map_intensity: 1.0,
-            prefiltered: resource_registry.request_texture(
-                "assets/kloofendal_overcast_puresky_8k.prefiltered.dds",
-                true,
-            ),
-            di: resource_registry
-                .request_texture("assets/kloofendal_overcast_puresky_8k.di.dds", true),
-            brdf: resource_registry.request_texture("assets/brdf_lut.png", false),
+            prefiltered: resource_registry.request_texture(ENV_MAP_PREFILTERED_DDS, true),
+            di: resource_registry.request_texture(ENV_MAP_DI_DDS, true),
+            brdf: resource_registry.request_texture(BRDF_LUT_PNG, false),
         }
     }
 }

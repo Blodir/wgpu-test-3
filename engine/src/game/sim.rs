@@ -16,8 +16,8 @@ use crate::{
     fixed_snapshot_handoff::FixedSnapshotHandoff,
     game::build_snapshot::FixedSnapshot,
     game_trait::{InputEvent, SimTrait},
-    workers::worker_pool::Task,
     var_snapshot_handoff::{CameraSnapshotPair, VarSnapshotHandoff},
+    workers::worker_pool::Task,
 };
 
 #[derive(Debug, Clone, Copy, Default)]

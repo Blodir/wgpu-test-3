@@ -1,5 +1,6 @@
 use wgpu::util::DeviceExt;
 
+use crate::global_paths::SHADER_SKYBOX_WGSL;
 use crate::host::{shader_cache::ShaderCache, wgpu_context::WgpuContext};
 
 const INDICES: &[u16] = &[0, 2, 1, 3, 2, 0];
@@ -24,10 +25,7 @@ impl SkyboxPipeline {
                     bind_group_layouts,
                     push_constant_ranges: &[],
                 });
-        let shader_module = shader_cache.get(
-            "engine/src/host/world/shaders/skybox.wgsl".to_string(),
-            wgpu_context,
-        );
+        let shader_module = shader_cache.get(SHADER_SKYBOX_WGSL.to_string(), wgpu_context);
         let render_pipeline =
             wgpu_context
                 .device

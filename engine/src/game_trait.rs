@@ -1,5 +1,5 @@
-use std::{cell::RefCell, rc::Rc};
 use crate::host::renderer::DebugInfo;
+use std::{cell::RefCell, rc::Rc};
 
 use crate::game::{
     animator::AnimationGraph,

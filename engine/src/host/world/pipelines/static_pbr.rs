@@ -1,3 +1,4 @@
+use crate::global_paths::{SHADER_PBR_FRAG_WGSL, SHADER_STATIC_PBR_VERT_WGSL};
 use crate::host::assets::store::RenderAssetStore;
 use crate::host::world::attachments::depth::DepthTexture;
 use crate::host::world::{
@@ -50,14 +51,10 @@ impl StaticPbrPipeline {
                     bind_group_layouts,
                     push_constant_ranges: &[],
                 });
-        let vertex_shader_module = shader_cache.get(
-            "engine/src/host/world/shaders/static_pbr.vert.wgsl".to_string(),
-            wgpu_context,
-        );
-        let fragment_shader_module = shader_cache.get(
-            "engine/src/host/world/shaders/pbr.frag.wgsl".to_string(),
-            wgpu_context,
-        );
+        let vertex_shader_module =
+            shader_cache.get(SHADER_STATIC_PBR_VERT_WGSL.to_string(), wgpu_context);
+        let fragment_shader_module =
+            shader_cache.get(SHADER_PBR_FRAG_WGSL.to_string(), wgpu_context);
         wgpu_context
             .device
             .create_render_pipeline(&wgpu::RenderPipelineDescriptor {

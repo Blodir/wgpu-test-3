@@ -14,10 +14,10 @@ use winit::{
 use crate::{
     fixed_snapshot_handoff::FixedSnapshotHandoff,
     game_trait::{BuildUiFn, InputEvent},
-    workers::worker_pool::RenderResponse,
     host::assets::{manager::MainAssetManager, store::RenderAssetStore},
     host::{renderer::Renderer, wgpu_context::WgpuContext},
     var_snapshot_handoff::VarSnapshotHandoff,
+    workers::worker_pool::RenderResponse,
 };
 
 fn resize<S, C>(

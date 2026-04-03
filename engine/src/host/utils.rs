@@ -1,5 +1,7 @@
 use glam::Quat;
 
+use crate::global_paths::SHADER_FALLBACK_WGSL;
+
 fn read_shaders(path: &str) -> std::io::Result<String> {
     let mut file = std::fs::File::open(path)?;
     let mut contents = String::new();
@@ -8,7 +10,7 @@ fn read_shaders(path: &str) -> std::io::Result<String> {
 }
 
 fn read_fallback_shaders() -> std::io::Result<String> {
-    let mut file = std::fs::File::open("engine/src/host/world/shaders/fallback.wgsl")?;
+    let mut file = std::fs::File::open(SHADER_FALLBACK_WGSL)?;
     let mut contents = String::new();
     std::io::Read::read_to_string(&mut file, &mut contents)?;
     Ok(contents)

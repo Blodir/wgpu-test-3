@@ -3,11 +3,7 @@ use std::sync::Arc;
 use egui_wgpu::ScreenDescriptor;
 use winit::{event::WindowEvent, window::Window};
 
-use crate::{
-    game_trait::BuildUiFn,
-    host::renderer::DebugInfo,
-    host::wgpu_context::WgpuContext,
-};
+use crate::{game_trait::BuildUiFn, host::renderer::DebugInfo, host::wgpu_context::WgpuContext};
 
 struct PendingGuiFrame {
     paint_jobs: Vec<egui::ClippedPrimitive>,

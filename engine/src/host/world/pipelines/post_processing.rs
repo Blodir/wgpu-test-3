@@ -1,5 +1,6 @@
 use wgpu::util::DeviceExt;
 
+use crate::global_paths::SHADER_POST_PROCESSING_WGSL;
 use crate::host::world::{
     attachments::{msaa::MSAATextures, skybox::SkyboxOutputTexture},
     bindgroups::post_processing::{PostProcessingInputs, PostProcessingInputsBinding},
@@ -33,10 +34,7 @@ impl PostProcessingPipeline {
                     bind_group_layouts,
                     push_constant_ranges: &[],
                 });
-        let shader_module = shader_cache.get(
-            "engine/src/host/world/shaders/post_processing.wgsl".to_string(),
-            wgpu_context,
-        );
+        let shader_module = shader_cache.get(SHADER_POST_PROCESSING_WGSL.to_string(), wgpu_context);
         let render_pipeline =
             wgpu_context
                 .device
