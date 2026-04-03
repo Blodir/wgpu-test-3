@@ -1,4 +1,5 @@
 use std::{cell::RefCell, rc::Rc};
+use crate::main::renderer::DebugInfo;
 
 use crate::game::{
     animator::AnimationGraph,
@@ -12,25 +13,6 @@ pub enum InputEvent<C> {
     AspectChange(f32),
     Ui(C),
     Exit,
-}
-
-#[derive(Debug, Clone, Copy, Default)]
-pub struct RenderDebugInfo {
-    pub frame_index: u32,
-    pub fps: f32,
-    pub frame_time_ms: f32,
-}
-
-#[derive(Debug, Clone, Copy, Default)]
-pub struct SimDebugInfo {
-    pub fps: f32,
-    pub frame_time_ms: f32,
-}
-
-#[derive(Debug, Clone, Copy, Default)]
-pub struct DebugInfo {
-    pub render: RenderDebugInfo,
-    pub sim: SimDebugInfo,
 }
 
 pub type BuildUiFn<S, C> =

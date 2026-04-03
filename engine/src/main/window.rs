@@ -146,7 +146,7 @@ where
                     let sim_debug = var_snapshot_guard
                         .as_ref()
                         .map(|snapshot| &snapshot.sim_debug);
-                    let default_sim_debug = crate::game_trait::SimDebugInfo::default();
+                    let default_sim_debug = crate::game::sim::SimDebugInfo::default();
 
                     renderer.begin_frame(render_context.frame_idx);
                     let ui_commands = renderer.run_ui(

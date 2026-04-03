@@ -3,7 +3,7 @@ use std::{sync::Arc, time::Instant};
 use arc_swap::{ArcSwapOption, Guard};
 
 use crate::game::build_snapshot::CameraSnapshot;
-use crate::game_trait::SimDebugInfo;
+use crate::game::sim::SimDebugInfo;
 
 #[derive(Clone, Copy)]
 pub struct CameraSnapshotPair {

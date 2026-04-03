@@ -8,10 +8,24 @@ use super::wgpu_context::WgpuContext;
 use super::world::bindgroups::material::MaterialBinding;
 use super::world::WorldRenderer;
 use crate::fixed_snapshot_handoff::FixedSnapshotHandoff;
-use crate::game_trait::{BuildUiFn, DebugInfo, RenderDebugInfo, SimDebugInfo};
+use crate::game_trait::BuildUiFn;
 use crate::job_system::worker_pool::AnimPoseTaskResult;
 pub use crate::main::world::UploadMaterialRequest;
 use crate::var_snapshot_handoff::CameraSnapshotPair;
+use crate::game::sim::SimDebugInfo;
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct RenderDebugInfo {
+    pub frame_index: u32,
+    pub fps: f32,
+    pub frame_time_ms: f32,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct DebugInfo {
+    pub render: RenderDebugInfo,
+    pub sim: SimDebugInfo,
+}
 
 pub struct Renderer<S, C> {
     world_renderer: WorldRenderer,

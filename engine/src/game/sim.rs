@@ -15,10 +15,16 @@ use super::scene_tree::RenderDataType;
 use crate::{
     fixed_snapshot_handoff::FixedSnapshotHandoff,
     game::build_snapshot::FixedSnapshot,
-    game_trait::{InputEvent, SimDebugInfo, SimTrait},
+    game_trait::{InputEvent, SimTrait},
     job_system::worker_pool::Task,
     var_snapshot_handoff::{CameraSnapshotPair, VarSnapshotHandoff},
 };
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SimDebugInfo {
+    pub fps: f32,
+    pub frame_time_ms: f32,
+}
 
 const FIXED_TICK: Duration = Duration::from_millis(100);
 const VAR_IDLE_SPIN: Duration = Duration::from_micros(200);

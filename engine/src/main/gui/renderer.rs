@@ -4,7 +4,8 @@ use egui_wgpu::ScreenDescriptor;
 use winit::{event::WindowEvent, window::Window};
 
 use crate::{
-    game_trait::{BuildUiFn, DebugInfo},
+    game_trait::BuildUiFn,
+    main::renderer::DebugInfo,
     main::wgpu_context::WgpuContext,
 };
 

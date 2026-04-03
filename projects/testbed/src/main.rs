@@ -10,7 +10,8 @@ use engine::{
             StaticModel, Sun,
         },
     },
-    game_trait::{DebugInfo, InputEvent, SimTrait, UiTrait},
+    game_trait::{InputEvent, SimTrait, UiTrait},
+    main::renderer::DebugInfo,
     run,
 };
 use generational_arena::Arena;
