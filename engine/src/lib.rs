@@ -9,14 +9,14 @@ use crate::{
     fixed_snapshot_handoff::FixedSnapshotHandoff,
     game::build_snapshot::FixedSnapshot,
     game::sim::InputEvent,
-    game_trait::{SimTrait, UiTrait},
+    api::{GameTrait, UiTrait},
     host::window,
     var_snapshot_handoff::VarSnapshotHandoff,
 };
 
 pub mod fixed_snapshot_handoff;
 pub mod game;
-pub mod game_trait;
+pub mod api;
 pub mod global_paths;
 pub mod host;
 pub mod var_snapshot_handoff;
@@ -24,13 +24,13 @@ pub mod workers;
 
 pub fn run<G, F>(make_game: F)
 where
-    G: SimTrait
+    G: GameTrait
         // UiTraits associated VarSnapshot and UiCommand types have to match with SimTrait
-        + UiTrait<VarSnapshot = <G as SimTrait>::VarSnapshot, UiCommand = <G as SimTrait>::UiCommand>
+        + UiTrait<VarSnapshot = <G as GameTrait>::VarSnapshot, UiCommand = <G as GameTrait>::UiCommand>
         + 'static,
     F: FnOnce() -> G + Send + 'static,
-    <G as SimTrait>::VarSnapshot: Send + Sync + Default + 'static,
-    <G as SimTrait>::UiCommand: Send + 'static,
+    <G as GameTrait>::VarSnapshot: Send + Sync + Default + 'static,
+    <G as GameTrait>::UiCommand: Send + 'static,
 {
     let (game_req_tx, game_req_rx) = cbch::unbounded();
     let (game_res_tx, game_res_rx) = cbch::unbounded();
@@ -38,8 +38,8 @@ where
     let (registry_res_tx, registry_res_rx) = cbch::unbounded();
     let initial_snap = FixedSnapshot::init();
     let fixed_snapshot_handoff = Arc::new(FixedSnapshotHandoff::new(initial_snap));
-    let var_snapshot_handoff = Arc::new(VarSnapshotHandoff::<<G as SimTrait>::VarSnapshot>::new());
-    let sim_inputs = Arc::new(SegQueue::<InputEvent<<G as SimTrait>::UiCommand>>::new());
+    let var_snapshot_handoff = Arc::new(VarSnapshotHandoff::<<G as GameTrait>::VarSnapshot>::new());
+    let sim_inputs = Arc::new(SegQueue::<InputEvent<<G as GameTrait>::UiCommand>>::new());
 
     let (worker_pool, task_tx, render_rx, game_rx) = WorkerPool::init();
     let sim_handle = spawn_sim(

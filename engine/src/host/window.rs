@@ -18,7 +18,7 @@ use crate::{
         store::{CreateGameResourceRequest, CreateGameResourceResponse},
     },
     game::sim::InputEvent,
-    game_trait::BuildUiFn,
+    api::BuildUiFn,
     host::assets::{manager::HostAssetManager, store::RenderAssetStore},
     host::{renderer::Renderer, wgpu_context::WgpuContext},
     var_snapshot_handoff::VarSnapshotHandoff,

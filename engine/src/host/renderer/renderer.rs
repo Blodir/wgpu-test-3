@@ -9,7 +9,7 @@ use super::world::bindgroups::material::MaterialBinding;
 use super::world::WorldRenderer;
 use crate::fixed_snapshot_handoff::FixedSnapshotGuard;
 use crate::game::sim::SimDebugInfo;
-use crate::game_trait::BuildUiFn;
+use crate::api::BuildUiFn;
 use crate::host::assets::store::{PlaceholderTextureIds, RenderAssetStore, TextureRenderId};
 pub use crate::host::renderer::world::UploadMaterialRequest;
 use crate::host::wgpu_context::WgpuContext;

@@ -15,7 +15,7 @@ use super::scene_tree::RenderDataType;
 use crate::{
     fixed_snapshot_handoff::FixedSnapshotHandoff,
     game::build_snapshot::FixedSnapshot,
-    game_trait::SimTrait,
+    api::GameTrait,
     var_snapshot_handoff::{CameraSnapshotPair, VarSnapshotHandoff},
     workers::worker_pool::Task,
 };
@@ -51,7 +51,7 @@ pub fn spawn_sim<G, F>(
     make_game: F,
 ) -> std::thread::JoinHandle<()>
 where
-    G: SimTrait + 'static,
+    G: GameTrait + 'static,
     F: FnOnce() -> G + Send + 'static,
     G::UiCommand: Send + 'static,
     G::VarSnapshot: Send + Sync + Default + 'static,

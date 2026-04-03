@@ -11,7 +11,7 @@ use crate::game::{
 pub type BuildUiFn<S, C> =
     fn(ctx: &egui::Context, snapshot: &S, debug_info: &DebugInfo, emit: &mut dyn FnMut(C));
 
-pub trait SimTrait {
+pub trait GameTrait {
     type VarSnapshot: Default;
     type UiCommand;
 

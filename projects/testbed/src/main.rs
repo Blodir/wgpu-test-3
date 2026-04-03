@@ -11,7 +11,7 @@ use engine::{
         },
         sim::InputEvent,
     },
-    game_trait::{SimTrait, UiTrait},
+    api::{GameTrait, UiTrait},
     host::renderer::DebugInfo,
     run,
 };
@@ -431,7 +431,7 @@ impl Game {
     }
 }
 
-impl SimTrait for Game {
+impl GameTrait for Game {
     type VarSnapshot = VarSnapshot;
     type UiCommand = UiCommand;
 
