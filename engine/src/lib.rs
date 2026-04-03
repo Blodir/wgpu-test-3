@@ -1,7 +1,7 @@
 use crossbeam::channel as cbch;
 use crossbeam_queue::SegQueue;
 use game::sim::spawn_sim;
-use job_system::worker_pool::WorkerPool;
+use workers::worker_pool::WorkerPool;
 use main::assets::manager::MainAssetManager;
 use std::sync::Arc;
 use winit::event_loop::{ControlFlow, EventLoop};
@@ -17,7 +17,7 @@ use crate::{
 pub mod fixed_snapshot_handoff;
 pub mod game;
 pub mod game_trait;
-pub mod job_system;
+pub mod workers;
 pub mod main;
 pub mod var_snapshot_handoff;
 

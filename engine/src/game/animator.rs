@@ -4,7 +4,7 @@ use super::assets::registry::{GameState, ModelHandle, ResourceRegistry};
 use super::assets::store::GameAssetStore;
 use crate::game::build_snapshot::AnimationSnapshot;
 use crate::{
-    job_system::worker_pool::{AnimPoseTask, BlendPoseTask, SinglePoseTask},
+    workers::worker_pool::{AnimPoseTask, BlendPoseTask, SinglePoseTask},
     main::world::anim_pose_store::POSE_STORAGE_BUFFER_SIZE,
 };
 

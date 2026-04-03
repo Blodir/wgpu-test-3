@@ -9,7 +9,7 @@ use super::world::bindgroups::material::MaterialBinding;
 use super::world::WorldRenderer;
 use crate::fixed_snapshot_handoff::FixedSnapshotHandoff;
 use crate::game_trait::BuildUiFn;
-use crate::job_system::worker_pool::AnimPoseTaskResult;
+use crate::workers::worker_pool::AnimPoseTaskResult;
 pub use crate::main::world::UploadMaterialRequest;
 use crate::var_snapshot_handoff::CameraSnapshotPair;
 use crate::game::sim::SimDebugInfo;

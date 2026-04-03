@@ -14,7 +14,7 @@ use winit::{
 use crate::{
     fixed_snapshot_handoff::FixedSnapshotHandoff,
     game_trait::{BuildUiFn, InputEvent},
-    job_system::worker_pool::RenderResponse,
+    workers::worker_pool::RenderResponse,
     main::assets::{manager::MainAssetManager, store::RenderAssetStore},
     main::{renderer::Renderer, wgpu_context::WgpuContext},
     var_snapshot_handoff::VarSnapshotHandoff,

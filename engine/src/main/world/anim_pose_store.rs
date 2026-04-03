@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use generational_arena::{Arena, Index};
 
 use crate::{
-    game::scene_tree::SceneNodeId, job_system::worker_pool::AnimPoseTaskResult,
+    game::scene_tree::SceneNodeId, workers::worker_pool::AnimPoseTaskResult,
     main::assets::io::asset_formats::rigfile::SRT,
 };
 
