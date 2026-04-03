@@ -48,7 +48,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
             uv
         );
 
-    var col = mix(skybox_sample.xyz, resolve_sample.xyz, resolve_sample.w);
+    // resolve_sample.rgb is premultiplied by resolve_sample.a after raster blending.
+    // Composite with skybox using premultiplied-alpha math.
+    var col = resolve_sample.xyz + skybox_sample.xyz * (1.0 - resolve_sample.w);
 
     // exposure
     let exposure = -2.0;
@@ -60,4 +62,3 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     return vec4f(col, 1.0);
 }
-

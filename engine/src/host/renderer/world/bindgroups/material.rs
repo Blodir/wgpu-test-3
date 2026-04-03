@@ -13,6 +13,7 @@ pub struct MaterialBinding {
     normal_texture_scale: wgpu::Buffer,
     alpha_mask_enabled: wgpu::Buffer,
     alpha_cutoff: wgpu::Buffer,
+    alpha_blend_enabled: wgpu::Buffer,
 }
 impl MaterialBinding {
     pub fn desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
@@ -185,6 +186,17 @@ impl MaterialBinding {
                     },
                     count: None,
                 },
+                // alpha blend enabled (1 = Blend, 0 = Opaque/Mask)
+                wgpu::BindGroupLayoutEntry {
+                    binding: 17,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
             ],
             label: Some("Material Bind Group Layout"),
         }
@@ -258,6 +270,17 @@ impl MaterialBinding {
                 .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                     label: Some("Alpha Cutoff Buffer"),
                     contents: bytemuck::cast_slice(&[mat.alpha_cutoff]),
+                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                });
+        let alpha_blend_enabled =
+            wgpu_context
+                .device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("Alpha Blend Enabled Buffer"),
+                    contents: bytemuck::cast_slice(&[match mat.alpha_mode {
+                        materialfile::AlphaMode::Blend => 1u32,
+                        _ => 0u32,
+                    }]),
                     usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
                 });
 
@@ -369,6 +392,10 @@ impl MaterialBinding {
                         binding: 16,
                         resource: alpha_cutoff.as_entire_binding(),
                     },
+                    wgpu::BindGroupEntry {
+                        binding: 17,
+                        resource: alpha_blend_enabled.as_entire_binding(),
+                    },
                 ],
                 label: Some("Material Bind Group"),
             });
@@ -382,6 +409,7 @@ impl MaterialBinding {
             normal_texture_scale,
             alpha_mask_enabled,
             alpha_cutoff,
+            alpha_blend_enabled,
         }
     }
 }

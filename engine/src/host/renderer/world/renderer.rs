@@ -241,8 +241,8 @@ impl WorldRenderer {
             frame_idx,
         );
 
-        self.skinned_pipeline.render(
-            skinned_draw_context,
+        self.skinned_pipeline.render_opaque(
+            &skinned_draw_context,
             &self.skinned_instances.buffer,
             encoder,
             &self.msaa_textures.msaa_texture_view,
@@ -253,8 +253,31 @@ impl WorldRenderer {
             render_resources,
         );
 
-        self.static_pipeline.render(
-            static_draw_context,
+        self.static_pipeline.render_opaque(
+            &static_draw_context,
+            &self.static_instances.buffer,
+            encoder,
+            &self.msaa_textures.msaa_texture_view,
+            &self.depth_texture.view,
+            &self.camera.bind_group,
+            &self.lights.bind_group,
+            render_resources,
+        );
+
+        self.skinned_pipeline.render_transparent(
+            &skinned_draw_context,
+            &self.skinned_instances.buffer,
+            encoder,
+            &self.msaa_textures.msaa_texture_view,
+            &self.depth_texture.view,
+            &self.camera.bind_group,
+            &self.lights.bind_group,
+            &self.bones.bind_group,
+            render_resources,
+        );
+
+        self.static_pipeline.render_transparent(
+            &static_draw_context,
             &self.static_instances.buffer,
             encoder,
             &self.msaa_textures.msaa_texture_view,

@@ -31,6 +31,7 @@
 @group(2) @binding(14) var<uniform> normal_texture_scale: f32;
 @group(2) @binding(15) var<uniform> alpha_mask_enabled: u32;
 @group(2) @binding(16) var<uniform> alpha_cutoff: f32;
+@group(2) @binding(17) var<uniform> alpha_blend_enabled: u32;
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
@@ -216,5 +217,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     var col = ambient + Lo + (surface_emissive * surface_emissive_sample.a);
 
-    return vec4f(col, 1.0);
+    let out_alpha = select(1.0, surface_color.a, alpha_blend_enabled == 1u);
+    return vec4f(col, out_alpha);
 }

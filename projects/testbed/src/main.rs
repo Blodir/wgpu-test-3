@@ -40,7 +40,7 @@ const ENV_MAP_CHOICES: [(&str, &str, &str); 3] = [
     ),
 ];
 
-const MESH_CHOICES: [(&str, &str, f32, bool); 4] = [
+const MESH_CHOICES: [(&str, &str, f32, bool); 5] = [
     ("Fox", "assets/local/Fox/Fox.json", 1.0, true),
     ("Sponza", "assets/local/Sponza/Sponza.json", 10.0, false),
     ("Lantern", "assets/local/Lantern/Lantern.json", 10.0, false),
@@ -50,6 +50,7 @@ const MESH_CHOICES: [(&str, &str, f32, bool); 4] = [
         10.0,
         false,
     ),
+    ("AlphaBlendModeTest", "assets/local/AlphaBlendModeTest/AlphaBlendModeTest.json", 1.0, false),
 ];
 
 const DEFAULT_MESH_IDX: usize = 1;

@@ -3,12 +3,13 @@ use crate::host::assets::store::RenderAssetStore;
 use crate::host::world::attachments::depth::DepthTexture;
 use crate::host::world::{
     buffers::{static_instance::StaticInstance, static_vertex::StaticVertex},
-    prepare::mesh::DrawContext,
+    prepare::mesh::{DrawContext, PassDrawContext},
 };
 use crate::host::{shader_cache::ShaderCache, wgpu_context::WgpuContext};
 
 pub struct StaticPbrPipeline {
-    pub render_pipeline: wgpu::RenderPipeline,
+    pub opaque_pipeline: wgpu::RenderPipeline,
+    pub transparent_pipeline: wgpu::RenderPipeline,
 }
 
 impl StaticPbrPipeline {
@@ -19,15 +20,27 @@ impl StaticPbrPipeline {
         camera_bind_group_layout: &wgpu::BindGroupLayout,
         lights_bind_group_layout: &wgpu::BindGroupLayout,
     ) -> Self {
-        let render_pipeline = Self::build_pipeline(
+        let opaque_pipeline = Self::build_pipeline(
             wgpu_context,
             shader_cache,
             camera_bind_group_layout,
             lights_bind_group_layout,
             &material_bind_group_layout,
+            false,
+        );
+        let transparent_pipeline = Self::build_pipeline(
+            wgpu_context,
+            shader_cache,
+            camera_bind_group_layout,
+            lights_bind_group_layout,
+            &material_bind_group_layout,
+            true,
         );
 
-        Self { render_pipeline }
+        Self {
+            opaque_pipeline,
+            transparent_pipeline,
+        }
     }
 
     pub fn build_pipeline(
@@ -36,6 +49,7 @@ impl StaticPbrPipeline {
         camera_bind_group_layout: &wgpu::BindGroupLayout,
         lights_bind_group_layout: &wgpu::BindGroupLayout,
         material_bind_group_layout: &wgpu::BindGroupLayout,
+        transparent: bool,
     ) -> wgpu::RenderPipeline {
         let vertex_buffer_layouts = &[StaticInstance::desc(), StaticVertex::desc()];
         let bind_group_layouts = &[
@@ -71,7 +85,11 @@ impl StaticPbrPipeline {
                     entry_point: Some("fs_main"),
                     targets: &[Some(wgpu::ColorTargetState {
                         format: wgpu::TextureFormat::Rgba16Float,
-                        blend: Some(wgpu::BlendState::REPLACE),
+                        blend: Some(if transparent {
+                            wgpu::BlendState::ALPHA_BLENDING
+                        } else {
+                            wgpu::BlendState::REPLACE
+                        }),
                         write_mask: wgpu::ColorWrites::ALL,
                     })],
                     compilation_options: wgpu::PipelineCompilationOptions::default(),
@@ -87,8 +105,12 @@ impl StaticPbrPipeline {
                 },
                 depth_stencil: Some(wgpu::DepthStencilState {
                     format: DepthTexture::DEPTH_FORMAT,
-                    depth_write_enabled: true,
-                    depth_compare: wgpu::CompareFunction::Less,
+                    depth_write_enabled: !transparent,
+                    depth_compare: if transparent {
+                        wgpu::CompareFunction::LessEqual
+                    } else {
+                        wgpu::CompareFunction::Less
+                    },
                     stencil: wgpu::StencilState::default(),
                     bias: wgpu::DepthBiasState::default(),
                 }),
@@ -102,31 +124,63 @@ impl StaticPbrPipeline {
             })
     }
 
-    pub fn render<'a>(
-        &self,
-        draw_context: DrawContext,
+    fn draw_pass<'a>(
+        pass_draw: &PassDrawContext<'a>,
+        render_pass: &mut wgpu::RenderPass<'a>,
         instance_buffer: &wgpu::Buffer,
-        encoder: &mut wgpu::CommandEncoder,
-        msaa_texture_view: &wgpu::TextureView,
-        msaa_resolve_texture_view: &wgpu::TextureView,
-        depth_texture_view: &wgpu::TextureView,
-        camera_bind_group: &wgpu::BindGroup,
-        lights_bind_group: &wgpu::BindGroup,
-        render_resources: &RenderAssetStore,
+        render_resources: &'a RenderAssetStore,
     ) {
         let models = &render_resources.models;
         let materials = &render_resources.materials;
         let meshes = &render_resources.meshes;
+        for material_batch in
+            &pass_draw.batch.material_batches[pass_draw.batch.static_batch.clone()]
+        {
+            let material = materials.get(material_batch.material_id.into()).unwrap();
+            render_pass.set_bind_group(2u32, &material.bind_group, &[]);
+            for mesh_batch in &pass_draw.batch.mesh_batches[material_batch.mesh_range.clone()] {
+                let model = models.get(mesh_batch.model_id.into()).unwrap();
+                let mesh = meshes.get(model.mesh_id.into()).unwrap();
+                render_pass.set_index_buffer(
+                    mesh.buffer
+                        .slice(0..model.vertex_buffer_start_offset as u64),
+                    wgpu::IndexFormat::Uint32,
+                );
+                render_pass.set_vertex_buffer(0, instance_buffer.slice(..));
+                render_pass.set_vertex_buffer(
+                    1u32,
+                    mesh.buffer.slice(model.vertex_buffer_start_offset as u64..),
+                );
+                for draw_idx in mesh_batch.submesh_range.clone() {
+                    let submesh_batch = &pass_draw.batch.submesh_batches[draw_idx];
+                    let submesh = &model.submeshes[submesh_batch.submesh_idx];
+                    render_pass.draw_indexed(
+                        submesh.index_range.clone(),
+                        submesh.base_vertex as i32,
+                        pass_draw.instance_ranges[draw_idx].clone(),
+                    );
+                }
+            }
+        }
+    }
 
-        // TODO can this descriptor be reused?
+    pub fn render_opaque<'a>(
+        &self,
+        draw_context: &'a DrawContext<'a>,
+        instance_buffer: &wgpu::Buffer,
+        encoder: &mut wgpu::CommandEncoder,
+        msaa_texture_view: &wgpu::TextureView,
+        depth_texture_view: &wgpu::TextureView,
+        camera_bind_group: &wgpu::BindGroup,
+        lights_bind_group: &wgpu::BindGroup,
+        render_resources: &'a RenderAssetStore,
+    ) {
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("Static PBR Render Pass"),
+            label: Some("Static PBR Opaque Render Pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: &msaa_texture_view,
-                // last pass drawing to msaa resolves
-                resolve_target: Some(&msaa_resolve_texture_view),
+                resolve_target: None,
                 ops: wgpu::Operations {
-                    // don't clear previous passes work
                     load: wgpu::LoadOp::Load,
                     store: wgpu::StoreOp::Store,
                 },
@@ -143,41 +197,59 @@ impl StaticPbrPipeline {
             timestamp_writes: None,
         });
 
-        render_pass.set_pipeline(&self.render_pipeline);
+        render_pass.set_pipeline(&self.opaque_pipeline);
         render_pass.set_bind_group(0u32, camera_bind_group, &[]);
         render_pass.set_bind_group(1, lights_bind_group, &[]);
+        Self::draw_pass(
+            &draw_context.opaque,
+            &mut render_pass,
+            instance_buffer,
+            render_resources,
+        );
+    }
 
-        for pass_draw in [&draw_context.opaque, &draw_context.transparent] {
-            for material_batch in
-                &pass_draw.batch.material_batches[pass_draw.batch.static_batch.clone()]
-            {
-                let material = materials.get(material_batch.material_id.into()).unwrap();
-                render_pass.set_bind_group(2u32, &material.bind_group, &[]);
-                for mesh_batch in &pass_draw.batch.mesh_batches[material_batch.mesh_range.clone()] {
-                    let model = models.get(mesh_batch.model_id.into()).unwrap();
-                    let mesh = meshes.get(model.mesh_id.into()).unwrap();
-                    render_pass.set_index_buffer(
-                        mesh.buffer
-                            .slice(0..model.vertex_buffer_start_offset as u64),
-                        wgpu::IndexFormat::Uint32,
-                    );
-                    // apparently there's no performance benefit to not just taking the whole instace buffer slice
-                    render_pass.set_vertex_buffer(0, instance_buffer.slice(..));
-                    render_pass.set_vertex_buffer(
-                        1u32,
-                        mesh.buffer.slice(model.vertex_buffer_start_offset as u64..),
-                    );
-                    for draw_idx in mesh_batch.submesh_range.clone() {
-                        let submesh_batch = &pass_draw.batch.submesh_batches[draw_idx];
-                        let submesh = &model.submeshes[submesh_batch.submesh_idx];
-                        render_pass.draw_indexed(
-                            submesh.index_range.clone(),
-                            submesh.base_vertex as i32,
-                            pass_draw.instance_ranges[draw_idx].clone(),
-                        );
-                    }
-                }
-            }
-        }
+    pub fn render_transparent<'a>(
+        &self,
+        draw_context: &'a DrawContext<'a>,
+        instance_buffer: &wgpu::Buffer,
+        encoder: &mut wgpu::CommandEncoder,
+        msaa_texture_view: &wgpu::TextureView,
+        msaa_resolve_texture_view: &wgpu::TextureView,
+        depth_texture_view: &wgpu::TextureView,
+        camera_bind_group: &wgpu::BindGroup,
+        lights_bind_group: &wgpu::BindGroup,
+        render_resources: &'a RenderAssetStore,
+    ) {
+        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Static PBR Transparent Render Pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &msaa_texture_view,
+                resolve_target: Some(&msaa_resolve_texture_view),
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: depth_texture_view,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                }),
+                stencil_ops: None,
+            }),
+            occlusion_query_set: None,
+            timestamp_writes: None,
+        });
+
+        render_pass.set_pipeline(&self.transparent_pipeline);
+        render_pass.set_bind_group(0u32, camera_bind_group, &[]);
+        render_pass.set_bind_group(1, lights_bind_group, &[]);
+        Self::draw_pass(
+            &draw_context.transparent,
+            &mut render_pass,
+            instance_buffer,
+            render_resources,
+        );
     }
 }
