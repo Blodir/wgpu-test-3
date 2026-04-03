@@ -18,14 +18,14 @@ use super::{
 use crate::game::assets::registry::{ResourceRequest, ResourceResult};
 use crate::game::assets::store::{CreateGameResourceRequest, CreateGameResourceResponse};
 
-pub struct MainAssetManager {
+pub struct HostAssetManager {
     io: IoWorkerPool,
     game_res_rx: cbch::Receiver<CreateGameResourceResponse>,
     game_req_tx: cbch::Sender<CreateGameResourceRequest>,
     registry_req_rx: cbch::Receiver<ResourceRequest>,
     registry_res_tx: cbch::Sender<ResourceResult>,
 }
-impl MainAssetManager {
+impl HostAssetManager {
     pub fn new(
         registry_req_rx: cbch::Receiver<ResourceRequest>,
         registry_res_tx: cbch::Sender<ResourceResult>,

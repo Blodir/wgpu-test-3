@@ -13,8 +13,12 @@ use winit::{
 
 use crate::{
     fixed_snapshot_handoff::FixedSnapshotHandoff,
+    game::assets::{
+        registry::{ResourceRequest, ResourceResult},
+        store::{CreateGameResourceRequest, CreateGameResourceResponse},
+    },
     game_trait::{BuildUiFn, InputEvent},
-    host::assets::{manager::MainAssetManager, store::RenderAssetStore},
+    host::assets::{manager::HostAssetManager, store::RenderAssetStore},
     host::{renderer::Renderer, wgpu_context::WgpuContext},
     var_snapshot_handoff::VarSnapshotHandoff,
     workers::worker_pool::RenderResponse,
@@ -48,7 +52,7 @@ pub struct MainWindow<'surface, S, C> {
     fixed_snapshot_handoff: Arc<FixedSnapshotHandoff>,
     var_snapshot_handoff: Arc<VarSnapshotHandoff<S>>,
     sim_inputs: Arc<SegQueue<InputEvent<C>>>,
-    resource_manager: MainAssetManager,
+    resource_manager: HostAssetManager,
     task_res_rx: cbch::Receiver<RenderResponse>,
     build_ui_fn: BuildUiFn<S, C>,
 }
@@ -57,11 +61,16 @@ impl<S, C> MainWindow<'_, S, C> {
     pub fn new(
         sim_inputs: Arc<SegQueue<InputEvent<C>>>,
         fixed_snapshot_handoff: Arc<FixedSnapshotHandoff>,
-        resource_manager: MainAssetManager,
+        registry_req_rx: cbch::Receiver<ResourceRequest>,
+        registry_res_tx: cbch::Sender<ResourceResult>,
+        game_res_rx: cbch::Receiver<CreateGameResourceResponse>,
+        game_req_tx: cbch::Sender<CreateGameResourceRequest>,
         task_res_rx: cbch::Receiver<RenderResponse>,
         var_snapshot_handoff: Arc<VarSnapshotHandoff<S>>,
         build_ui_fn: BuildUiFn<S, C>,
     ) -> Self {
+        let resource_manager =
+            HostAssetManager::new(registry_req_rx, registry_res_tx, game_res_rx, game_req_tx);
         Self {
             render_context: None,
             fixed_snapshot_handoff,

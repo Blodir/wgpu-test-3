@@ -1,7 +1,6 @@
 use crossbeam::channel as cbch;
 use crossbeam_queue::SegQueue;
 use game::sim::spawn_sim;
-use host::assets::manager::MainAssetManager;
 use std::sync::Arc;
 use winit::event_loop::{ControlFlow, EventLoop};
 use workers::worker_pool::WorkerPool;
@@ -36,8 +35,6 @@ where
     let (game_res_tx, game_res_rx) = cbch::unbounded();
     let (registry_req_tx, registry_req_rx) = cbch::unbounded();
     let (registry_res_tx, registry_res_rx) = cbch::unbounded();
-    let asset_manager =
-        MainAssetManager::new(registry_req_rx, registry_res_tx, game_res_rx, game_req_tx);
     let initial_snap = FixedSnapshot::init();
     let fixed_snapshot_handoff = Arc::new(FixedSnapshotHandoff::new(initial_snap));
     let var_snapshot_handoff = Arc::new(VarSnapshotHandoff::<<G as SimTrait>::VarSnapshot>::new());
@@ -59,7 +56,10 @@ where
     let mut main_window = window::MainWindow::new(
         sim_inputs.clone(),
         fixed_snapshot_handoff.clone(),
-        asset_manager,
+        registry_req_rx,
+        registry_res_tx,
+        game_res_rx,
+        game_req_tx,
         render_rx,
         var_snapshot_handoff,
         <G as UiTrait>::build_ui,
