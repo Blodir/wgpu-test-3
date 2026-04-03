@@ -268,7 +268,7 @@ fn compute_node_srt(task: AnimPoseTask) -> Vec<rigfile::SRT> {
         .collect()
 }
 
-pub fn execute_pose_tasks(
+pub fn execute_pose_job(
     node_id: SceneNodeId,
     tasks: Vec<AnimPoseTask>,
     render_tx: &mut cbch::Sender<RenderResponse>,

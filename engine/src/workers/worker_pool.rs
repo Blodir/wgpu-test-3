@@ -2,7 +2,7 @@ use crossbeam::channel as cbch;
 
 use crate::game::scene_tree::SceneNodeId;
 
-use super::anim_pose::{execute_pose_tasks, AnimPoseTask, AnimPoseTaskResult};
+use super::anim_pose::{execute_pose_job, AnimPoseTask, AnimPoseTaskResult};
 
 pub enum Job {
     Pose(SceneNodeId, Vec<AnimPoseTask>),
@@ -21,7 +21,7 @@ fn worker_loop(
     while let Ok(task) = rx.recv() {
         match task {
             Job::Pose(node_id, tasks) => {
-                execute_pose_tasks(node_id, tasks, render_tx);
+                execute_pose_job(node_id, tasks, render_tx);
             }
         }
     }
