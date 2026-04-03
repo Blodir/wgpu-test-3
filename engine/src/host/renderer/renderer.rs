@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Instant};
+use std::time::Instant;
 
 use winit::event::WindowEvent;
 
@@ -7,7 +7,7 @@ use super::sampler_cache::SamplerCache;
 use super::shader_cache::ShaderCache;
 use super::world::bindgroups::material::MaterialBinding;
 use super::world::WorldRenderer;
-use crate::fixed_snapshot_handoff::FixedSnapshotHandoff;
+use crate::fixed_snapshot_handoff::FixedSnapshotGuard;
 use crate::game::sim::SimDebugInfo;
 use crate::game_trait::BuildUiFn;
 use crate::host::assets::store::{PlaceholderTextureIds, RenderAssetStore, TextureRenderId};
@@ -42,7 +42,6 @@ pub struct Renderer<S, C> {
 impl<S, C> Renderer<S, C> {
     pub fn new(
         wgpu_context: &WgpuContext,
-        fixed_snapshot_handoff: Arc<FixedSnapshotHandoff>,
         placeholders: PlaceholderTextureIds,
         brdf_lut: TextureRenderId,
         render_resources: &RenderAssetStore,
@@ -52,7 +51,6 @@ impl<S, C> Renderer<S, C> {
         let mut shader_cache = ShaderCache::new();
         let world_renderer = WorldRenderer::new(
             wgpu_context,
-            fixed_snapshot_handoff,
             placeholders,
             brdf_lut,
             &mut sampler_cache,
@@ -91,6 +89,7 @@ impl<S, C> Renderer<S, C> {
 
     pub fn render(
         &mut self,
+        fixed_snapshot_guard: &FixedSnapshotGuard,
         wgpu_context: &WgpuContext,
         render_resources: &RenderAssetStore,
         frame_idx: u32,
@@ -109,6 +108,7 @@ impl<S, C> Renderer<S, C> {
                 });
 
         self.world_renderer.render(
+            fixed_snapshot_guard,
             wgpu_context,
             render_resources,
             &mut self.sampler_cache,

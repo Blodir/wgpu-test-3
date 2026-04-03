@@ -1,4 +1,3 @@
-use std::sync::Arc;
 use std::time::Instant;
 
 use super::super::sampler_cache::SamplerCache;
@@ -25,9 +24,7 @@ use crate::host::wgpu_context::WgpuContext;
 use crate::host::world::buffers::static_instance::StaticInstances;
 use crate::host::world::pipelines::static_pbr::StaticPbrPipeline;
 use crate::host::world::prepare::mesh::resolve_static_draw;
-use crate::{
-    fixed_snapshot_handoff::FixedSnapshotHandoff, var_snapshot_handoff::CameraSnapshotPair,
-};
+use crate::{fixed_snapshot_handoff::FixedSnapshotGuard, var_snapshot_handoff::CameraSnapshotPair};
 
 pub struct Layouts {
     pub camera: wgpu::BindGroupLayout,
@@ -81,7 +78,6 @@ pub struct WorldRenderer {
     skinned_pipeline: SkinnedPbrPipeline,
     static_pipeline: StaticPbrPipeline,
     post_pipeline: PostProcessingPipeline,
-    fixed_snapshot_handoff: Arc<FixedSnapshotHandoff>,
     pub layouts: Layouts,
     pub placeholders: PlaceholderTextureIds,
     pub brdf_lut: TextureRenderId,
@@ -95,7 +91,6 @@ pub struct WorldRenderer {
 impl WorldRenderer {
     pub fn new(
         wgpu_context: &WgpuContext,
-        fixed_snapshot_handoff: Arc<FixedSnapshotHandoff>,
         placeholders: PlaceholderTextureIds,
         brdf_lut: TextureRenderId,
         sampler_cache: &mut SamplerCache,
@@ -158,7 +153,6 @@ impl WorldRenderer {
             skybox_pipeline,
             skinned_pipeline,
             post_pipeline,
-            fixed_snapshot_handoff,
             layouts,
             bones,
             camera,
@@ -181,6 +175,7 @@ impl WorldRenderer {
 
     pub fn render(
         &mut self,
+        snaps: &FixedSnapshotGuard,
         wgpu_context: &WgpuContext,
         render_resources: &RenderAssetStore,
         sampler_cache: &mut SamplerCache,
@@ -189,7 +184,6 @@ impl WorldRenderer {
         output_view: &wgpu::TextureView,
         camera_pair: Option<&CameraSnapshotPair>,
     ) {
-        let snaps = self.fixed_snapshot_handoff.load();
         let now = Instant::now();
         let elapsed = now.saturating_duration_since(snaps.curr_timestamp);
         let interval = snaps

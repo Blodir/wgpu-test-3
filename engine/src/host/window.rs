@@ -91,7 +91,6 @@ where
         let brdf_lut = render_resources.initialize_brdf_lut(&wgpu_context);
         let renderer = Arc::new(Mutex::new(Renderer::new(
             &wgpu_context,
-            self.fixed_snapshot_handoff.clone(),
             placeholders,
             brdf_lut,
             &render_resources,
@@ -141,6 +140,7 @@ where
 
                     // self.resource_manager.process_upload_queue(&mut renderer, &mut render_context.render_resources, &render_context.wgpu_context);
                     let var_snapshot_guard = self.var_snapshot_handoff.load();
+                    let fixed_snapshot_guard = self.fixed_snapshot_handoff.load();
                     let var_snapshot = var_snapshot_guard.as_ref().map(|snapshot| &snapshot.snap);
                     let camera_pair = var_snapshot_guard
                         .as_ref()
@@ -161,6 +161,7 @@ where
                     }
 
                     match renderer.render(
+                        &fixed_snapshot_guard,
                         &render_context.wgpu_context,
                         &render_context.render_resources,
                         render_context.frame_idx,
