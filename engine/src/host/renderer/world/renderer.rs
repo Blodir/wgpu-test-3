@@ -85,8 +85,6 @@ pub struct WorldRenderer {
     pub layouts: Layouts,
     pub placeholders: PlaceholderTextureIds,
     pub brdf_lut: TextureRenderId,
-    sampler_cache: SamplerCache,
-    shader_cache: ShaderCache,
     bones: BonesBinding,
     pub camera: CameraBinding,
     lights: LightsBinding,
@@ -100,15 +98,15 @@ impl WorldRenderer {
         fixed_snapshot_handoff: Arc<FixedSnapshotHandoff>,
         placeholders: PlaceholderTextureIds,
         brdf_lut: TextureRenderId,
+        sampler_cache: &mut SamplerCache,
+        shader_cache: &mut ShaderCache,
         render_resources: &RenderAssetStore,
     ) -> Self {
         let layouts = Layouts::new(&wgpu_context);
-        let mut sampler_cache = SamplerCache::new();
-        let mut shader_cache = ShaderCache::new();
         let lights = LightsBinding::new(
             render_resources,
             brdf_lut,
-            &mut sampler_cache,
+            sampler_cache,
             &placeholders,
             wgpu_context,
             &layouts.lights,
@@ -127,13 +125,13 @@ impl WorldRenderer {
 
         let skybox_pipeline = SkyboxPipeline::new(
             &wgpu_context,
-            &mut shader_cache,
+            shader_cache,
             &layouts.camera,
             &layouts.lights,
         );
         let skinned_pipeline = SkinnedPbrPipeline::new(
             &wgpu_context,
-            &mut shader_cache,
+            shader_cache,
             &layouts.pbr_material,
             &layouts.camera,
             &layouts.lights,
@@ -141,14 +139,14 @@ impl WorldRenderer {
         );
         let static_pipeline = StaticPbrPipeline::new(
             &wgpu_context,
-            &mut shader_cache,
+            shader_cache,
             &layouts.pbr_material,
             &layouts.camera,
             &layouts.lights,
         );
         let post_pipeline = PostProcessingPipeline::new(
             &wgpu_context,
-            &mut shader_cache,
+            shader_cache,
             &skybox_output,
             &msaa_textures,
         );
@@ -168,8 +166,6 @@ impl WorldRenderer {
             skinned_instances,
             placeholders,
             brdf_lut,
-            sampler_cache,
-            shader_cache,
             static_instances,
             static_pipeline,
             pose_storage,
@@ -187,6 +183,7 @@ impl WorldRenderer {
         &mut self,
         wgpu_context: &WgpuContext,
         render_resources: &RenderAssetStore,
+        sampler_cache: &mut SamplerCache,
         frame_idx: u32,
         encoder: &mut wgpu::CommandEncoder,
         output_view: &wgpu::TextureView,
@@ -217,7 +214,7 @@ impl WorldRenderer {
             &mut self.lights,
             self.brdf_lut,
             render_resources,
-            &mut self.sampler_cache,
+            sampler_cache,
             wgpu_context,
             &self.layouts.lights,
         );
@@ -295,6 +292,7 @@ impl WorldRenderer {
         &mut self,
         request: UploadMaterialRequest<'_>,
         render_resources: &RenderAssetStore,
+        sampler_cache: &mut SamplerCache,
         wgpu_context: &WgpuContext,
     ) -> Result<MaterialBinding, ()> {
         let textures_gpu = &render_resources.textures;
@@ -343,6 +341,7 @@ impl WorldRenderer {
             )
             .unwrap()
             .texture_view;
+
         Ok(MaterialBinding::upload(
             request.manifest,
             base_color_view,
@@ -352,7 +351,7 @@ impl WorldRenderer {
             occlusion_view,
             &self.layouts.material,
             wgpu_context,
-            &mut self.sampler_cache,
+            sampler_cache,
         ))
     }
 }

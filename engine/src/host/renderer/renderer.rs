@@ -3,14 +3,16 @@ use std::{sync::Arc, time::Instant};
 use winit::event::WindowEvent;
 
 use super::gui::GuiRenderer;
+use super::sampler_cache::SamplerCache;
+use super::shader_cache::ShaderCache;
 use super::world::bindgroups::material::MaterialBinding;
 use super::world::WorldRenderer;
 use crate::fixed_snapshot_handoff::FixedSnapshotHandoff;
 use crate::game::sim::SimDebugInfo;
 use crate::game_trait::BuildUiFn;
 use crate::host::assets::store::{PlaceholderTextureIds, RenderAssetStore, TextureRenderId};
-use crate::host::wgpu_context::WgpuContext;
 pub use crate::host::renderer::world::UploadMaterialRequest;
+use crate::host::wgpu_context::WgpuContext;
 use crate::var_snapshot_handoff::CameraSnapshotPair;
 use crate::workers::worker_pool::AnimPoseTaskResult;
 
@@ -30,6 +32,8 @@ pub struct DebugInfo {
 pub struct Renderer<S, C> {
     world_renderer: WorldRenderer,
     gui_renderer: GuiRenderer<S, C>,
+    sampler_cache: SamplerCache,
+    _shader_cache: ShaderCache,
     last_frame_instant: Option<Instant>,
     frame_fps_smoothed: f32,
     render_debug: RenderDebugInfo,
@@ -44,17 +48,23 @@ impl<S, C> Renderer<S, C> {
         render_resources: &RenderAssetStore,
         build_ui_fn: BuildUiFn<S, C>,
     ) -> Self {
+        let mut sampler_cache = SamplerCache::new();
+        let mut shader_cache = ShaderCache::new();
         let world_renderer = WorldRenderer::new(
             wgpu_context,
             fixed_snapshot_handoff,
             placeholders,
             brdf_lut,
+            &mut sampler_cache,
+            &mut shader_cache,
             render_resources,
         );
         let gui_renderer = GuiRenderer::new(wgpu_context, build_ui_fn);
         Self {
             world_renderer,
             gui_renderer,
+            sampler_cache,
+            _shader_cache: shader_cache,
             last_frame_instant: None,
             frame_fps_smoothed: 0.0,
             render_debug: RenderDebugInfo::default(),
@@ -101,6 +111,7 @@ impl<S, C> Renderer<S, C> {
         self.world_renderer.render(
             wgpu_context,
             render_resources,
+            &mut self.sampler_cache,
             frame_idx,
             &mut encoder,
             &output_view,
@@ -137,8 +148,12 @@ impl<S, C> Renderer<S, C> {
         render_resources: &RenderAssetStore,
         wgpu_context: &WgpuContext,
     ) -> Result<MaterialBinding, ()> {
-        self.world_renderer
-            .upload_material(request, render_resources, wgpu_context)
+        self.world_renderer.upload_material(
+            request,
+            render_resources,
+            &mut self.sampler_cache,
+            wgpu_context,
+        )
     }
 
     fn update_render_debug(&mut self, frame_index: u32) {
