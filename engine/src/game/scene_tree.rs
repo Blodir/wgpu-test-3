@@ -2,7 +2,7 @@ use std::{cell::RefCell, rc::Rc, u32};
 
 use glam::{Mat4, Quat, Vec3};
 
-use crate::global_paths::{BRDF_LUT_PNG, ENV_MAP_DI_DDS, ENV_MAP_PREFILTERED_DDS};
+use crate::global_paths::{ENV_MAP_DI_DDS, ENV_MAP_PREFILTERED_DDS};
 
 use super::assets::registry::{ModelHandle, RegistryExt as _, ResourceRegistry, TextureHandle};
 use generational_arena::{Arena, Index};
@@ -74,7 +74,6 @@ pub struct Environment {
     pub environment_map_intensity: f32,
     pub prefiltered: TextureHandle,
     pub di: TextureHandle,
-    pub brdf: TextureHandle,
 }
 impl Environment {
     pub fn init(resource_registry: &Rc<RefCell<ResourceRegistry>>) -> Self {
@@ -83,7 +82,6 @@ impl Environment {
             environment_map_intensity: 1.0,
             prefiltered: resource_registry.request_texture(ENV_MAP_PREFILTERED_DDS, true),
             di: resource_registry.request_texture(ENV_MAP_DI_DDS, true),
-            brdf: resource_registry.request_texture(BRDF_LUT_PNG, false),
         }
     }
 }

@@ -2,7 +2,7 @@ use std::{sync::Arc, time::Instant};
 
 use winit::event::WindowEvent;
 
-use super::assets::store::{PlaceholderTextureIds, RenderAssetStore};
+use super::assets::store::{PlaceholderTextureIds, RenderAssetStore, TextureRenderId};
 use super::gui::GuiRenderer;
 use super::wgpu_context::WgpuContext;
 use super::world::bindgroups::material::MaterialBinding;
@@ -40,6 +40,7 @@ impl<S, C> Renderer<S, C> {
         wgpu_context: &WgpuContext,
         fixed_snapshot_handoff: Arc<FixedSnapshotHandoff>,
         placeholders: PlaceholderTextureIds,
+        brdf_lut: TextureRenderId,
         render_resources: &RenderAssetStore,
         build_ui_fn: BuildUiFn<S, C>,
     ) -> Self {
@@ -47,6 +48,7 @@ impl<S, C> Renderer<S, C> {
             wgpu_context,
             fixed_snapshot_handoff,
             placeholders,
+            brdf_lut,
             render_resources,
         );
         let gui_renderer = GuiRenderer::new(wgpu_context, build_ui_fn);

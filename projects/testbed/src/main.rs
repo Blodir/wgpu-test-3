@@ -461,7 +461,6 @@ impl SimTrait for Game {
             di: self.environment_map_options[self.selected_environment_map_idx]
                 .di
                 .clone(),
-            brdf: resource_registry.request_texture("assets/brdf_lut.png", false),
         };
 
         let mut nodes = Arena::new();

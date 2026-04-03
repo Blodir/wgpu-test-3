@@ -1,6 +1,9 @@
 use crate::fixed_snapshot_handoff::FixedSnapshotGuard;
 use crate::{
-    host::assets::{io::asset_formats::materialfile, store::RenderAssetStore},
+    host::assets::{
+        io::asset_formats::materialfile,
+        store::{RenderAssetStore, TextureRenderId},
+    },
     host::{
         sampler_cache::SamplerCache, wgpu_context::WgpuContext,
         world::bindgroups::lights::LightsBinding,
@@ -10,6 +13,7 @@ use crate::{
 pub fn prepare_lights(
     snaps: &FixedSnapshotGuard,
     lights_binding: &mut LightsBinding,
+    brdf_lut: TextureRenderId,
     render_resources: &RenderAssetStore,
     sampler_cache: &mut SamplerCache,
     wgpu_context: &WgpuContext,
@@ -27,13 +31,12 @@ pub fn prepare_lights(
         // if one of env maps has changed, we must rebuild the bindgroup entirely
         if e.prefiltered != lights_binding.curr_prefiltered_render_id
             || e.di != lights_binding.curr_di_render_id
-            || e.brdf != lights_binding.curr_brdf_render_id
         {
             let gpu_textures = &render_resources.textures;
             let (prefiltered, di, brdf) = (
                 gpu_textures.get(e.prefiltered.into()).unwrap(),
                 gpu_textures.get(e.di.into()).unwrap(),
-                gpu_textures.get(e.brdf.into()).unwrap(),
+                gpu_textures.get(brdf_lut.into()).unwrap(),
             );
             let default_sampler =
                 sampler_cache.get(&materialfile::Sampler::default(), wgpu_context);
@@ -49,7 +52,6 @@ pub fn prepare_lights(
             );
             lights_binding.curr_prefiltered_render_id = e.prefiltered;
             lights_binding.curr_di_render_id = e.di;
-            lights_binding.curr_brdf_render_id = e.brdf;
         }
     }
 }

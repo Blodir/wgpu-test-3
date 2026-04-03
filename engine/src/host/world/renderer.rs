@@ -84,6 +84,7 @@ pub struct WorldRenderer {
     fixed_snapshot_handoff: Arc<FixedSnapshotHandoff>,
     pub layouts: Layouts,
     pub placeholders: PlaceholderTextureIds,
+    pub brdf_lut: TextureRenderId,
     sampler_cache: SamplerCache,
     shader_cache: ShaderCache,
     bones: BonesBinding,
@@ -98,6 +99,7 @@ impl WorldRenderer {
         wgpu_context: &WgpuContext,
         fixed_snapshot_handoff: Arc<FixedSnapshotHandoff>,
         placeholders: PlaceholderTextureIds,
+        brdf_lut: TextureRenderId,
         render_resources: &RenderAssetStore,
     ) -> Self {
         let layouts = Layouts::new(&wgpu_context);
@@ -105,6 +107,7 @@ impl WorldRenderer {
         let mut shader_cache = ShaderCache::new();
         let lights = LightsBinding::new(
             render_resources,
+            brdf_lut,
             &mut sampler_cache,
             &placeholders,
             wgpu_context,
@@ -164,6 +167,7 @@ impl WorldRenderer {
             lights,
             skinned_instances,
             placeholders,
+            brdf_lut,
             sampler_cache,
             shader_cache,
             static_instances,
@@ -211,6 +215,7 @@ impl WorldRenderer {
         prepare_lights(
             &snaps,
             &mut self.lights,
+            self.brdf_lut,
             render_resources,
             &mut self.sampler_cache,
             wgpu_context,

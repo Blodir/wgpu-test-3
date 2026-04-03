@@ -24,7 +24,6 @@ pub struct LightsBinding {
     pub point_light_colors_intensities_buffer: wgpu::Buffer,
     pub curr_prefiltered_render_id: TextureRenderId,
     pub curr_di_render_id: TextureRenderId,
-    pub curr_brdf_render_id: TextureRenderId,
     pub bind_group: wgpu::BindGroup,
 }
 impl LightsBinding {
@@ -155,6 +154,7 @@ impl LightsBinding {
 
     pub fn new(
         render_resources: &RenderAssetStore,
+        brdf_lut: TextureRenderId,
         sampler_cache: &mut SamplerCache,
         placeholders: &PlaceholderTextureIds,
         wgpu_context: &WgpuContext,
@@ -213,7 +213,7 @@ impl LightsBinding {
         let (prefiltered, di, brdf) = (
             textures.get(placeholders.prefiltered.into()).unwrap(),
             textures.get(placeholders.di.into()).unwrap(),
-            textures.get(placeholders.brdf.into()).unwrap(),
+            textures.get(brdf_lut.into()).unwrap(),
         );
         let default_sampler = sampler_cache.get(&materialfile::Sampler::default(), wgpu_context);
         let bind_group = wgpu_context
@@ -283,7 +283,6 @@ impl LightsBinding {
             bind_group,
             curr_prefiltered_render_id: placeholders.prefiltered,
             curr_di_render_id: placeholders.di,
-            curr_brdf_render_id: placeholders.brdf,
         }
     }
 

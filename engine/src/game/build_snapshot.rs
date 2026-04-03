@@ -182,7 +182,6 @@ impl Default for CameraSnapshot {
 pub struct EnvironmentMapSnapshot {
     pub prefiltered: TextureRenderId,
     pub di: TextureRenderId,
-    pub brdf: TextureRenderId,
 }
 
 pub struct LightsSnapshot {
@@ -197,20 +196,12 @@ impl LightsSnapshot {
         resource_registry: &Rc<RefCell<ResourceRegistry>>,
         point_lights: Vec<PointLightSnapshot>,
     ) -> Self {
-        if let (
-            RenderState::Ready(prefiltered_render_id),
-            RenderState::Ready(di_render_id),
-            RenderState::Ready(brdf_render_id),
-        ) = (
+        if let (RenderState::Ready(prefiltered_render_id), RenderState::Ready(di_render_id)) = (
             &resource_registry
                 .borrow()
                 .get(&environment.prefiltered)
                 .render_state,
             &resource_registry.borrow().get(&environment.di).render_state,
-            &resource_registry
-                .borrow()
-                .get(&environment.brdf)
-                .render_state,
         ) {
             Self {
                 sun: environment.sun.clone(),
@@ -219,7 +210,6 @@ impl LightsSnapshot {
                 environment_map: Some(EnvironmentMapSnapshot {
                     prefiltered: TextureRenderId(*prefiltered_render_id),
                     di: TextureRenderId(*di_render_id),
-                    brdf: TextureRenderId(*brdf_render_id),
                 }),
             }
         } else {

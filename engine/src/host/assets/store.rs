@@ -1,12 +1,15 @@
 use std::ops::Range;
 use std::sync::Arc;
 
-use generational_arena::{Arena, Index};
-
+use crate::global_paths::BRDF_LUT_PNG;
 use crate::host::{
-    assets::io::asset_formats::rigfile::Rig, wgpu_context::WgpuContext,
+    assets::{io::asset_formats::rigfile::Rig, texture::TextureLoadData},
+    wgpu_context::WgpuContext,
     world::bindgroups::material::MaterialBinding,
 };
+use generational_arena::{Arena, Index};
+
+use super::texture::upload_texture;
 
 #[derive(Hash, Eq, PartialEq, Clone, Copy, Debug)]
 pub struct ModelRenderId(pub Index);
@@ -58,7 +61,6 @@ pub struct PlaceholderTextureIds {
     pub metallic_roughness: TextureRenderId,
     pub prefiltered: TextureRenderId,
     pub di: TextureRenderId,
-    pub brdf: TextureRenderId,
 }
 
 pub struct SubMesh {
@@ -195,18 +197,6 @@ impl RenderAssetStore {
                 usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
                 view_formats: &[],
             });
-        let brdf_texture = wgpu_context
-            .device
-            .create_texture(&wgpu::TextureDescriptor {
-                label: Some("BRDF placeholder"),
-                size: extent,
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format: wgpu::TextureFormat::Rgba16Float,
-                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-                view_formats: &[],
-            });
         let base_color_ict = wgpu::ImageCopyTexture {
             texture: &base_color_texture,
             mip_level: 0,
@@ -245,12 +235,6 @@ impl RenderAssetStore {
         };
         let di_ict = wgpu::ImageCopyTexture {
             texture: &di_texture,
-            mip_level: 0,
-            origin: wgpu::Origin3d { x: 0, y: 0, z: 0 },
-            aspect: wgpu::TextureAspect::All,
-        };
-        let brdf_ict = wgpu::ImageCopyTexture {
-            texture: &brdf_texture,
             mip_level: 0,
             origin: wgpu::Origin3d { x: 0, y: 0, z: 0 },
             aspect: wgpu::TextureAspect::All,
@@ -335,16 +319,6 @@ impl RenderAssetStore {
             },
             extent,
         );
-        wgpu_context.queue.write_texture(
-            brdf_ict,
-            &bytemuck::cast_slice(&[0x39E1u16, 0x2404u16, 0x0000u16, 0x3C00u16]).to_vec(),
-            wgpu::ImageDataLayout {
-                offset: 0,
-                bytes_per_row: Some(8),
-                rows_per_image: Some(1),
-            },
-            extent,
-        );
 
         let normals_view = normals_texture.create_view(&wgpu::TextureViewDescriptor::default());
         let base_color_view =
@@ -361,7 +335,6 @@ impl RenderAssetStore {
             dimension: Some(wgpu::TextureViewDimension::Cube),
             ..Default::default()
         });
-        let brdf_view = brdf_texture.create_view(&wgpu::TextureViewDescriptor::default());
         let normals = self.textures.insert(TextureGpuData {
             texture: normals_texture,
             texture_view: normals_view,
@@ -390,11 +363,6 @@ impl RenderAssetStore {
             texture: di_texture,
             texture_view: di_view,
         });
-        let brdf = self.textures.insert(TextureGpuData {
-            texture: brdf_texture,
-            texture_view: brdf_view,
-        });
-
         PlaceholderTextureIds {
             normals: TextureRenderId(normals),
             base_color: TextureRenderId(base_color),
@@ -403,7 +371,32 @@ impl RenderAssetStore {
             metallic_roughness: TextureRenderId(metallic_roughness),
             prefiltered: TextureRenderId(prefiltered),
             di: TextureRenderId(di),
-            brdf: TextureRenderId(brdf),
         }
+    }
+
+    pub fn initialize_brdf_lut(&mut self, wgpu_context: &WgpuContext) -> TextureRenderId {
+        let bytes = std::fs::read(BRDF_LUT_PNG)
+            .unwrap_or_else(|_| panic!("Failed to read BRDF LUT at path: {}", BRDF_LUT_PNG));
+        let img = image::load_from_memory(&bytes)
+            .unwrap_or_else(|_| panic!("Failed to decode BRDF LUT at path: {}", BRDF_LUT_PNG))
+            .to_rgba8();
+        let (width, height) = img.dimensions();
+        let texture = upload_texture(
+            &TextureLoadData {
+                data: img.into_raw(),
+                base_width: width,
+                base_height: height,
+                mips: 1,
+                layers: 1,
+                format: wgpu::TextureFormat::Rgba8Unorm,
+            },
+            wgpu_context,
+        );
+        let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let idx = self.textures.insert(TextureGpuData {
+            texture,
+            texture_view,
+        });
+        TextureRenderId(idx)
     }
 }

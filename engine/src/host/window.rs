@@ -88,10 +88,12 @@ where
         let wgpu_context = WgpuContext::new(window.clone()).block_on();
         let mut render_resources = RenderAssetStore::new();
         let placeholders = render_resources.initialize_placeholders(&wgpu_context);
+        let brdf_lut = render_resources.initialize_brdf_lut(&wgpu_context);
         let renderer = Arc::new(Mutex::new(Renderer::new(
             &wgpu_context,
             self.fixed_snapshot_handoff.clone(),
             placeholders,
+            brdf_lut,
             &render_resources,
             self.build_ui_fn,
         )));
