@@ -2,14 +2,14 @@ use crossbeam::channel as cbch;
 
 use crate::game::scene_tree::SceneNodeId;
 
-use super::anim_pose::{execute_pose_job, AnimPoseTask, AnimPoseTaskResult};
+use super::anim_pose::{execute_pose_job, AnimPoseTask, PoseJobResult};
 
 pub enum Job {
     Pose(SceneNodeId, Vec<AnimPoseTask>),
 }
 
 pub enum RenderResponse {
-    Pose(AnimPoseTaskResult),
+    Pose(PoseJobResult),
 }
 pub enum GameResponse {}
 

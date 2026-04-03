@@ -14,7 +14,7 @@ use crate::host::assets::store::{PlaceholderTextureIds, RenderAssetStore, Textur
 pub use crate::host::renderer::world::UploadMaterialRequest;
 use crate::host::wgpu_context::WgpuContext;
 use crate::var_snapshot_handoff::CameraSnapshotPair;
-use crate::workers::anim_pose::AnimPoseTaskResult;
+use crate::workers::anim_pose::PoseJobResult;
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct RenderDebugInfo {
@@ -138,7 +138,7 @@ impl<S, C> Renderer<S, C> {
         self.gui_renderer.wants_pointer_input()
     }
 
-    pub fn receive_poses(&mut self, anim_pose_task_results: AnimPoseTaskResult) {
+    pub fn receive_poses(&mut self, anim_pose_task_results: PoseJobResult) {
         self.world_renderer.receive_poses(anim_pose_task_results);
     }
 

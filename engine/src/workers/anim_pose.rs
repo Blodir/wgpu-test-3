@@ -13,7 +13,6 @@ use crate::{
     host::{
         assets::io::asset_formats::{animationfile, rigfile},
         utils::QuatExt,
-        world::anim_pose_store::PoseData,
     },
     workers::worker_pool::RenderResponse,
 };
@@ -49,9 +48,14 @@ pub enum AnimPoseTask {
     Blend(BlendPoseTask),
 }
 
-pub struct AnimPoseTaskResult {
+pub struct PoseTaskResult {
+    pub nodes: Vec<rigfile::SRT>,
+    pub time: u64,
+}
+
+pub struct PoseJobResult {
     pub node_id: SceneNodeId,
-    pub data: Vec<PoseData>,
+    pub data: Vec<PoseTaskResult>,
 }
 
 fn bin_search_anim_indices(times: &[f32], val: f32) -> (usize, usize) {
@@ -418,7 +422,7 @@ pub fn execute_pose_job(
         return;
     }
     if render_tx
-        .send(RenderResponse::Pose(AnimPoseTaskResult {
+        .send(RenderResponse::Pose(PoseJobResult {
             node_id,
             data: tasks
                 .into_iter()
@@ -428,7 +432,7 @@ pub fn execute_pose_job(
                         AnimPoseTask::Blend(ref t) => t.instance_time,
                     };
                     let nodes = compute_node_srt(task);
-                    PoseData { time, nodes }
+                    PoseTaskResult { time, nodes }
                 })
                 .collect(),
         }))

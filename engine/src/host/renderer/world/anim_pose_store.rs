@@ -3,21 +3,17 @@ use std::collections::HashMap;
 use generational_arena::{Arena, Index};
 
 use crate::{
-    game::scene_tree::SceneNodeId, host::assets::io::asset_formats::rigfile::SRT,
-    workers::anim_pose::AnimPoseTaskResult,
+    game::scene_tree::SceneNodeId,
+    host::assets::io::asset_formats::rigfile::SRT,
+    workers::anim_pose::{PoseJobResult, PoseTaskResult},
 };
-
-pub struct PoseData {
-    pub nodes: Vec<SRT>,
-    pub time: u64,
-}
 
 struct PoseEntry {
     buffer: PoseBuffer,
     last_seen: u32,
 }
 impl PoseEntry {
-    fn new(first_pose: PoseData) -> Self {
+    fn new(first_pose: PoseTaskResult) -> Self {
         Self {
             buffer: PoseBuffer::new(first_pose),
             last_seen: u32::MAX,
@@ -40,7 +36,7 @@ struct PoseBuffer {
     nodes_count: usize,
 }
 impl PoseBuffer {
-    fn new(first_pose: PoseData) -> Self {
+    fn new(first_pose: PoseTaskResult) -> Self {
         let nodes_count = first_pose.nodes.len();
         let times = Vec::with_capacity(POSE_STORAGE_BUFFER_SIZE);
         let nodes = Vec::with_capacity(nodes_count * POSE_STORAGE_BUFFER_SIZE);
@@ -74,7 +70,7 @@ impl PoseBuffer {
         self.times.truncate(times_len - n_poses);
     }
 
-    fn insert_one(&mut self, data: PoseData) {
+    fn insert_one(&mut self, data: PoseTaskResult) {
         if self.times.len() == POSE_STORAGE_BUFFER_SIZE {
             self.evict_first_n(1);
         }
@@ -168,7 +164,7 @@ impl AnimPoseStore {
         }
     }
 
-    pub fn receive_poses(&mut self, res: AnimPoseTaskResult) {
+    pub fn receive_poses(&mut self, res: PoseJobResult) {
         if res.data.len() == 0 {
             return;
         }
