@@ -27,6 +27,14 @@ fn worker_loop(
     }
 }
 
+fn determine_worker_pool_size() -> usize {
+    let available_threads = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4);
+    // Keep one thread for the main/render loop when possible.
+    available_threads.saturating_sub(1).max(1)
+}
+
 pub struct WorkerPool {
     pub workers: Vec<std::thread::JoinHandle<()>>,
 }
@@ -41,7 +49,8 @@ impl WorkerPool {
         let (render_res_tx, render_res_rx) = cbch::unbounded::<RenderResponse>();
         let (game_res_tx, game_res_rx) = cbch::unbounded::<GameResponse>();
 
-        let workers = (0..8)
+        let worker_count = determine_worker_pool_size();
+        let workers = (0..worker_count)
             .map(|_| {
                 let rx = req_rx.clone();
                 let mut render_tx = render_res_tx.clone();
