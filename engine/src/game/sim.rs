@@ -15,10 +15,18 @@ use super::scene_tree::RenderDataType;
 use crate::{
     fixed_snapshot_handoff::FixedSnapshotHandoff,
     game::build_snapshot::FixedSnapshot,
-    game_trait::{InputEvent, SimTrait},
+    game_trait::SimTrait,
     var_snapshot_handoff::{CameraSnapshotPair, VarSnapshotHandoff},
     workers::worker_pool::Task,
 };
+
+pub enum InputEvent<C> {
+    DeviceEvent(winit::event::DeviceEvent),
+    WindowEvent(winit::event::WindowEvent),
+    AspectChange(f32),
+    Ui(C),
+    Exit,
+}
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct SimDebugInfo {

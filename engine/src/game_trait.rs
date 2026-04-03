@@ -5,15 +5,8 @@ use crate::game::{
     animator::AnimationGraph,
     assets::registry::ResourceRegistry,
     scene_tree::{Scene, SceneNodeId},
+    sim::InputEvent,
 };
-
-pub enum InputEvent<C> {
-    DeviceEvent(winit::event::DeviceEvent),
-    WindowEvent(winit::event::WindowEvent),
-    AspectChange(f32),
-    Ui(C),
-    Exit,
-}
 
 pub type BuildUiFn<S, C> =
     fn(ctx: &egui::Context, snapshot: &S, debug_info: &DebugInfo, emit: &mut dyn FnMut(C));

@@ -8,7 +8,8 @@ use workers::worker_pool::WorkerPool;
 use crate::{
     fixed_snapshot_handoff::FixedSnapshotHandoff,
     game::build_snapshot::FixedSnapshot,
-    game_trait::{InputEvent, SimTrait, UiTrait},
+    game::sim::InputEvent,
+    game_trait::{SimTrait, UiTrait},
     host::window,
     var_snapshot_handoff::VarSnapshotHandoff,
 };

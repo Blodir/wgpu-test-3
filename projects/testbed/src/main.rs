@@ -9,8 +9,9 @@ use engine::{
             AnimatedModel, Environment, Node, PointLight, RenderDataType, Scene, SceneNodeId,
             StaticModel, Sun,
         },
+        sim::InputEvent,
     },
-    game_trait::{InputEvent, SimTrait, UiTrait},
+    game_trait::{SimTrait, UiTrait},
     host::renderer::DebugInfo,
     run,
 };
