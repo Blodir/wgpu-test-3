@@ -104,6 +104,7 @@ where
             placeholders,
             brdf_lut,
             &render_resources,
+            wgpu_context.renderer_options,
             self.build_ui_fn,
         );
         self.render_context = Some(RenderContext {

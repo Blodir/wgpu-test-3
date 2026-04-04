@@ -16,11 +16,46 @@ use crate::host::wgpu_context::WgpuContext;
 use crate::var_snapshot::CameraSnapshotPair;
 use crate::workers::anim_pose::PoseJobResult;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum OpaqueRenderPath {
+    Deferred,
+    CompactDeferred,
+    #[default]
+    Forward,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RendererOptions {
+    pub opaque_render_path: OpaqueRenderPath,
+}
+impl Default for RendererOptions {
+    fn default() -> Self {
+        Self {
+            opaque_render_path: OpaqueRenderPath::Forward,
+        }
+    }
+}
+impl RendererOptions {
+    pub fn from_limits(limits: &wgpu::Limits) -> Self {
+        // Conservative heuristic based on MRT availability for deferred paths.
+        let opaque_render_path = if limits.max_color_attachments >= 6 {
+            OpaqueRenderPath::Deferred
+        } else if limits.max_color_attachments >= 4 {
+            OpaqueRenderPath::CompactDeferred
+        } else {
+            OpaqueRenderPath::Forward
+        };
+
+        Self { opaque_render_path }
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default)]
 pub struct RenderDebugInfo {
     pub frame_index: u32,
     pub fps: f32,
     pub frame_time_ms: f32,
+    pub opaque_render_path: OpaqueRenderPath,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -34,6 +69,7 @@ pub struct Renderer<S, C> {
     gui_renderer: GuiRenderer<S, C>,
     sampler_cache: SamplerCache,
     _shader_cache: ShaderCache,
+    options: RendererOptions,
     last_frame_instant: Option<Instant>,
     frame_fps_smoothed: f32,
     render_debug: RenderDebugInfo,
@@ -45,6 +81,7 @@ impl<S, C> Renderer<S, C> {
         placeholders: PlaceholderTextureIds,
         brdf_lut: TextureRenderId,
         render_resources: &RenderAssetStore,
+        options: RendererOptions,
         build_ui_fn: BuildUiFn<S, C>,
     ) -> Self {
         let mut sampler_cache = SamplerCache::new();
@@ -58,14 +95,19 @@ impl<S, C> Renderer<S, C> {
             render_resources,
         );
         let gui_renderer = GuiRenderer::new(wgpu_context, build_ui_fn);
+        let render_debug = RenderDebugInfo {
+            opaque_render_path: options.opaque_render_path,
+            ..Default::default()
+        };
         Self {
             world_renderer,
             gui_renderer,
             sampler_cache,
             _shader_cache: shader_cache,
+            options,
             last_frame_instant: None,
             frame_fps_smoothed: 0.0,
-            render_debug: RenderDebugInfo::default(),
+            render_debug,
         }
     }
 
@@ -179,6 +221,7 @@ impl<S, C> Renderer<S, C> {
             } else {
                 0.0
             },
+            opaque_render_path: self.options.opaque_render_path,
         };
     }
 }

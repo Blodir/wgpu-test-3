@@ -3,6 +3,8 @@ use std::sync::Arc;
 use glam::Mat4;
 use winit::window::Window;
 
+use crate::host::renderer::RendererOptions;
+
 #[rustfmt::skip]
 pub const OPENGL_TO_WGPU_MATRIX: Mat4 = Mat4::from_cols_slice(&[
     1.0, 0.0, 0.0, 0.0,
@@ -17,6 +19,7 @@ pub struct WgpuContext<'surface> {
     pub surface_config: wgpu::SurfaceConfiguration,
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
+    pub renderer_options: RendererOptions,
 }
 
 impl WgpuContext<'_> {
@@ -38,13 +41,15 @@ impl WgpuContext<'_> {
             })
             .await
             .unwrap();
+        let adapter_limits = adapter.limits();
+        let renderer_options = RendererOptions::from_limits(&adapter_limits);
 
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: None,
                 required_features: wgpu::Features::TEXTURE_COMPRESSION_BC,
                 required_limits: wgpu::Limits::downlevel_defaults()
-                    .using_resolution(adapter.limits()),
+                    .using_resolution(adapter_limits),
                 memory_hints: wgpu::MemoryHints::Performance,
                 trace: wgpu::Trace::Off,
             })
@@ -79,6 +84,7 @@ impl WgpuContext<'_> {
             device,
             queue,
             surface_config,
+            renderer_options,
         }
     }
 }
