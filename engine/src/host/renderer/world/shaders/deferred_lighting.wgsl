@@ -21,6 +21,8 @@
 @group(2) @binding(5) var gbuffer_emissive_metallic_sampler: sampler;
 @group(2) @binding(6) var gbuffer_world_position: texture_2d<f32>;
 @group(2) @binding(7) var gbuffer_world_position_sampler: sampler;
+@group(2) @binding(8) var gtao_texture: texture_2d<f32>;
+@group(2) @binding(9) var gtao_texture_sampler: sampler;
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
@@ -109,6 +111,11 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         gbuffer_world_position_sampler,
         uv
     );
+    let gtao = textureSample(
+        gtao_texture,
+        gtao_texture_sampler,
+        uv
+    ).r;
     if (world_position.w < 0.5) {
         return vec4f(0.0, 0.0, 0.0, 0.0);
     }
@@ -194,7 +201,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         vec2(max(dot(N, V), 0.0), 1.0 - surface_roughness)
     ).rg;
     let specular_env = prefiltered_color * (F_env * brdf.x + brdf.y);
-    let ambient = (k_d2 * diffuse + specular_env) * ao * environment_map_intensity;
+    let final_ao = ao * gtao;
+    let ambient = (k_d2 * diffuse + specular_env) * final_ao * environment_map_intensity;
 
     let col = ambient + Lo + surface_emissive;
     return vec4f(col, 1.0);

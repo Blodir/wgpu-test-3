@@ -13,6 +13,7 @@ use super::bindgroups::material::MaterialBinding;
 use super::buffers::skinned_instance::SkinnedInstances;
 use super::pipelines::deferred_lighting::DeferredLightingPipeline;
 use super::pipelines::g_buffer::{GBufferPipeline, GBufferTargets};
+use super::pipelines::gtao::{GtaoPipeline, GtaoTexture};
 use super::pipelines::post_processing::PostProcessingPipeline;
 use super::pipelines::skinned_pbr::SkinnedPbrPipeline;
 use super::pipelines::skybox::SkyboxPipeline;
@@ -173,6 +174,8 @@ impl WorldPipelines {
 
 struct DeferredOpaqueRenderer {
     g_buffer_targets: GBufferTargets,
+    gtao_texture: GtaoTexture,
+    gtao_pipeline: GtaoPipeline,
     g_buffer_pipeline: GBufferPipeline,
     deferred_lighting_pipeline: DeferredLightingPipeline,
 }
@@ -180,6 +183,8 @@ impl DeferredOpaqueRenderer {
     fn new(wgpu_context: &WgpuContext, shader_cache: &mut ShaderCache, layouts: &Layouts) -> Self {
         let g_buffer_targets =
             GBufferTargets::new(&wgpu_context.device, &wgpu_context.surface_config);
+        let gtao_texture = GtaoTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
+        let gtao_pipeline = GtaoPipeline::new(wgpu_context, shader_cache, &g_buffer_targets);
         let g_buffer_pipeline = GBufferPipeline::new(
             wgpu_context,
             shader_cache,
@@ -194,9 +199,12 @@ impl DeferredOpaqueRenderer {
             &layouts.camera,
             &layouts.lights,
             &g_buffer_targets,
+            &gtao_texture,
         );
         Self {
             g_buffer_targets,
+            gtao_texture,
+            gtao_pipeline,
             g_buffer_pipeline,
             deferred_lighting_pipeline,
         }
@@ -237,6 +245,7 @@ impl DeferredOpaqueRenderer {
             lights_bind_group,
             render_resources,
         );
+        self.gtao_pipeline.render(encoder, &self.gtao_texture.view);
         self.deferred_lighting_pipeline.render(
             encoder,
             hdr_color_view,
@@ -248,8 +257,14 @@ impl DeferredOpaqueRenderer {
     fn resize(&mut self, wgpu_context: &WgpuContext) {
         self.g_buffer_targets =
             GBufferTargets::new(&wgpu_context.device, &wgpu_context.surface_config);
-        self.deferred_lighting_pipeline
+        self.gtao_texture = GtaoTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
+        self.gtao_pipeline
             .update_input_bindgroup(&wgpu_context.device, &self.g_buffer_targets);
+        self.deferred_lighting_pipeline.update_input_bindgroup(
+            &wgpu_context.device,
+            &self.g_buffer_targets,
+            &self.gtao_texture,
+        );
     }
 }
 
