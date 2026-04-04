@@ -5,7 +5,5 @@ pub mod shader_cache;
 pub mod utils;
 pub mod world;
 
-pub use renderer::{
-    DebugInfo, OpaqueRenderPath, RenderDebugInfo, Renderer, RendererOptions,
-};
+pub use renderer::{DebugInfo, OpaqueRenderPath, RenderDebugInfo, Renderer, RendererOptions};
 pub use world::UploadMaterialRequest;

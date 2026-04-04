@@ -1,3 +1,5 @@
+pub mod deferred_lighting;
+pub mod g_buffer;
 pub mod post_processing;
 pub mod skinned_pbr;
 pub mod skybox;

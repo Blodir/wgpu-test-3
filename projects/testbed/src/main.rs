@@ -859,7 +859,10 @@ impl UiTrait for Game {
         painter.galley(
             rect.min
                 + padding
-                + egui::vec2(0.0, line1_h + line2_h + line3_h + line4_h + (line_gap * 4.0)),
+                + egui::vec2(
+                    0.0,
+                    line1_h + line2_h + line3_h + line4_h + (line_gap * 4.0),
+                ),
             galley5,
             text_color,
         );

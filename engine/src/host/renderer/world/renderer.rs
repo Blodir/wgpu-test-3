@@ -11,12 +11,14 @@ use super::bindgroups::camera::CameraBinding;
 use super::bindgroups::lights::LightsBinding;
 use super::bindgroups::material::MaterialBinding;
 use super::buffers::skinned_instance::SkinnedInstances;
+use super::pipelines::deferred_lighting::DeferredLightingPipeline;
+use super::pipelines::g_buffer::{GBufferPipeline, GBufferTargets};
 use super::pipelines::post_processing::PostProcessingPipeline;
 use super::pipelines::skinned_pbr::SkinnedPbrPipeline;
 use super::pipelines::skybox::SkyboxPipeline;
 use super::prepare::camera::prepare_camera;
 use super::prepare::lights::prepare_lights;
-use super::prepare::mesh::resolve_skinned_draw;
+use super::prepare::mesh::{resolve_skinned_draw, PassDrawContext};
 
 use crate::host::assets::io::asset_formats::materialfile;
 use crate::host::assets::store::{PlaceholderTextureIds, RenderAssetStore, TextureRenderId};
@@ -169,18 +171,86 @@ impl WorldPipelines {
     }
 }
 
-struct DeferredOpaqueRenderer;
+struct DeferredOpaqueRenderer {
+    g_buffer_targets: GBufferTargets,
+    g_buffer_pipeline: GBufferPipeline,
+    deferred_lighting_pipeline: DeferredLightingPipeline,
+}
 impl DeferredOpaqueRenderer {
-    fn new(
-        _wgpu_context: &WgpuContext,
-        _shader_cache: &mut ShaderCache,
-        _layouts: &Layouts,
-        _attachments: &WorldAttachments,
-    ) -> Self {
-        Self
+    fn new(wgpu_context: &WgpuContext, shader_cache: &mut ShaderCache, layouts: &Layouts) -> Self {
+        let g_buffer_targets =
+            GBufferTargets::new(&wgpu_context.device, &wgpu_context.surface_config);
+        let g_buffer_pipeline = GBufferPipeline::new(
+            wgpu_context,
+            shader_cache,
+            &layouts.material,
+            &layouts.camera,
+            &layouts.lights,
+            &layouts.bones,
+        );
+        let deferred_lighting_pipeline = DeferredLightingPipeline::new(
+            wgpu_context,
+            shader_cache,
+            &layouts.camera,
+            &layouts.lights,
+            &g_buffer_targets,
+        );
+        Self {
+            g_buffer_targets,
+            g_buffer_pipeline,
+            deferred_lighting_pipeline,
+        }
     }
 
-    fn render(&mut self) {}
+    fn render<'a>(
+        &mut self,
+        skinned_opaque_pass: &'a PassDrawContext<'a>,
+        static_opaque_pass: &'a PassDrawContext<'a>,
+        skinned_instance_buffer: &wgpu::Buffer,
+        static_instance_buffer: &wgpu::Buffer,
+        encoder: &mut wgpu::CommandEncoder,
+        depth_texture_view: &wgpu::TextureView,
+        hdr_color_view: &wgpu::TextureView,
+        camera_bind_group: &wgpu::BindGroup,
+        lights_bind_group: &wgpu::BindGroup,
+        bones_bind_group: &wgpu::BindGroup,
+        render_resources: &'a RenderAssetStore,
+    ) {
+        self.g_buffer_pipeline.render_skinned_opaque(
+            skinned_opaque_pass,
+            skinned_instance_buffer,
+            encoder,
+            &self.g_buffer_targets,
+            depth_texture_view,
+            camera_bind_group,
+            lights_bind_group,
+            bones_bind_group,
+            render_resources,
+        );
+        self.g_buffer_pipeline.render_static_opaque(
+            static_opaque_pass,
+            static_instance_buffer,
+            encoder,
+            &self.g_buffer_targets,
+            depth_texture_view,
+            camera_bind_group,
+            lights_bind_group,
+            render_resources,
+        );
+        self.deferred_lighting_pipeline.render(
+            encoder,
+            hdr_color_view,
+            camera_bind_group,
+            lights_bind_group,
+        );
+    }
+
+    fn resize(&mut self, wgpu_context: &WgpuContext) {
+        self.g_buffer_targets =
+            GBufferTargets::new(&wgpu_context.device, &wgpu_context.surface_config);
+        self.deferred_lighting_pipeline
+            .update_input_bindgroup(&wgpu_context.device, &self.g_buffer_targets);
+    }
 }
 
 struct CompactDeferredOpaqueRenderer;
@@ -189,12 +259,27 @@ impl CompactDeferredOpaqueRenderer {
         _wgpu_context: &WgpuContext,
         _shader_cache: &mut ShaderCache,
         _layouts: &Layouts,
-        _attachments: &WorldAttachments,
     ) -> Self {
         Self
     }
 
-    fn render(&mut self) {}
+    fn render<'a>(
+        &mut self,
+        _skinned_opaque_pass: &'a PassDrawContext<'a>,
+        _static_opaque_pass: &'a PassDrawContext<'a>,
+        _skinned_instance_buffer: &wgpu::Buffer,
+        _static_instance_buffer: &wgpu::Buffer,
+        _encoder: &mut wgpu::CommandEncoder,
+        _depth_texture_view: &wgpu::TextureView,
+        _hdr_color_view: &wgpu::TextureView,
+        _camera_bind_group: &wgpu::BindGroup,
+        _lights_bind_group: &wgpu::BindGroup,
+        _bones_bind_group: &wgpu::BindGroup,
+        _render_resources: &'a RenderAssetStore,
+    ) {
+    }
+
+    fn resize(&mut self, _wgpu_context: &WgpuContext) {}
 }
 
 enum OpaqueRenderer {
@@ -241,23 +326,20 @@ impl WorldRenderer {
             &bind_groups.layouts,
             &attachments,
         );
-        let opaque_renderer = match options.opaque_render_path {
-            OpaqueRenderPath::Forward => OpaqueRenderer::Forward,
-            OpaqueRenderPath::Deferred => OpaqueRenderer::Deferred(DeferredOpaqueRenderer::new(
-                wgpu_context,
-                shader_cache,
-                &bind_groups.layouts,
-                &attachments,
-            )),
-            OpaqueRenderPath::CompactDeferred => OpaqueRenderer::CompactDeferred(
-                CompactDeferredOpaqueRenderer::new(
-                    wgpu_context,
-                    shader_cache,
-                    &bind_groups.layouts,
-                    &attachments,
+        let opaque_renderer =
+            match options.opaque_render_path {
+                OpaqueRenderPath::Forward => OpaqueRenderer::Forward,
+                OpaqueRenderPath::Deferred => OpaqueRenderer::Deferred(
+                    DeferredOpaqueRenderer::new(wgpu_context, shader_cache, &bind_groups.layouts),
                 ),
-            ),
-        };
+                OpaqueRenderPath::CompactDeferred => {
+                    OpaqueRenderer::CompactDeferred(CompactDeferredOpaqueRenderer::new(
+                        wgpu_context,
+                        shader_cache,
+                        &bind_groups.layouts,
+                    ))
+                }
+            };
 
         Self {
             attachments,
@@ -372,8 +454,32 @@ impl WorldRenderer {
                     render_resources,
                 );
             }
-            OpaqueRenderer::Deferred(renderer) => renderer.render(),
-            OpaqueRenderer::CompactDeferred(renderer) => renderer.render(),
+            OpaqueRenderer::Deferred(renderer) => renderer.render(
+                &skinned_opaque_pass,
+                &static_opaque_pass,
+                &self.skinned_instances.buffer,
+                &self.static_instances.buffer,
+                encoder,
+                &self.attachments.depth_texture.view,
+                &self.attachments.hdr_color.view,
+                &self.bind_groups.camera.bind_group,
+                &self.bind_groups.lights.bind_group,
+                &self.bind_groups.bones.bind_group,
+                render_resources,
+            ),
+            OpaqueRenderer::CompactDeferred(renderer) => renderer.render(
+                &skinned_opaque_pass,
+                &static_opaque_pass,
+                &self.skinned_instances.buffer,
+                &self.static_instances.buffer,
+                encoder,
+                &self.attachments.depth_texture.view,
+                &self.attachments.hdr_color.view,
+                &self.bind_groups.camera.bind_group,
+                &self.bind_groups.lights.bind_group,
+                &self.bind_groups.bones.bind_group,
+                render_resources,
+            ),
         }
 
         self.pipelines.skinned_pbr.render_transparent(
@@ -409,6 +515,11 @@ impl WorldRenderer {
             &self.attachments.skybox_output,
             &self.attachments.hdr_color,
         );
+        match &mut self.opaque_renderer {
+            OpaqueRenderer::Forward => {}
+            OpaqueRenderer::Deferred(renderer) => renderer.resize(wgpu_context),
+            OpaqueRenderer::CompactDeferred(renderer) => renderer.resize(wgpu_context),
+        }
     }
 
     pub fn upload_material(
