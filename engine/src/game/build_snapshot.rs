@@ -1,15 +1,20 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use glam::{Mat4, Quat, Vec3};
+use glam::Mat4;
 
 use crate::game::assets::registry::{GameState, RenderState, ResourceRegistry};
 use crate::game::assets::store::GameAssetStore;
 use crate::host::assets::io::asset_formats::{materialfile, modelfile, rigfile::SRT};
 use crate::{
+    fixed_snapshot::{
+        EnvironmentMapSnapshot, FixedSnapshot, LightsSnapshot, MaterialBatch, MeshBatch,
+        MeshDrawSnapshot, PassBatches, PointLightSnapshot, SkinnedInstanceSnapshot,
+        StaticInstanceSnapshot, SubmeshBatch,
+    },
     game::{
         animator::AnimationGraph,
         camera::{frustum_intersects_aabb_world, Frustum},
-        scene_tree::{Environment, RenderDataType, Scene, SceneNodeId, Sun},
+        scene_tree::{Environment, RenderDataType, Scene, SceneNodeId},
     },
     host::assets::store::{MaterialRenderId, ModelRenderId, TextureRenderId},
     host::world::pipelines::MeshPipelineKind,
@@ -150,48 +155,8 @@ pub fn accumulate_instance_snapshots(
     }
 }
 
-#[derive(Clone, Copy)]
-pub struct PointLightSnapshot {
-    pub position: Vec3,
-    pub color: [f32; 3],
-    pub intensity: f32,
-    pub range: f32,
-}
-
-#[derive(Clone, Copy)]
-pub struct CameraSnapshot {
-    pub position: Vec3,
-    pub rotation: Quat,
-    pub fovy: f32,
-    pub znear: f32,
-    pub zfar: f32,
-}
-impl Default for CameraSnapshot {
-    fn default() -> Self {
-        Self {
-            position: Vec3::ZERO,
-            rotation: Quat::IDENTITY,
-            fovy: 45.0f32,
-            znear: 0.1f32,
-            zfar: 100.0f32,
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct EnvironmentMapSnapshot {
-    pub prefiltered: TextureRenderId,
-    pub di: TextureRenderId,
-}
-
-pub struct LightsSnapshot {
-    pub sun: Sun,
-    pub environment_map_intensity: f32,
-    pub point_lights: Vec<PointLightSnapshot>,
-    pub environment_map: Option<EnvironmentMapSnapshot>,
-}
 impl LightsSnapshot {
-    pub fn from(
+    pub(in crate::game) fn from(
         environment: &Environment,
         resource_registry: &Rc<RefCell<ResourceRegistry>>,
         point_lights: Vec<PointLightSnapshot>,
@@ -223,58 +188,8 @@ impl LightsSnapshot {
     }
 }
 
-#[derive(Clone, Copy)]
-pub struct AnimationSnapshot(pub u64);
-
-pub struct SkinnedInstanceSnapshot {
-    pub node_id: SceneNodeId,
-    pub model_transform: SRT,
-    pub animation: Option<AnimationSnapshot>,
-    pub dirty: bool,
-    pub prev_index: Option<u32>,
-}
-
-pub struct StaticInstanceSnapshot {
-    pub node_id: SceneNodeId,
-    pub model_transform: SRT,
-    pub animation: Option<AnimationSnapshot>,
-    pub dirty: bool,
-    pub prev_index: Option<u32>,
-}
-
-pub struct SubmeshBatch {
-    pub instances: Vec<u32>, // indexes into skinned_instances/static_instances
-    pub submesh_idx: usize,
-}
-
-pub struct MeshBatch {
-    pub model_id: ModelRenderId,
-    pub submesh_range: std::ops::Range<usize>, // indexes into both submesh and instance ranges arrays
-}
-
-pub struct MaterialBatch {
-    pub material_id: MaterialRenderId,
-    pub mesh_range: std::ops::Range<usize>,
-}
-
-#[derive(Default)]
-pub struct PassBatches {
-    pub submesh_batches: Vec<SubmeshBatch>,
-    pub material_batches: Vec<MaterialBatch>, // indexes into mesh batches
-    pub mesh_batches: Vec<MeshBatch>,         // indexes into submesh batches
-    pub skinned_batch: std::ops::Range<usize>, // indexes into material batches
-    pub static_batch: std::ops::Range<usize>, // indexes into material batches
-}
-
-#[derive(Default)]
-pub struct MeshDrawSnapshot {
-    pub opaque_batch: PassBatches,
-    pub transparent_batch: PassBatches,
-    pub skinned_instances: Vec<SkinnedInstanceSnapshot>,
-    pub static_instances: Vec<StaticInstanceSnapshot>,
-}
 impl MeshDrawSnapshot {
-    fn build_pass_batches(
+    pub(in crate::game) fn build_pass_batches(
         pipelines: &mut HashMap<
             MeshPipelineKind,
             HashMap<MaterialRenderId, HashMap<ModelRenderId, Vec<Vec<u32>>>>,
@@ -334,7 +249,7 @@ impl MeshDrawSnapshot {
         }
     }
 
-    pub fn link_previous(&mut self, prev: &MeshDrawSnapshot) {
+    pub(in crate::game) fn link_previous(&mut self, prev: &MeshDrawSnapshot) {
         let mut prev_skinned_by_node = HashMap::new();
         for (idx, inst) in prev.skinned_instances.iter().enumerate() {
             prev_skinned_by_node.insert(inst.node_id, idx as u32);
@@ -352,7 +267,7 @@ impl MeshDrawSnapshot {
         }
     }
 
-    fn build(
+    pub(in crate::game) fn build(
         scene: &Scene,
         resource_registry: &Rc<RefCell<ResourceRegistry>>,
         game_resources: &GameAssetStore,
@@ -513,12 +428,8 @@ impl MeshDrawSnapshot {
     }
 }
 
-pub struct FixedSnapshot {
-    pub mesh_draw_snapshot: MeshDrawSnapshot,
-    pub lights: LightsSnapshot,
-}
 impl FixedSnapshot {
-    pub fn build(
+    pub(in crate::game) fn build(
         scene: &mut Scene,
         resource_registry: &Rc<RefCell<ResourceRegistry>>,
         animation_graphs: &Vec<AnimationGraph>,
@@ -540,19 +451,7 @@ impl FixedSnapshot {
         }
     }
 
-    pub fn init() -> Self {
-        Self {
-            lights: LightsSnapshot {
-                sun: Sun::default(),
-                environment_map_intensity: 1.0,
-                point_lights: vec![],
-                environment_map: None,
-            },
-            mesh_draw_snapshot: MeshDrawSnapshot::default(),
-        }
-    }
-
-    pub(crate) fn link_previous(&mut self, prev: &FixedSnapshot) {
+    pub(in crate::game) fn link_previous(&mut self, prev: &FixedSnapshot) {
         self.mesh_draw_snapshot
             .link_previous(&prev.mesh_draw_snapshot);
     }

@@ -2,8 +2,8 @@ use std::{cell::RefCell, rc::Rc};
 
 use super::assets::registry::{GameState, ModelHandle, ResourceRegistry};
 use super::assets::store::GameAssetStore;
-use crate::game::build_snapshot::AnimationSnapshot;
 use crate::{
+    fixed_snapshot::AnimationSnapshot,
     host::world::anim_pose_store::POSE_STORAGE_BUFFER_SIZE,
     workers::anim_pose::{AnimPoseTask, BlendPoseTask, SinglePoseTask},
 };

@@ -14,9 +14,8 @@ use super::assets::store::{CreateGameResourceRequest, CreateGameResourceResponse
 use super::scene_tree::RenderDataType;
 use crate::{
     api::GameTrait,
-    fixed_snapshot_handoff::FixedSnapshotHandoff,
-    game::build_snapshot::FixedSnapshot,
-    var_snapshot_handoff::{CameraSnapshotPair, VarSnapshotHandoff},
+    fixed_snapshot::{FixedSnapshot, FixedSnapshotHandoff},
+    var_snapshot::{CameraSnapshotPair, VarSnapshotHandoff},
     workers::worker_pool::Job,
 };
 
@@ -135,13 +134,15 @@ where
                     fixed_dt,
                 );
 
-                let fixed_snapshot = FixedSnapshot::build(
+                let mut fixed_snapshot = FixedSnapshot::build(
                     &mut scene,
                     &resource_registry,
                     &animation_graphs,
                     &game_resources,
                     fixed_tick,
                 );
+                let previous_snapshot = fixed_snapshot_handoff.load();
+                fixed_snapshot.link_previous(&previous_snapshot.curr);
 
                 let mut pose_jobs_scheduled = 0usize;
                 // schedule animation jobs for all visible animated models

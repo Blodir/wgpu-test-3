@@ -8,12 +8,12 @@ use super::shader_cache::ShaderCache;
 use super::world::bindgroups::material::MaterialBinding;
 use super::world::WorldRenderer;
 use crate::api::BuildUiFn;
-use crate::fixed_snapshot_handoff::FixedSnapshotGuard;
+use crate::fixed_snapshot::FixedSnapshotGuard;
 use crate::game::sim::SimDebugInfo;
 use crate::host::assets::store::{PlaceholderTextureIds, RenderAssetStore, TextureRenderId};
 pub use crate::host::renderer::world::UploadMaterialRequest;
 use crate::host::wgpu_context::WgpuContext;
-use crate::var_snapshot_handoff::CameraSnapshotPair;
+use crate::var_snapshot::CameraSnapshotPair;
 use crate::workers::anim_pose::PoseJobResult;
 
 #[derive(Debug, Clone, Copy, Default)]

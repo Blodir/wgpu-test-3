@@ -7,19 +7,18 @@ use workers::worker_pool::WorkerPool;
 
 use crate::{
     api::{GameTrait, UiTrait},
-    fixed_snapshot_handoff::FixedSnapshotHandoff,
-    game::build_snapshot::FixedSnapshot,
+    fixed_snapshot::{FixedSnapshot, FixedSnapshotHandoff},
     game::sim::InputEvent,
     host::window,
-    var_snapshot_handoff::VarSnapshotHandoff,
+    var_snapshot::VarSnapshotHandoff,
 };
 
 pub mod api;
-pub mod fixed_snapshot_handoff;
+pub mod fixed_snapshot;
 pub mod game;
 pub mod global_paths;
 pub mod host;
-pub mod var_snapshot_handoff;
+pub mod var_snapshot;
 pub mod workers;
 
 pub fn run<G, F>(make_game: F)
@@ -38,7 +37,7 @@ where
     let (game_res_tx, game_res_rx) = cbch::unbounded();
     let (registry_req_tx, registry_req_rx) = cbch::unbounded();
     let (registry_res_tx, registry_res_rx) = cbch::unbounded();
-    let initial_snap = FixedSnapshot::init();
+    let initial_snap = FixedSnapshot::default();
     let fixed_snapshot_handoff = Arc::new(FixedSnapshotHandoff::new(initial_snap));
     let var_snapshot_handoff = Arc::new(VarSnapshotHandoff::<<G as GameTrait>::VarSnapshot>::new());
     let sim_inputs = Arc::new(SegQueue::<InputEvent<<G as GameTrait>::UiCommand>>::new());

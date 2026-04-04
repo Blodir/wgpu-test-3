@@ -1,7 +1,7 @@
 use wgpu::util::DeviceExt as _;
 
 use crate::{
-    game::build_snapshot::PointLightSnapshot,
+    fixed_snapshot::PointLightSnapshot,
     game::scene_tree,
     host::{
         assets::{

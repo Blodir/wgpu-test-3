@@ -1,4 +1,4 @@
-use crate::fixed_snapshot_handoff::FixedSnapshotGuard;
+use crate::fixed_snapshot::FixedSnapshotGuard;
 use crate::{
     host::assets::{
         io::asset_formats::materialfile,

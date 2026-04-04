@@ -2,9 +2,8 @@ use std::ops::Range;
 
 use glam::Mat4;
 
-use crate::fixed_snapshot_handoff::FixedSnapshotGuard;
-use crate::game::build_snapshot::{MeshDrawSnapshot, PassBatches};
 use crate::{
+    fixed_snapshot::{FixedSnapshotGuard, MeshDrawSnapshot, PassBatches},
     game::scene_tree::SceneNodeId,
     host::{
         assets::{io::asset_formats::rigfile::SRT, store::RenderAssetStore},

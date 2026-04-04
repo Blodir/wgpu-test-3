@@ -24,7 +24,7 @@ use crate::host::wgpu_context::WgpuContext;
 use crate::host::world::buffers::static_instance::StaticInstances;
 use crate::host::world::pipelines::static_pbr::StaticPbrPipeline;
 use crate::host::world::prepare::mesh::resolve_static_draw;
-use crate::{fixed_snapshot_handoff::FixedSnapshotGuard, var_snapshot_handoff::CameraSnapshotPair};
+use crate::{fixed_snapshot::FixedSnapshotGuard, var_snapshot::CameraSnapshotPair};
 
 pub struct Layouts {
     pub camera: wgpu::BindGroupLayout,
