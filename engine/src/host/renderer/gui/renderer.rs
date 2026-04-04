@@ -3,6 +3,7 @@ use std::sync::Arc;
 use egui_wgpu::ScreenDescriptor;
 use winit::{event::WindowEvent, window::Window};
 
+use crate::api::UiCommand;
 use crate::{api::BuildUiFn, host::renderer::UiFrameInfo, host::wgpu_context::WgpuContext};
 
 struct PendingGuiFrame {
@@ -72,13 +73,13 @@ impl<S, C> GuiRenderer<S, C> {
         wgpu_context: &WgpuContext,
         ui_snapshot: &S,
         ui_frame_info: &UiFrameInfo,
-    ) -> Vec<C> {
+    ) -> Vec<UiCommand<C>> {
         self.screen_descriptor = screen_descriptor_from_context(wgpu_context);
-        let mut ui_commands = Vec::new();
+        let mut ui_commands: Vec<UiCommand<C>> = Vec::new();
 
         let raw_input = self.egui_state.take_egui_input(self.window.as_ref());
         let full_output = self.egui_context.run(raw_input, |ctx| {
-            let mut emit = |cmd: C| ui_commands.push(cmd);
+            let mut emit = |cmd: UiCommand<C>| ui_commands.push(cmd);
             (self.build_ui_fn)(ctx, ui_snapshot, ui_frame_info, &mut emit);
         });
         self.wants_pointer_input = self.egui_context.wants_pointer_input();

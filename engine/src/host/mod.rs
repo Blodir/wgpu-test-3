@@ -5,5 +5,6 @@ pub mod window;
 
 pub use renderer::{gui, sampler_cache, shader_cache, utils, world};
 pub use renderer::{
-    DiagnosticsInfo, RenderDebugInfo, Renderer, RuntimeSettings, UiFrameInfo, UploadMaterialRequest,
+    DiagnosticsInfo, RenderCommand, RenderDebugInfo, Renderer, RuntimeSettings, UiFrameInfo,
+    UploadMaterialRequest,
 };

@@ -1,4 +1,4 @@
-use crate::host::renderer::UiFrameInfo;
+use crate::host::renderer::{RenderCommand, UiFrameInfo};
 use std::{cell::RefCell, rc::Rc};
 
 use crate::game::{
@@ -8,8 +8,17 @@ use crate::game::{
     sim::InputEvent,
 };
 
-pub type BuildUiFn<S, C> =
-    fn(ctx: &egui::Context, snapshot: &S, ui_frame_info: &UiFrameInfo, emit: &mut dyn FnMut(C));
+pub type BuildUiFn<S, C> = fn(
+    ctx: &egui::Context,
+    snapshot: &S,
+    ui_frame_info: &UiFrameInfo,
+    emit: &mut dyn FnMut(UiCommand<C>),
+);
+
+pub enum UiCommand<C> {
+    Game(C),
+    Render(RenderCommand),
+}
 
 pub trait GameTrait {
     type VarSnapshot: Default;
@@ -40,7 +49,7 @@ pub trait UiTrait {
         _ctx: &egui::Context,
         _snapshot: &<Self as UiTrait>::VarSnapshot,
         _ui_frame_info: &UiFrameInfo,
-        _emit: &mut dyn FnMut(<Self as UiTrait>::UiCommand),
+        _emit: &mut dyn FnMut(UiCommand<<Self as UiTrait>::UiCommand>),
     ) {
     }
 }

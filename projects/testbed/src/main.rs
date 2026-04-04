@@ -1,7 +1,7 @@
 use std::{cell::RefCell, io};
 
 use engine::{
-    api::{GameTrait, UiTrait},
+    api::{GameTrait, UiCommand as EngineUiCommand, UiTrait},
     game::{
         animator::{self, AnimationGraph, Animator},
         assets::registry::{ModelHandle, RegistryExt as _, TextureHandle},
@@ -12,7 +12,7 @@ use engine::{
         },
         sim::InputEvent,
     },
-    host::renderer::UiFrameInfo,
+    host::renderer::{OpaqueRenderPath, RenderCommand, RendererOptions, UiFrameInfo},
     run,
 };
 use generational_arena::Arena;
@@ -112,7 +112,7 @@ struct VarSnapshot {
     grid_spacing: f32,
 }
 
-enum UiCommand {
+enum GameUiCommand {
     SetSunSettings {
         tint: [f32; 3],
         intensity: f32,
@@ -439,7 +439,7 @@ impl Game {
 
 impl GameTrait for Game {
     type VarSnapshot = VarSnapshot;
-    type UiCommand = UiCommand;
+    type UiCommand = GameUiCommand;
 
     fn init(
         &mut self,
@@ -590,7 +590,7 @@ impl GameTrait for Game {
             InputEvent::Exit => return (),
             InputEvent::AspectChange(aspect) => scene.camera.aspect = aspect,
             InputEvent::Ui(command) => match command {
-                UiCommand::SetSunSettings {
+                GameUiCommand::SetSunSettings {
                     tint,
                     intensity,
                     environment_map_intensity,
@@ -609,7 +609,7 @@ impl GameTrait for Game {
                     self.apply_sun_settings(scene);
                     self.apply_environment_map_selection(scene);
                 }
-                UiCommand::SetSceneSettings {
+                GameUiCommand::SetSceneSettings {
                     mesh_idx,
                     grid_size,
                     grid_spacing,
@@ -794,13 +794,13 @@ impl GameTrait for Game {
 
 impl UiTrait for Game {
     type VarSnapshot = VarSnapshot;
-    type UiCommand = UiCommand;
+    type UiCommand = GameUiCommand;
 
     fn build_ui(
         ctx: &egui::Context,
         snapshot: &Self::VarSnapshot,
         ui_frame_info: &UiFrameInfo,
-        emit: &mut dyn FnMut(Self::UiCommand),
+        emit: &mut dyn FnMut(EngineUiCommand<Self::UiCommand>),
     ) {
         let line1 = format!("render fps: {:.1}", ui_frame_info.diagnostics.render.fps);
         let line2 = format!(
@@ -934,14 +934,14 @@ impl UiTrait for Game {
             });
 
         if sun_changed {
-            emit(UiCommand::SetSunSettings {
+            emit(EngineUiCommand::Game(GameUiCommand::SetSunSettings {
                 tint,
                 intensity,
                 environment_map_intensity,
                 altitude_deg,
                 direction_deg,
                 environment_map_idx,
-            });
+            }));
         }
 
         let mut mesh_idx = snapshot.selected_mesh_idx;
@@ -979,11 +979,59 @@ impl UiTrait for Game {
             });
 
         if scene_changed {
-            emit(UiCommand::SetSceneSettings {
+            emit(EngineUiCommand::Game(GameUiCommand::SetSceneSettings {
                 mesh_idx,
                 grid_size,
                 grid_spacing,
+            }));
+        }
+
+        let mut renderer_options = ui_frame_info.settings.renderer_options;
+        let mut render_settings_changed = false;
+        egui::Window::new("Renderer")
+            .default_pos(egui::pos2(508.0, rect.max.y + 10.0))
+            .resizable(false)
+            .show(ctx, |ui| {
+                let mut opaque_path_kind = match renderer_options.opaque_render_path {
+                    OpaqueRenderPath::Forward => 0u32,
+                    OpaqueRenderPath::CompactDeferred => 1u32,
+                    OpaqueRenderPath::Deferred { .. } => 2u32,
+                };
+                ui.label("Opaque Path");
+                render_settings_changed |= ui
+                    .radio_value(&mut opaque_path_kind, 0, "Forward")
+                    .changed();
+                render_settings_changed |= ui
+                    .radio_value(&mut opaque_path_kind, 1, "Compact Deferred")
+                    .changed();
+                render_settings_changed |= ui
+                    .radio_value(&mut opaque_path_kind, 2, "Deferred")
+                    .changed();
+
+                let mut deferred_gtao = match renderer_options.opaque_render_path {
+                    OpaqueRenderPath::Deferred { gtao } => gtao,
+                    _ => true,
+                };
+                if opaque_path_kind == 2 {
+                    render_settings_changed |=
+                        ui.checkbox(&mut deferred_gtao, "Enable GTAO").changed();
+                }
+
+                renderer_options = RendererOptions {
+                    opaque_render_path: match opaque_path_kind {
+                        0 => OpaqueRenderPath::Forward,
+                        1 => OpaqueRenderPath::CompactDeferred,
+                        2 => OpaqueRenderPath::Deferred {
+                            gtao: deferred_gtao,
+                        },
+                        _ => OpaqueRenderPath::Forward,
+                    },
+                };
             });
+        if render_settings_changed {
+            emit(EngineUiCommand::Render(RenderCommand::SetRendererOptions(
+                renderer_options,
+            )));
         }
     }
 }

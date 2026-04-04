@@ -12,7 +12,7 @@ use winit::{
 };
 
 use crate::{
-    api::BuildUiFn,
+    api::{BuildUiFn, UiCommand},
     fixed_snapshot::FixedSnapshotHandoff,
     game::assets::{
         registry::{ResourceRequest, ResourceResult},
@@ -158,7 +158,13 @@ where
                     let ui_commands =
                         renderer.run_ui(&render_context.wgpu_context, var_snapshot, sim_debug);
                     for cmd in ui_commands {
-                        self.sim_inputs.push(InputEvent::Ui(cmd));
+                        match cmd {
+                            UiCommand::Game(game_cmd) => {
+                                self.sim_inputs.push(InputEvent::Ui(game_cmd))
+                            }
+                            UiCommand::Render(render_cmd) => renderer
+                                .apply_render_command(render_cmd, &render_context.wgpu_context),
+                        }
                     }
 
                     match renderer.render(

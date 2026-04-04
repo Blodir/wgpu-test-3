@@ -339,6 +339,23 @@ pub struct WorldRenderer {
     pose_storage: AnimPoseStore,
 }
 impl WorldRenderer {
+    fn build_opaque_renderer(
+        options: RendererOptions,
+        wgpu_context: &WgpuContext,
+        shader_cache: &mut ShaderCache,
+        layouts: &Layouts,
+    ) -> OpaqueRenderer {
+        match options.opaque_render_path {
+            OpaqueRenderPath::Forward => OpaqueRenderer::Forward,
+            OpaqueRenderPath::Deferred { gtao } => OpaqueRenderer::Deferred(
+                DeferredOpaqueRenderer::new(wgpu_context, shader_cache, layouts, gtao),
+            ),
+            OpaqueRenderPath::CompactDeferred => OpaqueRenderer::CompactDeferred(
+                CompactDeferredOpaqueRenderer::new(wgpu_context, shader_cache, layouts),
+            ),
+        }
+    }
+
     pub fn new(
         wgpu_context: &WgpuContext,
         placeholders: PlaceholderTextureIds,
@@ -365,19 +382,8 @@ impl WorldRenderer {
             &bind_groups.layouts,
             &attachments,
         );
-        let opaque_renderer = match options.opaque_render_path {
-            OpaqueRenderPath::Forward => OpaqueRenderer::Forward,
-            OpaqueRenderPath::Deferred { gtao } => OpaqueRenderer::Deferred(
-                DeferredOpaqueRenderer::new(wgpu_context, shader_cache, &bind_groups.layouts, gtao),
-            ),
-            OpaqueRenderPath::CompactDeferred => {
-                OpaqueRenderer::CompactDeferred(CompactDeferredOpaqueRenderer::new(
-                    wgpu_context,
-                    shader_cache,
-                    &bind_groups.layouts,
-                ))
-            }
-        };
+        let opaque_renderer =
+            Self::build_opaque_renderer(options, wgpu_context, shader_cache, &bind_groups.layouts);
 
         Self {
             attachments,
@@ -390,6 +396,20 @@ impl WorldRenderer {
             static_instances,
             pose_storage,
         }
+    }
+
+    pub fn apply_options(
+        &mut self,
+        options: RendererOptions,
+        wgpu_context: &WgpuContext,
+        shader_cache: &mut ShaderCache,
+    ) {
+        self.opaque_renderer = Self::build_opaque_renderer(
+            options,
+            wgpu_context,
+            shader_cache,
+            &self.bind_groups.layouts,
+        );
     }
 
     pub fn receive_poses(

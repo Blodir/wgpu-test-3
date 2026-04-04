@@ -7,7 +7,7 @@ use super::sampler_cache::SamplerCache;
 use super::shader_cache::ShaderCache;
 use super::world::bindgroups::material::MaterialBinding;
 use super::world::WorldRenderer;
-use crate::api::BuildUiFn;
+use crate::api::{BuildUiFn, UiCommand};
 use crate::fixed_snapshot::FixedSnapshotGuard;
 use crate::game::sim::SimDebugInfo;
 use crate::host::assets::store::{PlaceholderTextureIds, RenderAssetStore, TextureRenderId};
@@ -52,6 +52,11 @@ impl RendererOptions {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RenderCommand {
+    SetRendererOptions(RendererOptions),
+}
+
 #[derive(Debug, Clone, Copy, Default)]
 pub struct RenderDebugInfo {
     pub frame_index: u32,
@@ -80,7 +85,7 @@ pub struct Renderer<S, C> {
     world_renderer: WorldRenderer,
     gui_renderer: GuiRenderer<S, C>,
     sampler_cache: SamplerCache,
-    _shader_cache: ShaderCache,
+    shader_cache: ShaderCache,
     options: RendererOptions,
     last_frame_instant: Option<Instant>,
     frame_fps_smoothed: f32,
@@ -112,7 +117,7 @@ impl<S, C> Renderer<S, C> {
             world_renderer,
             gui_renderer,
             sampler_cache,
-            _shader_cache: shader_cache,
+            shader_cache,
             options,
             last_frame_instant: None,
             frame_fps_smoothed: 0.0,
@@ -125,7 +130,7 @@ impl<S, C> Renderer<S, C> {
         wgpu_context: &WgpuContext,
         ui_snapshot: &S,
         sim_debug: &SimDebugInfo,
-    ) -> Vec<C> {
+    ) -> Vec<UiCommand<C>> {
         let ui_frame_info = UiFrameInfo {
             diagnostics: DiagnosticsInfo {
                 render: self.render_debug,
@@ -137,6 +142,19 @@ impl<S, C> Renderer<S, C> {
         };
         self.gui_renderer
             .run_ui(wgpu_context, ui_snapshot, &ui_frame_info)
+    }
+
+    pub fn apply_render_command(&mut self, command: RenderCommand, wgpu_context: &WgpuContext) {
+        match command {
+            RenderCommand::SetRendererOptions(options) => {
+                if options == self.options {
+                    return;
+                }
+                self.options = options;
+                self.world_renderer
+                    .apply_options(options, wgpu_context, &mut self.shader_cache);
+            }
+        }
     }
 
     pub fn begin_frame(&mut self, frame_index: u32) {
