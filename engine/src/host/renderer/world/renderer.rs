@@ -20,6 +20,7 @@ use super::prepare::mesh::resolve_skinned_draw;
 
 use crate::host::assets::io::asset_formats::materialfile;
 use crate::host::assets::store::{PlaceholderTextureIds, RenderAssetStore, TextureRenderId};
+use crate::host::renderer::{OpaqueRenderPath, RendererOptions};
 use crate::host::wgpu_context::WgpuContext;
 use crate::host::world::buffers::static_instance::StaticInstances;
 use crate::host::world::pipelines::static_pbr::StaticPbrPipeline;
@@ -168,10 +169,45 @@ impl WorldPipelines {
     }
 }
 
+struct DeferredOpaqueRenderer;
+impl DeferredOpaqueRenderer {
+    fn new(
+        _wgpu_context: &WgpuContext,
+        _shader_cache: &mut ShaderCache,
+        _layouts: &Layouts,
+        _attachments: &WorldAttachments,
+    ) -> Self {
+        Self
+    }
+
+    fn render(&mut self) {}
+}
+
+struct CompactDeferredOpaqueRenderer;
+impl CompactDeferredOpaqueRenderer {
+    fn new(
+        _wgpu_context: &WgpuContext,
+        _shader_cache: &mut ShaderCache,
+        _layouts: &Layouts,
+        _attachments: &WorldAttachments,
+    ) -> Self {
+        Self
+    }
+
+    fn render(&mut self) {}
+}
+
+enum OpaqueRenderer {
+    Forward,
+    Deferred(DeferredOpaqueRenderer),
+    CompactDeferred(CompactDeferredOpaqueRenderer),
+}
+
 pub struct WorldRenderer {
     attachments: WorldAttachments,
     bind_groups: WorldBindGroups,
     pipelines: WorldPipelines,
+    opaque_renderer: OpaqueRenderer,
     placeholders: PlaceholderTextureIds,
     brdf_lut: TextureRenderId,
     skinned_instances: SkinnedInstances,
@@ -186,6 +222,7 @@ impl WorldRenderer {
         sampler_cache: &mut SamplerCache,
         shader_cache: &mut ShaderCache,
         render_resources: &RenderAssetStore,
+        options: RendererOptions,
     ) -> Self {
         let bind_groups = WorldBindGroups::new(
             wgpu_context,
@@ -204,11 +241,29 @@ impl WorldRenderer {
             &bind_groups.layouts,
             &attachments,
         );
+        let opaque_renderer = match options.opaque_render_path {
+            OpaqueRenderPath::Forward => OpaqueRenderer::Forward,
+            OpaqueRenderPath::Deferred => OpaqueRenderer::Deferred(DeferredOpaqueRenderer::new(
+                wgpu_context,
+                shader_cache,
+                &bind_groups.layouts,
+                &attachments,
+            )),
+            OpaqueRenderPath::CompactDeferred => OpaqueRenderer::CompactDeferred(
+                CompactDeferredOpaqueRenderer::new(
+                    wgpu_context,
+                    shader_cache,
+                    &bind_groups.layouts,
+                    &attachments,
+                ),
+            ),
+        };
 
         Self {
             attachments,
             bind_groups,
             pipelines,
+            opaque_renderer,
             skinned_instances,
             placeholders,
             brdf_lut,
@@ -292,28 +347,34 @@ impl WorldRenderer {
             frame_idx,
         );
 
-        self.pipelines.skinned_pbr.render_opaque(
-            &skinned_opaque_pass,
-            &self.skinned_instances.buffer,
-            encoder,
-            &self.attachments.hdr_color.view,
-            &self.attachments.depth_texture.view,
-            &self.bind_groups.camera.bind_group,
-            &self.bind_groups.lights.bind_group,
-            &self.bind_groups.bones.bind_group,
-            render_resources,
-        );
+        match &mut self.opaque_renderer {
+            OpaqueRenderer::Forward => {
+                self.pipelines.skinned_pbr.render_opaque(
+                    &skinned_opaque_pass,
+                    &self.skinned_instances.buffer,
+                    encoder,
+                    &self.attachments.hdr_color.view,
+                    &self.attachments.depth_texture.view,
+                    &self.bind_groups.camera.bind_group,
+                    &self.bind_groups.lights.bind_group,
+                    &self.bind_groups.bones.bind_group,
+                    render_resources,
+                );
 
-        self.pipelines.static_pbr.render_opaque(
-            &static_opaque_pass,
-            &self.static_instances.buffer,
-            encoder,
-            &self.attachments.hdr_color.view,
-            &self.attachments.depth_texture.view,
-            &self.bind_groups.camera.bind_group,
-            &self.bind_groups.lights.bind_group,
-            render_resources,
-        );
+                self.pipelines.static_pbr.render_opaque(
+                    &static_opaque_pass,
+                    &self.static_instances.buffer,
+                    encoder,
+                    &self.attachments.hdr_color.view,
+                    &self.attachments.depth_texture.view,
+                    &self.bind_groups.camera.bind_group,
+                    &self.bind_groups.lights.bind_group,
+                    render_resources,
+                );
+            }
+            OpaqueRenderer::Deferred(renderer) => renderer.render(),
+            OpaqueRenderer::CompactDeferred(renderer) => renderer.render(),
+        }
 
         self.pipelines.skinned_pbr.render_transparent(
             &skinned_transparent_pass,

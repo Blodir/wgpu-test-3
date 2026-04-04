@@ -93,6 +93,7 @@ impl<S, C> Renderer<S, C> {
             &mut sampler_cache,
             &mut shader_cache,
             render_resources,
+            options,
         );
         let gui_renderer = GuiRenderer::new(wgpu_context, build_ui_fn);
         let render_debug = RenderDebugInfo {
