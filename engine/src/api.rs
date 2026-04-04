@@ -1,4 +1,4 @@
-use crate::host::renderer::DebugInfo;
+use crate::host::renderer::UiFrameInfo;
 use std::{cell::RefCell, rc::Rc};
 
 use crate::game::{
@@ -9,7 +9,7 @@ use crate::game::{
 };
 
 pub type BuildUiFn<S, C> =
-    fn(ctx: &egui::Context, snapshot: &S, debug_info: &DebugInfo, emit: &mut dyn FnMut(C));
+    fn(ctx: &egui::Context, snapshot: &S, ui_frame_info: &UiFrameInfo, emit: &mut dyn FnMut(C));
 
 pub trait GameTrait {
     type VarSnapshot: Default;
@@ -39,7 +39,7 @@ pub trait UiTrait {
     fn build_ui(
         _ctx: &egui::Context,
         _snapshot: &<Self as UiTrait>::VarSnapshot,
-        _debug_info: &DebugInfo,
+        _ui_frame_info: &UiFrameInfo,
         _emit: &mut dyn FnMut(<Self as UiTrait>::UiCommand),
     ) {
     }

@@ -12,7 +12,7 @@ use engine::{
         },
         sim::InputEvent,
     },
-    host::renderer::DebugInfo,
+    host::renderer::UiFrameInfo,
     run,
 };
 use generational_arena::Arena;
@@ -799,14 +799,23 @@ impl UiTrait for Game {
     fn build_ui(
         ctx: &egui::Context,
         snapshot: &Self::VarSnapshot,
-        debug_info: &DebugInfo,
+        ui_frame_info: &UiFrameInfo,
         emit: &mut dyn FnMut(Self::UiCommand),
     ) {
-        let line1 = format!("render fps: {:.1}", debug_info.render.fps);
-        let line2 = format!("render frame: {:.2} ms", debug_info.render.frame_time_ms);
-        let line3 = format!("sim fps: {:.1}", debug_info.sim.fps);
-        let line4 = format!("sim frame: {:.2} ms", debug_info.sim.frame_time_ms);
-        let line5 = format!("opaque path: {:?}", debug_info.render.opaque_render_path);
+        let line1 = format!("render fps: {:.1}", ui_frame_info.diagnostics.render.fps);
+        let line2 = format!(
+            "render frame: {:.2} ms",
+            ui_frame_info.diagnostics.render.frame_time_ms
+        );
+        let line3 = format!("sim fps: {:.1}", ui_frame_info.diagnostics.sim.fps);
+        let line4 = format!(
+            "sim frame: {:.2} ms",
+            ui_frame_info.diagnostics.sim.frame_time_ms
+        );
+        let line5 = format!(
+            "opaque path: {:?}",
+            ui_frame_info.settings.renderer_options.opaque_render_path
+        );
         let text_color = egui::Color32::WHITE;
         let font = egui::FontId::proportional(22.0);
         let padding = egui::vec2(10.0, 8.0);

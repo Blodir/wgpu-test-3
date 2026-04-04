@@ -18,7 +18,9 @@ use crate::workers::anim_pose::PoseJobResult;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum OpaqueRenderPath {
-    Deferred { gtao: bool },
+    Deferred {
+        gtao: bool,
+    },
     CompactDeferred,
     #[default]
     Forward,
@@ -55,13 +57,23 @@ pub struct RenderDebugInfo {
     pub frame_index: u32,
     pub fps: f32,
     pub frame_time_ms: f32,
-    pub opaque_render_path: OpaqueRenderPath,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
-pub struct DebugInfo {
+pub struct DiagnosticsInfo {
     pub render: RenderDebugInfo,
     pub sim: SimDebugInfo,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct RuntimeSettings {
+    pub renderer_options: RendererOptions,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct UiFrameInfo {
+    pub diagnostics: DiagnosticsInfo,
+    pub settings: RuntimeSettings,
 }
 
 pub struct Renderer<S, C> {
@@ -96,10 +108,6 @@ impl<S, C> Renderer<S, C> {
             options,
         );
         let gui_renderer = GuiRenderer::new(wgpu_context, build_ui_fn);
-        let render_debug = RenderDebugInfo {
-            opaque_render_path: options.opaque_render_path,
-            ..Default::default()
-        };
         Self {
             world_renderer,
             gui_renderer,
@@ -108,7 +116,7 @@ impl<S, C> Renderer<S, C> {
             options,
             last_frame_instant: None,
             frame_fps_smoothed: 0.0,
-            render_debug,
+            render_debug: RenderDebugInfo::default(),
         }
     }
 
@@ -118,12 +126,17 @@ impl<S, C> Renderer<S, C> {
         ui_snapshot: &S,
         sim_debug: &SimDebugInfo,
     ) -> Vec<C> {
-        let debug_info = DebugInfo {
-            render: self.render_debug,
-            sim: *sim_debug,
+        let ui_frame_info = UiFrameInfo {
+            diagnostics: DiagnosticsInfo {
+                render: self.render_debug,
+                sim: *sim_debug,
+            },
+            settings: RuntimeSettings {
+                renderer_options: self.options,
+            },
         };
         self.gui_renderer
-            .run_ui(wgpu_context, ui_snapshot, &debug_info)
+            .run_ui(wgpu_context, ui_snapshot, &ui_frame_info)
     }
 
     pub fn begin_frame(&mut self, frame_index: u32) {
@@ -222,7 +235,6 @@ impl<S, C> Renderer<S, C> {
             } else {
                 0.0
             },
-            opaque_render_path: self.options.opaque_render_path,
         };
     }
 }
