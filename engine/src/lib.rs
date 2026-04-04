@@ -42,7 +42,7 @@ where
     let var_snapshot_handoff = Arc::new(VarSnapshotHandoff::<<G as GameTrait>::VarSnapshot>::new());
     let sim_inputs = Arc::new(SegQueue::<InputEvent<<G as GameTrait>::UiCommand>>::new());
 
-    let (worker_pool, task_tx, render_rx, game_rx) = WorkerPool::init();
+    let (worker_pool, worker_tx, worker_render_rx, worker_game_rx) = WorkerPool::init();
     let sim_handle = spawn_sim(
         sim_inputs.clone(),
         fixed_snapshot_handoff.clone(),
@@ -51,7 +51,7 @@ where
         registry_res_rx,
         game_req_rx,
         game_res_tx,
-        task_tx,
+        worker_tx,
         make_game,
     );
 
@@ -62,7 +62,7 @@ where
         registry_res_tx,
         game_res_rx,
         game_req_tx,
-        render_rx,
+        worker_render_rx,
         var_snapshot_handoff,
         <G as UiTrait>::build_ui,
     );

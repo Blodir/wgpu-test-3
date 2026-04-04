@@ -130,6 +130,7 @@ impl<S, C> Renderer<S, C> {
         self.gui_renderer.resize(wgpu_context);
     }
 
+    /// returns true if event was consumed by the gui
     pub fn handle_window_event(&mut self, event: &WindowEvent) -> bool {
         self.gui_renderer.handle_window_event(event)
     }

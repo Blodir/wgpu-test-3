@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use crossbeam::channel as cbch;
 use crossbeam_queue::SegQueue;
@@ -41,7 +41,7 @@ fn resize<S, C>(
 }
 
 struct RenderContext<'surface, S, C> {
-    renderer: Arc<Mutex<Renderer<S, C>>>,
+    renderer: Renderer<S, C>,
     render_resources: RenderAssetStore,
     window: Arc<Window>,
     wgpu_context: WgpuContext<'surface>,
@@ -54,7 +54,7 @@ pub struct MainWindow<'surface, S, C> {
     var_snapshot_handoff: Arc<VarSnapshotHandoff<S>>,
     sim_inputs: Arc<SegQueue<InputEvent<C>>>,
     resource_manager: HostAssetManager,
-    task_res_rx: cbch::Receiver<RenderResponse>,
+    worker_res_rx: cbch::Receiver<RenderResponse>,
     build_ui_fn: BuildUiFn<S, C>,
 }
 
@@ -66,7 +66,7 @@ impl<S, C> MainWindow<'_, S, C> {
         registry_res_tx: cbch::Sender<ResourceResult>,
         game_res_rx: cbch::Receiver<CreateGameResourceResponse>,
         game_req_tx: cbch::Sender<CreateGameResourceRequest>,
-        task_res_rx: cbch::Receiver<RenderResponse>,
+        worker_res_rx: cbch::Receiver<RenderResponse>,
         var_snapshot_handoff: Arc<VarSnapshotHandoff<S>>,
         build_ui_fn: BuildUiFn<S, C>,
     ) -> Self {
@@ -78,7 +78,7 @@ impl<S, C> MainWindow<'_, S, C> {
             var_snapshot_handoff,
             sim_inputs,
             resource_manager,
-            task_res_rx,
+            worker_res_rx,
             build_ui_fn,
         }
     }
@@ -99,13 +99,13 @@ where
         let mut render_resources = RenderAssetStore::new();
         let placeholders = render_resources.initialize_placeholders(&wgpu_context);
         let brdf_lut = render_resources.initialize_brdf_lut(&wgpu_context);
-        let renderer = Arc::new(Mutex::new(Renderer::new(
+        let renderer = Renderer::new(
             &wgpu_context,
             placeholders,
             brdf_lut,
             &render_resources,
             self.build_ui_fn,
-        )));
+        );
         self.render_context = Some(RenderContext {
             window,
             renderer,
@@ -118,8 +118,7 @@ where
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
         let mut gui_consumed = false;
         if let Some(ref mut render_context) = self.render_context {
-            let mut renderer = render_context.renderer.lock().unwrap();
-            gui_consumed = renderer.handle_window_event(&event);
+            gui_consumed = render_context.renderer.handle_window_event(&event);
         }
 
         match event {
@@ -132,15 +131,15 @@ where
                         &mut render_context.render_resources,
                         &render_context.wgpu_context,
                     );
-                    let mut renderer = render_context.renderer.lock().unwrap();
+                    let renderer = &mut render_context.renderer;
                     self.resource_manager.process_game_responses(
-                        &mut renderer,
+                        renderer,
                         &mut render_context.render_resources,
                         &render_context.wgpu_context,
                     );
                     self.resource_manager.process_reg_requests();
 
-                    for res in self.task_res_rx.try_iter() {
+                    for res in self.worker_res_rx.try_iter() {
                         match res {
                             RenderResponse::Pose(anim_pose_task_results) => {
                                 renderer.receive_poses(anim_pose_task_results);
@@ -148,7 +147,6 @@ where
                         }
                     }
 
-                    // self.resource_manager.process_upload_queue(&mut renderer, &mut render_context.render_resources, &render_context.wgpu_context);
                     let var_snapshot_guard = self.var_snapshot_handoff.load();
                     let fixed_snapshot_guard = self.fixed_snapshot_handoff.load();
                     let var_snapshot = &var_snapshot_guard.snap;
@@ -178,9 +176,8 @@ where
             }
             WindowEvent::Resized(physical_size) => {
                 if let Some(ref mut render_context) = self.render_context {
-                    let mut renderer = render_context.renderer.lock().unwrap();
                     let wgpu_context = &mut render_context.wgpu_context;
-                    resize(physical_size, wgpu_context, &mut renderer);
+                    resize(physical_size, wgpu_context, &mut render_context.renderer);
                     let aspect = wgpu_context.surface_config.width as f32
                         / wgpu_context.surface_config.height as f32;
                     self.sim_inputs.push(InputEvent::AspectChange(aspect));
@@ -188,10 +185,9 @@ where
             }
             WindowEvent::ScaleFactorChanged { .. } => {
                 if let Some(ref mut render_context) = self.render_context {
-                    let mut renderer = render_context.renderer.lock().unwrap();
                     let wgpu_context = &mut render_context.wgpu_context;
                     let new_size = wgpu_context.window.inner_size();
-                    resize(new_size, wgpu_context, &mut renderer);
+                    resize(new_size, wgpu_context, &mut render_context.renderer);
                     let aspect = wgpu_context.surface_config.width as f32
                         / wgpu_context.surface_config.height as f32;
                     self.sim_inputs.push(InputEvent::AspectChange(aspect));
@@ -225,8 +221,7 @@ where
         match event {
             DeviceEvent::MouseMotion { .. } => {
                 if let Some(ref render_context) = self.render_context {
-                    let renderer = render_context.renderer.lock().unwrap();
-                    if renderer.wants_pointer_input() {
+                    if render_context.renderer.wants_pointer_input() {
                         return;
                     }
                 }
