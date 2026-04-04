@@ -70,20 +70,111 @@ pub struct UploadMaterialRequest<'a> {
     pub metallic_roughness_texture: &'a Option<TextureRenderId>,
 }
 
-pub struct WorldRenderer {
+struct WorldAttachments {
     skybox_output: SkyboxOutputTexture,
     depth_texture: DepthTexture,
     msaa_textures: MSAATextures,
-    skybox_pipeline: SkyboxPipeline,
-    skinned_pipeline: SkinnedPbrPipeline,
-    static_pipeline: StaticPbrPipeline,
-    post_pipeline: PostProcessingPipeline,
-    pub layouts: Layouts,
-    pub placeholders: PlaceholderTextureIds,
-    pub brdf_lut: TextureRenderId,
+}
+impl WorldAttachments {
+    fn new(wgpu_context: &WgpuContext) -> Self {
+        Self {
+            skybox_output: SkyboxOutputTexture::new(&wgpu_context.device, &wgpu_context.surface_config),
+            depth_texture: DepthTexture::new(&wgpu_context.device, &wgpu_context.surface_config),
+            msaa_textures: MSAATextures::new(&wgpu_context.device, &wgpu_context.surface_config),
+        }
+    }
+}
+
+struct WorldBindGroups {
+    layouts: Layouts,
     bones: BonesBinding,
-    pub camera: CameraBinding,
+    camera: CameraBinding,
     lights: LightsBinding,
+}
+impl WorldBindGroups {
+    fn new(
+        wgpu_context: &WgpuContext,
+        placeholders: &PlaceholderTextureIds,
+        brdf_lut: TextureRenderId,
+        sampler_cache: &mut SamplerCache,
+        render_resources: &RenderAssetStore,
+    ) -> Self {
+        let layouts = Layouts::new(wgpu_context);
+        let lights = LightsBinding::new(
+            render_resources,
+            brdf_lut,
+            sampler_cache,
+            placeholders,
+            wgpu_context,
+            &layouts.lights,
+        );
+        let camera = CameraBinding::new(&wgpu_context.device, &layouts.camera);
+        let bones = BonesBinding::new(&layouts.bones, &wgpu_context.device);
+        Self {
+            layouts,
+            bones,
+            camera,
+            lights,
+        }
+    }
+}
+
+struct WorldPipelines {
+    skybox: SkyboxPipeline,
+    skinned_pbr: SkinnedPbrPipeline,
+    static_pbr: StaticPbrPipeline,
+    post: PostProcessingPipeline,
+}
+impl WorldPipelines {
+    fn new(
+        wgpu_context: &WgpuContext,
+        shader_cache: &mut ShaderCache,
+        layouts: &Layouts,
+        attachments: &WorldAttachments,
+    ) -> Self {
+        let skybox = SkyboxPipeline::new(
+            wgpu_context,
+            shader_cache,
+            &layouts.camera,
+            &layouts.lights,
+        );
+        let skinned_pbr = SkinnedPbrPipeline::new(
+            wgpu_context,
+            shader_cache,
+            &layouts.pbr_material,
+            &layouts.camera,
+            &layouts.lights,
+            &layouts.bones,
+        );
+        let static_pbr = StaticPbrPipeline::new(
+            wgpu_context,
+            shader_cache,
+            &layouts.pbr_material,
+            &layouts.camera,
+            &layouts.lights,
+        );
+        let post = PostProcessingPipeline::new(
+            wgpu_context,
+            shader_cache,
+            &attachments.skybox_output,
+            &attachments.msaa_textures,
+        );
+
+        Self {
+            skybox,
+            skinned_pbr,
+            static_pbr,
+            post,
+        }
+    }
+}
+
+pub struct WorldRenderer {
+    attachments: WorldAttachments,
+    bind_groups: WorldBindGroups,
+    pipelines: WorldPipelines,
+    placeholders: PlaceholderTextureIds,
+    brdf_lut: TextureRenderId,
     skinned_instances: SkinnedInstances,
     static_instances: StaticInstances,
     pose_storage: AnimPoseStore,
@@ -97,71 +188,32 @@ impl WorldRenderer {
         shader_cache: &mut ShaderCache,
         render_resources: &RenderAssetStore,
     ) -> Self {
-        let layouts = Layouts::new(&wgpu_context);
-        let lights = LightsBinding::new(
-            render_resources,
+        let bind_groups = WorldBindGroups::new(
+            wgpu_context,
+            &placeholders,
             brdf_lut,
             sampler_cache,
-            &placeholders,
-            wgpu_context,
-            &layouts.lights,
+            render_resources,
         );
-
-        let camera = CameraBinding::new(&wgpu_context.device, &layouts.camera);
-        let bones = BonesBinding::new(&layouts.bones, &wgpu_context.device);
         let skinned_instances = SkinnedInstances::new(wgpu_context);
         let static_instances = StaticInstances::new(wgpu_context);
         let pose_storage = AnimPoseStore::new();
-
-        let skybox_output =
-            SkyboxOutputTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
-        let depth_texture = DepthTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
-        let msaa_textures = MSAATextures::new(&wgpu_context.device, &wgpu_context.surface_config);
-
-        let skybox_pipeline = SkyboxPipeline::new(
-            &wgpu_context,
+        let attachments = WorldAttachments::new(wgpu_context);
+        let pipelines = WorldPipelines::new(
+            wgpu_context,
             shader_cache,
-            &layouts.camera,
-            &layouts.lights,
-        );
-        let skinned_pipeline = SkinnedPbrPipeline::new(
-            &wgpu_context,
-            shader_cache,
-            &layouts.pbr_material,
-            &layouts.camera,
-            &layouts.lights,
-            &layouts.bones,
-        );
-        let static_pipeline = StaticPbrPipeline::new(
-            &wgpu_context,
-            shader_cache,
-            &layouts.pbr_material,
-            &layouts.camera,
-            &layouts.lights,
-        );
-        let post_pipeline = PostProcessingPipeline::new(
-            &wgpu_context,
-            shader_cache,
-            &skybox_output,
-            &msaa_textures,
+            &bind_groups.layouts,
+            &attachments,
         );
 
         Self {
-            skybox_output,
-            depth_texture,
-            msaa_textures,
-            skybox_pipeline,
-            skinned_pipeline,
-            post_pipeline,
-            layouts,
-            bones,
-            camera,
-            lights,
+            attachments,
+            bind_groups,
+            pipelines,
             skinned_instances,
             placeholders,
             brdf_lut,
             static_instances,
-            static_pipeline,
             pose_storage,
         }
     }
@@ -195,7 +247,7 @@ impl WorldRenderer {
             (elapsed.as_secs_f32() / interval.as_secs_f32()).clamp(0.0, 1.0)
         };
         prepare_camera(
-            &mut self.camera,
+            &mut self.bind_groups.camera,
             camera_pair,
             now,
             &wgpu_context.queue,
@@ -203,24 +255,24 @@ impl WorldRenderer {
         );
         prepare_lights(
             &snaps,
-            &mut self.lights,
+            &mut self.bind_groups.lights,
             self.brdf_lut,
             render_resources,
             sampler_cache,
             wgpu_context,
-            &self.layouts.lights,
+            &self.bind_groups.layouts.lights,
         );
 
-        self.skybox_pipeline.render(
+        self.pipelines.skybox.render(
             encoder,
-            &self.skybox_output.view,
-            &self.camera.bind_group,
-            &self.lights.bind_group,
+            &self.attachments.skybox_output.view,
+            &self.bind_groups.camera.bind_group,
+            &self.bind_groups.lights.bind_group,
         );
 
-        let skinned_draw_context = resolve_skinned_draw(
-            &mut self.bones,
-            &self.layouts.bones,
+        let (skinned_opaque_pass, skinned_transparent_pass) = resolve_skinned_draw(
+            &mut self.bind_groups.bones,
+            &self.bind_groups.layouts.bones,
             &mut self.skinned_instances,
             render_resources,
             &snaps,
@@ -230,7 +282,7 @@ impl WorldRenderer {
             &mut self.pose_storage,
             frame_idx,
         );
-        let static_draw_context = resolve_static_draw(
+        let (static_opaque_pass, static_transparent_pass) = resolve_static_draw(
             &mut self.static_instances,
             render_resources,
             &snaps,
@@ -241,65 +293,62 @@ impl WorldRenderer {
             frame_idx,
         );
 
-        self.skinned_pipeline.render_opaque(
-            &skinned_draw_context,
+        self.pipelines.skinned_pbr.render_opaque(
+            &skinned_opaque_pass,
             &self.skinned_instances.buffer,
             encoder,
-            &self.msaa_textures.msaa_texture_view,
-            &self.depth_texture.view,
-            &self.camera.bind_group,
-            &self.lights.bind_group,
-            &self.bones.bind_group,
+            &self.attachments.msaa_textures.msaa_texture_view,
+            &self.attachments.depth_texture.view,
+            &self.bind_groups.camera.bind_group,
+            &self.bind_groups.lights.bind_group,
+            &self.bind_groups.bones.bind_group,
             render_resources,
         );
 
-        self.static_pipeline.render_opaque(
-            &static_draw_context,
+        self.pipelines.static_pbr.render_opaque(
+            &static_opaque_pass,
             &self.static_instances.buffer,
             encoder,
-            &self.msaa_textures.msaa_texture_view,
-            &self.depth_texture.view,
-            &self.camera.bind_group,
-            &self.lights.bind_group,
+            &self.attachments.msaa_textures.msaa_texture_view,
+            &self.attachments.depth_texture.view,
+            &self.bind_groups.camera.bind_group,
+            &self.bind_groups.lights.bind_group,
             render_resources,
         );
 
-        self.skinned_pipeline.render_transparent(
-            &skinned_draw_context,
+        self.pipelines.skinned_pbr.render_transparent(
+            &skinned_transparent_pass,
             &self.skinned_instances.buffer,
             encoder,
-            &self.msaa_textures.msaa_texture_view,
-            &self.depth_texture.view,
-            &self.camera.bind_group,
-            &self.lights.bind_group,
-            &self.bones.bind_group,
+            &self.attachments.msaa_textures.msaa_texture_view,
+            &self.attachments.depth_texture.view,
+            &self.bind_groups.camera.bind_group,
+            &self.bind_groups.lights.bind_group,
+            &self.bind_groups.bones.bind_group,
             render_resources,
         );
 
-        self.static_pipeline.render_transparent(
-            &static_draw_context,
+        self.pipelines.static_pbr.render_transparent(
+            &static_transparent_pass,
             &self.static_instances.buffer,
             encoder,
-            &self.msaa_textures.msaa_texture_view,
-            &self.msaa_textures.resolve_texture_view,
-            &self.depth_texture.view,
-            &self.camera.bind_group,
-            &self.lights.bind_group,
+            &self.attachments.msaa_textures.msaa_texture_view,
+            &self.attachments.msaa_textures.resolve_texture_view,
+            &self.attachments.depth_texture.view,
+            &self.bind_groups.camera.bind_group,
+            &self.bind_groups.lights.bind_group,
             render_resources,
         );
 
-        self.post_pipeline.render(encoder, output_view);
+        self.pipelines.post.render(encoder, output_view);
     }
 
     pub fn resize(&mut self, wgpu_context: &WgpuContext) {
-        self.skybox_output =
-            SkyboxOutputTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
-        self.depth_texture = DepthTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
-        self.msaa_textures = MSAATextures::new(&wgpu_context.device, &wgpu_context.surface_config);
-        self.post_pipeline.update_input_bindgroup(
+        self.attachments = WorldAttachments::new(wgpu_context);
+        self.pipelines.post.update_input_bindgroup(
             &wgpu_context.device,
-            &self.skybox_output,
-            &self.msaa_textures,
+            &self.attachments.skybox_output,
+            &self.attachments.msaa_textures,
         );
     }
 
@@ -364,7 +413,7 @@ impl WorldRenderer {
             metallic_roughness_view,
             normal_view,
             occlusion_view,
-            &self.layouts.material,
+            &self.bind_groups.layouts.material,
             wgpu_context,
             sampler_cache,
         ))

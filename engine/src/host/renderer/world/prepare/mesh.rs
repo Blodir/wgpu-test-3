@@ -3,7 +3,7 @@ use std::ops::Range;
 use glam::Mat4;
 
 use crate::{
-    fixed_snapshot::{FixedSnapshotGuard, MeshDrawSnapshot, PassBatches},
+    fixed_snapshot::{FixedSnapshotGuard, PassBatches},
     game::scene_tree::SceneNodeId,
     host::{
         assets::{io::asset_formats::rigfile::SRT, store::RenderAssetStore},
@@ -18,12 +18,6 @@ use crate::{
         },
     },
 };
-
-pub struct DrawContext<'a> {
-    pub snap: &'a MeshDrawSnapshot,
-    pub opaque: PassDrawContext<'a>,
-    pub transparent: PassDrawContext<'a>,
-}
 
 pub struct PassDrawContext<'a> {
     pub batch: &'a PassBatches,
@@ -288,7 +282,7 @@ pub fn resolve_skinned_draw<'a>(
     queue: &wgpu::Queue,
     pose_storage: &mut AnimPoseStore,
     frame_idx: u32,
-) -> DrawContext<'a> {
+) -> (PassDrawContext<'a>, PassDrawContext<'a>) {
     let mut joint_palette: Vec<BoneMat34> = vec![];
     let mut instance_data = vec![];
     let skinned_instance_count = snaps.curr.mesh_draw_snapshot.skinned_instances.len();
@@ -323,17 +317,16 @@ pub fn resolve_skinned_draw<'a>(
     bones.update(joint_palette, bones_layout, device, queue);
     instances.update(instance_data, queue, device);
 
-    DrawContext {
-        snap: &snaps.curr.mesh_draw_snapshot,
-        opaque: PassDrawContext {
+    (
+        PassDrawContext {
             batch: &snaps.curr.mesh_draw_snapshot.opaque_batch,
             instance_ranges: opaque_instance_ranges,
         },
-        transparent: PassDrawContext {
+        PassDrawContext {
             batch: &snaps.curr.mesh_draw_snapshot.transparent_batch,
             instance_ranges: transparent_instance_ranges,
         },
-    }
+    )
 }
 
 pub fn resolve_static_draw<'a>(
@@ -345,7 +338,7 @@ pub fn resolve_static_draw<'a>(
     queue: &wgpu::Queue,
     pose_storage: &mut AnimPoseStore,
     frame_idx: u32,
-) -> DrawContext<'a> {
+) -> (PassDrawContext<'a>, PassDrawContext<'a>) {
     let mut instance_data = vec![];
     let static_instance_count = snaps.curr.mesh_draw_snapshot.static_instances.len();
     let mut node_world_cache = Vec::with_capacity(static_instance_count);
@@ -373,15 +366,14 @@ pub fn resolve_static_draw<'a>(
 
     instances.update(instance_data, queue, device);
 
-    DrawContext {
-        snap: &snaps.curr.mesh_draw_snapshot,
-        opaque: PassDrawContext {
+    (
+        PassDrawContext {
             batch: &snaps.curr.mesh_draw_snapshot.opaque_batch,
             instance_ranges: opaque_instance_ranges,
         },
-        transparent: PassDrawContext {
+        PassDrawContext {
             batch: &snaps.curr.mesh_draw_snapshot.transparent_batch,
             instance_ranges: transparent_instance_ranges,
         },
-    }
+    )
 }

@@ -3,7 +3,7 @@ use crate::host::assets::store::RenderAssetStore;
 use crate::host::world::{
     attachments::depth::DepthTexture,
     buffers::{skinned_instance::SkinnedInstance, skinned_vertex::SkinnedVertex},
-    prepare::mesh::{DrawContext, PassDrawContext},
+    prepare::mesh::PassDrawContext,
 };
 use crate::host::{shader_cache::ShaderCache, wgpu_context::WgpuContext};
 
@@ -171,7 +171,7 @@ impl SkinnedPbrPipeline {
 
     pub fn render_opaque<'a>(
         &self,
-        draw_context: &'a DrawContext<'a>,
+        pass_draw: &'a PassDrawContext<'a>,
         instance_buffer: &wgpu::Buffer,
         encoder: &mut wgpu::CommandEncoder,
         msaa_texture_view: &wgpu::TextureView,
@@ -207,17 +207,12 @@ impl SkinnedPbrPipeline {
         render_pass.set_bind_group(0u32, camera_bind_group, &[]);
         render_pass.set_bind_group(1, lights_bind_group, &[]);
         render_pass.set_bind_group(3, bones_bind_group, &[]);
-        Self::draw_pass(
-            &draw_context.opaque,
-            &mut render_pass,
-            instance_buffer,
-            render_resources,
-        );
+        Self::draw_pass(pass_draw, &mut render_pass, instance_buffer, render_resources);
     }
 
     pub fn render_transparent<'a>(
         &self,
-        draw_context: &'a DrawContext<'a>,
+        pass_draw: &'a PassDrawContext<'a>,
         instance_buffer: &wgpu::Buffer,
         encoder: &mut wgpu::CommandEncoder,
         msaa_texture_view: &wgpu::TextureView,
@@ -253,11 +248,6 @@ impl SkinnedPbrPipeline {
         render_pass.set_bind_group(0u32, camera_bind_group, &[]);
         render_pass.set_bind_group(1, lights_bind_group, &[]);
         render_pass.set_bind_group(3, bones_bind_group, &[]);
-        Self::draw_pass(
-            &draw_context.transparent,
-            &mut render_pass,
-            instance_buffer,
-            render_resources,
-        );
+        Self::draw_pass(pass_draw, &mut render_pass, instance_buffer, render_resources);
     }
 }
