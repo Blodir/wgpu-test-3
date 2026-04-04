@@ -18,7 +18,7 @@ use crate::workers::anim_pose::PoseJobResult;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum OpaqueRenderPath {
-    Deferred,
+    Deferred { gtao: bool },
     CompactDeferred,
     #[default]
     Forward,
@@ -39,7 +39,7 @@ impl RendererOptions {
     pub fn from_limits(limits: &wgpu::Limits) -> Self {
         // Conservative heuristic based on MRT availability for deferred paths.
         let opaque_render_path = if limits.max_color_attachments >= 6 {
-            OpaqueRenderPath::Deferred
+            OpaqueRenderPath::Deferred { gtao: true }
         } else if limits.max_color_attachments >= 4 {
             OpaqueRenderPath::CompactDeferred
         } else {

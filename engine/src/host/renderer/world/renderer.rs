@@ -173,6 +173,7 @@ impl WorldPipelines {
 }
 
 struct DeferredOpaqueRenderer {
+    gtao_enabled: bool,
     g_buffer_targets: GBufferTargets,
     gtao_texture: GtaoTexture,
     gtao_pipeline: GtaoPipeline,
@@ -180,7 +181,12 @@ struct DeferredOpaqueRenderer {
     deferred_lighting_pipeline: DeferredLightingPipeline,
 }
 impl DeferredOpaqueRenderer {
-    fn new(wgpu_context: &WgpuContext, shader_cache: &mut ShaderCache, layouts: &Layouts) -> Self {
+    fn new(
+        wgpu_context: &WgpuContext,
+        shader_cache: &mut ShaderCache,
+        layouts: &Layouts,
+        gtao_enabled: bool,
+    ) -> Self {
         let g_buffer_targets =
             GBufferTargets::new(&wgpu_context.device, &wgpu_context.surface_config);
         let gtao_texture = GtaoTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
@@ -202,6 +208,7 @@ impl DeferredOpaqueRenderer {
             &gtao_texture,
         );
         Self {
+            gtao_enabled,
             g_buffer_targets,
             gtao_texture,
             gtao_pipeline,
@@ -245,7 +252,24 @@ impl DeferredOpaqueRenderer {
             lights_bind_group,
             render_resources,
         );
-        self.gtao_pipeline.render(encoder, &self.gtao_texture.view);
+        if self.gtao_enabled {
+            self.gtao_pipeline.render(encoder, &self.gtao_texture.view);
+        } else {
+            let _clear_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("GTAO Disabled Clear Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &self.gtao_texture.view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::WHITE),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                occlusion_query_set: None,
+                timestamp_writes: None,
+            });
+        }
         self.deferred_lighting_pipeline.render(
             encoder,
             hdr_color_view,
@@ -344,8 +368,13 @@ impl WorldRenderer {
         let opaque_renderer =
             match options.opaque_render_path {
                 OpaqueRenderPath::Forward => OpaqueRenderer::Forward,
-                OpaqueRenderPath::Deferred => OpaqueRenderer::Deferred(
-                    DeferredOpaqueRenderer::new(wgpu_context, shader_cache, &bind_groups.layouts),
+                OpaqueRenderPath::Deferred { gtao } => OpaqueRenderer::Deferred(
+                    DeferredOpaqueRenderer::new(
+                        wgpu_context,
+                        shader_cache,
+                        &bind_groups.layouts,
+                        gtao,
+                    ),
                 ),
                 OpaqueRenderPath::CompactDeferred => {
                     OpaqueRenderer::CompactDeferred(CompactDeferredOpaqueRenderer::new(
