@@ -1,7 +1,7 @@
 @group(0) @binding(0) var skybox_texture: texture_2d<f32>;
 @group(0) @binding(1) var skybox_texture_sampler: sampler;
-@group(0) @binding(2) var resolve_texture: texture_2d<f32>;
-@group(0) @binding(3) var resolve_texture_sampler: sampler;
+@group(0) @binding(2) var scene_color_texture: texture_2d<f32>;
+@group(0) @binding(3) var scene_color_sampler: sampler;
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
@@ -19,11 +19,11 @@ fn luma(rgb: vec3f) -> f32 {
 fn sample_post_color(uv: vec2f) -> vec3f {
     let uv_flipped = vec2f(uv.x, 1.0 - uv.y);
     let skybox_sample = textureSample(skybox_texture, skybox_texture_sampler, uv_flipped);
-    let resolve_sample = textureSample(resolve_texture, resolve_texture_sampler, uv_flipped);
+    let scene_color_sample = textureSample(scene_color_texture, scene_color_sampler, uv_flipped);
 
-    // resolve_sample.rgb is premultiplied by resolve_sample.a after raster blending.
+    // scene_color_sample.rgb is premultiplied by scene_color_sample.a after raster blending.
     // Composite with skybox using premultiplied-alpha math.
-    var col = resolve_sample.xyz + skybox_sample.xyz * (1.0 - resolve_sample.w);
+    var col = scene_color_sample.xyz + skybox_sample.xyz * (1.0 - scene_color_sample.w);
 
     // exposure
     let exposure = -2.0;
@@ -105,7 +105,7 @@ fn vs_main(
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let uv = in.tex_coords;
-    let tex_dims = vec2f(textureDimensions(resolve_texture, 0));
+    let tex_dims = vec2f(textureDimensions(scene_color_texture, 0));
     let inv_resolution = 1.0 / tex_dims;
     let col = fxaa(uv, inv_resolution);
     return vec4f(col, 1.0);

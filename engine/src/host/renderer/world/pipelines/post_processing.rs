@@ -2,7 +2,7 @@ use wgpu::util::DeviceExt;
 
 use crate::global_paths::SHADER_POST_PROCESSING_WGSL;
 use crate::host::world::{
-    attachments::{msaa::MSAATextures, skybox::SkyboxOutputTexture},
+    attachments::{color::HdrColorTexture, skybox::SkyboxOutputTexture},
     bindgroups::post_processing::{PostProcessingInputs, PostProcessingInputsBinding},
 };
 use crate::host::{shader_cache::ShaderCache, wgpu_context::WgpuContext};
@@ -20,7 +20,7 @@ impl PostProcessingPipeline {
         wgpu_context: &WgpuContext,
         shader_cache: &mut ShaderCache,
         skybox_texture: &SkyboxOutputTexture,
-        msaa_textures: &MSAATextures,
+        hdr_color_texture: &HdrColorTexture,
     ) -> Self {
         let inputs_bind_group_layout = wgpu_context
             .device
@@ -83,7 +83,7 @@ impl PostProcessingPipeline {
             &wgpu_context.device,
             &inputs_bind_group_layout,
             skybox_texture,
-            msaa_textures,
+            hdr_color_texture,
         );
 
         Self {
@@ -98,13 +98,13 @@ impl PostProcessingPipeline {
         &mut self,
         device: &wgpu::Device,
         skybox_texture: &SkyboxOutputTexture,
-        msaa_textures: &MSAATextures,
+        hdr_color_texture: &HdrColorTexture,
     ) {
         self.inputs_binding = PostProcessingInputs::upload(
             device,
             &self.inputs_bind_group_layout,
             skybox_texture,
-            msaa_textures,
+            hdr_color_texture,
         );
     }
 

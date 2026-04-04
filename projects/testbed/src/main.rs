@@ -50,7 +50,12 @@ const MESH_CHOICES: [(&str, &str, f32, bool); 5] = [
         10.0,
         false,
     ),
-    ("AlphaBlendModeTest", "assets/local/AlphaBlendModeTest/AlphaBlendModeTest.json", 1.0, false),
+    (
+        "AlphaBlendModeTest",
+        "assets/local/AlphaBlendModeTest/AlphaBlendModeTest.json",
+        1.0,
+        false,
+    ),
 ];
 
 const DEFAULT_MESH_IDX: usize = 1;

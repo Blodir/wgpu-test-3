@@ -120,7 +120,7 @@ impl SkinnedPbrPipeline {
                     bias: wgpu::DepthBiasState::default(),
                 }),
                 multisample: wgpu::MultisampleState {
-                    count: 4,
+                    count: 1,
                     mask: !0,
                     alpha_to_coverage_enabled: false,
                 },
@@ -174,7 +174,7 @@ impl SkinnedPbrPipeline {
         pass_draw: &'a PassDrawContext<'a>,
         instance_buffer: &wgpu::Buffer,
         encoder: &mut wgpu::CommandEncoder,
-        msaa_texture_view: &wgpu::TextureView,
+        hdr_color_view: &wgpu::TextureView,
         depth_texture_view: &wgpu::TextureView,
         camera_bind_group: &wgpu::BindGroup,
         lights_bind_group: &wgpu::BindGroup,
@@ -184,7 +184,7 @@ impl SkinnedPbrPipeline {
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Skinned PBR Opaque Render Pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &msaa_texture_view,
+                view: &hdr_color_view,
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
@@ -207,7 +207,12 @@ impl SkinnedPbrPipeline {
         render_pass.set_bind_group(0u32, camera_bind_group, &[]);
         render_pass.set_bind_group(1, lights_bind_group, &[]);
         render_pass.set_bind_group(3, bones_bind_group, &[]);
-        Self::draw_pass(pass_draw, &mut render_pass, instance_buffer, render_resources);
+        Self::draw_pass(
+            pass_draw,
+            &mut render_pass,
+            instance_buffer,
+            render_resources,
+        );
     }
 
     pub fn render_transparent<'a>(
@@ -215,7 +220,7 @@ impl SkinnedPbrPipeline {
         pass_draw: &'a PassDrawContext<'a>,
         instance_buffer: &wgpu::Buffer,
         encoder: &mut wgpu::CommandEncoder,
-        msaa_texture_view: &wgpu::TextureView,
+        hdr_color_view: &wgpu::TextureView,
         depth_texture_view: &wgpu::TextureView,
         camera_bind_group: &wgpu::BindGroup,
         lights_bind_group: &wgpu::BindGroup,
@@ -225,7 +230,7 @@ impl SkinnedPbrPipeline {
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Skinned PBR Transparent Render Pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &msaa_texture_view,
+                view: &hdr_color_view,
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Load,
@@ -248,6 +253,11 @@ impl SkinnedPbrPipeline {
         render_pass.set_bind_group(0u32, camera_bind_group, &[]);
         render_pass.set_bind_group(1, lights_bind_group, &[]);
         render_pass.set_bind_group(3, bones_bind_group, &[]);
-        Self::draw_pass(pass_draw, &mut render_pass, instance_buffer, render_resources);
+        Self::draw_pass(
+            pass_draw,
+            &mut render_pass,
+            instance_buffer,
+            render_resources,
+        );
     }
 }

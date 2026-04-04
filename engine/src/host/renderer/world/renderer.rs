@@ -3,8 +3,8 @@ use std::time::Instant;
 use super::super::sampler_cache::SamplerCache;
 use super::super::shader_cache::ShaderCache;
 use super::anim_pose_store::AnimPoseStore;
+use super::attachments::color::HdrColorTexture;
 use super::attachments::depth::DepthTexture;
-use super::attachments::msaa::MSAATextures;
 use super::attachments::skybox::SkyboxOutputTexture;
 use super::bindgroups::bones::BonesBinding;
 use super::bindgroups::camera::CameraBinding;
@@ -73,14 +73,17 @@ pub struct UploadMaterialRequest<'a> {
 struct WorldAttachments {
     skybox_output: SkyboxOutputTexture,
     depth_texture: DepthTexture,
-    msaa_textures: MSAATextures,
+    hdr_color: HdrColorTexture,
 }
 impl WorldAttachments {
     fn new(wgpu_context: &WgpuContext) -> Self {
         Self {
-            skybox_output: SkyboxOutputTexture::new(&wgpu_context.device, &wgpu_context.surface_config),
+            skybox_output: SkyboxOutputTexture::new(
+                &wgpu_context.device,
+                &wgpu_context.surface_config,
+            ),
             depth_texture: DepthTexture::new(&wgpu_context.device, &wgpu_context.surface_config),
-            msaa_textures: MSAATextures::new(&wgpu_context.device, &wgpu_context.surface_config),
+            hdr_color: HdrColorTexture::new(&wgpu_context.device, &wgpu_context.surface_config),
         }
     }
 }
@@ -132,12 +135,8 @@ impl WorldPipelines {
         layouts: &Layouts,
         attachments: &WorldAttachments,
     ) -> Self {
-        let skybox = SkyboxPipeline::new(
-            wgpu_context,
-            shader_cache,
-            &layouts.camera,
-            &layouts.lights,
-        );
+        let skybox =
+            SkyboxPipeline::new(wgpu_context, shader_cache, &layouts.camera, &layouts.lights);
         let skinned_pbr = SkinnedPbrPipeline::new(
             wgpu_context,
             shader_cache,
@@ -157,7 +156,7 @@ impl WorldPipelines {
             wgpu_context,
             shader_cache,
             &attachments.skybox_output,
-            &attachments.msaa_textures,
+            &attachments.hdr_color,
         );
 
         Self {
@@ -297,7 +296,7 @@ impl WorldRenderer {
             &skinned_opaque_pass,
             &self.skinned_instances.buffer,
             encoder,
-            &self.attachments.msaa_textures.msaa_texture_view,
+            &self.attachments.hdr_color.view,
             &self.attachments.depth_texture.view,
             &self.bind_groups.camera.bind_group,
             &self.bind_groups.lights.bind_group,
@@ -309,7 +308,7 @@ impl WorldRenderer {
             &static_opaque_pass,
             &self.static_instances.buffer,
             encoder,
-            &self.attachments.msaa_textures.msaa_texture_view,
+            &self.attachments.hdr_color.view,
             &self.attachments.depth_texture.view,
             &self.bind_groups.camera.bind_group,
             &self.bind_groups.lights.bind_group,
@@ -320,7 +319,7 @@ impl WorldRenderer {
             &skinned_transparent_pass,
             &self.skinned_instances.buffer,
             encoder,
-            &self.attachments.msaa_textures.msaa_texture_view,
+            &self.attachments.hdr_color.view,
             &self.attachments.depth_texture.view,
             &self.bind_groups.camera.bind_group,
             &self.bind_groups.lights.bind_group,
@@ -332,8 +331,7 @@ impl WorldRenderer {
             &static_transparent_pass,
             &self.static_instances.buffer,
             encoder,
-            &self.attachments.msaa_textures.msaa_texture_view,
-            &self.attachments.msaa_textures.resolve_texture_view,
+            &self.attachments.hdr_color.view,
             &self.attachments.depth_texture.view,
             &self.bind_groups.camera.bind_group,
             &self.bind_groups.lights.bind_group,
@@ -348,7 +346,7 @@ impl WorldRenderer {
         self.pipelines.post.update_input_bindgroup(
             &wgpu_context.device,
             &self.attachments.skybox_output,
-            &self.attachments.msaa_textures,
+            &self.attachments.hdr_color,
         );
     }
 

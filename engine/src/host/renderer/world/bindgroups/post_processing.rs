@@ -1,4 +1,4 @@
-use crate::host::world::attachments::{msaa::MSAATextures, skybox::SkyboxOutputTexture};
+use crate::host::world::attachments::{color::HdrColorTexture, skybox::SkyboxOutputTexture};
 
 pub struct PostProcessingInputs {}
 pub struct PostProcessingInputsBinding {
@@ -49,7 +49,7 @@ impl PostProcessingInputs {
         device: &wgpu::Device,
         bind_group_layout: &wgpu::BindGroupLayout,
         skybox_texture: &SkyboxOutputTexture,
-        msaa_textures: &MSAATextures,
+        hdr_color_texture: &HdrColorTexture,
     ) -> PostProcessingInputsBinding {
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: bind_group_layout,
@@ -64,13 +64,11 @@ impl PostProcessingInputs {
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: wgpu::BindingResource::TextureView(
-                        &msaa_textures.resolve_texture_view,
-                    ),
+                    resource: wgpu::BindingResource::TextureView(&hdr_color_texture.view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 3,
-                    resource: wgpu::BindingResource::Sampler(&msaa_textures.resolve_sampler),
+                    resource: wgpu::BindingResource::Sampler(&hdr_color_texture.sampler),
                 },
             ],
             label: Some("Post Processing Inputs Bind Group"),

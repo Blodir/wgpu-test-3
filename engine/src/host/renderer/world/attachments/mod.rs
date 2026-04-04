@@ -1,3 +1,3 @@
+pub mod color;
 pub mod depth;
-pub mod msaa;
 pub mod skybox;

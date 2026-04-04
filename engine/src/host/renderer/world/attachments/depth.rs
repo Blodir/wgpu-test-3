@@ -16,7 +16,7 @@ impl DepthTexture {
             label: Some("depth_texture"),
             size,
             mip_level_count: 1,
-            sample_count: 4,
+            sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: Self::DEPTH_FORMAT,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
