@@ -96,7 +96,6 @@ fn vs_main(
         vec2(0.0, 0.0),
         vec2(0.0, 1.0),
     );
-    let p = pos[vertex_index];
     out.clip_position = vec4<f32>(pos[vertex_index], 0, 1);
     out.tex_coords = tex_coords[vertex_index];
     return out;

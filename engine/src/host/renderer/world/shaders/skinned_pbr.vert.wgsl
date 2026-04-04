@@ -1,30 +1,4 @@
 @group(0) @binding(0) var<uniform> view_proj: mat4x4<f32>;
-@group(0) @binding(1) var<uniform> camera_position: vec3<f32>;
-
-@group(1) @binding(0) var<uniform> light_dir: vec3<f32>;
-@group(1) @binding(1) var<uniform> light_col: vec3<f32>;
-@group(1) @binding(2) var environment_texture: texture_cube<f32>;
-@group(1) @binding(3) var environment_texture_sampler: sampler;
-@group(1) @binding(4) var diffuse_irradiance_texture: texture_cube<f32>;
-@group(1) @binding(5) var diffuse_irradiance_texture_sampler: sampler;
-@group(1) @binding(6) var brdf_lut: texture_2d<f32>;
-@group(1) @binding(7) var brdf_lut_sampler: sampler;
-
-@group(2) @binding(0) var<uniform> base_color_factor: vec4<f32>;
-@group(2) @binding(1) var<uniform> metallic_factor: f32;
-@group(2) @binding(2) var<uniform> roughness_factor: f32;
-@group(2) @binding(3) var<uniform> emissive_factor: vec3<f32>;
-@group(2) @binding(4) var normal_texture: texture_2d<f32>;
-@group(2) @binding(5) var normal_texture_sampler: sampler;
-@group(2) @binding(6) var occlusion_texture: texture_2d<f32>;
-@group(2) @binding(7) var occlusion_texture_sampler: sampler;
-@group(2) @binding(8) var emissive_texture: texture_2d<f32>;
-@group(2) @binding(9) var emissive_texture_sampler: sampler;
-@group(2) @binding(10) var base_color_texture: texture_2d<f32>;
-@group(2) @binding(11) var base_color_texture_sampler: sampler;
-@group(2) @binding(12) var metallic_roughness_texture: texture_2d<f32>;
-@group(2) @binding(13) var metallic_roughness_texture_sampler: sampler;
-@group(2) @binding(14) var<uniform> normal_texture_scale: f32;
 
 struct BoneMat34 {
     r0 : vec4<f32>,
@@ -50,10 +24,7 @@ struct VertexInput {
     @location(9) weights: vec4<f32>,
     @location(10) position: vec3<f32>,
     @location(11) normal: vec3<f32>,
-    // optimization: combining normal and occlusion tex coords
     @location(12) normal_tex_coords: vec4<f32>,
-    //@location(12) occlusion_tex_coords: vec2<f32>,
-    // optimization: combining emissive base color tex coords
     @location(13) emissive_base_color_tex_coords: vec4<f32>,
     @location(14) metallic_roughness_tex_coords: vec2<f32>,
     @location(15) joints: vec4<u32>, // reinterpreting u8 as u32, since u8 is not supported by wgsl
@@ -72,9 +43,6 @@ struct VertexOutput {
     @location(7) base_color_tex_coords: vec2<f32>,
     @location(8) metallic_roughness_tex_coords: vec2<f32>,
 }
-
-const PI: f32 = 3.1415927;
-const MAX_REFLECTION_LOD: f32 = 4.0;
 
 fn apply_bone_to_position(mat: BoneMat34, position: vec4<f32>) -> vec3<f32> {
     return vec3f(
