@@ -25,6 +25,9 @@ use crate::{
     workers::worker_pool::RenderResponse,
 };
 
+const DEFAULT_WINDOW_WIDTH: u32 = 1920;
+const DEFAULT_WINDOW_HEIGHT: u32 = 1080;
+
 fn resize<S, C>(
     physical_size: PhysicalSize<u32>,
     wgpu_context: &mut WgpuContext,
@@ -92,7 +95,12 @@ where
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         let window = Arc::new(
             event_loop
-                .create_window(Window::default_attributes())
+                .create_window(
+                    Window::default_attributes().with_inner_size(PhysicalSize::new(
+                        DEFAULT_WINDOW_WIDTH,
+                        DEFAULT_WINDOW_HEIGHT,
+                    )),
+                )
                 .unwrap(),
         );
         let wgpu_context = WgpuContext::new(window.clone()).block_on();

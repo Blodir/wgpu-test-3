@@ -70,14 +70,7 @@ fn build_sun_shadow_light_view_proj(camera: &PreparedCamera, sun_direction: Vec3
     min_v.y = center_v.y - extent_y * 0.5;
     max_v.y = center_v.y + extent_y * 0.5;
 
-    let proj = Mat4::orthographic_rh(
-        min_v.x,
-        max_v.x,
-        min_v.y,
-        max_v.y,
-        min_v.z,
-        max_v.z,
-    );
+    let proj = Mat4::orthographic_rh(min_v.x, max_v.x, min_v.y, max_v.y, min_v.z, max_v.z);
 
     // mult together to get view_proj matrix
     let view_proj: Mat4 = proj * view;
@@ -90,6 +83,8 @@ pub fn prepare_sun_shadow_light_view_proj(
     lights_binding: &LightsBinding,
     queue: &wgpu::Queue,
 ) {
-    let sun_shadow_light_view_proj = build_sun_shadow_light_view_proj(camera, Vec3::from_slice(&sun_direction));
-    lights_binding.update_sun_shadow_light_view_proj(&sun_shadow_light_view_proj.to_cols_array(), queue);
+    let sun_shadow_light_view_proj =
+        build_sun_shadow_light_view_proj(camera, Vec3::from_slice(&sun_direction));
+    lights_binding
+        .update_sun_shadow_light_view_proj(&sun_shadow_light_view_proj.to_cols_array(), queue);
 }

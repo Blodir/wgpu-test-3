@@ -62,6 +62,14 @@ const DEFAULT_MESH_IDX: usize = 1;
 const DEFAULT_GRID_SIZE: u32 = 1;
 const DEFAULT_GRID_SPACING: f32 = 200.0;
 
+const UI_STATS_X: f32 = 12.0;
+const UI_STATS_Y: f32 = 12.0;
+const UI_WINDOWS_Y_GAP: f32 = 200.0;
+const UI_WINDOW_SUN_X: f32 = 12.0;
+const UI_WINDOW_SCENE_X: f32 = 12.0;
+const UI_WINDOW_CAMERA_X: f32 = 12.0;
+const UI_WINDOW_RENDERER_X: f32 = 12.0;
+
 struct EnvironmentMapOption {
     prefiltered: TextureHandle,
     di: TextureHandle,
@@ -106,6 +114,9 @@ struct VarSnapshot {
     environment_map_intensity: f32,
     sun_altitude_deg: f32,
     sun_direction_deg: f32,
+    camera_fovy_deg: f32,
+    camera_znear: f32,
+    camera_zfar: f32,
     selected_environment_map_idx: usize,
     selected_mesh_idx: usize,
     grid_size: u32,
@@ -125,6 +136,11 @@ enum GameUiCommand {
         mesh_idx: usize,
         grid_size: u32,
         grid_spacing: f32,
+    },
+    SetCameraSettings {
+        fovy_deg: f32,
+        znear: f32,
+        zfar: f32,
     },
 }
 
@@ -632,6 +648,18 @@ impl GameTrait for Game {
                         self.apply_orbit_camera(scene);
                     }
                 }
+                GameUiCommand::SetCameraSettings {
+                    fovy_deg,
+                    znear,
+                    zfar,
+                } => {
+                    let fovy_deg = fovy_deg.clamp(1.0, 179.0);
+                    let znear = znear.max(0.001);
+                    let zfar = zfar.max(znear + 0.001);
+                    scene.camera.fovy = fovy_deg.to_radians();
+                    scene.camera.znear = znear;
+                    scene.camera.zfar = zfar;
+                }
             },
             InputEvent::DeviceEvent(event) => match event {
                 DeviceEvent::MouseMotion { delta: (x, y) } => {
@@ -779,13 +807,16 @@ impl GameTrait for Game {
         }
     }
 
-    fn build_var_snapshot(&mut self, _scene: &Scene, _tick: u64) -> Self::VarSnapshot {
+    fn build_var_snapshot(&mut self, scene: &Scene, _tick: u64) -> Self::VarSnapshot {
         VarSnapshot {
             sun_tint: self.sun_tint,
             sun_intensity: self.sun_intensity,
             environment_map_intensity: self.environment_map_intensity,
             sun_altitude_deg: self.sun_altitude_deg,
             sun_direction_deg: self.sun_direction_deg,
+            camera_fovy_deg: scene.camera.fovy.to_degrees(),
+            camera_znear: scene.camera.znear,
+            camera_zfar: scene.camera.zfar,
             selected_environment_map_idx: self.selected_environment_map_idx,
             selected_mesh_idx: self.selected_mesh_idx,
             grid_size: self.grid_size,
@@ -822,7 +853,7 @@ impl UiTrait for Game {
         let font = egui::FontId::proportional(22.0);
         let padding = egui::vec2(10.0, 8.0);
         let line_gap = 4.0;
-        let origin = egui::pos2(12.0, 12.0);
+        let origin = egui::pos2(UI_STATS_X, UI_STATS_Y);
         let painter = ctx.layer_painter(egui::LayerId::new(
             egui::Order::Foreground,
             egui::Id::new("renderer_stats_overlay"),
@@ -886,8 +917,10 @@ impl UiTrait for Game {
         let mut environment_map_idx = snapshot.selected_environment_map_idx;
         let mut sun_changed = false;
 
+        let mut ui_windows_y = rect.max.y + 10.0;
+
         egui::Window::new("Sun")
-            .default_pos(egui::pos2(12.0, rect.max.y + 10.0))
+            .default_pos(egui::pos2(UI_WINDOW_SUN_X, ui_windows_y))
             .resizable(false)
             .show(ctx, |ui| {
                 ui.label("Color");
@@ -951,8 +984,10 @@ impl UiTrait for Game {
         let mut grid_spacing = snapshot.grid_spacing;
         let mut scene_changed = false;
 
+        ui_windows_y += UI_WINDOWS_Y_GAP;
+
         egui::Window::new("Scene")
-            .default_pos(egui::pos2(260.0, rect.max.y + 10.0))
+            .default_pos(egui::pos2(UI_WINDOW_SCENE_X, ui_windows_y))
             .resizable(false)
             .show(ctx, |ui| {
                 let selected_label = MESH_CHOICES.get(mesh_idx).map(|v| v.0).unwrap_or("Unknown");
@@ -988,10 +1023,59 @@ impl UiTrait for Game {
             }));
         }
 
+        let mut camera_fovy_deg = snapshot.camera_fovy_deg;
+        let mut camera_znear = snapshot.camera_znear;
+        let mut camera_zfar = snapshot.camera_zfar;
+        let mut camera_changed = false;
+
+        ui_windows_y += UI_WINDOWS_Y_GAP;
+
+        egui::Window::new("Camera")
+            .default_pos(egui::pos2(UI_WINDOW_CAMERA_X, ui_windows_y))
+            .resizable(false)
+            .show(ctx, |ui| {
+                camera_changed |= ui
+                    .add(
+                        egui::Slider::new(&mut camera_fovy_deg, 20.0..=120.0)
+                            .text("FoV Y (deg)")
+                            .clamping(egui::SliderClamping::Always),
+                    )
+                    .changed();
+                camera_changed |= ui
+                    .add(
+                        egui::Slider::new(&mut camera_znear, 0.001..=50.0)
+                            .text("zNear")
+                            .logarithmic(true)
+                            .clamping(egui::SliderClamping::Always),
+                    )
+                    .changed();
+                camera_changed |= ui
+                    .add(
+                        egui::Slider::new(&mut camera_zfar, 0.01..=5000.0)
+                            .text("zFar")
+                            .logarithmic(true)
+                            .clamping(egui::SliderClamping::Always),
+                    )
+                    .changed();
+            });
+
+        camera_znear = camera_znear.max(0.001);
+        camera_zfar = camera_zfar.max(camera_znear + 0.001);
+        if camera_changed {
+            emit(EngineUiCommand::Game(GameUiCommand::SetCameraSettings {
+                fovy_deg: camera_fovy_deg,
+                znear: camera_znear,
+                zfar: camera_zfar,
+            }));
+        }
+
         let mut renderer_options = ui_frame_info.settings.renderer_options;
         let mut render_settings_changed = false;
+
+        ui_windows_y += UI_WINDOWS_Y_GAP;
+
         egui::Window::new("Renderer")
-            .default_pos(egui::pos2(508.0, rect.max.y + 10.0))
+            .default_pos(egui::pos2(UI_WINDOW_RENDERER_X, ui_windows_y))
             .resizable(false)
             .show(ctx, |ui| {
                 let mut opaque_path_kind = match renderer_options.opaque_render_path {

@@ -1,9 +1,6 @@
 use glam::{Mat3, Mat4, Quat, Vec3, Vec4};
 
-use crate::{
-    host::assets::io::asset_formats::modelfile::Aabb,
-    var_snapshot::CameraSnapshot,
-};
+use crate::{host::assets::io::asset_formats::modelfile::Aabb, var_snapshot::CameraSnapshot};
 
 #[derive(Clone, Copy)]
 pub struct Plane {
