@@ -10,6 +10,7 @@ use crate::{
         },
         sampler_cache::SamplerCache,
         wgpu_context::WgpuContext,
+        world::sun_shadow::SunShadowUniform,
     },
 };
 
@@ -18,7 +19,7 @@ pub const MAX_POINT_LIGHTS: usize = 64;
 pub struct LightsBinding {
     pub sun_direction_buffer: wgpu::Buffer,
     pub sun_color_buffer: wgpu::Buffer,
-    pub sun_shadow_light_view_proj_buffer: wgpu::Buffer,
+    pub sun_shadow_buffer: wgpu::Buffer,
     pub environment_map_intensity_buffer: wgpu::Buffer,
     pub point_light_count_buffer: wgpu::Buffer,
     pub point_light_positions_ranges_buffer: wgpu::Buffer,
@@ -166,7 +167,7 @@ impl LightsBinding {
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Texture {
                         sample_type: wgpu::TextureSampleType::Depth,
-                        view_dimension: wgpu::TextureViewDimension::D2,
+                        view_dimension: wgpu::TextureViewDimension::D2Array,
                         multisampled: false,
                     },
                     count: None,
@@ -209,12 +210,12 @@ impl LightsBinding {
                     contents: bytemuck::cast_slice(&sun.color),
                     usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
                 });
-        let sun_shadow_light_view_proj_buffer =
+        let sun_shadow_buffer =
             wgpu_context
                 .device
                 .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("Sun Shadow Light View Projection Buffer"),
-                    contents: bytemuck::cast_slice(&glam::Mat4::IDENTITY.to_cols_array()),
+                    label: Some("Sun Shadow Buffer"),
+                    contents: bytemuck::bytes_of(&SunShadowUniform::identity()),
                     usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
                 });
         let sun_shadow_sampler = wgpu_context
@@ -324,7 +325,7 @@ impl LightsBinding {
                     },
                     wgpu::BindGroupEntry {
                         binding: 12,
-                        resource: sun_shadow_light_view_proj_buffer.as_entire_binding(),
+                        resource: sun_shadow_buffer.as_entire_binding(),
                     },
                     wgpu::BindGroupEntry {
                         binding: 13,
@@ -341,7 +342,7 @@ impl LightsBinding {
         Self {
             sun_direction_buffer: direction_buffer,
             sun_color_buffer: color_buffer,
-            sun_shadow_light_view_proj_buffer,
+            sun_shadow_buffer,
             environment_map_intensity_buffer,
             point_light_count_buffer,
             point_light_positions_ranges_buffer,
@@ -370,16 +371,8 @@ impl LightsBinding {
         );
     }
 
-    pub fn update_sun_shadow_light_view_proj(
-        &self,
-        light_view_proj: &[f32; 16],
-        queue: &wgpu::Queue,
-    ) {
-        queue.write_buffer(
-            &self.sun_shadow_light_view_proj_buffer,
-            0,
-            bytemuck::cast_slice(light_view_proj),
-        );
+    pub fn update_sun_shadow(&self, sun_shadow: &SunShadowUniform, queue: &wgpu::Queue) {
+        queue.write_buffer(&self.sun_shadow_buffer, 0, bytemuck::bytes_of(sun_shadow));
     }
 
     pub fn update_point_lights(&self, point_lights: &[PointLightSnapshot], queue: &wgpu::Queue) {
@@ -486,7 +479,7 @@ impl LightsBinding {
                     },
                     wgpu::BindGroupEntry {
                         binding: 12,
-                        resource: self.sun_shadow_light_view_proj_buffer.as_entire_binding(),
+                        resource: self.sun_shadow_buffer.as_entire_binding(),
                     },
                     wgpu::BindGroupEntry {
                         binding: 13,

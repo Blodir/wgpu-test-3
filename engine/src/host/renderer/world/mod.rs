@@ -5,4 +5,5 @@ pub mod buffers;
 pub mod pipelines;
 pub mod prepare;
 pub mod renderer;
+pub mod sun_shadow;
 pub use renderer::*;

@@ -106,6 +106,7 @@ pub fn prepare_camera(
     let view = Mat4::from_rotation_translation(rot_inv, -(rot_inv * state.position));
     let proj = Mat4::perspective_rh(state.fovy, state.aspect, state.znear, state.zfar);
     let view_proj: Mat4 = proj * view;
+    let forward = state.rotation * -Vec3::Z;
     let m3 = Mat3::from_mat4(view_proj).inverse();
     let inverse_view_proj_rot = Mat4::from_cols(
         Vec4::new(m3.x_axis.x, m3.x_axis.y, m3.x_axis.z, 0.0),
@@ -118,6 +119,7 @@ pub fn prepare_camera(
         &view_proj.to_cols_array(),
         &state.position.to_array(),
         &inverse_view_proj_rot.to_cols_array(),
+        &forward.to_array(),
         queue,
     );
 

@@ -1,4 +1,4 @@
-use std::time::Instant;
+use std::{array, time::Instant};
 
 use super::super::sampler_cache::SamplerCache;
 use super::super::shader_cache::ShaderCache;
@@ -23,7 +23,7 @@ use super::pipelines::sun_shadow::SunShadowPipeline;
 use super::prepare::camera::prepare_camera;
 use super::prepare::lights::prepare_lights;
 use super::prepare::mesh::{resolve_skinned_draw, PassDrawContext};
-use super::prepare::sun_shadow::prepare_sun_shadow_light_view_proj;
+use super::prepare::sun_shadow::prepare_sun_shadow;
 
 use crate::host::assets::io::asset_formats::materialfile;
 use crate::host::assets::store::{PlaceholderTextureIds, RenderAssetStore, TextureRenderId};
@@ -32,6 +32,7 @@ use crate::host::wgpu_context::WgpuContext;
 use crate::host::world::buffers::static_instance::StaticInstances;
 use crate::host::world::pipelines::static_pbr::StaticPbrPipeline;
 use crate::host::world::prepare::mesh::resolve_static_draw;
+use crate::host::world::sun_shadow::SUN_SHADOW_CASCADE_COUNT;
 use crate::{fixed_snapshot::FixedSnapshotGuard, var_snapshot::CameraSnapshotPair};
 
 pub struct Layouts {
@@ -115,7 +116,7 @@ struct WorldBindGroups {
     bones: BonesBinding,
     camera: CameraBinding,
     lights: LightsBinding,
-    sun_shadow_matrix: SunShadowMatrixBindGroup,
+    sun_shadow_matrices: [SunShadowMatrixBindGroup; SUN_SHADOW_CASCADE_COUNT],
 }
 impl WorldBindGroups {
     fn new(
@@ -136,11 +137,9 @@ impl WorldBindGroups {
             &layouts.lights,
             sun_shadow_view,
         );
-        let sun_shadow_matrix = SunShadowMatrixBindGroup::new(
-            &wgpu_context.device,
-            &layouts.sun_shadow_matrix,
-            &lights.sun_shadow_light_view_proj_buffer,
-        );
+        let sun_shadow_matrices = array::from_fn(|_| {
+            SunShadowMatrixBindGroup::new(&wgpu_context.device, &layouts.sun_shadow_matrix)
+        });
         let camera = CameraBinding::new(&wgpu_context.device, &layouts.camera);
         let bones = BonesBinding::new(&layouts.bones, &wgpu_context.device);
         Self {
@@ -148,7 +147,7 @@ impl WorldBindGroups {
             bones,
             camera,
             lights,
-            sun_shadow_matrix,
+            sun_shadow_matrices,
         }
     }
 }
@@ -493,7 +492,7 @@ impl WorldRenderer {
             &self.bind_groups.layouts.lights,
             &self.attachments.sun_shadow.view,
         );
-        prepare_sun_shadow_light_view_proj(
+        let prepared_sun_shadow = prepare_sun_shadow(
             &prepared_camera,
             snaps.curr.lights.sun.direction,
             &self.bind_groups.lights,
@@ -530,17 +529,25 @@ impl WorldRenderer {
             frame_idx,
         );
 
-        self.pipelines.sun_shadow.render(
-            &skinned_opaque_pass,
-            &static_opaque_pass,
-            &self.skinned_instances.buffer,
-            &self.static_instances.buffer,
-            encoder,
-            &self.attachments.sun_shadow.view,
-            &self.bind_groups.sun_shadow_matrix.bind_group,
-            &self.bind_groups.bones.bind_group,
-            render_resources,
-        );
+        for ((cascade, cascade_view), cascade_bind_group) in prepared_sun_shadow
+            .cascades
+            .iter()
+            .zip(self.attachments.sun_shadow.cascade_views.iter())
+            .zip(self.bind_groups.sun_shadow_matrices.iter())
+        {
+            cascade_bind_group.update(&cascade.light_view_proj, &wgpu_context.queue);
+            self.pipelines.sun_shadow.render(
+                &skinned_opaque_pass,
+                &static_opaque_pass,
+                &self.skinned_instances.buffer,
+                &self.static_instances.buffer,
+                encoder,
+                cascade_view,
+                &cascade_bind_group.bind_group,
+                &self.bind_groups.bones.bind_group,
+                render_resources,
+            );
+        }
 
         match &mut self.opaque_renderer {
             OpaqueRenderer::Forward => {
