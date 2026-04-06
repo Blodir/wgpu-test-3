@@ -1,43 +1,10 @@
 use wgpu::util::DeviceExt;
 
 use crate::global_paths::SHADER_GTAO_WGSL;
-use crate::host::world::pipelines::g_buffer::GBufferTargets;
+use crate::host::world::attachments::deferred::GBufferTargets;
 use crate::host::{shader_cache::ShaderCache, wgpu_context::WgpuContext};
 
 const INDICES: &[u16] = &[0, 2, 1, 3, 2, 0];
-
-pub struct GtaoTexture {
-    _texture: wgpu::Texture,
-    pub view: wgpu::TextureView,
-    pub sampler: wgpu::Sampler,
-}
-
-impl GtaoTexture {
-    pub fn new(device: &wgpu::Device, surface_config: &wgpu::SurfaceConfiguration) -> Self {
-        let texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("GTAO Texture"),
-            size: wgpu::Extent3d {
-                width: surface_config.width,
-                height: surface_config.height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::R8Unorm,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
-        });
-        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor::default());
-
-        Self {
-            _texture: texture,
-            view,
-            sampler,
-        }
-    }
-}
 
 pub struct GtaoPipeline {
     render_pipeline: wgpu::RenderPipeline,

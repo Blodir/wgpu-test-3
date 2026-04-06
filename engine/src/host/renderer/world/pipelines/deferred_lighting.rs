@@ -1,8 +1,7 @@
 use wgpu::util::DeviceExt;
 
 use crate::global_paths::SHADER_DEFERRED_LIGHTING_WGSL;
-use crate::host::world::pipelines::g_buffer::GBufferTargets;
-use crate::host::world::pipelines::gtao::GtaoTexture;
+use crate::host::world::attachments::deferred::{GBufferTargets, GtaoTexture};
 use crate::host::{shader_cache::ShaderCache, wgpu_context::WgpuContext};
 
 const INDICES: &[u16] = &[0, 2, 1, 3, 2, 0];
