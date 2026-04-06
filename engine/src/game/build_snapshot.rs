@@ -20,9 +20,6 @@ use crate::{
     host::world::pipelines::MeshPipelineKind,
 };
 
-// TEMP: keep all instances in draw snapshots so off-screen casters can still affect sun shadows.
-const DISABLE_CAMERA_FRUSTUM_CULLING: bool = true;
-
 pub fn accumulate_instance_snapshots(
     scene: &Scene,
     animation_graphs: &Vec<AnimationGraph>,
@@ -101,8 +98,8 @@ pub fn accumulate_instance_snapshots(
         // render everything that was visible on the previous frame to reduce popping when the camera moves fast
         let last_frame_visible = tick_index.wrapping_sub(last_visible_frame) <= 1;
         let intersect = frustum_intersects_aabb_world(frustum, &model_game.aabb, &transform);
-        if DISABLE_CAMERA_FRUSTUM_CULLING || last_frame_visible || intersect {
-            if DISABLE_CAMERA_FRUSTUM_CULLING || intersect {
+        if last_frame_visible || intersect {
+            if intersect {
                 match &scene.nodes.get(node_id.into()).unwrap().render_data {
                     RenderDataType::Model(static_model) => {
                         static_model.last_visible_frame.replace(tick_index)
