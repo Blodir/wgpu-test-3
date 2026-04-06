@@ -406,7 +406,7 @@ impl WorldRenderer {
             brdf_lut,
             sampler_cache,
             render_resources,
-            &attachments.sun_shadow.view,
+            &attachments.sun_shadow.array_view,
         );
         let skinned_instances = SkinnedInstances::new(wgpu_context);
         let static_instances = StaticInstances::new(wgpu_context);
@@ -490,7 +490,7 @@ impl WorldRenderer {
             sampler_cache,
             wgpu_context,
             &self.bind_groups.layouts.lights,
-            &self.attachments.sun_shadow.view,
+            &self.attachments.sun_shadow.array_view,
         );
         let prepared_sun_shadow = prepare_sun_shadow(
             &prepared_camera,

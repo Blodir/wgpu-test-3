@@ -12,8 +12,8 @@ pub struct SunShadowUniform {
     pub split_depths: [f32; 4],
 }
 
-impl SunShadowUniform {
-    pub fn identity() -> Self {
+impl Default for SunShadowUniform {
+    fn default() -> Self {
         Self {
             light_view_proj: [glam::Mat4::IDENTITY.to_cols_array(); SUN_SHADOW_CASCADE_COUNT],
             split_depths: [0.0; 4],

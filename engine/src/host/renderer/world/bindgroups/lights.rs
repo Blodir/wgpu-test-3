@@ -215,7 +215,7 @@ impl LightsBinding {
                 .device
                 .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                     label: Some("Sun Shadow Buffer"),
-                    contents: bytemuck::bytes_of(&SunShadowUniform::identity()),
+                    contents: bytemuck::bytes_of(&SunShadowUniform::default()),
                     usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
                 });
         let sun_shadow_sampler = wgpu_context
@@ -420,7 +420,7 @@ impl LightsBinding {
         di_sampler: &wgpu::Sampler,
         brdf_view: &wgpu::TextureView,
         brdf_sampler: &wgpu::Sampler,
-        sun_shadow_view: &wgpu::TextureView,
+        sun_shadow_array_view: &wgpu::TextureView,
     ) {
         self.bind_group = wgpu_context
             .device
@@ -483,7 +483,7 @@ impl LightsBinding {
                     },
                     wgpu::BindGroupEntry {
                         binding: 13,
-                        resource: wgpu::BindingResource::TextureView(sun_shadow_view),
+                        resource: wgpu::BindingResource::TextureView(sun_shadow_array_view),
                     },
                     wgpu::BindGroupEntry {
                         binding: 14,

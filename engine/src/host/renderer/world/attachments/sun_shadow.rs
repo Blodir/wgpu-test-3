@@ -1,6 +1,6 @@
 pub struct SunShadowTexture {
     texture: wgpu::Texture,
-    pub view: wgpu::TextureView,
+    pub array_view: wgpu::TextureView,
     pub cascade_views: Vec<wgpu::TextureView>,
 }
 
@@ -54,7 +54,7 @@ impl SunShadowTexture {
             .collect();
         Self {
             texture,
-            view,
+            array_view: view,
             cascade_views,
         }
     }
