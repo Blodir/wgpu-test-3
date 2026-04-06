@@ -6,7 +6,8 @@ pub struct SunShadowTexture {
 
 impl SunShadowTexture {
     pub const SHADOW_MAP_SIZE: u32 = crate::host::world::sun_shadow::SUN_SHADOW_MAP_SIZE;
-    pub const CASCADE_COUNT: u32 = crate::host::world::sun_shadow::SUN_SHADOW_CASCADE_COUNT as u32;
+    pub const CASCADE_COUNT: u32 =
+        crate::host::world::sun_shadow::SUN_SHADOW_MAX_CASCADE_COUNT as u32;
     pub const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
     pub fn new(device: &wgpu::Device) -> Self {

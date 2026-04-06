@@ -4,8 +4,8 @@ use glam::{Mat4, Vec3};
 
 use crate::host::world::prepare::camera::{build_camera_frustum_corners, PreparedCamera};
 use crate::host::world::sun_shadow::{
-    PreparedSunShadow, PreparedSunShadowCascade, SunShadowUniform, SUN_SHADOW_CASCADE_SPLIT_RATIOS,
-    SUN_SHADOW_MAP_SIZE, SUN_SHADOW_MAX_DISTANCE,
+    PreparedSunShadow, PreparedSunShadowCascade, SunShadowUniform, SUN_SHADOW_MAP_SIZE,
+    SUN_SHADOW_MAX_CASCADE_COUNT, SUN_SHADOW_MAX_DISTANCE,
 };
 
 use super::super::bindgroups::lights::LightsBinding;
@@ -102,13 +102,19 @@ pub fn prepare_sun_shadow(
     let sun_direction = Vec3::from_slice(&sun_direction);
     let shadow_distance = camera.state.zfar.min(SUN_SHADOW_MAX_DISTANCE);
     let near = camera.state.znear.min(shadow_distance);
+    let cascade_count = camera
+        .state
+        .sun_shadow_cascade_count
+        .clamp(1, SUN_SHADOW_MAX_CASCADE_COUNT);
+    let split_ratios = camera.state.sun_shadow_cascade_split_ratios;
     let cascades = array::from_fn(|idx| {
-        let prev_ratio = if idx == 0 {
+        let active_idx = idx.min(cascade_count - 1);
+        let prev_ratio = if active_idx == 0 {
             0.0
         } else {
-            SUN_SHADOW_CASCADE_SPLIT_RATIOS[idx - 1]
+            split_ratios[active_idx - 1]
         };
-        let far_ratio = SUN_SHADOW_CASCADE_SPLIT_RATIOS[idx];
+        let far_ratio = split_ratios[active_idx];
         let slice_near = near + (shadow_distance - near) * prev_ratio;
         let slice_far = near + (shadow_distance - near) * far_ratio;
         let light_view_proj =
@@ -121,8 +127,13 @@ pub fn prepare_sun_shadow(
     let uniform = SunShadowUniform {
         light_view_proj: array::from_fn(|idx| cascades[idx].light_view_proj),
         split_depths: array::from_fn(|idx| cascades[idx].split_depth),
+        cascade_params: [cascade_count as u32, 0, 0, 0],
+        ..Default::default()
     };
     lights_binding.update_sun_shadow(&uniform, queue);
 
-    PreparedSunShadow { cascades }
+    PreparedSunShadow {
+        cascades,
+        cascade_count,
+    }
 }

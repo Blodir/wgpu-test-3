@@ -32,7 +32,7 @@ use crate::host::wgpu_context::WgpuContext;
 use crate::host::world::buffers::static_instance::StaticInstances;
 use crate::host::world::pipelines::static_pbr::StaticPbrPipeline;
 use crate::host::world::prepare::mesh::resolve_static_draw;
-use crate::host::world::sun_shadow::SUN_SHADOW_CASCADE_COUNT;
+use crate::host::world::sun_shadow::SUN_SHADOW_MAX_CASCADE_COUNT;
 use crate::{fixed_snapshot::FixedSnapshotGuard, var_snapshot::CameraSnapshotPair};
 
 pub struct Layouts {
@@ -116,7 +116,7 @@ struct WorldBindGroups {
     bones: BonesBinding,
     camera: CameraBinding,
     lights: LightsBinding,
-    sun_shadow_matrices: [SunShadowMatrixBindGroup; SUN_SHADOW_CASCADE_COUNT],
+    sun_shadow_matrices: [SunShadowMatrixBindGroup; SUN_SHADOW_MAX_CASCADE_COUNT],
 }
 impl WorldBindGroups {
     fn new(
@@ -532,6 +532,7 @@ impl WorldRenderer {
         for ((cascade, cascade_view), cascade_bind_group) in prepared_sun_shadow
             .cascades
             .iter()
+            .take(prepared_sun_shadow.cascade_count)
             .zip(self.attachments.sun_shadow.cascade_views.iter())
             .zip(self.bind_groups.sun_shadow_matrices.iter())
         {

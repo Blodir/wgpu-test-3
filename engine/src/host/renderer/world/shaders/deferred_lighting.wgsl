@@ -4,6 +4,7 @@
 struct SunShadowUniform {
     light_view_proj: array<mat4x4<f32>, 4>,
     split_depths: vec4<f32>,
+    cascade_params: vec4<u32>,
 }
 
 @group(1) @binding(0) var<uniform> light_dir: vec3<f32>;
@@ -77,23 +78,38 @@ fn fresnel_schlick_roughness(cos_theta: f32, F0: vec3f, roughness: f32) -> vec3f
     return F0 + (max(vec3f(1.0 - roughness), F0) - F0) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
 }
 
+fn active_sun_shadow_far_depth() -> f32 {
+    let cascade_count = max(sun_shadow.cascade_params.x, 1u);
+    if (cascade_count == 1u) {
+        return sun_shadow.split_depths.x;
+    }
+    if (cascade_count == 2u) {
+        return sun_shadow.split_depths.y;
+    }
+    if (cascade_count == 3u) {
+        return sun_shadow.split_depths.z;
+    }
+    return sun_shadow.split_depths.w;
+}
+
 fn select_sun_shadow_cascade(world_position: vec3f) -> u32 {
     let cascade_depth = max(dot(world_position - camera_position, camera_forward), 0.0);
-    if (cascade_depth <= sun_shadow.split_depths.x) {
+    let cascade_count = max(sun_shadow.cascade_params.x, 1u);
+    if (cascade_count == 1u || cascade_depth <= sun_shadow.split_depths.x) {
         return 0u;
     }
-    if (cascade_depth <= sun_shadow.split_depths.y) {
+    if (cascade_count == 2u || cascade_depth <= sun_shadow.split_depths.y) {
         return 1u;
     }
-    if (cascade_depth <= sun_shadow.split_depths.z) {
+    if (cascade_count == 3u || cascade_depth <= sun_shadow.split_depths.z) {
         return 2u;
     }
-    return 3u;
+    return min(3u, cascade_count - 1u);
 }
 
 fn sample_sun_shadow(world_position: vec3f, N: vec3f, L: vec3f) -> f32 {
     let cascade_depth = max(dot(world_position - camera_position, camera_forward), 0.0);
-    if (cascade_depth > sun_shadow.split_depths.w) {
+    if (cascade_depth > active_sun_shadow_far_depth()) {
         return 1.0;
     }
     let cascade_index = select_sun_shadow_cascade(world_position);

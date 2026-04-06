@@ -3,7 +3,10 @@ use std::time::Instant;
 use glam::{Mat3, Mat4, Quat, Vec3, Vec4};
 
 use crate::{
-    host::{utils::lerpf32, world::bindgroups::camera::CameraBinding},
+    host::{
+        utils::lerpf32,
+        world::{bindgroups::camera::CameraBinding, sun_shadow::SUN_SHADOW_MAX_CASCADE_COUNT},
+    },
     var_snapshot::CameraSnapshotPair,
 };
 
@@ -14,6 +17,8 @@ pub struct InterpolatedCameraState {
     pub fovy: f32,
     pub znear: f32,
     pub zfar: f32,
+    pub sun_shadow_cascade_count: usize,
+    pub sun_shadow_cascade_split_ratios: [f32; SUN_SHADOW_MAX_CASCADE_COUNT],
     pub aspect: f32,
 }
 
@@ -51,6 +56,8 @@ pub fn interpolate_camera_state(
         fovy: lerpf32(prev.fovy, curr.fovy, t),
         znear: lerpf32(prev.znear, curr.znear, t),
         zfar: lerpf32(prev.zfar, curr.zfar, t),
+        sun_shadow_cascade_count: curr.sun_shadow_cascade_count,
+        sun_shadow_cascade_split_ratios: curr.sun_shadow_cascade_split_ratios,
         aspect,
     }
 }

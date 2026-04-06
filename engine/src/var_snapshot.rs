@@ -3,7 +3,10 @@ use std::{sync::Arc, time::Instant};
 use arc_swap::{ArcSwap, Guard};
 use glam::{Quat, Vec3};
 
-use crate::game::{camera::Camera, sim::SimDebugInfo};
+use crate::{
+    game::{camera::Camera, sim::SimDebugInfo},
+    host::world::sun_shadow::SUN_SHADOW_MAX_CASCADE_COUNT,
+};
 
 #[derive(Clone, Copy)]
 pub struct CameraSnapshot {
@@ -12,6 +15,8 @@ pub struct CameraSnapshot {
     pub fovy: f32,
     pub znear: f32,
     pub zfar: f32,
+    pub sun_shadow_cascade_count: usize,
+    pub sun_shadow_cascade_split_ratios: [f32; SUN_SHADOW_MAX_CASCADE_COUNT],
 }
 impl Default for CameraSnapshot {
     fn default() -> Self {
@@ -22,6 +27,8 @@ impl Default for CameraSnapshot {
             fovy: cam.fovy,
             znear: cam.znear,
             zfar: cam.zfar,
+            sun_shadow_cascade_count: cam.sun_shadow_cascade_count,
+            sun_shadow_cascade_split_ratios: cam.sun_shadow_cascade_split_ratios,
         }
     }
 }

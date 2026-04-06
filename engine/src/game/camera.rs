@@ -1,6 +1,15 @@
 use glam::{Mat3, Mat4, Quat, Vec3, Vec4};
 
-use crate::{host::assets::io::asset_formats::modelfile::Aabb, var_snapshot::CameraSnapshot};
+use crate::{
+    host::{
+        assets::io::asset_formats::modelfile::Aabb,
+        world::sun_shadow::{
+            SUN_SHADOW_DEFAULT_CASCADE_COUNT, SUN_SHADOW_DEFAULT_CASCADE_SPLIT_RATIOS,
+            SUN_SHADOW_MAX_CASCADE_COUNT,
+        },
+    },
+    var_snapshot::CameraSnapshot,
+};
 
 #[derive(Clone, Copy)]
 pub struct Plane {
@@ -29,6 +38,8 @@ pub struct Camera {
     pub fovy: f32,
     pub znear: f32,
     pub zfar: f32,
+    pub sun_shadow_cascade_count: usize,
+    pub sun_shadow_cascade_split_ratios: [f32; SUN_SHADOW_MAX_CASCADE_COUNT],
     pub aspect: f32, // needed for frustum culling
 }
 impl Default for Camera {
@@ -38,6 +49,8 @@ impl Default for Camera {
         let fovy = 60.0f32.to_radians();
         let znear = 0.1f32;
         let zfar = 1000f32;
+        let sun_shadow_cascade_count = SUN_SHADOW_DEFAULT_CASCADE_COUNT;
+        let sun_shadow_cascade_split_ratios = SUN_SHADOW_DEFAULT_CASCADE_SPLIT_RATIOS;
         let aspect = 16.0 / 9.0;
 
         Self {
@@ -46,6 +59,8 @@ impl Default for Camera {
             fovy,
             znear,
             zfar,
+            sun_shadow_cascade_count,
+            sun_shadow_cascade_split_ratios,
             aspect,
         }
     }
@@ -58,6 +73,8 @@ impl Camera {
             fovy: self.fovy,
             znear: self.znear,
             zfar: self.zfar,
+            sun_shadow_cascade_count: self.sun_shadow_cascade_count,
+            sun_shadow_cascade_split_ratios: self.sun_shadow_cascade_split_ratios,
         }
     }
 
