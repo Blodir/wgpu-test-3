@@ -3,7 +3,7 @@ use std::{sync::Arc, time::Instant};
 use arc_swap::{ArcSwap, Guard};
 use glam::{Quat, Vec3};
 
-use crate::game::sim::SimDebugInfo;
+use crate::game::{camera::Camera, sim::SimDebugInfo};
 
 #[derive(Clone, Copy)]
 pub struct CameraSnapshot {
@@ -15,12 +15,13 @@ pub struct CameraSnapshot {
 }
 impl Default for CameraSnapshot {
     fn default() -> Self {
+        let cam = Camera::default();
         Self {
-            position: Vec3::ZERO,
-            rotation: Quat::IDENTITY,
-            fovy: 45.0f32,
-            znear: 0.1f32,
-            zfar: 100.0f32,
+            position: cam.position,
+            rotation: cam.rotation,
+            fovy: cam.fovy,
+            znear: cam.znear,
+            zfar: cam.zfar,
         }
     }
 }

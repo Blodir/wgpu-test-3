@@ -6,10 +6,12 @@ use super::anim_pose_store::AnimPoseStore;
 use super::attachments::color::HdrColorTexture;
 use super::attachments::depth::DepthTexture;
 use super::attachments::skybox::SkyboxOutputTexture;
+use super::attachments::sun_shadow::SunShadowTexture;
 use super::bindgroups::bones::BonesBinding;
 use super::bindgroups::camera::CameraBinding;
 use super::bindgroups::lights::LightsBinding;
 use super::bindgroups::material::MaterialBinding;
+use super::bindgroups::sun_shadow_matrix::SunShadowMatrixBindGroup;
 use super::buffers::skinned_instance::SkinnedInstances;
 use super::pipelines::deferred_lighting::DeferredLightingPipeline;
 use super::pipelines::g_buffer::{GBufferPipeline, GBufferTargets};
@@ -17,9 +19,11 @@ use super::pipelines::gtao::{GtaoPipeline, GtaoTexture};
 use super::pipelines::post_processing::PostProcessingPipeline;
 use super::pipelines::skinned_pbr::SkinnedPbrPipeline;
 use super::pipelines::skybox::SkyboxPipeline;
+use super::pipelines::sun_shadow::SunShadowPipeline;
 use super::prepare::camera::prepare_camera;
 use super::prepare::lights::prepare_lights;
 use super::prepare::mesh::{resolve_skinned_draw, PassDrawContext};
+use super::prepare::sun_shadow::prepare_sun_shadow_light_view_proj;
 
 use crate::host::assets::io::asset_formats::materialfile;
 use crate::host::assets::store::{PlaceholderTextureIds, RenderAssetStore, TextureRenderId};
@@ -33,6 +37,7 @@ use crate::{fixed_snapshot::FixedSnapshotGuard, var_snapshot::CameraSnapshotPair
 pub struct Layouts {
     pub camera: wgpu::BindGroupLayout,
     pub lights: wgpu::BindGroupLayout,
+    pub sun_shadow_matrix: wgpu::BindGroupLayout,
     pub material: wgpu::BindGroupLayout,
     pub bones: wgpu::BindGroupLayout,
     pub pbr_material: wgpu::BindGroupLayout,
@@ -45,6 +50,9 @@ impl Layouts {
         let lights = wgpu_context
             .device
             .create_bind_group_layout(&LightsBinding::desc());
+        let sun_shadow_matrix = wgpu_context
+            .device
+            .create_bind_group_layout(&SunShadowMatrixBindGroup::desc());
         let material = wgpu_context
             .device
             .create_bind_group_layout(&MaterialBinding::desc());
@@ -58,6 +66,7 @@ impl Layouts {
         Self {
             camera,
             lights,
+            sun_shadow_matrix,
             material,
             bones,
             pbr_material,
@@ -78,6 +87,7 @@ struct WorldAttachments {
     skybox_output: SkyboxOutputTexture,
     depth_texture: DepthTexture,
     hdr_color: HdrColorTexture,
+    sun_shadow: SunShadowTexture,
 }
 impl WorldAttachments {
     fn new(wgpu_context: &WgpuContext) -> Self {
@@ -88,7 +98,15 @@ impl WorldAttachments {
             ),
             depth_texture: DepthTexture::new(&wgpu_context.device, &wgpu_context.surface_config),
             hdr_color: HdrColorTexture::new(&wgpu_context.device, &wgpu_context.surface_config),
+            sun_shadow: SunShadowTexture::new(&wgpu_context.device),
         }
+    }
+
+    fn resize(&mut self, wgpu_context: &WgpuContext) {
+        self.skybox_output =
+            SkyboxOutputTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
+        self.depth_texture = DepthTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
+        self.hdr_color = HdrColorTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
     }
 }
 
@@ -97,6 +115,7 @@ struct WorldBindGroups {
     bones: BonesBinding,
     camera: CameraBinding,
     lights: LightsBinding,
+    sun_shadow_matrix: SunShadowMatrixBindGroup,
 }
 impl WorldBindGroups {
     fn new(
@@ -105,6 +124,7 @@ impl WorldBindGroups {
         brdf_lut: TextureRenderId,
         sampler_cache: &mut SamplerCache,
         render_resources: &RenderAssetStore,
+        sun_shadow_view: &wgpu::TextureView,
     ) -> Self {
         let layouts = Layouts::new(wgpu_context);
         let lights = LightsBinding::new(
@@ -114,6 +134,12 @@ impl WorldBindGroups {
             placeholders,
             wgpu_context,
             &layouts.lights,
+            sun_shadow_view,
+        );
+        let sun_shadow_matrix = SunShadowMatrixBindGroup::new(
+            &wgpu_context.device,
+            &layouts.sun_shadow_matrix,
+            &lights.sun_shadow_light_view_proj_buffer,
         );
         let camera = CameraBinding::new(&wgpu_context.device, &layouts.camera);
         let bones = BonesBinding::new(&layouts.bones, &wgpu_context.device);
@@ -122,12 +148,14 @@ impl WorldBindGroups {
             bones,
             camera,
             lights,
+            sun_shadow_matrix,
         }
     }
 }
 
 struct WorldPipelines {
     skybox: SkyboxPipeline,
+    sun_shadow: SunShadowPipeline,
     skinned_pbr: SkinnedPbrPipeline,
     static_pbr: StaticPbrPipeline,
     post: PostProcessingPipeline,
@@ -141,6 +169,12 @@ impl WorldPipelines {
     ) -> Self {
         let skybox =
             SkyboxPipeline::new(wgpu_context, shader_cache, &layouts.camera, &layouts.lights);
+        let sun_shadow = SunShadowPipeline::new(
+            wgpu_context,
+            shader_cache,
+            &layouts.sun_shadow_matrix,
+            &layouts.bones,
+        );
         let skinned_pbr = SkinnedPbrPipeline::new(
             wgpu_context,
             shader_cache,
@@ -165,6 +199,7 @@ impl WorldPipelines {
 
         Self {
             skybox,
+            sun_shadow,
             skinned_pbr,
             static_pbr,
             post,
@@ -365,17 +400,18 @@ impl WorldRenderer {
         render_resources: &RenderAssetStore,
         options: RendererOptions,
     ) -> Self {
+        let attachments = WorldAttachments::new(wgpu_context);
         let bind_groups = WorldBindGroups::new(
             wgpu_context,
             &placeholders,
             brdf_lut,
             sampler_cache,
             render_resources,
+            &attachments.sun_shadow.view,
         );
         let skinned_instances = SkinnedInstances::new(wgpu_context);
         let static_instances = StaticInstances::new(wgpu_context);
         let pose_storage = AnimPoseStore::new();
-        let attachments = WorldAttachments::new(wgpu_context);
         let pipelines = WorldPipelines::new(
             wgpu_context,
             shader_cache,
@@ -440,7 +476,7 @@ impl WorldRenderer {
         } else {
             (elapsed.as_secs_f32() / interval.as_secs_f32()).clamp(0.0, 1.0)
         };
-        prepare_camera(
+        let prepared_camera = prepare_camera(
             &mut self.bind_groups.camera,
             camera_pair,
             now,
@@ -455,6 +491,13 @@ impl WorldRenderer {
             sampler_cache,
             wgpu_context,
             &self.bind_groups.layouts.lights,
+            &self.attachments.sun_shadow.view,
+        );
+        prepare_sun_shadow_light_view_proj(
+            &prepared_camera,
+            snaps.curr.lights.sun.direction,
+            &self.bind_groups.lights,
+            &wgpu_context.queue,
         );
 
         self.pipelines.skybox.render(
@@ -485,6 +528,18 @@ impl WorldRenderer {
             &wgpu_context.queue,
             &mut self.pose_storage,
             frame_idx,
+        );
+
+        self.pipelines.sun_shadow.render(
+            &skinned_opaque_pass,
+            &static_opaque_pass,
+            &self.skinned_instances.buffer,
+            &self.static_instances.buffer,
+            encoder,
+            &self.attachments.sun_shadow.view,
+            &self.bind_groups.sun_shadow_matrix.bind_group,
+            &self.bind_groups.bones.bind_group,
+            render_resources,
         );
 
         match &mut self.opaque_renderer {
@@ -567,7 +622,7 @@ impl WorldRenderer {
     }
 
     pub fn resize(&mut self, wgpu_context: &WgpuContext) {
-        self.attachments = WorldAttachments::new(wgpu_context);
+        self.attachments.resize(wgpu_context);
         self.pipelines.post.update_input_bindgroup(
             &wgpu_context.device,
             &self.attachments.skybox_output,

@@ -5,6 +5,10 @@ pub const SHADER_SKINNED_PBR_VERT_WGSL: &str =
     "engine/src/host/renderer/world/shaders/skinned_pbr.vert.wgsl";
 pub const SHADER_STATIC_PBR_VERT_WGSL: &str =
     "engine/src/host/renderer/world/shaders/static_pbr.vert.wgsl";
+pub const SHADER_SUN_SHADOW_SKINNED_VERT_WGSL: &str =
+    "engine/src/host/renderer/world/shaders/sun_shadow_skinned.vert.wgsl";
+pub const SHADER_SUN_SHADOW_STATIC_VERT_WGSL: &str =
+    "engine/src/host/renderer/world/shaders/sun_shadow_static.vert.wgsl";
 pub const SHADER_PBR_FRAG_WGSL: &str = "engine/src/host/renderer/world/shaders/pbr.frag.wgsl";
 pub const SHADER_G_BUFFER_FRAG_WGSL: &str =
     "engine/src/host/renderer/world/shaders/g_buffer.frag.wgsl";

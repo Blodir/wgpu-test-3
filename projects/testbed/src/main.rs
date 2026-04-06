@@ -405,6 +405,7 @@ impl Game {
         }
 
         // TEMP: point light for validating point-light rendering in testbed.
+        /*
         let test_light = nodes.insert(Node {
             parent: None,
             children: vec![],
@@ -417,6 +418,7 @@ impl Game {
             }),
         });
         children.push(SceneNodeId(test_light));
+        */
 
         let root_handle = nodes.insert(Node {
             parent: None,

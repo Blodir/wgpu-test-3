@@ -13,6 +13,9 @@
 @group(1) @binding(9) var<uniform> point_light_count: vec4<u32>;
 @group(1) @binding(10) var<uniform> point_light_positions_ranges: array<vec4<f32>, 64>;
 @group(1) @binding(11) var<uniform> point_light_colors_intensities: array<vec4<f32>, 64>;
+@group(1) @binding(12) var<uniform> sun_shadow_light_view_proj: mat4x4<f32>;
+@group(1) @binding(13) var sun_shadow_texture: texture_depth_2d;
+@group(1) @binding(14) var sun_shadow_sampler: sampler_comparison;
 
 @group(2) @binding(0) var<uniform> base_color_factor: vec4<f32>;
 @group(2) @binding(1) var<uniform> metallic_factor: f32;
@@ -86,6 +89,45 @@ fn fresnel_schlick_roughness(cos_theta: f32, F0: vec3f, roughness: f32) -> vec3f
     return F0 + (max(vec3f(1.0 - roughness), F0) - F0) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
 }
 
+fn sample_sun_shadow(world_position: vec3f, N: vec3f, L: vec3f) -> f32 {
+    let shadow_clip = sun_shadow_light_view_proj * vec4f(world_position, 1.0);
+    if (shadow_clip.w <= 0.0) {
+        return 1.0;
+    }
+    let shadow_ndc = shadow_clip.xyz / shadow_clip.w;
+    let shadow_uv = vec2f(
+        shadow_ndc.x * 0.5 + 0.5,
+        0.5 - shadow_ndc.y * 0.5
+    );
+    let shadow_depth = shadow_ndc.z;
+    if (
+        shadow_uv.x < 0.0 || shadow_uv.x > 1.0 ||
+        shadow_uv.y < 0.0 || shadow_uv.y > 1.0 ||
+        shadow_depth <= 0.0 || shadow_depth >= 1.0
+    ) {
+        return 1.0;
+    }
+
+    let n_dot_l = max(dot(N, L), 0.0);
+    let bias = max(0.0015 * (1.0 - n_dot_l), 0.0003);
+    let texel_size = 1.0 / vec2f(textureDimensions(sun_shadow_texture));
+
+    var visibility = 0.0;
+    for (var y: i32 = -1; y <= 1; y += 1) {
+        for (var x: i32 = -1; x <= 1; x += 1) {
+            let offset = vec2f(f32(x), f32(y)) * texel_size;
+            let uv = clamp(shadow_uv + offset, vec2f(0.0), vec2f(1.0));
+            visibility += textureSampleCompare(
+                sun_shadow_texture,
+                sun_shadow_sampler,
+                uv,
+                shadow_depth - bias,
+            );
+        }
+    }
+    return visibility / 9.0;
+}
+
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let normal_sample =
@@ -140,6 +182,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     var Lo = vec3f(0.0);
     {
         let L = normalize(-light_dir); // reverse light direction (pointing from surface toward light source)
+        let sun_shadow = sample_sun_shadow(in.world_position.xyz, N, L);
         let H = normalize(V + L);
         let radiance = light_col;
 
@@ -156,7 +199,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         let k_d = (vec3f(1.0) - F) * (1.0 - surface_metallic); // diffuse/refracted
 
         let NdotL = max(dot(N, L), 0.0);
-        Lo += (k_d * surface_color.xyz / PI + specular) * radiance * NdotL;
+        Lo += (k_d * surface_color.xyz / PI + specular) * radiance * NdotL * sun_shadow;
     }
 
     let clamped_point_light_count = min(point_light_count.x, MAX_POINT_LIGHTS);

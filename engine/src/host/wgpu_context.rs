@@ -1,17 +1,8 @@
 use std::sync::Arc;
 
-use glam::Mat4;
 use winit::window::Window;
 
 use crate::host::renderer::RendererOptions;
-
-#[rustfmt::skip]
-pub const OPENGL_TO_WGPU_MATRIX: Mat4 = Mat4::from_cols_slice(&[
-    1.0, 0.0, 0.0, 0.0,
-    0.0, 1.0, 0.0, 0.0,
-    0.0, 0.0, 0.5, 0.5,
-    0.0, 0.0, 0.0, 1.0,
-]);
 
 pub struct WgpuContext<'surface> {
     pub window: Arc<Window>,

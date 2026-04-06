@@ -5,6 +5,7 @@ pub mod post_processing;
 pub mod skinned_pbr;
 pub mod skybox;
 pub mod static_pbr;
+pub mod sun_shadow;
 
 #[derive(Hash, Eq, PartialEq, Clone, Copy, Debug)]
 pub enum MeshPipelineKind {

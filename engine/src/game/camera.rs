@@ -1,7 +1,7 @@
 use glam::{Mat3, Mat4, Quat, Vec3, Vec4};
 
 use crate::{
-    host::{assets::io::asset_formats::modelfile::Aabb, wgpu_context},
+    host::assets::io::asset_formats::modelfile::Aabb,
     var_snapshot::CameraSnapshot,
 };
 
@@ -38,9 +38,9 @@ impl Default for Camera {
     fn default() -> Self {
         let position: Vec3 = (0.0, 0.0, 100.0).into();
         let rotation = Quat::IDENTITY;
-        let fovy = 45.0f32;
+        let fovy = 60.0f32.to_radians();
         let znear = 0.1f32;
-        let zfar = 1000.0f32;
+        let zfar = 1000f32;
         let aspect = 16.0 / 9.0;
 
         Self {
@@ -68,7 +68,7 @@ impl Camera {
         let rot_inv = self.rotation.conjugate();
         let view = Mat4::from_rotation_translation(rot_inv, -(rot_inv * self.position));
         let proj = Mat4::perspective_rh(self.fovy, self.aspect, self.znear, self.zfar);
-        let m: Mat4 = wgpu_context::OPENGL_TO_WGPU_MATRIX * proj * view;
+        let m: Mat4 = proj * view;
 
         // extract planes (row-major conceptual form)
         let planes = [

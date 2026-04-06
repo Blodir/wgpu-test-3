@@ -18,6 +18,7 @@ pub fn prepare_lights(
     sampler_cache: &mut SamplerCache,
     wgpu_context: &WgpuContext,
     bind_group_layout: &wgpu::BindGroupLayout,
+    sun_shadow_view: &wgpu::TextureView,
 ) {
     // TODO interpolation
     lights_binding.update_sun(&snaps.curr.lights.sun, &wgpu_context.queue);
@@ -49,6 +50,7 @@ pub fn prepare_lights(
                 &default_sampler,
                 &brdf.texture_view,
                 &default_sampler,
+                sun_shadow_view,
             );
             lights_binding.curr_prefiltered_render_id = e.prefiltered;
             lights_binding.curr_di_render_id = e.di;
