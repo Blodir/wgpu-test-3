@@ -13,6 +13,7 @@ use engine::{
         sim::InputEvent,
     },
     host::renderer::{OpaqueRenderPath, RenderCommand, RendererOptions, UiFrameInfo},
+    host::world::sun_shadow::SUN_SHADOW_MAX_CASCADE_COUNT,
     run,
 };
 use generational_arena::Arena;
@@ -117,6 +118,7 @@ struct VarSnapshot {
     camera_fovy_deg: f32,
     camera_znear: f32,
     camera_zfar: f32,
+    camera_sun_shadow_cascade_count: usize,
     selected_environment_map_idx: usize,
     selected_mesh_idx: usize,
     grid_size: u32,
@@ -141,6 +143,7 @@ enum GameUiCommand {
         fovy_deg: f32,
         znear: f32,
         zfar: f32,
+        sun_shadow_cascade_count: usize,
     },
 }
 
@@ -296,6 +299,17 @@ impl Game {
         scene.environment.environment_map_intensity = self.environment_map_intensity;
         scene.environment.sun.direction =
             Self::angles_to_direction(self.sun_altitude_deg, self.sun_direction_deg);
+    }
+
+    fn evenly_spaced_shadow_split_ratios(
+        cascade_count: usize,
+    ) -> [f32; SUN_SHADOW_MAX_CASCADE_COUNT] {
+        let cascade_count = cascade_count.clamp(1, SUN_SHADOW_MAX_CASCADE_COUNT);
+        let mut split_ratios = [1.0; SUN_SHADOW_MAX_CASCADE_COUNT];
+        for (idx, split_ratio) in split_ratios.iter_mut().enumerate().take(cascade_count) {
+            *split_ratio = (idx + 1) as f32 / cascade_count as f32;
+        }
+        split_ratios
     }
 
     fn request_environment_map_options(
@@ -652,13 +666,19 @@ impl GameTrait for Game {
                     fovy_deg,
                     znear,
                     zfar,
+                    sun_shadow_cascade_count,
                 } => {
                     let fovy_deg = fovy_deg.clamp(1.0, 179.0);
                     let znear = znear.max(0.001);
                     let zfar = zfar.max(znear + 0.001);
+                    let sun_shadow_cascade_count =
+                        sun_shadow_cascade_count.clamp(1, SUN_SHADOW_MAX_CASCADE_COUNT);
                     scene.camera.fovy = fovy_deg.to_radians();
                     scene.camera.znear = znear;
                     scene.camera.zfar = zfar;
+                    scene.camera.sun_shadow_cascade_count = sun_shadow_cascade_count;
+                    scene.camera.sun_shadow_cascade_split_ratios =
+                        Self::evenly_spaced_shadow_split_ratios(sun_shadow_cascade_count);
                 }
             },
             InputEvent::DeviceEvent(event) => match event {
@@ -817,6 +837,7 @@ impl GameTrait for Game {
             camera_fovy_deg: scene.camera.fovy.to_degrees(),
             camera_znear: scene.camera.znear,
             camera_zfar: scene.camera.zfar,
+            camera_sun_shadow_cascade_count: scene.camera.sun_shadow_cascade_count,
             selected_environment_map_idx: self.selected_environment_map_idx,
             selected_mesh_idx: self.selected_mesh_idx,
             grid_size: self.grid_size,
@@ -1026,6 +1047,7 @@ impl UiTrait for Game {
         let mut camera_fovy_deg = snapshot.camera_fovy_deg;
         let mut camera_znear = snapshot.camera_znear;
         let mut camera_zfar = snapshot.camera_zfar;
+        let mut camera_sun_shadow_cascade_count = snapshot.camera_sun_shadow_cascade_count;
         let mut camera_changed = false;
 
         ui_windows_y += UI_WINDOWS_Y_GAP;
@@ -1057,6 +1079,16 @@ impl UiTrait for Game {
                             .clamping(egui::SliderClamping::Always),
                     )
                     .changed();
+                camera_changed |= ui
+                    .add(
+                        egui::Slider::new(
+                            &mut camera_sun_shadow_cascade_count,
+                            1..=SUN_SHADOW_MAX_CASCADE_COUNT,
+                        )
+                        .text("Shadow Cascades")
+                        .clamping(egui::SliderClamping::Always),
+                    )
+                    .changed();
             });
 
         camera_znear = camera_znear.max(0.001);
@@ -1066,6 +1098,7 @@ impl UiTrait for Game {
                 fovy_deg: camera_fovy_deg,
                 znear: camera_znear,
                 zfar: camera_zfar,
+                sun_shadow_cascade_count: camera_sun_shadow_cascade_count,
             }));
         }
 
