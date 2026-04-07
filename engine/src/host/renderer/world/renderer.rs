@@ -29,7 +29,7 @@ use super::prepare::sun_shadow::prepare_sun_shadow;
 
 use crate::host::assets::io::asset_formats::materialfile;
 use crate::host::assets::store::{PlaceholderTextureIds, RenderAssetStore, TextureRenderId};
-use crate::host::renderer::{OpaqueRenderPath, RendererOptions};
+use crate::host::renderer::{OpaqueRenderPath, RendererOptions, SsgiOptions};
 use crate::host::wgpu_context::WgpuContext;
 use crate::host::world::buffers::static_instance::StaticInstances;
 use crate::host::world::pipelines::static_pbr::StaticPbrPipeline;
@@ -220,7 +220,7 @@ impl WorldPipelines {
 
 struct DeferredOpaqueRenderer {
     gtao_enabled: bool,
-    ssgi_enabled: bool,
+    ssgi_options: Option<SsgiOptions>,
     g_buffer_targets: GBufferTargets,
     gtao_texture: GtaoTexture,
     gtao_pipeline: GtaoPipeline,
@@ -235,7 +235,7 @@ impl DeferredOpaqueRenderer {
         layouts: &Layouts,
         attachments: &WorldAttachments,
         gtao_enabled: bool,
-        ssgi_enabled: bool,
+        ssgi_options: Option<SsgiOptions>,
     ) -> Self {
         let g_buffer_targets =
             GBufferTargets::new(&wgpu_context.device, &wgpu_context.surface_config);
@@ -270,10 +270,11 @@ impl DeferredOpaqueRenderer {
             &gtao_texture,
             &attachments.deferred_final_color,
             &attachments.gi_source,
+            &ssgi_options.unwrap_or_default(),
         );
         Self {
             gtao_enabled,
-            ssgi_enabled,
+            ssgi_options,
             g_buffer_targets,
             gtao_texture,
             gtao_pipeline,
@@ -355,7 +356,7 @@ impl DeferredOpaqueRenderer {
             encoder,
             hdr_color_view,
             camera_bind_group,
-            self.ssgi_enabled,
+            self.ssgi_options.is_some(),
         );
     }
 
@@ -376,6 +377,7 @@ impl DeferredOpaqueRenderer {
             &self.gtao_texture,
             &attachments.deferred_final_color,
             &attachments.gi_source,
+            &self.ssgi_options.unwrap_or_default(),
         );
     }
 }

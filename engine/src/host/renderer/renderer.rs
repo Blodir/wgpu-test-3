@@ -16,18 +16,38 @@ use crate::host::wgpu_context::WgpuContext;
 use crate::var_snapshot::CameraSnapshotPair;
 use crate::workers::anim_pose::PoseJobResult;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SsgiOptions {
+    pub radius_pixels: f32,
+    pub world_radius: f32,
+    pub thickness: f32,
+    pub depth_reject_scale: f32,
+    pub intensity: f32,
+}
+impl Default for SsgiOptions {
+    fn default() -> Self {
+        Self {
+            radius_pixels: 24.0,
+            world_radius: 2.0,
+            thickness: 0.2,
+            depth_reject_scale: 2.0,
+            intensity: 1.0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum OpaqueRenderPath {
     Deferred {
         gtao: bool,
-        ssgi: bool,
+        ssgi: Option<SsgiOptions>,
     },
     CompactDeferred,
     #[default]
     Forward,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RendererOptions {
     pub opaque_render_path: OpaqueRenderPath,
 }
@@ -44,7 +64,7 @@ impl RendererOptions {
         let opaque_render_path = if limits.max_color_attachments >= 6 {
             OpaqueRenderPath::Deferred {
                 gtao: true,
-                ssgi: true,
+                ssgi: Some(SsgiOptions::default()),
             }
         } else if limits.max_color_attachments >= 4 {
             OpaqueRenderPath::CompactDeferred
@@ -56,7 +76,7 @@ impl RendererOptions {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum RenderCommand {
     SetRendererOptions(RendererOptions),
 }

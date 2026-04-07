@@ -16,15 +16,16 @@
 @group(3) @binding(1) var final_color_texture_sampler: sampler;
 @group(3) @binding(2) var gi_source_texture: texture_2d<f32>;
 @group(3) @binding(3) var gi_source_texture_sampler: sampler;
+struct SsgiSettings {
+    params0: vec4<f32>,
+    params1: vec4<f32>,
+}
+
+@group(3) @binding(4) var<uniform> ssgi_settings: SsgiSettings;
 
 const PI: f32 = 3.14159265358979323846;
 const SSGI_DIRECTIONS: u32 = 4u;
 const SSGI_STEPS: u32 = 4u;
-const SSGI_RADIUS_PIXELS: f32 = 24.0;
-const SSGI_WORLD_RADIUS: f32 = 2.0;
-const SSGI_THICKNESS: f32 = 0.2;
-const SSGI_DEPTH_REJECT_SCALE: f32 = 2.0;
-const SSGI_INTENSITY: f32 = 1.0;
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
@@ -133,12 +134,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         uv
     );
     let final_color = sample_final_color(uv);
-    let gi_source_center = textureSample(
-        gi_source_texture,
-        gi_source_texture_sampler,
-        uv
-    );
-
     if (world_position.w < 0.5) {
         return final_color;
     }
@@ -178,7 +173,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
             // Bias density toward nearby samples.
             let step_scale = t * t;
-            let pixel_radius = SSGI_RADIUS_PIXELS * step_scale;
+            let pixel_radius = ssgi_settings.params0.x * step_scale;
 
             // Use the bent normal projected into tangent space to bias 2D sampling direction.
             // We treat dir2 as a hemisphere sample around +Z in tangent space and use its XY
@@ -210,7 +205,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
             }
 
             let dist = sqrt(dist2);
-            if (dist > SSGI_WORLD_RADIUS) {
+            if (dist > ssgi_settings.params0.y) {
                 continue;
             }
 
@@ -236,19 +231,19 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
             }
 
             // Simple thickness / discontinuity rejection.
-            let expected_step_world = SSGI_WORLD_RADIUS * t;
-            let thickness_weight = 1.0 - saturate((dist - expected_step_world) / max(SSGI_THICKNESS, 1e-4));
+            let expected_step_world = ssgi_settings.params0.y * t;
+            let thickness_weight = 1.0 - saturate((dist - expected_step_world) / max(ssgi_settings.params0.z, 1e-4));
 
             // Bent-normal confidence: prefer samples in the bent-normal hemisphere.
             let bent_weight = saturate(dot(bent_normal, wi));
 
             // Distance falloff.
-            let falloff = 1.0 - saturate(dist / SSGI_WORLD_RADIUS);
+            let falloff = 1.0 - saturate(dist / ssgi_settings.params0.y);
             let falloff2 = falloff * falloff;
 
             // Extra edge rejection using view direction similarity.
             let sample_view = safe_normalize(camera_position - S);
-            let view_consistency = pow(saturate(dot(V, sample_view)), SSGI_DEPTH_REJECT_SCALE);
+            let view_consistency = pow(saturate(dot(V, sample_view)), ssgi_settings.params0.w);
 
             let sample_gi = textureSample(
                 gi_source_texture,
@@ -279,7 +274,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     indirect_radiance *= ao;
 
     // Apply diffuse BRDF of the receiving surface.
-    let indirect_diffuse = indirect_radiance * diffuse_color * (SSGI_INTENSITY / PI);
+    let indirect_diffuse = indirect_radiance * diffuse_color * (ssgi_settings.params1.x / PI);
 
     return vec4<f32>(final_color.rgb + indirect_diffuse, final_color.a);
 }

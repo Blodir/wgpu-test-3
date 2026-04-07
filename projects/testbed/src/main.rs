@@ -12,7 +12,7 @@ use engine::{
         },
         sim::InputEvent,
     },
-    host::renderer::{OpaqueRenderPath, RenderCommand, RendererOptions, UiFrameInfo},
+    host::renderer::{OpaqueRenderPath, RenderCommand, RendererOptions, SsgiOptions, UiFrameInfo},
     host::world::sun_shadow::SUN_SHADOW_MAX_CASCADE_COUNT,
     run,
 };
@@ -1133,13 +1133,59 @@ impl UiTrait for Game {
                 };
                 let mut deferred_ssgi = match renderer_options.opaque_render_path {
                     OpaqueRenderPath::Deferred { ssgi, .. } => ssgi,
-                    _ => true,
+                    _ => Some(SsgiOptions::default()),
                 };
                 if opaque_path_kind == 2 {
                     render_settings_changed |=
                         ui.checkbox(&mut deferred_gtao, "Enable GTAO").changed();
-                    render_settings_changed |=
-                        ui.checkbox(&mut deferred_ssgi, "Enable SSGI").changed();
+                    let mut deferred_ssgi_enabled = deferred_ssgi.is_some();
+                    render_settings_changed |= ui
+                        .checkbox(&mut deferred_ssgi_enabled, "Enable SSGI")
+                        .changed();
+                    if deferred_ssgi_enabled {
+                        let mut ssgi_options = deferred_ssgi.unwrap_or_default();
+                        render_settings_changed |= ui
+                            .add(
+                                egui::Slider::new(&mut ssgi_options.radius_pixels, 1.0..=128.0)
+                                    .text("SSGI Radius Pixels")
+                                    .clamping(egui::SliderClamping::Always),
+                            )
+                            .changed();
+                        render_settings_changed |= ui
+                            .add(
+                                egui::Slider::new(&mut ssgi_options.world_radius, 0.05..=100.0)
+                                    .text("SSGI World Radius")
+                                    .logarithmic(true)
+                                    .clamping(egui::SliderClamping::Always),
+                            )
+                            .changed();
+                        render_settings_changed |= ui
+                            .add(
+                                egui::Slider::new(&mut ssgi_options.thickness, 0.01..=4.0)
+                                    .text("SSGI Thickness")
+                                    .logarithmic(true)
+                                    .clamping(egui::SliderClamping::Always),
+                            )
+                            .changed();
+                        render_settings_changed |= ui
+                            .add(
+                                egui::Slider::new(&mut ssgi_options.depth_reject_scale, 0.1..=8.0)
+                                    .text("SSGI Depth Reject")
+                                    .logarithmic(true)
+                                    .clamping(egui::SliderClamping::Always),
+                            )
+                            .changed();
+                        render_settings_changed |= ui
+                            .add(
+                                egui::Slider::new(&mut ssgi_options.intensity, 0.0..=8.0)
+                                    .text("SSGI Intensity")
+                                    .clamping(egui::SliderClamping::Always),
+                            )
+                            .changed();
+                        deferred_ssgi = Some(ssgi_options);
+                    } else {
+                        deferred_ssgi = None;
+                    }
                 }
 
                 renderer_options = RendererOptions {

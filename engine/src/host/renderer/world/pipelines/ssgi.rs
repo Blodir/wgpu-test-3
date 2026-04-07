@@ -2,6 +2,7 @@ use wgpu::util::DeviceExt;
 
 use crate::global_paths::SHADER_SSGI_WGSL;
 use crate::host::{
+    renderer::SsgiOptions,
     shader_cache::ShaderCache,
     wgpu_context::WgpuContext,
     world::{
@@ -79,6 +80,7 @@ impl SsgiPipeline {
         gtao_texture: &GtaoTexture,
         final_color_texture: &HdrColorTexture,
         gi_source_texture: &HdrColorTexture,
+        ssgi_options: &SsgiOptions,
     ) -> Self {
         let gtao_inputs_bind_group_layout = wgpu_context
             .device
@@ -106,6 +108,7 @@ impl SsgiPipeline {
             &gi_source_inputs_bind_group_layout,
             final_color_texture,
             gi_source_texture,
+            ssgi_options,
         );
 
         let bind_group_layouts = &[
@@ -164,6 +167,7 @@ impl SsgiPipeline {
         gtao_texture: &GtaoTexture,
         final_color_texture: &HdrColorTexture,
         gi_source_texture: &HdrColorTexture,
+        ssgi_options: &SsgiOptions,
     ) {
         self.gtao_inputs_bind_group =
             GtaoInputs::upload(device, &self.gtao_inputs_bind_group_layout, gtao_texture);
@@ -177,6 +181,7 @@ impl SsgiPipeline {
             &self.gi_source_inputs_bind_group_layout,
             final_color_texture,
             gi_source_texture,
+            ssgi_options,
         );
     }
 
