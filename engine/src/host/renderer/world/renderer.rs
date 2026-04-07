@@ -92,6 +92,7 @@ struct WorldAttachments {
     hdr_color: HdrColorTexture,
     deferred_final_color: HdrColorTexture,
     gi_source: HdrColorTexture,
+    ssgi_indirect: HdrColorTexture,
     sun_shadow: SunShadowTexture,
 }
 impl WorldAttachments {
@@ -108,6 +109,10 @@ impl WorldAttachments {
                 &wgpu_context.surface_config,
             ),
             gi_source: HdrColorTexture::new(&wgpu_context.device, &wgpu_context.surface_config),
+            ssgi_indirect: HdrColorTexture::new_half_res(
+                &wgpu_context.device,
+                &wgpu_context.surface_config,
+            ),
             sun_shadow: SunShadowTexture::new(&wgpu_context.device),
         }
     }
@@ -120,6 +125,8 @@ impl WorldAttachments {
         self.deferred_final_color =
             HdrColorTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
         self.gi_source = HdrColorTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
+        self.ssgi_indirect =
+            HdrColorTexture::new_half_res(&wgpu_context.device, &wgpu_context.surface_config);
     }
 }
 
@@ -270,6 +277,7 @@ impl DeferredOpaqueRenderer {
             &gtao_texture,
             &attachments.deferred_final_color,
             &attachments.gi_source,
+            &attachments.ssgi_indirect,
             &ssgi_options.unwrap_or_default(),
         );
         Self {
@@ -295,6 +303,7 @@ impl DeferredOpaqueRenderer {
         hdr_color_view: &wgpu::TextureView,
         deferred_final_color_view: &wgpu::TextureView,
         gi_source_view: &wgpu::TextureView,
+        ssgi_indirect_view: &wgpu::TextureView,
         camera_bind_group: &wgpu::BindGroup,
         lights_bind_group: &wgpu::BindGroup,
         bones_bind_group: &wgpu::BindGroup,
@@ -354,6 +363,7 @@ impl DeferredOpaqueRenderer {
         );
         self.ssgi_pipeline.render(
             encoder,
+            ssgi_indirect_view,
             hdr_color_view,
             camera_bind_group,
             self.ssgi_options.is_some(),
@@ -377,6 +387,7 @@ impl DeferredOpaqueRenderer {
             &self.gtao_texture,
             &attachments.deferred_final_color,
             &attachments.gi_source,
+            &attachments.ssgi_indirect,
             &self.ssgi_options.unwrap_or_default(),
         );
     }
@@ -657,6 +668,7 @@ impl WorldRenderer {
                 &self.attachments.hdr_color.view,
                 &self.attachments.deferred_final_color.view,
                 &self.attachments.gi_source.view,
+                &self.attachments.ssgi_indirect.view,
                 &self.bind_groups.camera.bind_group,
                 &self.bind_groups.lights.bind_group,
                 &self.bind_groups.bones.bind_group,

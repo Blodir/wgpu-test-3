@@ -6,12 +6,33 @@ pub struct HdrColorTexture {
 
 impl HdrColorTexture {
     pub fn new(device: &wgpu::Device, surface_config: &wgpu::SurfaceConfiguration) -> Self {
+        Self::new_scaled(device, surface_config, 1, "HDR Color Texture")
+    }
+
+    pub fn new_half_res(
+        device: &wgpu::Device,
+        surface_config: &wgpu::SurfaceConfiguration,
+    ) -> Self {
+        Self::new_scaled(
+            device,
+            surface_config,
+            2,
+            "Half Resolution HDR Color Texture",
+        )
+    }
+
+    fn new_scaled(
+        device: &wgpu::Device,
+        surface_config: &wgpu::SurfaceConfiguration,
+        scale_divisor: u32,
+        label: &'static str,
+    ) -> Self {
         let hdr_format = wgpu::TextureFormat::Rgba16Float;
         let texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("HDR Color Texture"),
+            label: Some(label),
             size: wgpu::Extent3d {
-                width: surface_config.width,
-                height: surface_config.height,
+                width: (surface_config.width / scale_divisor).max(1),
+                height: (surface_config.height / scale_divisor).max(1),
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,

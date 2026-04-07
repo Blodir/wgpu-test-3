@@ -6,4 +6,5 @@ pub mod gtao;
 pub mod lights;
 pub mod material;
 pub mod post_processing;
+pub mod ssgi_resolve;
 pub mod sun_shadow_matrix;
