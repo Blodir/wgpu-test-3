@@ -1,13 +1,17 @@
 use wgpu::util::DeviceExt;
 
-use crate::global_paths::SHADER_DEFERRED_LIGHTING_WGSL;
+use crate::global_paths::SHADER_SSGI_WGSL;
 use crate::host::{
     shader_cache::ShaderCache,
     wgpu_context::WgpuContext,
     world::{
-        attachments::deferred::{GBufferTargets, GtaoTexture},
+        attachments::{
+            color::HdrColorTexture,
+            deferred::{GBufferTargets, GtaoTexture},
+        },
         bindgroups::{
             g_buffer::{GBufferInputs, GBufferInputsBinding},
+            gi_source::{GiSourceInputs, GiSourceInputsBinding},
             gtao::{GtaoInputs, GtaoInputsBinding},
         },
     },
@@ -15,32 +19,27 @@ use crate::host::{
 
 const INDICES: &[u16] = &[0, 2, 1, 3, 2, 0];
 
-pub struct DeferredLightingPipeline {
+pub struct SsgiPipeline {
     render_pipeline: wgpu::RenderPipeline,
     index_buffer: wgpu::Buffer,
-    gbuffer_inputs_bind_group_layout: wgpu::BindGroupLayout,
-    gbuffer_inputs_bind_group: GBufferInputsBinding,
     gtao_inputs_bind_group_layout: wgpu::BindGroupLayout,
     gtao_inputs_bind_group: GtaoInputsBinding,
+    gbuffer_inputs_bind_group_layout: wgpu::BindGroupLayout,
+    gbuffer_inputs_bind_group: GBufferInputsBinding,
+    gi_source_inputs_bind_group_layout: wgpu::BindGroupLayout,
+    gi_source_inputs_bind_group: GiSourceInputsBinding,
 }
 
-impl DeferredLightingPipeline {
+impl SsgiPipeline {
     pub fn new(
         wgpu_context: &WgpuContext,
         shader_cache: &mut ShaderCache,
         camera_bind_group_layout: &wgpu::BindGroupLayout,
-        lights_bind_group_layout: &wgpu::BindGroupLayout,
         gbuffer_targets: &GBufferTargets,
         gtao_texture: &GtaoTexture,
+        final_color_texture: &HdrColorTexture,
+        gi_source_texture: &HdrColorTexture,
     ) -> Self {
-        let gbuffer_inputs_bind_group_layout = wgpu_context
-            .device
-            .create_bind_group_layout(&GBufferInputs::desc());
-        let gbuffer_inputs_bind_group = GBufferInputs::upload(
-            &wgpu_context.device,
-            &gbuffer_inputs_bind_group_layout,
-            gbuffer_targets,
-        );
         let gtao_inputs_bind_group_layout = wgpu_context
             .device
             .create_bind_group_layout(&GtaoInputs::desc());
@@ -50,27 +49,45 @@ impl DeferredLightingPipeline {
             gtao_texture,
         );
 
+        let gbuffer_inputs_bind_group_layout = wgpu_context
+            .device
+            .create_bind_group_layout(&GBufferInputs::desc());
+        let gbuffer_inputs_bind_group = GBufferInputs::upload(
+            &wgpu_context.device,
+            &gbuffer_inputs_bind_group_layout,
+            gbuffer_targets,
+        );
+
+        let gi_source_inputs_bind_group_layout = wgpu_context
+            .device
+            .create_bind_group_layout(&GiSourceInputs::desc());
+        let gi_source_inputs_bind_group = GiSourceInputs::upload(
+            &wgpu_context.device,
+            &gi_source_inputs_bind_group_layout,
+            final_color_texture,
+            gi_source_texture,
+        );
+
         let bind_group_layouts = &[
             camera_bind_group_layout,
-            lights_bind_group_layout,
-            &gbuffer_inputs_bind_group_layout,
             &gtao_inputs_bind_group_layout,
+            &gbuffer_inputs_bind_group_layout,
+            &gi_source_inputs_bind_group_layout,
         ];
         let render_pipeline_layout =
             wgpu_context
                 .device
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                    label: Some("Deferred Lighting Pipeline Layout"),
+                    label: Some("SSGI Pipeline Layout"),
                     bind_group_layouts,
                     push_constant_ranges: &[],
                 });
-        let shader_module =
-            shader_cache.get(SHADER_DEFERRED_LIGHTING_WGSL.to_string(), wgpu_context);
+        let shader_module = shader_cache.get(SHADER_SSGI_WGSL.to_string(), wgpu_context);
         let render_pipeline =
             wgpu_context
                 .device
                 .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                    label: Some("Deferred Lighting Pipeline"),
+                    label: Some("SSGI Pipeline"),
                     layout: Some(&render_pipeline_layout),
                     vertex: wgpu::VertexState {
                         module: &shader_module,
@@ -81,18 +98,11 @@ impl DeferredLightingPipeline {
                     fragment: Some(wgpu::FragmentState {
                         module: &shader_module,
                         entry_point: Some("fs_main"),
-                        targets: &[
-                            Some(wgpu::ColorTargetState {
-                                format: wgpu::TextureFormat::Rgba16Float,
-                                blend: Some(wgpu::BlendState::REPLACE),
-                                write_mask: wgpu::ColorWrites::ALL,
-                            }),
-                            Some(wgpu::ColorTargetState {
-                                format: wgpu::TextureFormat::Rgba16Float,
-                                blend: Some(wgpu::BlendState::REPLACE),
-                                write_mask: wgpu::ColorWrites::ALL,
-                            }),
-                        ],
+                        targets: &[Some(wgpu::ColorTargetState {
+                            format: wgpu::TextureFormat::Rgba16Float,
+                            blend: Some(wgpu::BlendState::REPLACE),
+                            write_mask: wgpu::ColorWrites::ALL,
+                        })],
                         compilation_options: wgpu::PipelineCompilationOptions::default(),
                     }),
                     primitive: wgpu::PrimitiveState {
@@ -111,7 +121,7 @@ impl DeferredLightingPipeline {
             wgpu_context
                 .device
                 .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("Deferred Lighting Index Buffer"),
+                    label: Some("SSGI Index Buffer"),
                     contents: bytemuck::cast_slice(INDICES),
                     usage: wgpu::BufferUsages::INDEX,
                 });
@@ -119,56 +129,54 @@ impl DeferredLightingPipeline {
         Self {
             render_pipeline,
             index_buffer,
-            gbuffer_inputs_bind_group_layout,
-            gbuffer_inputs_bind_group,
             gtao_inputs_bind_group_layout,
             gtao_inputs_bind_group,
+            gbuffer_inputs_bind_group_layout,
+            gbuffer_inputs_bind_group,
+            gi_source_inputs_bind_group_layout,
+            gi_source_inputs_bind_group,
         }
     }
 
-    pub fn update_input_bindgroup(
+    pub fn update_input_bindgroups(
         &mut self,
         device: &wgpu::Device,
         gbuffer_targets: &GBufferTargets,
         gtao_texture: &GtaoTexture,
+        final_color_texture: &HdrColorTexture,
+        gi_source_texture: &HdrColorTexture,
     ) {
+        self.gtao_inputs_bind_group =
+            GtaoInputs::upload(device, &self.gtao_inputs_bind_group_layout, gtao_texture);
         self.gbuffer_inputs_bind_group = GBufferInputs::upload(
             device,
             &self.gbuffer_inputs_bind_group_layout,
             gbuffer_targets,
         );
-        self.gtao_inputs_bind_group =
-            GtaoInputs::upload(device, &self.gtao_inputs_bind_group_layout, gtao_texture);
+        self.gi_source_inputs_bind_group = GiSourceInputs::upload(
+            device,
+            &self.gi_source_inputs_bind_group_layout,
+            final_color_texture,
+            gi_source_texture,
+        );
     }
 
     pub fn render(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         hdr_color_view: &wgpu::TextureView,
-        gi_source_view: &wgpu::TextureView,
         camera_bind_group: &wgpu::BindGroup,
-        lights_bind_group: &wgpu::BindGroup,
     ) {
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("Deferred Lighting Pass"),
-            color_attachments: &[
-                Some(wgpu::RenderPassColorAttachment {
-                    view: hdr_color_view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
-                        store: wgpu::StoreOp::Store,
-                    },
-                }),
-                Some(wgpu::RenderPassColorAttachment {
-                    view: gi_source_view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
-                        store: wgpu::StoreOp::Store,
-                    },
-                }),
-            ],
+            label: Some("SSGI Pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: hdr_color_view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
             depth_stencil_attachment: None,
             occlusion_query_set: None,
             timestamp_writes: None,
@@ -176,9 +184,9 @@ impl DeferredLightingPipeline {
 
         render_pass.set_pipeline(&self.render_pipeline);
         render_pass.set_bind_group(0u32, camera_bind_group, &[]);
-        render_pass.set_bind_group(1u32, lights_bind_group, &[]);
+        render_pass.set_bind_group(1u32, &self.gtao_inputs_bind_group.bind_group, &[]);
         render_pass.set_bind_group(2u32, &self.gbuffer_inputs_bind_group.bind_group, &[]);
-        render_pass.set_bind_group(3u32, &self.gtao_inputs_bind_group.bind_group, &[]);
+        render_pass.set_bind_group(3u32, &self.gi_source_inputs_bind_group.bind_group, &[]);
         render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
         render_pass.draw_indexed(0..INDICES.len() as u32, 0, 0..1);
     }

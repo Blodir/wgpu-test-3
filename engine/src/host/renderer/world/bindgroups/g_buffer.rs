@@ -1,11 +1,11 @@
-use crate::host::world::attachments::deferred::{GBufferTargets, GtaoTexture};
+use crate::host::world::attachments::deferred::GBufferTargets;
 
-pub struct DeferredLightingInputs {}
-pub struct DeferredLightingInputsBinding {
+pub struct GBufferInputs {}
+pub struct GBufferInputsBinding {
     pub bind_group: wgpu::BindGroup,
 }
 
-impl DeferredLightingInputs {
+impl GBufferInputs {
     pub fn desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
         wgpu::BindGroupLayoutDescriptor {
             entries: &[
@@ -73,24 +73,8 @@ impl DeferredLightingInputs {
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 8,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 9,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
             ],
-            label: Some("Deferred Lighting Inputs Bind Group Layout"),
+            label: Some("GBuffer Inputs Bind Group Layout"),
         }
     }
 
@@ -98,8 +82,7 @@ impl DeferredLightingInputs {
         device: &wgpu::Device,
         bind_group_layout: &wgpu::BindGroupLayout,
         gbuffer_targets: &GBufferTargets,
-        gtao_texture: &GtaoTexture,
-    ) -> DeferredLightingInputsBinding {
+    ) -> GBufferInputsBinding {
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: bind_group_layout,
             entries: &[
@@ -147,18 +130,10 @@ impl DeferredLightingInputs {
                         &gbuffer_targets.world_position.sampler,
                     ),
                 },
-                wgpu::BindGroupEntry {
-                    binding: 8,
-                    resource: wgpu::BindingResource::TextureView(&gtao_texture.view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 9,
-                    resource: wgpu::BindingResource::Sampler(&gtao_texture.sampler),
-                },
             ],
-            label: Some("Deferred Lighting Inputs Bind Group"),
+            label: Some("GBuffer Inputs Bind Group"),
         });
 
-        DeferredLightingInputsBinding { bind_group }
+        GBufferInputsBinding { bind_group }
     }
 }

@@ -4,6 +4,7 @@ pub mod gtao;
 pub mod post_processing;
 pub mod skinned_pbr;
 pub mod skybox;
+pub mod ssgi;
 pub mod static_pbr;
 pub mod sun_shadow;
 

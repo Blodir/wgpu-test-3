@@ -31,8 +31,9 @@ struct SunShadowUniform {
 @group(2) @binding(5) var gbuffer_emissive_metallic_sampler: sampler;
 @group(2) @binding(6) var gbuffer_world_position: texture_2d<f32>;
 @group(2) @binding(7) var gbuffer_world_position_sampler: sampler;
-@group(2) @binding(8) var gtao_texture: texture_2d<f32>;
-@group(2) @binding(9) var gtao_texture_sampler: sampler;
+
+@group(3) @binding(0) var gtao_texture: texture_2d<f32>;
+@group(3) @binding(1) var gtao_texture_sampler: sampler;
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,

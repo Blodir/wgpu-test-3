@@ -20,6 +20,7 @@ use super::pipelines::gtao::GtaoPipeline;
 use super::pipelines::post_processing::PostProcessingPipeline;
 use super::pipelines::skinned_pbr::SkinnedPbrPipeline;
 use super::pipelines::skybox::SkyboxPipeline;
+use super::pipelines::ssgi::SsgiPipeline;
 use super::pipelines::sun_shadow::SunShadowPipeline;
 use super::prepare::camera::prepare_camera;
 use super::prepare::lights::prepare_lights;
@@ -89,6 +90,7 @@ struct WorldAttachments {
     skybox_output: SkyboxOutputTexture,
     depth_texture: DepthTexture,
     hdr_color: HdrColorTexture,
+    deferred_final_color: HdrColorTexture,
     gi_source: HdrColorTexture,
     sun_shadow: SunShadowTexture,
 }
@@ -101,6 +103,10 @@ impl WorldAttachments {
             ),
             depth_texture: DepthTexture::new(&wgpu_context.device, &wgpu_context.surface_config),
             hdr_color: HdrColorTexture::new(&wgpu_context.device, &wgpu_context.surface_config),
+            deferred_final_color: HdrColorTexture::new(
+                &wgpu_context.device,
+                &wgpu_context.surface_config,
+            ),
             gi_source: HdrColorTexture::new(&wgpu_context.device, &wgpu_context.surface_config),
             sun_shadow: SunShadowTexture::new(&wgpu_context.device),
         }
@@ -111,6 +117,8 @@ impl WorldAttachments {
             SkyboxOutputTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
         self.depth_texture = DepthTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
         self.hdr_color = HdrColorTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
+        self.deferred_final_color =
+            HdrColorTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
         self.gi_source = HdrColorTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
     }
 }
@@ -217,12 +225,14 @@ struct DeferredOpaqueRenderer {
     gtao_pipeline: GtaoPipeline,
     g_buffer_pipeline: GBufferPipeline,
     deferred_lighting_pipeline: DeferredLightingPipeline,
+    ssgi_pipeline: SsgiPipeline,
 }
 impl DeferredOpaqueRenderer {
     fn new(
         wgpu_context: &WgpuContext,
         shader_cache: &mut ShaderCache,
         layouts: &Layouts,
+        attachments: &WorldAttachments,
         gtao_enabled: bool,
     ) -> Self {
         let g_buffer_targets =
@@ -250,6 +260,15 @@ impl DeferredOpaqueRenderer {
             &g_buffer_targets,
             &gtao_texture,
         );
+        let ssgi_pipeline = SsgiPipeline::new(
+            wgpu_context,
+            shader_cache,
+            &layouts.camera,
+            &g_buffer_targets,
+            &gtao_texture,
+            &attachments.deferred_final_color,
+            &attachments.gi_source,
+        );
         Self {
             gtao_enabled,
             g_buffer_targets,
@@ -257,6 +276,7 @@ impl DeferredOpaqueRenderer {
             gtao_pipeline,
             g_buffer_pipeline,
             deferred_lighting_pipeline,
+            ssgi_pipeline,
         }
     }
 
@@ -269,6 +289,7 @@ impl DeferredOpaqueRenderer {
         encoder: &mut wgpu::CommandEncoder,
         depth_texture_view: &wgpu::TextureView,
         hdr_color_view: &wgpu::TextureView,
+        deferred_final_color_view: &wgpu::TextureView,
         gi_source_view: &wgpu::TextureView,
         camera_bind_group: &wgpu::BindGroup,
         lights_bind_group: &wgpu::BindGroup,
@@ -322,14 +343,16 @@ impl DeferredOpaqueRenderer {
         }
         self.deferred_lighting_pipeline.render(
             encoder,
-            hdr_color_view,
+            deferred_final_color_view,
             gi_source_view,
             camera_bind_group,
             lights_bind_group,
         );
+        self.ssgi_pipeline
+            .render(encoder, hdr_color_view, camera_bind_group);
     }
 
-    fn resize(&mut self, wgpu_context: &WgpuContext) {
+    fn resize(&mut self, wgpu_context: &WgpuContext, attachments: &WorldAttachments) {
         self.g_buffer_targets =
             GBufferTargets::new(&wgpu_context.device, &wgpu_context.surface_config);
         self.gtao_texture = GtaoTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
@@ -339,6 +362,13 @@ impl DeferredOpaqueRenderer {
             &wgpu_context.device,
             &self.g_buffer_targets,
             &self.gtao_texture,
+        );
+        self.ssgi_pipeline.update_input_bindgroups(
+            &wgpu_context.device,
+            &self.g_buffer_targets,
+            &self.gtao_texture,
+            &attachments.deferred_final_color,
+            &attachments.gi_source,
         );
     }
 }
@@ -362,6 +392,7 @@ impl CompactDeferredOpaqueRenderer {
         _encoder: &mut wgpu::CommandEncoder,
         _depth_texture_view: &wgpu::TextureView,
         _hdr_color_view: &wgpu::TextureView,
+        _deferred_final_color_view: &wgpu::TextureView,
         _gi_source_view: &wgpu::TextureView,
         _camera_bind_group: &wgpu::BindGroup,
         _lights_bind_group: &wgpu::BindGroup,
@@ -396,11 +427,12 @@ impl WorldRenderer {
         wgpu_context: &WgpuContext,
         shader_cache: &mut ShaderCache,
         layouts: &Layouts,
+        attachments: &WorldAttachments,
     ) -> OpaqueRenderer {
         match options.opaque_render_path {
             OpaqueRenderPath::Forward => OpaqueRenderer::Forward,
             OpaqueRenderPath::Deferred { gtao } => OpaqueRenderer::Deferred(
-                DeferredOpaqueRenderer::new(wgpu_context, shader_cache, layouts, gtao),
+                DeferredOpaqueRenderer::new(wgpu_context, shader_cache, layouts, attachments, gtao),
             ),
             OpaqueRenderPath::CompactDeferred => OpaqueRenderer::CompactDeferred(
                 CompactDeferredOpaqueRenderer::new(wgpu_context, shader_cache, layouts),
@@ -435,8 +467,13 @@ impl WorldRenderer {
             &bind_groups.layouts,
             &attachments,
         );
-        let opaque_renderer =
-            Self::build_opaque_renderer(options, wgpu_context, shader_cache, &bind_groups.layouts);
+        let opaque_renderer = Self::build_opaque_renderer(
+            options,
+            wgpu_context,
+            shader_cache,
+            &bind_groups.layouts,
+            &attachments,
+        );
 
         Self {
             attachments,
@@ -462,6 +499,7 @@ impl WorldRenderer {
             wgpu_context,
             shader_cache,
             &self.bind_groups.layouts,
+            &self.attachments,
         );
     }
 
@@ -601,6 +639,7 @@ impl WorldRenderer {
                 encoder,
                 &self.attachments.depth_texture.view,
                 &self.attachments.hdr_color.view,
+                &self.attachments.deferred_final_color.view,
                 &self.attachments.gi_source.view,
                 &self.bind_groups.camera.bind_group,
                 &self.bind_groups.lights.bind_group,
@@ -615,6 +654,7 @@ impl WorldRenderer {
                 encoder,
                 &self.attachments.depth_texture.view,
                 &self.attachments.hdr_color.view,
+                &self.attachments.deferred_final_color.view,
                 &self.attachments.gi_source.view,
                 &self.bind_groups.camera.bind_group,
                 &self.bind_groups.lights.bind_group,
@@ -658,7 +698,7 @@ impl WorldRenderer {
         );
         match &mut self.opaque_renderer {
             OpaqueRenderer::Forward => {}
-            OpaqueRenderer::Deferred(renderer) => renderer.resize(wgpu_context),
+            OpaqueRenderer::Deferred(renderer) => renderer.resize(wgpu_context, &self.attachments),
             OpaqueRenderer::CompactDeferred(renderer) => renderer.resize(wgpu_context),
         }
     }
