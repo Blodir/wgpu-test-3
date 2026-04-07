@@ -1,8 +1,14 @@
 use wgpu::util::DeviceExt;
 
 use crate::global_paths::SHADER_DEFERRED_LIGHTING_WGSL;
-use crate::host::world::attachments::deferred::{GBufferTargets, GtaoTexture};
-use crate::host::{shader_cache::ShaderCache, wgpu_context::WgpuContext};
+use crate::host::{
+    shader_cache::ShaderCache,
+    wgpu_context::WgpuContext,
+    world::{
+        attachments::deferred::{GBufferTargets, GtaoTexture},
+        bindgroups::deferred_lighting::{DeferredLightingInputs, DeferredLightingInputsBinding},
+    },
+};
 
 const INDICES: &[u16] = &[0, 2, 1, 3, 2, 0];
 
@@ -10,7 +16,7 @@ pub struct DeferredLightingPipeline {
     render_pipeline: wgpu::RenderPipeline,
     index_buffer: wgpu::Buffer,
     gbuffer_inputs_bind_group_layout: wgpu::BindGroupLayout,
-    gbuffer_inputs_bind_group: wgpu::BindGroup,
+    gbuffer_inputs_bind_group: DeferredLightingInputsBinding,
 }
 
 impl DeferredLightingPipeline {
@@ -22,95 +28,10 @@ impl DeferredLightingPipeline {
         gbuffer_targets: &GBufferTargets,
         gtao_texture: &GtaoTexture,
     ) -> Self {
-        let gbuffer_inputs_bind_group_layout =
-            wgpu_context
-                .device
-                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                    entries: &[
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 0,
-                            visibility: wgpu::ShaderStages::FRAGMENT,
-                            ty: wgpu::BindingType::Texture {
-                                sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                                view_dimension: wgpu::TextureViewDimension::D2,
-                                multisampled: false,
-                            },
-                            count: None,
-                        },
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 1,
-                            visibility: wgpu::ShaderStages::FRAGMENT,
-                            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                            count: None,
-                        },
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 2,
-                            visibility: wgpu::ShaderStages::FRAGMENT,
-                            ty: wgpu::BindingType::Texture {
-                                sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                                view_dimension: wgpu::TextureViewDimension::D2,
-                                multisampled: false,
-                            },
-                            count: None,
-                        },
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 3,
-                            visibility: wgpu::ShaderStages::FRAGMENT,
-                            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                            count: None,
-                        },
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 4,
-                            visibility: wgpu::ShaderStages::FRAGMENT,
-                            ty: wgpu::BindingType::Texture {
-                                sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                                view_dimension: wgpu::TextureViewDimension::D2,
-                                multisampled: false,
-                            },
-                            count: None,
-                        },
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 5,
-                            visibility: wgpu::ShaderStages::FRAGMENT,
-                            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                            count: None,
-                        },
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 6,
-                            visibility: wgpu::ShaderStages::FRAGMENT,
-                            ty: wgpu::BindingType::Texture {
-                                sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                                view_dimension: wgpu::TextureViewDimension::D2,
-                                multisampled: false,
-                            },
-                            count: None,
-                        },
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 7,
-                            visibility: wgpu::ShaderStages::FRAGMENT,
-                            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                            count: None,
-                        },
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 8,
-                            visibility: wgpu::ShaderStages::FRAGMENT,
-                            ty: wgpu::BindingType::Texture {
-                                sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                                view_dimension: wgpu::TextureViewDimension::D2,
-                                multisampled: false,
-                            },
-                            count: None,
-                        },
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 9,
-                            visibility: wgpu::ShaderStages::FRAGMENT,
-                            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                            count: None,
-                        },
-                    ],
-                    label: Some("Deferred Lighting Inputs Bind Group Layout"),
-                });
-        let gbuffer_inputs_bind_group = Self::create_inputs_bind_group(
+        let gbuffer_inputs_bind_group_layout = wgpu_context
+            .device
+            .create_bind_group_layout(&DeferredLightingInputs::desc());
+        let gbuffer_inputs_bind_group = DeferredLightingInputs::upload(
             &wgpu_context.device,
             &gbuffer_inputs_bind_group_layout,
             gbuffer_targets,
@@ -183,79 +104,13 @@ impl DeferredLightingPipeline {
         }
     }
 
-    fn create_inputs_bind_group(
-        device: &wgpu::Device,
-        bind_group_layout: &wgpu::BindGroupLayout,
-        gbuffer_targets: &GBufferTargets,
-        gtao_texture: &GtaoTexture,
-    ) -> wgpu::BindGroup {
-        device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&gbuffer_targets.albedo_ao.view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&gbuffer_targets.albedo_ao.sampler),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::TextureView(
-                        &gbuffer_targets.normal_roughness.view,
-                    ),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: wgpu::BindingResource::Sampler(
-                        &gbuffer_targets.normal_roughness.sampler,
-                    ),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 4,
-                    resource: wgpu::BindingResource::TextureView(
-                        &gbuffer_targets.emissive_metallic.view,
-                    ),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 5,
-                    resource: wgpu::BindingResource::Sampler(
-                        &gbuffer_targets.emissive_metallic.sampler,
-                    ),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 6,
-                    resource: wgpu::BindingResource::TextureView(
-                        &gbuffer_targets.world_position.view,
-                    ),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 7,
-                    resource: wgpu::BindingResource::Sampler(
-                        &gbuffer_targets.world_position.sampler,
-                    ),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 8,
-                    resource: wgpu::BindingResource::TextureView(&gtao_texture.view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 9,
-                    resource: wgpu::BindingResource::Sampler(&gtao_texture.sampler),
-                },
-            ],
-            label: Some("Deferred Lighting Inputs Bind Group"),
-        })
-    }
-
     pub fn update_input_bindgroup(
         &mut self,
         device: &wgpu::Device,
         gbuffer_targets: &GBufferTargets,
         gtao_texture: &GtaoTexture,
     ) {
-        self.gbuffer_inputs_bind_group = Self::create_inputs_bind_group(
+        self.gbuffer_inputs_bind_group = DeferredLightingInputs::upload(
             device,
             &self.gbuffer_inputs_bind_group_layout,
             gbuffer_targets,
@@ -288,7 +143,7 @@ impl DeferredLightingPipeline {
         render_pass.set_pipeline(&self.render_pipeline);
         render_pass.set_bind_group(0u32, camera_bind_group, &[]);
         render_pass.set_bind_group(1u32, lights_bind_group, &[]);
-        render_pass.set_bind_group(2u32, &self.gbuffer_inputs_bind_group, &[]);
+        render_pass.set_bind_group(2u32, &self.gbuffer_inputs_bind_group.bind_group, &[]);
         render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
         render_pass.draw_indexed(0..INDICES.len() as u32, 0, 0..1);
     }
