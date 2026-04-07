@@ -90,7 +90,7 @@ impl GtaoPipeline {
                         module: &shader_module,
                         entry_point: Some("fs_main"),
                         targets: &[Some(wgpu::ColorTargetState {
-                            format: wgpu::TextureFormat::R8Unorm,
+                            format: wgpu::TextureFormat::Rgba16Float,
                             blend: None,
                             write_mask: wgpu::ColorWrites::ALL,
                         })],
@@ -183,7 +183,12 @@ impl GtaoPipeline {
                 view: gtao_view,
                 resolve_target: None,
                 ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color::WHITE),
+                    load: wgpu::LoadOp::Clear(wgpu::Color {
+                        r: 0.0,
+                        g: 0.0,
+                        b: 0.0,
+                        a: 1.0,
+                    }),
                     store: wgpu::StoreOp::Store,
                 },
             })],

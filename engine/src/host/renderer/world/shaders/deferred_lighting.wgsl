@@ -199,7 +199,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         gtao_texture,
         gtao_texture_sampler,
         uv
-    ).r;
+    ).w;
     if (world_position.w < 0.5) {
         return vec4f(0.0, 0.0, 0.0, 0.0);
     }

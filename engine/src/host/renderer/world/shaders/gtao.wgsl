@@ -15,7 +15,6 @@ const DIRECTIONS: u32 = 8u;
 const STEPS_PER_DIRECTION: u32 = 4u;
 const RADIUS_PIXELS: f32 = 8.0;
 const AO_RADIUS: f32 = 30.0;
-const NORMAL_BIAS: f32 = 0.05;
 
 @vertex
 fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
@@ -50,12 +49,39 @@ fn saturate(x: f32) -> f32 {
 }
 
 // Primitive of the cosine-weighted horizon slice integral.
-// This is the standard arc integral used in GTAO-style implementations.
 fn integrate_arc_cos_weighted(h: f32, n: f32) -> f32 {
     return 0.25 * (-cos(2.0 * h - n) + cos(n) + 2.0 * h * sin(n));
 }
 
-// Evaluate one slice from two horizon angles and the projected normal.
+fn clamped_slice_interval(
+    horizon_angle_bwd: f32,
+    horizon_angle_fwd: f32,
+    slice_tangent: vec3<f32>,
+    view_dir: vec3<f32>,
+    normal: vec3<f32>
+) -> vec4<f32> {
+    let nx = dot(normal, slice_tangent);
+    let ny = dot(normal, view_dir);
+    let proj_n = vec2<f32>(nx, ny);
+    let proj_n_len = length(proj_n);
+
+    if (proj_n_len < 1e-5) {
+        return vec4<f32>(0.0, 0.0, 0.0, 0.0);
+    }
+
+    let n_angle = atan2(ny, nx);
+    let min_angle = n_angle - 0.5 * PI;
+    let max_angle = n_angle + 0.5 * PI;
+    let h1 = clamp(horizon_angle_bwd, min_angle, max_angle);
+    let h2 = clamp(horizon_angle_fwd, min_angle, max_angle);
+
+    if (h2 <= h1) {
+        return vec4<f32>(0.0, 0.0, proj_n_len, 0.0);
+    }
+
+    return vec4<f32>(h1, h2, proj_n_len, n_angle);
+}
+
 fn evaluate_slice_visibility(
     horizon_angle_bwd: f32,
     horizon_angle_fwd: f32,
@@ -63,44 +89,56 @@ fn evaluate_slice_visibility(
     view_dir: vec3<f32>,
     normal: vec3<f32>
 ) -> f32 {
-    // Project normal into the slice plane spanned by {slice_tangent, view_dir}.
-    let nx = dot(normal, slice_tangent);
-    let ny = dot(normal, view_dir);
+    let interval = clamped_slice_interval(
+        horizon_angle_bwd,
+        horizon_angle_fwd,
+        slice_tangent,
+        view_dir,
+        normal,
+    );
+    let h1 = interval.x;
+    let h2 = interval.y;
+    let proj_n_len = interval.z;
+    let n_angle = interval.w;
 
-    let proj_n = vec2<f32>(nx, ny);
-    let proj_n_len = length(proj_n);
-
-    // If normal is nearly perpendicular to the slice plane, this slice contributes very little.
-    if (proj_n_len < 1e-5) {
+    if (proj_n_len < 1e-5 || h2 <= h1) {
         return 0.0;
     }
 
-    // Angle of projected normal inside the slice plane.
-    let n_angle = atan2(ny, nx);
-
-    // AO hemisphere is centered around the surface normal, not the whole circle.
-    // So we only integrate over the semicircle around the projected normal.
-    let min_angle = n_angle - 0.5 * PI;
-    let max_angle = n_angle + 0.5 * PI;
-
-    // Clamp visible interval to that normal-oriented semicircle.
-    let h1 = clamp(horizon_angle_bwd, min_angle, max_angle);
-    let h2 = clamp(horizon_angle_fwd, min_angle, max_angle);
-
-    if (h2 <= h1) {
-        return 0.0;
-    }
-
-    // Cosine-weighted analytic slice integral.
     let arc =
         integrate_arc_cos_weighted(h2, n_angle) -
         integrate_arc_cos_weighted(h1, n_angle);
 
-    // Because we projected the normal into the slice plane, scale by its projected length.
-    // This is the usual GTAO/HBAO-with-cosine-weighting correction.
-    let visibility = proj_n_len * arc;
+    return max(0.0, proj_n_len * arc);
+}
 
-    return max(0.0, visibility);
+fn evaluate_slice_bent_contribution(
+    horizon_angle_bwd: f32,
+    horizon_angle_fwd: f32,
+    slice_tangent: vec3<f32>,
+    view_dir: vec3<f32>,
+    normal: vec3<f32>
+) -> vec3<f32> {
+    let interval = clamped_slice_interval(
+        horizon_angle_bwd,
+        horizon_angle_fwd,
+        slice_tangent,
+        view_dir,
+        normal,
+    );
+    let h1 = interval.x;
+    let h2 = interval.y;
+    let proj_n_len = interval.z;
+
+    if (proj_n_len < 1e-5 || h2 <= h1) {
+        return vec3<f32>(0.0);
+    }
+
+    let slice_bent = vec2<f32>(
+        sin(h2) - sin(h1),
+        cos(h1) - cos(h2),
+    );
+    return (slice_tangent * slice_bent.x + view_dir * slice_bent.y) * proj_n_len;
 }
 
 @fragment
@@ -113,7 +151,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         uv
     );
     if (world_pos_sample.w < 0.5) {
-        return vec4<f32>(1.0, 1.0, 1.0, 1.0);
+        return vec4<f32>(0.0, 0.0, 0.0, 1.0);
     }
 
     let P = world_pos_sample.xyz;
@@ -123,20 +161,19 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         gbuffer_normal_roughness_sampler,
         uv
     );
-    let N = safe_normalize(normal_sample.xyz);
-
     let V = safe_normalize(camera_pos - P);
+    let base_normal = safe_normalize(normal_sample.xyz);
+    let N = select(base_normal, -base_normal, dot(base_normal, V) < 0.0);
 
     let dims = vec2<f32>(textureDimensions(gbuffer_world_position, 0));
     let inv_resolution = 1.0 / dims;
 
     var visibility_accum: f32 = 0.0;
+    var bent_accum = vec3<f32>(0.0);
 
     for (var dir_idx: u32 = 0u; dir_idx < DIRECTIONS; dir_idx += 1u) {
         let azimuth = 2.0 * PI * (f32(dir_idx) / f32(DIRECTIONS));
         let slice_dir_uv = vec2<f32>(cos(azimuth), sin(azimuth));
-
-        // Approximate a world-space slice tangent from the G-buffer.
         let uv_step = slice_dir_uv * inv_resolution;
 
         let neigh_pos_sample = textureSample(
@@ -150,7 +187,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
             slice_tangent = neigh_pos_sample.xyz - P;
         }
 
-        // Keep tangent perpendicular to view direction.
         slice_tangent = slice_tangent - V * dot(slice_tangent, V);
 
         if (dot(slice_tangent, slice_tangent) < 1e-8) {
@@ -162,7 +198,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         slice_tangent = safe_normalize(slice_tangent);
         let slice_plane_normal = safe_normalize(cross(V, slice_tangent));
 
-        // Search the two horizons.
         var horizon_angle_fwd: f32 = -0.5 * PI;
         var horizon_angle_bwd: f32 = -0.5 * PI;
 
@@ -170,7 +205,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
             let step_t = f32(step_idx) / f32(STEPS_PER_DIRECTION);
             let offset = slice_dir_uv * (RADIUS_PIXELS * step_t) * inv_resolution;
 
-            // Forward
             let sample_fwd_uv = clamp(uv + offset, vec2<f32>(0.0), vec2<f32>(1.0));
             let sample_fwd_world = textureSample(
                 gbuffer_world_position,
@@ -180,11 +214,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
             if (sample_fwd_world.w >= 0.5) {
                 let D = sample_fwd_world.xyz - P;
-
-                // Optional near-field radius limit
                 if (dot(D, D) <= AO_RADIUS * AO_RADIUS) {
                     let D_plane = D - slice_plane_normal * dot(D, slice_plane_normal);
-
                     let x = dot(D_plane, slice_tangent);
                     let y = dot(D_plane, V);
 
@@ -195,7 +226,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
                 }
             }
 
-            // Backward
             let sample_bwd_uv = clamp(uv - offset, vec2<f32>(0.0), vec2<f32>(1.0));
             let sample_bwd_world = textureSample(
                 gbuffer_world_position,
@@ -205,10 +235,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
             if (sample_bwd_world.w >= 0.5) {
                 let D = sample_bwd_world.xyz - P;
-
                 if (dot(D, D) <= AO_RADIUS * AO_RADIUS) {
                     let D_plane = D - slice_plane_normal * dot(D, slice_plane_normal);
-
                     let x = dot(D_plane, -slice_tangent);
                     let y = dot(D_plane, V);
 
@@ -227,13 +255,21 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
             V,
             N
         );
+        let slice_bent = evaluate_slice_bent_contribution(
+            horizon_angle_bwd,
+            horizon_angle_fwd,
+            slice_tangent,
+            V,
+            N
+        );
 
         visibility_accum += slice_vis;
+        bent_accum += slice_bent;
     }
 
-    // Average visibility over all slices and convert to occlusion.
     let visibility = visibility_accum / f32(DIRECTIONS);
     let ao = 1.0 - saturate(visibility);
+    let bent_normal = select(N, safe_normalize(bent_accum), dot(bent_accum, bent_accum) > 1e-8);
 
-    return vec4<f32>(ao, ao, ao, 1.0);
+    return vec4<f32>(bent_normal, ao);
 }
