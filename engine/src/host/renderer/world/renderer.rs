@@ -225,7 +225,12 @@ impl DeferredOpaqueRenderer {
         let g_buffer_targets =
             GBufferTargets::new(&wgpu_context.device, &wgpu_context.surface_config);
         let gtao_texture = GtaoTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
-        let gtao_pipeline = GtaoPipeline::new(wgpu_context, shader_cache, &g_buffer_targets);
+        let gtao_pipeline = GtaoPipeline::new(
+            wgpu_context,
+            shader_cache,
+            &layouts.camera,
+            &g_buffer_targets,
+        );
         let g_buffer_pipeline = GBufferPipeline::new(
             wgpu_context,
             shader_cache,
@@ -288,7 +293,8 @@ impl DeferredOpaqueRenderer {
             render_resources,
         );
         if self.gtao_enabled {
-            self.gtao_pipeline.render(encoder, &self.gtao_texture.view);
+            self.gtao_pipeline
+                .render(encoder, &self.gtao_texture.view, camera_bind_group);
         } else {
             let _clear_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("GTAO Disabled Clear Pass"),

@@ -17,6 +17,7 @@ impl GtaoPipeline {
     pub fn new(
         wgpu_context: &WgpuContext,
         shader_cache: &mut ShaderCache,
+        camera_bind_group_layout: &wgpu::BindGroupLayout,
         gbuffer_targets: &GBufferTargets,
     ) -> Self {
         let inputs_bind_group_layout =
@@ -69,7 +70,7 @@ impl GtaoPipeline {
                 .device
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                     label: Some("GTAO Pipeline Layout"),
-                    bind_group_layouts: &[&inputs_bind_group_layout],
+                    bind_group_layouts: &[camera_bind_group_layout, &inputs_bind_group_layout],
                     push_constant_ranges: &[],
                 });
         let shader_module = shader_cache.get(SHADER_GTAO_WGSL.to_string(), wgpu_context);
@@ -170,7 +171,12 @@ impl GtaoPipeline {
             Self::create_inputs_bind_group(device, &self.inputs_bind_group_layout, gbuffer_targets);
     }
 
-    pub fn render(&self, encoder: &mut wgpu::CommandEncoder, gtao_view: &wgpu::TextureView) {
+    pub fn render(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        gtao_view: &wgpu::TextureView,
+        camera_bind_group: &wgpu::BindGroup,
+    ) {
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("GTAO Pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -187,7 +193,8 @@ impl GtaoPipeline {
         });
 
         render_pass.set_pipeline(&self.render_pipeline);
-        render_pass.set_bind_group(0u32, &self.inputs_bind_group, &[]);
+        render_pass.set_bind_group(0u32, camera_bind_group, &[]);
+        render_pass.set_bind_group(1u32, &self.inputs_bind_group, &[]);
         render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
         render_pass.draw_indexed(0..INDICES.len() as u32, 0, 0..1);
     }
