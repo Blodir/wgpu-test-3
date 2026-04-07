@@ -220,6 +220,7 @@ impl WorldPipelines {
 
 struct DeferredOpaqueRenderer {
     gtao_enabled: bool,
+    ssgi_enabled: bool,
     g_buffer_targets: GBufferTargets,
     gtao_texture: GtaoTexture,
     gtao_pipeline: GtaoPipeline,
@@ -234,6 +235,7 @@ impl DeferredOpaqueRenderer {
         layouts: &Layouts,
         attachments: &WorldAttachments,
         gtao_enabled: bool,
+        ssgi_enabled: bool,
     ) -> Self {
         let g_buffer_targets =
             GBufferTargets::new(&wgpu_context.device, &wgpu_context.surface_config);
@@ -271,6 +273,7 @@ impl DeferredOpaqueRenderer {
         );
         Self {
             gtao_enabled,
+            ssgi_enabled,
             g_buffer_targets,
             gtao_texture,
             gtao_pipeline,
@@ -348,8 +351,12 @@ impl DeferredOpaqueRenderer {
             camera_bind_group,
             lights_bind_group,
         );
-        self.ssgi_pipeline
-            .render(encoder, hdr_color_view, camera_bind_group);
+        self.ssgi_pipeline.render(
+            encoder,
+            hdr_color_view,
+            camera_bind_group,
+            self.ssgi_enabled,
+        );
     }
 
     fn resize(&mut self, wgpu_context: &WgpuContext, attachments: &WorldAttachments) {
@@ -431,9 +438,16 @@ impl WorldRenderer {
     ) -> OpaqueRenderer {
         match options.opaque_render_path {
             OpaqueRenderPath::Forward => OpaqueRenderer::Forward,
-            OpaqueRenderPath::Deferred { gtao } => OpaqueRenderer::Deferred(
-                DeferredOpaqueRenderer::new(wgpu_context, shader_cache, layouts, attachments, gtao),
-            ),
+            OpaqueRenderPath::Deferred { gtao, ssgi } => {
+                OpaqueRenderer::Deferred(DeferredOpaqueRenderer::new(
+                    wgpu_context,
+                    shader_cache,
+                    layouts,
+                    attachments,
+                    gtao,
+                    ssgi,
+                ))
+            }
             OpaqueRenderPath::CompactDeferred => OpaqueRenderer::CompactDeferred(
                 CompactDeferredOpaqueRenderer::new(wgpu_context, shader_cache, layouts),
             ),

@@ -1128,12 +1128,18 @@ impl UiTrait for Game {
                     .changed();
 
                 let mut deferred_gtao = match renderer_options.opaque_render_path {
-                    OpaqueRenderPath::Deferred { gtao } => gtao,
+                    OpaqueRenderPath::Deferred { gtao, .. } => gtao,
+                    _ => true,
+                };
+                let mut deferred_ssgi = match renderer_options.opaque_render_path {
+                    OpaqueRenderPath::Deferred { ssgi, .. } => ssgi,
                     _ => true,
                 };
                 if opaque_path_kind == 2 {
                     render_settings_changed |=
                         ui.checkbox(&mut deferred_gtao, "Enable GTAO").changed();
+                    render_settings_changed |=
+                        ui.checkbox(&mut deferred_ssgi, "Enable SSGI").changed();
                 }
 
                 renderer_options = RendererOptions {
@@ -1142,6 +1148,7 @@ impl UiTrait for Game {
                         1 => OpaqueRenderPath::CompactDeferred,
                         2 => OpaqueRenderPath::Deferred {
                             gtao: deferred_gtao,
+                            ssgi: deferred_ssgi,
                         },
                         _ => OpaqueRenderPath::Forward,
                     },

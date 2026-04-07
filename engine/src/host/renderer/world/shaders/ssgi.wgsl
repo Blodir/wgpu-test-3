@@ -31,6 +31,14 @@ struct VertexOutput {
     @location(0) tex_coords: vec2<f32>,
 }
 
+fn sample_final_color(uv: vec2<f32>) -> vec4<f32> {
+    return textureSample(
+        final_color_texture,
+        final_color_texture_sampler,
+        uv
+    );
+}
+
 fn saturate(x: f32) -> f32 {
     return clamp(x, 0.0, 1.0);
 }
@@ -91,6 +99,11 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
 }
 
 @fragment
+fn fs_passthrough(in: VertexOutput) -> @location(0) vec4<f32> {
+    return sample_final_color(in.tex_coords);
+}
+
+@fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let uv = in.tex_coords;
 
@@ -119,11 +132,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         gbuffer_world_position_sampler,
         uv
     );
-    let final_color = textureSample(
-        final_color_texture,
-        final_color_texture_sampler,
-        uv
-    );
+    let final_color = sample_final_color(uv);
     let gi_source_center = textureSample(
         gi_source_texture,
         gi_source_texture_sampler,
