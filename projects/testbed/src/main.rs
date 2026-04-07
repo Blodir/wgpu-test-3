@@ -12,7 +12,9 @@ use engine::{
         },
         sim::InputEvent,
     },
-    host::renderer::{OpaqueRenderPath, RenderCommand, RendererOptions, SsgiOptions, UiFrameInfo},
+    host::renderer::{
+        GtaoOptions, OpaqueRenderPath, RenderCommand, RendererOptions, SsgiOptions, UiFrameInfo,
+    },
     host::world::sun_shadow::SUN_SHADOW_MAX_CASCADE_COUNT,
     run,
 };
@@ -1129,15 +1131,45 @@ impl UiTrait for Game {
 
                 let mut deferred_gtao = match renderer_options.opaque_render_path {
                     OpaqueRenderPath::Deferred { gtao, .. } => gtao,
-                    _ => true,
+                    _ => Some(GtaoOptions::default()),
                 };
                 let mut deferred_ssgi = match renderer_options.opaque_render_path {
                     OpaqueRenderPath::Deferred { ssgi, .. } => ssgi,
                     _ => Some(SsgiOptions::default()),
                 };
                 if opaque_path_kind == 2 {
-                    render_settings_changed |=
-                        ui.checkbox(&mut deferred_gtao, "Enable GTAO").changed();
+                    let mut deferred_gtao_enabled = deferred_gtao.is_some();
+                    render_settings_changed |= ui
+                        .checkbox(&mut deferred_gtao_enabled, "Enable GTAO")
+                        .changed();
+                    if deferred_gtao_enabled {
+                        let mut gtao_options = deferred_gtao.unwrap_or_default();
+                        render_settings_changed |= ui
+                            .add(
+                                egui::Slider::new(&mut gtao_options.radius_pixels, 1.0..=64.0)
+                                    .text("GTAO Radius Pixels")
+                                    .clamping(egui::SliderClamping::Always),
+                            )
+                            .changed();
+                        render_settings_changed |= ui
+                            .add(
+                                egui::Slider::new(&mut gtao_options.ao_radius, 0.05..=100.0)
+                                    .text("GTAO World Radius")
+                                    .logarithmic(true)
+                                    .clamping(egui::SliderClamping::Always),
+                            )
+                            .changed();
+                        render_settings_changed |= ui
+                            .add(
+                                egui::Slider::new(&mut gtao_options.power, 0.1..=8.0)
+                                    .text("GTAO Power")
+                                    .clamping(egui::SliderClamping::Always),
+                            )
+                            .changed();
+                        deferred_gtao = Some(gtao_options);
+                    } else {
+                        deferred_gtao = None;
+                    }
                     let mut deferred_ssgi_enabled = deferred_ssgi.is_some();
                     render_settings_changed |= ui
                         .checkbox(&mut deferred_ssgi_enabled, "Enable SSGI")

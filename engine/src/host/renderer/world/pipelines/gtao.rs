@@ -1,7 +1,9 @@
 use wgpu::util::DeviceExt;
 
 use crate::global_paths::SHADER_GTAO_WGSL;
+use crate::host::renderer::GtaoOptions;
 use crate::host::world::attachments::deferred::GBufferTargets;
+use crate::host::world::bindgroups::gtao_settings::{GtaoSettings, GtaoSettingsBinding};
 use crate::host::{shader_cache::ShaderCache, wgpu_context::WgpuContext};
 
 const INDICES: &[u16] = &[0, 2, 1, 3, 2, 0];
@@ -11,6 +13,8 @@ pub struct GtaoPipeline {
     index_buffer: wgpu::Buffer,
     inputs_bind_group_layout: wgpu::BindGroupLayout,
     inputs_bind_group: wgpu::BindGroup,
+    settings_bind_group_layout: wgpu::BindGroupLayout,
+    settings_bind_group: GtaoSettingsBinding,
 }
 
 impl GtaoPipeline {
@@ -19,6 +23,7 @@ impl GtaoPipeline {
         shader_cache: &mut ShaderCache,
         camera_bind_group_layout: &wgpu::BindGroupLayout,
         gbuffer_targets: &GBufferTargets,
+        gtao_options: &GtaoOptions,
     ) -> Self {
         let inputs_bind_group_layout =
             wgpu_context
@@ -65,12 +70,24 @@ impl GtaoPipeline {
             &inputs_bind_group_layout,
             gbuffer_targets,
         );
+        let settings_bind_group_layout = wgpu_context
+            .device
+            .create_bind_group_layout(&GtaoSettings::desc());
+        let settings_bind_group = GtaoSettings::upload(
+            &wgpu_context.device,
+            &settings_bind_group_layout,
+            gtao_options,
+        );
         let render_pipeline_layout =
             wgpu_context
                 .device
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                     label: Some("GTAO Pipeline Layout"),
-                    bind_group_layouts: &[camera_bind_group_layout, &inputs_bind_group_layout],
+                    bind_group_layouts: &[
+                        camera_bind_group_layout,
+                        &inputs_bind_group_layout,
+                        &settings_bind_group_layout,
+                    ],
                     push_constant_ranges: &[],
                 });
         let shader_module = shader_cache.get(SHADER_GTAO_WGSL.to_string(), wgpu_context);
@@ -122,6 +139,8 @@ impl GtaoPipeline {
             index_buffer,
             inputs_bind_group_layout,
             inputs_bind_group,
+            settings_bind_group_layout,
+            settings_bind_group,
         }
     }
 
@@ -162,13 +181,16 @@ impl GtaoPipeline {
         })
     }
 
-    pub fn update_input_bindgroup(
+    pub fn update_input_bindgroups(
         &mut self,
         device: &wgpu::Device,
         gbuffer_targets: &GBufferTargets,
+        gtao_options: &GtaoOptions,
     ) {
         self.inputs_bind_group =
             Self::create_inputs_bind_group(device, &self.inputs_bind_group_layout, gbuffer_targets);
+        self.settings_bind_group =
+            GtaoSettings::upload(device, &self.settings_bind_group_layout, gtao_options);
     }
 
     pub fn render(
@@ -200,6 +222,7 @@ impl GtaoPipeline {
         render_pass.set_pipeline(&self.render_pipeline);
         render_pass.set_bind_group(0u32, camera_bind_group, &[]);
         render_pass.set_bind_group(1u32, &self.inputs_bind_group, &[]);
+        render_pass.set_bind_group(2u32, &self.settings_bind_group.bind_group, &[]);
         render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
         render_pass.draw_indexed(0..INDICES.len() as u32, 0, 0..1);
     }

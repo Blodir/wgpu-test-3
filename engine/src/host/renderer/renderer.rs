@@ -17,6 +17,22 @@ use crate::var_snapshot::CameraSnapshotPair;
 use crate::workers::anim_pose::PoseJobResult;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+pub struct GtaoOptions {
+    pub radius_pixels: f32,
+    pub ao_radius: f32,
+    pub power: f32,
+}
+impl Default for GtaoOptions {
+    fn default() -> Self {
+        Self {
+            radius_pixels: 8.0,
+            ao_radius: 30.0,
+            power: 1.0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SsgiOptions {
     pub radius_pixels: f32,
     pub world_radius: f32,
@@ -39,7 +55,7 @@ impl Default for SsgiOptions {
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum OpaqueRenderPath {
     Deferred {
-        gtao: bool,
+        gtao: Option<GtaoOptions>,
         ssgi: Option<SsgiOptions>,
     },
     CompactDeferred,
@@ -63,7 +79,7 @@ impl RendererOptions {
         // Conservative heuristic based on MRT availability for deferred paths.
         let opaque_render_path = if limits.max_color_attachments >= 6 {
             OpaqueRenderPath::Deferred {
-                gtao: true,
+                gtao: Some(GtaoOptions::default()),
                 ssgi: Some(SsgiOptions::default()),
             }
         } else if limits.max_color_attachments >= 4 {

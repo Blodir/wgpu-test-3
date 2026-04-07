@@ -3,6 +3,7 @@ pub mod camera;
 pub mod g_buffer;
 pub mod gi_source;
 pub mod gtao;
+pub mod gtao_settings;
 pub mod lights;
 pub mod material;
 pub mod post_processing;

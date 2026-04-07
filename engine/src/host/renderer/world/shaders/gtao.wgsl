@@ -4,6 +4,7 @@
 @group(1) @binding(1) var gbuffer_normal_roughness_sampler: sampler;
 @group(1) @binding(2) var gbuffer_world_position: texture_2d<f32>;
 @group(1) @binding(3) var gbuffer_world_position_sampler: sampler;
+@group(2) @binding(0) var<uniform> gtao_settings: vec4<f32>;
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
@@ -13,8 +14,6 @@ struct VertexOutput {
 const PI: f32 = 3.14159265358979323846;
 const DIRECTIONS: u32 = 8u;
 const STEPS_PER_DIRECTION: u32 = 4u;
-const RADIUS_PIXELS: f32 = 8.0;
-const AO_RADIUS: f32 = 30.0;
 
 @vertex
 fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
@@ -167,6 +166,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     let dims = vec2<f32>(textureDimensions(gbuffer_world_position, 0));
     let inv_resolution = 1.0 / dims;
+    let radius_pixels = gtao_settings.x;
+    let ao_radius = gtao_settings.y;
+    let gtao_power = gtao_settings.z;
 
     var visibility_accum: f32 = 0.0;
     var bent_accum = vec3<f32>(0.0);
@@ -203,7 +205,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
         for (var step_idx: u32 = 1u; step_idx <= STEPS_PER_DIRECTION; step_idx += 1u) {
             let step_t = f32(step_idx) / f32(STEPS_PER_DIRECTION);
-            let offset = slice_dir_uv * (RADIUS_PIXELS * step_t) * inv_resolution;
+            let offset = slice_dir_uv * (radius_pixels * step_t) * inv_resolution;
 
             let sample_fwd_uv = clamp(uv + offset, vec2<f32>(0.0), vec2<f32>(1.0));
             let sample_fwd_world = textureSample(
@@ -214,7 +216,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
             if (sample_fwd_world.w >= 0.5) {
                 let D = sample_fwd_world.xyz - P;
-                if (dot(D, D) <= AO_RADIUS * AO_RADIUS) {
+                if (dot(D, D) <= ao_radius * ao_radius) {
                     let D_plane = D - slice_plane_normal * dot(D, slice_plane_normal);
                     let x = dot(D_plane, slice_tangent);
                     let y = dot(D_plane, V);
@@ -235,7 +237,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
             if (sample_bwd_world.w >= 0.5) {
                 let D = sample_bwd_world.xyz - P;
-                if (dot(D, D) <= AO_RADIUS * AO_RADIUS) {
+                if (dot(D, D) <= ao_radius * ao_radius) {
                     let D_plane = D - slice_plane_normal * dot(D, slice_plane_normal);
                     let x = dot(D_plane, -slice_tangent);
                     let y = dot(D_plane, V);
@@ -268,7 +270,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     }
 
     let visibility = visibility_accum / f32(DIRECTIONS);
-    let ao = 1.0 - saturate(visibility);
+    let raw_ao = 1.0 - saturate(visibility);
+    let ao = pow(max(raw_ao, 1e-4), gtao_power);
     let bent_normal = select(N, safe_normalize(bent_accum), dot(bent_accum, bent_accum) > 1e-8);
 
     return vec4<f32>(bent_normal, ao);

@@ -29,7 +29,7 @@ use super::prepare::sun_shadow::prepare_sun_shadow;
 
 use crate::host::assets::io::asset_formats::materialfile;
 use crate::host::assets::store::{PlaceholderTextureIds, RenderAssetStore, TextureRenderId};
-use crate::host::renderer::{OpaqueRenderPath, RendererOptions, SsgiOptions};
+use crate::host::renderer::{GtaoOptions, OpaqueRenderPath, RendererOptions, SsgiOptions};
 use crate::host::wgpu_context::WgpuContext;
 use crate::host::world::buffers::static_instance::StaticInstances;
 use crate::host::world::pipelines::static_pbr::StaticPbrPipeline;
@@ -226,7 +226,7 @@ impl WorldPipelines {
 }
 
 struct DeferredOpaqueRenderer {
-    gtao_enabled: bool,
+    gtao_options: Option<GtaoOptions>,
     ssgi_options: Option<SsgiOptions>,
     g_buffer_targets: GBufferTargets,
     gtao_texture: GtaoTexture,
@@ -241,7 +241,7 @@ impl DeferredOpaqueRenderer {
         shader_cache: &mut ShaderCache,
         layouts: &Layouts,
         attachments: &WorldAttachments,
-        gtao_enabled: bool,
+        gtao_options: Option<GtaoOptions>,
         ssgi_options: Option<SsgiOptions>,
     ) -> Self {
         let g_buffer_targets =
@@ -252,6 +252,7 @@ impl DeferredOpaqueRenderer {
             shader_cache,
             &layouts.camera,
             &g_buffer_targets,
+            &gtao_options.unwrap_or_default(),
         );
         let g_buffer_pipeline = GBufferPipeline::new(
             wgpu_context,
@@ -281,7 +282,7 @@ impl DeferredOpaqueRenderer {
             &ssgi_options.unwrap_or_default(),
         );
         Self {
-            gtao_enabled,
+            gtao_options,
             ssgi_options,
             g_buffer_targets,
             gtao_texture,
@@ -330,7 +331,7 @@ impl DeferredOpaqueRenderer {
             lights_bind_group,
             render_resources,
         );
-        if self.gtao_enabled {
+        if self.gtao_options.is_some() {
             self.gtao_pipeline
                 .render(encoder, &self.gtao_texture.view, camera_bind_group);
         } else {
@@ -374,8 +375,11 @@ impl DeferredOpaqueRenderer {
         self.g_buffer_targets =
             GBufferTargets::new(&wgpu_context.device, &wgpu_context.surface_config);
         self.gtao_texture = GtaoTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
-        self.gtao_pipeline
-            .update_input_bindgroup(&wgpu_context.device, &self.g_buffer_targets);
+        self.gtao_pipeline.update_input_bindgroups(
+            &wgpu_context.device,
+            &self.g_buffer_targets,
+            &self.gtao_options.unwrap_or_default(),
+        );
         self.deferred_lighting_pipeline.update_input_bindgroup(
             &wgpu_context.device,
             &self.g_buffer_targets,
