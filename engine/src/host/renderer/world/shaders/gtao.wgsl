@@ -25,10 +25,10 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
         vec2(-1.0, 1.0)
     );
     var tex_coords = array(
-        vec2(1.0, 1.0),
         vec2(1.0, 0.0),
-        vec2(0.0, 0.0),
-        vec2(0.0, 1.0)
+        vec2(1.0, 1.0),
+        vec2(0.0, 1.0),
+        vec2(0.0, 0.0)
     );
     out.clip_position = vec4<f32>(pos[vertex_index], 0.0, 1.0);
     out.tex_coords = tex_coords[vertex_index];
@@ -37,8 +37,7 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    // G-buffer sampling requires Y flip in fullscreen passes.
-    let uv = vec2f(in.tex_coords.x, 1.0 - in.tex_coords.y);
+    let uv = in.tex_coords;
     let world_pos = textureSample(
         gbuffer_world_position,
         gbuffer_world_position_sampler,
