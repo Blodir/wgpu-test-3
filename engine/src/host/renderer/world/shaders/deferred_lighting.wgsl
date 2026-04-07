@@ -39,6 +39,11 @@ struct VertexOutput {
     @location(0) tex_coords: vec2<f32>,
 }
 
+struct FragmentOutput {
+    @location(0) final_color: vec4<f32>,
+    @location(1) gi_source: vec4<f32>,
+}
+
 const PI: f32 = 3.1415927;
 const MAX_REFLECTION_LOD: f32 = 4.0;
 const MAX_POINT_LIGHTS: u32 = 64u;
@@ -173,7 +178,7 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
 }
 
 @fragment
-fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+fn fs_main(in: VertexOutput) -> FragmentOutput {
     let uv = vec2f(in.tex_coords.x, 1.0 - in.tex_coords.y);
     let surface_color_ao = textureSample(
         gbuffer_albedo_ao,
@@ -201,7 +206,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         uv
     ).w;
     if (world_position.w < 0.5) {
-        return vec4f(0.0, 0.0, 0.0, 0.0);
+        return FragmentOutput(vec4f(0.0, 0.0, 0.0, 0.0), vec4f(0.0, 0.0, 0.0, 0.0));
     }
 
     let N = normalize(normal_roughness.xyz);
@@ -216,7 +221,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let prefiltered_color = textureSampleLevel(environment_texture, environment_texture_sampler, R, surface_roughness * MAX_REFLECTION_LOD).rgb;
     let F0 = mix(vec3f(0.04), surface_color, surface_metallic);
 
-    var Lo = vec3f(0.0);
+    var direct_diffuse = vec3f(0.0);
+    var direct_specular = vec3f(0.0);
     {
         let L = normalize(-light_dir);
         let sun_shadow = sample_sun_shadow(world_position.xyz, N, L);
@@ -235,7 +241,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
         let k_d = (vec3f(1.0) - F) * (1.0 - surface_metallic);
         let NdotL = max(dot(N, L), 0.0);
-        Lo += (k_d * surface_color / PI + specular) * radiance * NdotL * sun_shadow;
+        direct_diffuse += k_d * surface_color / PI * radiance * NdotL * sun_shadow;
+        direct_specular += specular * radiance * NdotL * sun_shadow;
     }
 
     let clamped_point_light_count = min(point_light_count.x, MAX_POINT_LIGHTS);
@@ -266,7 +273,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
         let k_d = (vec3f(1.0) - F) * (1.0 - surface_metallic);
         let NdotL = max(dot(N, L), 0.0);
-        Lo += (k_d * surface_color / PI + specular) * radiance * NdotL;
+        direct_diffuse += k_d * surface_color / PI * radiance * NdotL;
+        direct_specular += specular * radiance * NdotL;
     }
 
     let F_env = fresnel_schlick_roughness(max(dot(N, V), 0.0), F0, surface_roughness);
@@ -289,6 +297,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let final_ao = ao * gtao;
     let ambient = (k_d2 * diffuse + specular_env) * final_ao * environment_map_intensity;
 
-    let col = ambient + Lo + surface_emissive;
-    return vec4f(col, 1.0);
+    let final_color = vec4f(ambient + direct_diffuse + direct_specular + surface_emissive, 1.0);
+    let gi_source = vec4f(direct_diffuse + surface_emissive, 1.0);
+    return FragmentOutput(final_color, gi_source);
 }

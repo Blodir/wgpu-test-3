@@ -89,6 +89,7 @@ struct WorldAttachments {
     skybox_output: SkyboxOutputTexture,
     depth_texture: DepthTexture,
     hdr_color: HdrColorTexture,
+    gi_source: HdrColorTexture,
     sun_shadow: SunShadowTexture,
 }
 impl WorldAttachments {
@@ -100,6 +101,7 @@ impl WorldAttachments {
             ),
             depth_texture: DepthTexture::new(&wgpu_context.device, &wgpu_context.surface_config),
             hdr_color: HdrColorTexture::new(&wgpu_context.device, &wgpu_context.surface_config),
+            gi_source: HdrColorTexture::new(&wgpu_context.device, &wgpu_context.surface_config),
             sun_shadow: SunShadowTexture::new(&wgpu_context.device),
         }
     }
@@ -109,6 +111,7 @@ impl WorldAttachments {
             SkyboxOutputTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
         self.depth_texture = DepthTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
         self.hdr_color = HdrColorTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
+        self.gi_source = HdrColorTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
     }
 }
 
@@ -266,6 +269,7 @@ impl DeferredOpaqueRenderer {
         encoder: &mut wgpu::CommandEncoder,
         depth_texture_view: &wgpu::TextureView,
         hdr_color_view: &wgpu::TextureView,
+        gi_source_view: &wgpu::TextureView,
         camera_bind_group: &wgpu::BindGroup,
         lights_bind_group: &wgpu::BindGroup,
         bones_bind_group: &wgpu::BindGroup,
@@ -319,6 +323,7 @@ impl DeferredOpaqueRenderer {
         self.deferred_lighting_pipeline.render(
             encoder,
             hdr_color_view,
+            gi_source_view,
             camera_bind_group,
             lights_bind_group,
         );
@@ -357,6 +362,7 @@ impl CompactDeferredOpaqueRenderer {
         _encoder: &mut wgpu::CommandEncoder,
         _depth_texture_view: &wgpu::TextureView,
         _hdr_color_view: &wgpu::TextureView,
+        _gi_source_view: &wgpu::TextureView,
         _camera_bind_group: &wgpu::BindGroup,
         _lights_bind_group: &wgpu::BindGroup,
         _bones_bind_group: &wgpu::BindGroup,
@@ -595,6 +601,7 @@ impl WorldRenderer {
                 encoder,
                 &self.attachments.depth_texture.view,
                 &self.attachments.hdr_color.view,
+                &self.attachments.gi_source.view,
                 &self.bind_groups.camera.bind_group,
                 &self.bind_groups.lights.bind_group,
                 &self.bind_groups.bones.bind_group,
@@ -608,6 +615,7 @@ impl WorldRenderer {
                 encoder,
                 &self.attachments.depth_texture.view,
                 &self.attachments.hdr_color.view,
+                &self.attachments.gi_source.view,
                 &self.bind_groups.camera.bind_group,
                 &self.bind_groups.lights.bind_group,
                 &self.bind_groups.bones.bind_group,
