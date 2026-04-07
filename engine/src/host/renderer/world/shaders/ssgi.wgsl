@@ -16,10 +16,12 @@
 @group(3) @binding(1) var final_color_texture_sampler: sampler;
 @group(3) @binding(2) var gi_source_texture: texture_2d<f32>;
 @group(3) @binding(3) var gi_source_texture_sampler: sampler;
+
 struct SsgiSettings {
     params0: vec4<f32>,
     params1: vec4<f32>,
 }
+
 @group(3) @binding(4) var<uniform> ssgi_settings: SsgiSettings;
 @group(3) @binding(5) var ssgi_indirect_texture: texture_2d<f32>;
 @group(3) @binding(6) var ssgi_indirect_texture_sampler: sampler;
@@ -72,6 +74,91 @@ fn tangent_basis_from_normal(n: vec3<f32>) -> mat3x3<f32> {
     let t = safe_normalize(cross(up, n));
     let b = cross(n, t);
     return mat3x3<f32>(t, b, n);
+}
+
+fn sample_indirect_diffuse_bilateral(uv: vec2<f32>) -> vec3<f32> {
+    let center_world_position = textureSample(
+        gbuffer_world_position,
+        gbuffer_world_position_sampler,
+        uv
+    );
+    if (center_world_position.w < 0.5) {
+        return vec3<f32>(0.0);
+    }
+
+    let center_normal = safe_normalize(textureSample(
+        gbuffer_normal_roughness,
+        gbuffer_normal_roughness_sampler,
+        uv
+    ).xyz);
+    let indirect_inv_resolution = 1.0 / vec2<f32>(textureDimensions(ssgi_indirect_texture, 0));
+
+    let offsets = array(
+        vec2<f32>(0.0, 0.0),
+        vec2<f32>(1.0, 0.0),
+        vec2<f32>(-1.0, 0.0),
+        vec2<f32>(0.0, 1.0),
+        vec2<f32>(0.0, -1.0),
+        vec2<f32>(1.0, 1.0),
+        vec2<f32>(-1.0, 1.0),
+        vec2<f32>(1.0, -1.0),
+        vec2<f32>(-1.0, -1.0),
+    );
+    let spatial_weights = array(
+        0.22702703,
+        0.19459459,
+        0.19459459,
+        0.19459459,
+        0.19459459,
+        0.12162162,
+        0.12162162,
+        0.12162162,
+        0.12162162,
+    );
+
+    var indirect_sum = vec3<f32>(0.0);
+    var weight_sum = 0.0;
+
+    for (var i: u32 = 0u; i < 9u; i += 1u) {
+        let tap_uv = clamp(
+            uv + offsets[i] * indirect_inv_resolution,
+            vec2<f32>(0.0),
+            vec2<f32>(1.0),
+        );
+        let tap_world_position = textureSample(
+            gbuffer_world_position,
+            gbuffer_world_position_sampler,
+            tap_uv
+        );
+        if (tap_world_position.w < 0.5) {
+            continue;
+        }
+
+        let tap_normal = safe_normalize(textureSample(
+            gbuffer_normal_roughness,
+            gbuffer_normal_roughness_sampler,
+            tap_uv
+        ).xyz);
+        let tap_indirect = textureSample(
+            ssgi_indirect_texture,
+            ssgi_indirect_texture_sampler,
+            tap_uv
+        ).rgb;
+
+        let normal_weight = pow(saturate(dot(center_normal, tap_normal)), 16.0);
+        let position_delta = length(tap_world_position.xyz - center_world_position.xyz);
+        let depth_weight = exp(-position_delta * ssgi_settings.params0.w);
+        let weight = spatial_weights[i] * normal_weight * depth_weight;
+
+        indirect_sum += tap_indirect * weight;
+        weight_sum += weight;
+    }
+
+    if (weight_sum > 1e-5) {
+        return indirect_sum / weight_sum;
+    }
+
+    return vec3<f32>(0.0);
 }
 
 @vertex
@@ -244,10 +331,6 @@ fn fs_trace(in: VertexOutput) -> @location(0) vec4<f32> {
 fn fs_composite(in: VertexOutput) -> @location(0) vec4<f32> {
     let uv = in.tex_coords;
     let final_color = sample_final_color(uv);
-    let indirect_diffuse = textureSample(
-        ssgi_indirect_texture,
-        ssgi_indirect_texture_sampler,
-        uv
-    ).rgb;
+    let indirect_diffuse = sample_indirect_diffuse_bilateral(uv);
     return vec4<f32>(final_color.rgb + indirect_diffuse, final_color.a);
 }

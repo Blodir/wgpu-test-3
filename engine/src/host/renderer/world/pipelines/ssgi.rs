@@ -138,6 +138,7 @@ impl SsgiPipeline {
             &resolve_inputs_bind_group_layout,
             final_color_texture,
             ssgi_indirect_texture,
+            ssgi_options,
         );
         let empty_bind_group_layout =
             wgpu_context
@@ -161,7 +162,7 @@ impl SsgiPipeline {
                     bind_group_layouts: &[
                         &empty_bind_group_layout,
                         &empty_bind_group_layout,
-                        &empty_bind_group_layout,
+                        &gbuffer_inputs_bind_group_layout,
                         &resolve_inputs_bind_group_layout,
                     ],
                     push_constant_ranges: &[],
@@ -234,6 +235,7 @@ impl SsgiPipeline {
             &self.resolve_inputs_bind_group_layout,
             final_color_texture,
             ssgi_indirect_texture,
+            ssgi_options,
         );
     }
 
@@ -289,7 +291,7 @@ impl SsgiPipeline {
         composite_pass.set_pipeline(&self.composite_pipeline);
         composite_pass.set_bind_group(0u32, &self.empty_bind_group, &[]);
         composite_pass.set_bind_group(1u32, &self.empty_bind_group, &[]);
-        composite_pass.set_bind_group(2u32, &self.empty_bind_group, &[]);
+        composite_pass.set_bind_group(2u32, &self.gbuffer_inputs_bind_group.bind_group, &[]);
         composite_pass.set_bind_group(3u32, &self.resolve_inputs_bind_group.bind_group, &[]);
         composite_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
         composite_pass.draw_indexed(0..INDICES.len() as u32, 0, 0..1);
