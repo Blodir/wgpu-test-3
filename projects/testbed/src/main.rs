@@ -43,10 +43,11 @@ const ENV_MAP_CHOICES: [(&str, &str, &str); 3] = [
     ),
 ];
 
-const MESH_CHOICES: [(&str, &str, f32, bool); 5] = [
+const MESH_CHOICES: [(&str, &str, f32, bool); 6] = [
     ("Fox", "assets/local/Fox/Fox.json", 1.0, true),
     ("Sponza", "assets/local/Sponza/Sponza.json", 10.0, false),
     ("Lantern", "assets/local/Lantern/Lantern.json", 10.0, false),
+    ("scene", "assets/local/scene/scene.json", 1.0, false),
     (
         "MetalRoughSpheres",
         "assets/local/MetalRoughSpheres/MetalRoughSpheres.json",

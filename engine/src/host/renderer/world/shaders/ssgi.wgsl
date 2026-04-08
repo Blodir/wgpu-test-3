@@ -218,7 +218,7 @@ fn fs_trace(in: VertexOutput) -> @location(0) vec4<f32> {
     let N = safe_normalize(normal_roughness.xyz);
     let V = safe_normalize(camera_position - P);
 
-    let bent_normal = safe_normalize(gtao.xyz * 2.0 - 1.0);
+    let bent_normal = gtao.xyz;
     let ao = saturate(gtao.w);
 
     let base_color = albedo_ao.rgb;
