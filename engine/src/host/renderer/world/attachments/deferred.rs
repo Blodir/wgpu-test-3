@@ -69,11 +69,20 @@ pub struct GtaoTexture {
 
 impl GtaoTexture {
     pub fn new(device: &wgpu::Device, surface_config: &wgpu::SurfaceConfiguration) -> Self {
+        Self::new_scaled(device, surface_config, 2, "Half Resolution GTAO Texture")
+    }
+
+    fn new_scaled(
+        device: &wgpu::Device,
+        surface_config: &wgpu::SurfaceConfiguration,
+        scale_divisor: u32,
+        label: &'static str,
+    ) -> Self {
         let texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("GTAO Texture"),
+            label: Some(label),
             size: wgpu::Extent3d {
-                width: surface_config.width,
-                height: surface_config.height,
+                width: (surface_config.width / scale_divisor).max(1),
+                height: (surface_config.height / scale_divisor).max(1),
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
@@ -84,7 +93,11 @@ impl GtaoTexture {
             view_formats: &[],
         });
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor::default());
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            ..Default::default()
+        });
 
         Self {
             _texture: texture,
