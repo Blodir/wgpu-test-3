@@ -8,6 +8,7 @@ use crate::host::wgpu_context::WgpuContext;
 pub struct StaticInstance {
     pub m4: [[f32; 4]; 4],
     pub itr: [[f32; 3]; 3],
+    pub prev_m4: [[f32; 4]; 4],
 }
 
 impl Default for StaticInstance {
@@ -15,6 +16,7 @@ impl Default for StaticInstance {
         Self {
             m4: Mat4::IDENTITY.to_cols_array_2d(),
             itr: Mat3::IDENTITY.to_cols_array_2d(),
+            prev_m4: Mat4::IDENTITY.to_cols_array_2d(),
         }
     }
 }
@@ -26,7 +28,11 @@ impl StaticInstance {
             .transpose()
             .to_cols_array_2d();
 
-        StaticInstance { m4, itr }
+        StaticInstance {
+            m4,
+            itr,
+            prev_m4: m4,
+        }
     }
 }
 
@@ -82,6 +88,7 @@ impl StaticInstance {
         Self {
             m4: mat4.to_cols_array_2d(),
             itr: itr.to_cols_array_2d(),
+            prev_m4: mat4.to_cols_array_2d(),
         }
     }
 }
@@ -96,7 +103,7 @@ impl StaticInstances {
                 .device
                 .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                     label: Some("Instance buffer"),
-                    contents: bytemuck::cast_slice(&vec![Mat4::IDENTITY]),
+                    contents: bytemuck::cast_slice(&[StaticInstance::default()]),
                     usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
                 });
         Self {

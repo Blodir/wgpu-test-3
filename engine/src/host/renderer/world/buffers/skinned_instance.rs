@@ -9,6 +9,8 @@ pub struct SkinnedInstance {
     pub m4: [[f32; 4]; 4],
     pub itr: [[f32; 3]; 3],
     pub palette_offset: u32,
+    pub prev_m4: [[f32; 4]; 4],
+    pub prev_palette_offset: u32,
 }
 
 impl Default for SkinnedInstance {
@@ -17,6 +19,8 @@ impl Default for SkinnedInstance {
             m4: Mat4::IDENTITY.to_cols_array_2d(),
             itr: Mat3::IDENTITY.to_cols_array_2d(),
             palette_offset: 0,
+            prev_m4: Mat4::IDENTITY.to_cols_array_2d(),
+            prev_palette_offset: 0,
         }
     }
 }
@@ -32,6 +36,8 @@ impl SkinnedInstance {
             m4,
             itr,
             palette_offset,
+            prev_m4: m4,
+            prev_palette_offset: palette_offset,
         }
     }
 }
@@ -94,6 +100,8 @@ impl SkinnedInstance {
             m4: mat4.to_cols_array_2d(),
             itr: itr.to_cols_array_2d(),
             palette_offset,
+            prev_m4: mat4.to_cols_array_2d(),
+            prev_palette_offset: palette_offset,
         }
     }
 }
@@ -108,7 +116,7 @@ impl SkinnedInstances {
                 .device
                 .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                     label: Some("Instance buffer"),
-                    contents: bytemuck::cast_slice(&vec![Mat4::IDENTITY]),
+                    contents: bytemuck::cast_slice(&[SkinnedInstance::default()]),
                     usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
                 });
         Self {
