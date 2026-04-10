@@ -1,7 +1,10 @@
 use glam::{Mat3, Mat4};
 use wgpu::util::DeviceExt as _;
 
-use crate::host::wgpu_context::WgpuContext;
+use crate::host::{
+    wgpu_context::WgpuContext,
+    world::buffers::instance_links::SnapshotInstanceLinks,
+};
 
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
@@ -108,6 +111,8 @@ impl SkinnedInstance {
 
 pub struct SkinnedInstances {
     pub buffer: wgpu::Buffer,
+    pub data: Vec<SkinnedInstance>,
+    pub links: SnapshotInstanceLinks,
 }
 impl SkinnedInstances {
     pub fn new(wgpu_context: &WgpuContext) -> Self {
@@ -121,12 +126,15 @@ impl SkinnedInstances {
                 });
         Self {
             buffer: instance_buffer,
+            data: vec![],
+            links: SnapshotInstanceLinks::default(),
         }
     }
 
     pub fn update(
         &mut self,
         data: Vec<SkinnedInstance>,
+        links: SnapshotInstanceLinks,
         queue: &wgpu::Queue,
         device: &wgpu::Device,
     ) {
@@ -140,5 +148,7 @@ impl SkinnedInstances {
                 usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             });
         }
+        self.data = data;
+        self.links = links;
     }
 }

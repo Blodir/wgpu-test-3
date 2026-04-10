@@ -1,7 +1,10 @@
 use glam::{Mat3, Mat4};
 use wgpu::util::DeviceExt as _;
 
-use crate::host::wgpu_context::WgpuContext;
+use crate::host::{
+    wgpu_context::WgpuContext,
+    world::buffers::instance_links::SnapshotInstanceLinks,
+};
 
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
@@ -95,6 +98,8 @@ impl StaticInstance {
 
 pub struct StaticInstances {
     pub buffer: wgpu::Buffer,
+    pub data: Vec<StaticInstance>,
+    pub links: SnapshotInstanceLinks,
 }
 impl StaticInstances {
     pub fn new(wgpu_context: &WgpuContext) -> Self {
@@ -108,12 +113,15 @@ impl StaticInstances {
                 });
         Self {
             buffer: instance_buffer,
+            data: vec![],
+            links: SnapshotInstanceLinks::default(),
         }
     }
 
     pub fn update(
         &mut self,
         data: Vec<StaticInstance>,
+        links: SnapshotInstanceLinks,
         queue: &wgpu::Queue,
         device: &wgpu::Device,
     ) {
@@ -127,5 +135,7 @@ impl StaticInstances {
                 usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             });
         }
+        self.data = data;
+        self.links = links;
     }
 }

@@ -12,6 +12,7 @@ use crate::{
             anim_pose_store::{self, AnimPoseStore},
             bindgroups::bones::{BoneMat34, BonesBinding},
             buffers::{
+                instance_links::{SnapshotInstanceCursor, SnapshotInstanceLinks, SnapshotInstanceLinksBuilder},
                 skinned_instance::{SkinnedInstance, SkinnedInstances},
                 static_instance::{StaticInstance, StaticInstances},
             },
@@ -94,6 +95,10 @@ fn resolve_skinned_pass(
     pose_storage: &mut AnimPoseStore,
     frame_idx: u32,
     instance_data: &mut Vec<SkinnedInstance>,
+    links: &mut SnapshotInstanceLinksBuilder,
+    prev_cursor: &mut SnapshotInstanceCursor,
+    prev_instances: &[SkinnedInstance],
+    prev_links: &SnapshotInstanceLinks,
     node_world_cache: &mut Vec<PoseNodesCacheEntry>,
     node_to_palette_offset: &mut Vec<Option<u32>>,
     joint_palette: &mut Vec<BoneMat34>,
@@ -176,10 +181,25 @@ fn resolve_skinned_pass(
                             .get(*instance_node_idx as usize)
                             .copied()
                             .unwrap_or(Mat4::IDENTITY);
-                        instance_data.push(SkinnedInstance::new(
+                        let mut instance = SkinnedInstance::new(
                             model_transform * node_mat,
                             palette_offset,
-                        ));
+                        );
+                        if let Some(prev_snapshot_idx) = curr_inst_snap.prev_index {
+                            if let Some(prev_instance_idx) =
+                                prev_cursor.take_next(prev_snapshot_idx, prev_links)
+                            {
+                                if let Some(prev_instance) =
+                                    prev_instances.get(prev_instance_idx as usize)
+                                {
+                                    instance.prev_m4 = prev_instance.m4;
+                                    instance.prev_palette_offset = prev_instance.palette_offset;
+                                }
+                            }
+                        }
+                        let write_idx = links.push(instance_idx);
+                        debug_assert_eq!(write_idx as usize, instance_data.len());
+                        instance_data.push(instance);
                     }
                 }
 
@@ -200,6 +220,10 @@ fn resolve_static_pass(
     pose_storage: &mut AnimPoseStore,
     frame_idx: u32,
     instance_data: &mut Vec<StaticInstance>,
+    links: &mut SnapshotInstanceLinksBuilder,
+    prev_cursor: &mut SnapshotInstanceCursor,
+    prev_instances: &[StaticInstance],
+    prev_links: &SnapshotInstanceLinks,
     node_world_cache: &mut Vec<PoseNodesCacheEntry>,
 ) -> Vec<Range<u32>> {
     let mut instance_ranges = vec![0..0; pass_batch.submesh_batches.len()];
@@ -259,7 +283,21 @@ fn resolve_static_pass(
                             .get(*instance_node_idx as usize)
                             .copied()
                             .unwrap_or(Mat4::IDENTITY);
-                        instance_data.push(StaticInstance::new(model_transform * node_mat));
+                        let mut instance = StaticInstance::new(model_transform * node_mat);
+                        if let Some(prev_snapshot_idx) = curr_node_inst.prev_index {
+                            if let Some(prev_instance_idx) =
+                                prev_cursor.take_next(prev_snapshot_idx, prev_links)
+                            {
+                                if let Some(prev_instance) =
+                                    prev_instances.get(prev_instance_idx as usize)
+                                {
+                                    instance.prev_m4 = prev_instance.m4;
+                                }
+                            }
+                        }
+                        let write_idx = links.push(instance_idx);
+                        debug_assert_eq!(write_idx as usize, instance_data.len());
+                        instance_data.push(instance);
                     }
                 }
 
@@ -286,36 +324,51 @@ pub fn resolve_skinned_draw<'a>(
     let mut joint_palette: Vec<BoneMat34> = vec![];
     let mut instance_data = vec![];
     let skinned_instance_count = snaps.curr.mesh_draw_snapshot.skinned_instances.len();
+    let mut links = SnapshotInstanceLinksBuilder::new(skinned_instance_count);
     let mut node_world_cache = Vec::with_capacity(skinned_instance_count);
     node_world_cache.resize_with(skinned_instance_count, || PoseNodesCacheEntry::Pending);
     let mut node_to_palette_offset = vec![None; skinned_instance_count];
-    let opaque_instance_ranges = resolve_skinned_pass(
-        &snaps.curr.mesh_draw_snapshot.opaque_batch,
-        render_resources,
-        snaps,
-        t,
-        pose_storage,
-        frame_idx,
-        &mut instance_data,
-        &mut node_world_cache,
-        &mut node_to_palette_offset,
-        &mut joint_palette,
-    );
-    let transparent_instance_ranges = resolve_skinned_pass(
-        &snaps.curr.mesh_draw_snapshot.transparent_batch,
-        render_resources,
-        snaps,
-        t,
-        pose_storage,
-        frame_idx,
-        &mut instance_data,
-        &mut node_world_cache,
-        &mut node_to_palette_offset,
-        &mut joint_palette,
-    );
+    let (opaque_instance_ranges, transparent_instance_ranges) = {
+        let prev_instances = instances.data.as_slice();
+        let prev_links = &instances.links;
+        let mut prev_cursor = prev_links.cursor();
+        let opaque_instance_ranges = resolve_skinned_pass(
+            &snaps.curr.mesh_draw_snapshot.opaque_batch,
+            render_resources,
+            snaps,
+            t,
+            pose_storage,
+            frame_idx,
+            &mut instance_data,
+            &mut links,
+            &mut prev_cursor,
+            prev_instances,
+            prev_links,
+            &mut node_world_cache,
+            &mut node_to_palette_offset,
+            &mut joint_palette,
+        );
+        let transparent_instance_ranges = resolve_skinned_pass(
+            &snaps.curr.mesh_draw_snapshot.transparent_batch,
+            render_resources,
+            snaps,
+            t,
+            pose_storage,
+            frame_idx,
+            &mut instance_data,
+            &mut links,
+            &mut prev_cursor,
+            prev_instances,
+            prev_links,
+            &mut node_world_cache,
+            &mut node_to_palette_offset,
+            &mut joint_palette,
+        );
+        (opaque_instance_ranges, transparent_instance_ranges)
+    };
 
     bones.update(joint_palette, bones_layout, device, queue);
-    instances.update(instance_data, queue, device);
+    instances.update(instance_data, links.finish(), queue, device);
 
     (
         PassDrawContext {
@@ -341,30 +394,45 @@ pub fn resolve_static_draw<'a>(
 ) -> (PassDrawContext<'a>, PassDrawContext<'a>) {
     let mut instance_data = vec![];
     let static_instance_count = snaps.curr.mesh_draw_snapshot.static_instances.len();
+    let mut links = SnapshotInstanceLinksBuilder::new(static_instance_count);
     let mut node_world_cache = Vec::with_capacity(static_instance_count);
     node_world_cache.resize_with(static_instance_count, || PoseNodesCacheEntry::Pending);
-    let opaque_instance_ranges = resolve_static_pass(
-        &snaps.curr.mesh_draw_snapshot.opaque_batch,
-        render_resources,
-        snaps,
-        t,
-        pose_storage,
-        frame_idx,
-        &mut instance_data,
-        &mut node_world_cache,
-    );
-    let transparent_instance_ranges = resolve_static_pass(
-        &snaps.curr.mesh_draw_snapshot.transparent_batch,
-        render_resources,
-        snaps,
-        t,
-        pose_storage,
-        frame_idx,
-        &mut instance_data,
-        &mut node_world_cache,
-    );
+    let (opaque_instance_ranges, transparent_instance_ranges) = {
+        let prev_instances = instances.data.as_slice();
+        let prev_links = &instances.links;
+        let mut prev_cursor = prev_links.cursor();
+        let opaque_instance_ranges = resolve_static_pass(
+            &snaps.curr.mesh_draw_snapshot.opaque_batch,
+            render_resources,
+            snaps,
+            t,
+            pose_storage,
+            frame_idx,
+            &mut instance_data,
+            &mut links,
+            &mut prev_cursor,
+            prev_instances,
+            prev_links,
+            &mut node_world_cache,
+        );
+        let transparent_instance_ranges = resolve_static_pass(
+            &snaps.curr.mesh_draw_snapshot.transparent_batch,
+            render_resources,
+            snaps,
+            t,
+            pose_storage,
+            frame_idx,
+            &mut instance_data,
+            &mut links,
+            &mut prev_cursor,
+            prev_instances,
+            prev_links,
+            &mut node_world_cache,
+        );
+        (opaque_instance_ranges, transparent_instance_ranges)
+    };
 
-    instances.update(instance_data, queue, device);
+    instances.update(instance_data, links.finish(), queue, device);
 
     (
         PassDrawContext {

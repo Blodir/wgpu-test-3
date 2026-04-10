@@ -1,3 +1,4 @@
+pub mod instance_links;
 pub mod skinned_instance;
 pub mod skinned_vertex;
 pub mod static_instance;
