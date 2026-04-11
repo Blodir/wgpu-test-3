@@ -5,6 +5,7 @@
 @group(1) @binding(2) var gbuffer_world_position: texture_2d<f32>;
 @group(1) @binding(3) var gbuffer_world_position_sampler: sampler;
 @group(1) @binding(4) var gi_source_history_texture: texture_2d<f32>;
+@group(1) @binding(5) var gi_source_history_sampler: sampler;
 @group(2) @binding(0) var<uniform> gtao_settings: vec4<f32>;
 
 struct VertexOutput {
@@ -209,11 +210,12 @@ fn evaluate_hbil_interval(
     return max(0.0, nx * term_x + ny * term_y);
 }
 
-fn load_history_radiance(uv: vec2<f32>, dims: vec2<f32>) -> vec3<f32> {
-    return textureLoad(
+fn load_history_radiance(uv: vec2<f32>) -> vec3<f32> {
+    let history_uv = clamp(uv, vec2f(0.0), vec2f(1.0));
+    return textureSample(
         gi_source_history_texture,
-        vec2i(clamp(uv * dims, vec2f(0.0), dims - vec2f(1.0))),
-        0
+        gi_source_history_sampler,
+        history_uv
     ).rgb;
 }
 
@@ -223,7 +225,7 @@ fn sample_filtered_history_radiance(
     fallback_radiance: vec3<f32>,
     history_dims: vec2<f32>
 ) -> vec3<f32> {
-    let history_radiance = load_history_radiance(sample_uv, history_dims);
+    let history_radiance = load_history_radiance(sample_uv);
     let sample_normal = safe_normalize(textureSample(
         gbuffer_normal_roughness,
         gbuffer_normal_roughness_sampler,
@@ -233,8 +235,161 @@ fn sample_filtered_history_radiance(
     return mix(fallback_radiance, history_radiance, facing_weight);
 }
 
+fn safe_normalize3(v: vec3<f32>) -> vec3<f32> {
+    let len = length(v);
+    return select(vec3<f32>(0.0), v / len, len > 0.0001);
+}
+
+fn build_basis_frisvad(n: vec3<f32>) -> mat3x3<f32> {
+    let N = normalize(n);
+
+    let sign = select(-1.0, 1.0, N.z >= 0.0);
+    let a = -1.0 / (sign + N.z);
+    let b = N.x * N.y * a;
+
+    let T = vec3<f32>(
+        1.0 + sign * N.x * N.x * a,
+        sign * b,
+        -sign * N.x
+    );
+
+    let B = vec3<f32>(
+        b,
+        sign + N.y * N.y * a,
+        -N.y
+    );
+
+    return mat3x3<f32>(T, B, N);
+}
+
+fn angle_between(a: vec3<f32>, b: vec3<f32>) -> f32 {
+    let d = dot(a, b);
+    return acos(d);
+}
+
+fn gtao2(in: VertexOutput) -> FragmentOutput {
+    let uv = in.tex_coords;
+    let world_pos_sample = textureSample(
+        gbuffer_world_position,
+        gbuffer_world_position_sampler,
+        uv
+    );
+    if (world_pos_sample.w < 0.5) {
+        // invalid sample
+        return FragmentOutput(vec4<f32>(0.0, 0.0, 0.0, 1.0), vec4<f32>(0.0));
+    }
+    let P = world_pos_sample.xyz;
+
+    let normal = textureSample(
+        gbuffer_normal_roughness,
+        gbuffer_normal_roughness_sampler,
+        uv
+    ).xyz;
+    let V = safe_normalize3(camera_pos - P);
+    // view facing normal:
+    let N = select(normal, -normal, dot(normal, V) < 0.0);
+    let TBN = build_basis_frisvad(N);
+
+    // config
+    let radius_pixels = gtao_settings.x;
+    let ao_radius = gtao_settings.y;
+    let gtao_power = gtao_settings.z;
+    let hbil_radius = min(gtao_settings.w, ao_radius);
+
+    let dims = vec2<f32>(textureDimensions(gbuffer_world_position, 0));
+    let inv_dims = 1.0 / dims;
+    // history can be half res, quarter, or something else
+    let history_dims = vec2<f32>(textureDimensions(gi_source_history_texture, 0));
+    let inv_history_dims = 1.0 / history_dims;
+
+    var visibility_acc = 0.0;
+    var bent_normal_acc = vec3f(0.0, 0.0, 0.0);
+    var irradiance_acc = vec3f(0.0, 0.0, 0.0);
+    var irradiance_samples: u32 = 0;
+
+    for (var dir_idx: u32 = 0u; dir_idx < DIRECTIONS; dir_idx += 1u) {
+        // Note: this was wrong previously with 2PI, we only need to cover half of the hemisphere
+        // since we are taking samples from both sides of each slice
+        let azimuth = PI * (f32(dir_idx) / f32(DIRECTIONS));
+        let slice_dir_uv = vec2<f32>(cos(azimuth), sin(azimuth));
+        let uv_step = slice_dir_uv * inv_dims;
+        let history_uv_step = slice_dir_uv * inv_history_dims;
+
+        var horizon_angle_fwd = 0.0;
+        var horizon_angle_bwd = 0.0;
+
+        for (var step_idx: u32 = 1u; step_idx <= STEPS_PER_DIRECTION; step_idx += 1u) {
+            let step_t = f32(step_idx) / f32(STEPS_PER_DIRECTION);
+            let step_uv_offset = uv_step * step_t * radius_pixels;
+            let step_history_uv_offset = history_uv_step * step_t * radius_pixels;
+
+            let sample_fwd_world = textureSample(
+                gbuffer_world_position,
+                gbuffer_world_position_sampler,
+                uv + step_uv_offset
+            );
+
+            if (sample_fwd_world.w >= 0.5) {
+                let D = sample_fwd_world.xyz - P;
+                // calculate angle between N and D
+                // let's assume length(D) can't be 0 (radius_pixels needs to be larger than 0)
+                let D_normalized = normalize(D);
+                let angle = angle_between(N, D);
+                let horizon_angle = max(PI / 2.0 - angle, 0.0);
+                horizon_angle_fwd = max(horizon_angle_fwd, horizon_angle);
+
+                // TODO not proper HBIL, work on this later
+                let radiance_sample = load_history_radiance(uv + step_history_uv_offset);
+                irradiance_acc += radiance_sample;
+                irradiance_samples += 1;
+            }
+
+            let sample_bwd_world = textureSample(
+                gbuffer_world_position,
+                gbuffer_world_position_sampler,
+                uv - step_uv_offset
+            );
+
+            if (sample_bwd_world.w >= 0.5) {
+                let D = sample_bwd_world.xyz - P;
+                let D_normalized = normalize(D);
+                let angle = angle_between(N, D);
+                let horizon_angle = max(PI / 2.0 - angle, 0.0);
+                horizon_angle_bwd = max(horizon_angle_bwd, horizon_angle);
+
+                let radiance_sample = load_history_radiance(uv - step_history_uv_offset);
+                irradiance_acc += radiance_sample;
+                irradiance_samples += 1;
+            }
+        }
+
+        // average angle from N along slice plane
+        let alpha = PI - horizon_angle_fwd - horizon_angle_bwd;
+        // reconstruct vec3 from the angle
+        let dist = select(-tan(alpha), tan(alpha), alpha > 0.0);
+        let normal_contribution = normalize(N + TBN * dist * vec3f(slice_dir_uv, 0.0));
+        bent_normal_acc += normal_contribution;
+
+        // Simple visibility gathering TODO actual gtao
+        visibility_acc += alpha / PI;
+    }
+
+    // ..........
+
+    let ao = visibility_acc / f32(DIRECTIONS);
+    let bent_normal = bent_normal_acc / f32(DIRECTIONS);
+    let irradiance = select(
+        vec3f(0.0, 0.0, 0.0),
+        irradiance_acc / f32(irradiance_samples),
+        irradiance_samples > 0
+    );
+    return FragmentOutput(vec4f(bent_normal, ao), vec4f(irradiance, 1.0));
+}
+
 @fragment
 fn fs_main(in: VertexOutput) -> FragmentOutput {
+    return gtao2(in);
+    /*
     let uv = in.tex_coords;
 
     let world_pos_sample = textureSample(
@@ -423,4 +578,5 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
         vec4<f32>(bent_normal, ao * max(gi_source_history.a, 1.0)),
         hbil_diffuse_irradiance,
     );
+    */
 }

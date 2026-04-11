@@ -70,10 +70,16 @@ impl GtaoPipeline {
                             binding: 4,
                             visibility: wgpu::ShaderStages::FRAGMENT,
                             ty: wgpu::BindingType::Texture {
-                                sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                                sample_type: wgpu::TextureSampleType::Float { filterable: true },
                                 view_dimension: wgpu::TextureViewDimension::D2,
                                 multisampled: false,
                             },
+                            count: None,
+                        },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 5,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                             count: None,
                         },
                     ],
@@ -202,6 +208,10 @@ impl GtaoPipeline {
                 wgpu::BindGroupEntry {
                     binding: 4,
                     resource: wgpu::BindingResource::TextureView(&gi_source_texture.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: wgpu::BindingResource::Sampler(&gi_source_texture.sampler),
                 },
             ],
             label: Some("GTAO Inputs Bind Group"),

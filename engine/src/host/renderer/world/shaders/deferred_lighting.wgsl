@@ -207,7 +207,7 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
         gtao_texture,
         gtao_texture_sampler,
         uv
-    ).w;
+    );
     let hbil_diffuse_irradiance = textureSample(
         hbil_diffuse_irradiance_texture,
         hbil_diffuse_irradiance_sampler,
@@ -303,7 +303,7 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
         vec2(max(dot(N, V), 0.0), 1.0 - surface_roughness)
     ).rg;
     let specular_env = prefiltered_color * (F_env * brdf.x + brdf.y);
-    let final_ao = ao * gtao;
+    let final_ao = ao * gtao.w;
     let ambient_far_diffuse = k_d2 * far_field_diffuse * final_ao * environment_map_intensity;
     let ambient_far_specular = specular_env * final_ao * environment_map_intensity;
     let ambient_near = k_d2 * near_field_diffuse * ao;
@@ -322,4 +322,5 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
         1.0
     );
     return FragmentOutput(final_color, gi_source);
+    //return FragmentOutput(vec4f(gtao.xyz, 1.0), gi_source);
 }
