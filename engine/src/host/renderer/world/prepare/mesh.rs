@@ -12,7 +12,9 @@ use crate::{
             anim_pose_store::{self, AnimPoseStore},
             bindgroups::bones::{BoneMat34, BonesBinding},
             buffers::{
-                instance_links::{SnapshotInstanceCursor, SnapshotInstanceLinks, SnapshotInstanceLinksBuilder},
+                instance_links::{
+                    SnapshotInstanceCursor, SnapshotInstanceLinks, SnapshotInstanceLinksBuilder,
+                },
                 skinned_instance::{SkinnedInstance, SkinnedInstances},
                 static_instance::{StaticInstance, StaticInstances},
             },
@@ -181,10 +183,8 @@ fn resolve_skinned_pass(
                             .get(*instance_node_idx as usize)
                             .copied()
                             .unwrap_or(Mat4::IDENTITY);
-                        let mut instance = SkinnedInstance::new(
-                            model_transform * node_mat,
-                            palette_offset,
-                        );
+                        let mut instance =
+                            SkinnedInstance::new(model_transform * node_mat, palette_offset);
                         if let Some(prev_snapshot_idx) = curr_inst_snap.prev_index {
                             if let Some(prev_instance_idx) =
                                 prev_cursor.take_next(prev_snapshot_idx, prev_links)
@@ -312,6 +312,7 @@ fn resolve_static_pass(
 pub fn resolve_skinned_draw<'a>(
     bones: &mut BonesBinding,
     bones_layout: &wgpu::BindGroupLayout,
+    motion_bones_layout: &wgpu::BindGroupLayout,
     instances: &mut SkinnedInstances,
     render_resources: &RenderAssetStore,
     snaps: &'a FixedSnapshotGuard,
@@ -367,7 +368,13 @@ pub fn resolve_skinned_draw<'a>(
         (opaque_instance_ranges, transparent_instance_ranges)
     };
 
-    bones.update(joint_palette, bones_layout, device, queue);
+    bones.update(
+        joint_palette,
+        bones_layout,
+        motion_bones_layout,
+        device,
+        queue,
+    );
     instances.update(instance_data, links.finish(), queue, device);
 
     (

@@ -1,11 +1,10 @@
 pub mod bones;
 pub mod camera;
 pub mod g_buffer;
-pub mod gi_source;
 pub mod gtao;
 pub mod gtao_settings;
 pub mod lights;
 pub mod material;
+pub mod motion_camera;
 pub mod post_processing;
-pub mod ssgi_resolve;
 pub mod sun_shadow_matrix;

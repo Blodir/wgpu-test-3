@@ -2,8 +2,7 @@ use glam::{Mat3, Mat4};
 use wgpu::util::DeviceExt as _;
 
 use crate::host::{
-    wgpu_context::WgpuContext,
-    world::buffers::instance_links::SnapshotInstanceLinks,
+    wgpu_context::WgpuContext, world::buffers::instance_links::SnapshotInstanceLinks,
 };
 
 #[repr(C)]
@@ -41,6 +40,7 @@ impl StaticInstance {
 
 impl StaticInstance {
     const BASE_SHADER_LOCATION: u32 = 0;
+    const OFFSET_PREV_M4: wgpu::BufferAddress = size_of::<[f32; 25]>() as wgpu::BufferAddress;
     const ATTRIBUTES: [wgpu::VertexAttribute; 7] = [
         wgpu::VertexAttribute {
             offset: 0,
@@ -84,6 +84,57 @@ impl StaticInstance {
             array_stride: size_of::<StaticInstance>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Instance,
             attributes: &Self::ATTRIBUTES,
+        }
+    }
+
+    const VELOCITY_ATTRIBUTES: [wgpu::VertexAttribute; 8] = [
+        wgpu::VertexAttribute {
+            offset: 0,
+            shader_location: 0,
+            format: wgpu::VertexFormat::Float32x4,
+        },
+        wgpu::VertexAttribute {
+            offset: size_of::<[f32; 4]>() as wgpu::BufferAddress,
+            shader_location: 1,
+            format: wgpu::VertexFormat::Float32x4,
+        },
+        wgpu::VertexAttribute {
+            offset: size_of::<[f32; 8]>() as wgpu::BufferAddress,
+            shader_location: 2,
+            format: wgpu::VertexFormat::Float32x4,
+        },
+        wgpu::VertexAttribute {
+            offset: size_of::<[f32; 12]>() as wgpu::BufferAddress,
+            shader_location: 3,
+            format: wgpu::VertexFormat::Float32x4,
+        },
+        wgpu::VertexAttribute {
+            offset: Self::OFFSET_PREV_M4,
+            shader_location: 4,
+            format: wgpu::VertexFormat::Float32x4,
+        },
+        wgpu::VertexAttribute {
+            offset: Self::OFFSET_PREV_M4 + size_of::<[f32; 4]>() as wgpu::BufferAddress,
+            shader_location: 5,
+            format: wgpu::VertexFormat::Float32x4,
+        },
+        wgpu::VertexAttribute {
+            offset: Self::OFFSET_PREV_M4 + size_of::<[f32; 8]>() as wgpu::BufferAddress,
+            shader_location: 6,
+            format: wgpu::VertexFormat::Float32x4,
+        },
+        wgpu::VertexAttribute {
+            offset: Self::OFFSET_PREV_M4 + size_of::<[f32; 12]>() as wgpu::BufferAddress,
+            shader_location: 7,
+            format: wgpu::VertexFormat::Float32x4,
+        },
+    ];
+
+    pub fn velocity_desc() -> wgpu::VertexBufferLayout<'static> {
+        wgpu::VertexBufferLayout {
+            array_stride: size_of::<StaticInstance>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Instance,
+            attributes: &Self::VELOCITY_ATTRIBUTES,
         }
     }
 

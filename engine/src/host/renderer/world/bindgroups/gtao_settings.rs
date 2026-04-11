@@ -43,7 +43,7 @@ impl GtaoSettings {
                     gtao_options.radius_pixels,
                     gtao_options.ao_radius,
                     gtao_options.power,
-                    0.0,
+                    gtao_options.hbil_radius,
                 ],
             }),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,

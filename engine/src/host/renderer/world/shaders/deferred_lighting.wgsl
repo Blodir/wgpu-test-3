@@ -34,6 +34,8 @@ struct SunShadowUniform {
 
 @group(3) @binding(0) var gtao_texture: texture_2d<f32>;
 @group(3) @binding(1) var gtao_texture_sampler: sampler;
+@group(3) @binding(2) var hbil_diffuse_irradiance_texture: texture_2d<f32>;
+@group(3) @binding(3) var hbil_diffuse_irradiance_sampler: sampler;
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
@@ -206,6 +208,11 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
         gtao_texture_sampler,
         uv
     ).w;
+    let hbil_diffuse_irradiance = textureSample(
+        hbil_diffuse_irradiance_texture,
+        hbil_diffuse_irradiance_sampler,
+        uv
+    ).rgb;
     if (world_position.w < 0.5) {
         return FragmentOutput(vec4f(0.0, 0.0, 0.0, 0.0), vec4f(0.0, 0.0, 0.0, 0.0));
     }
@@ -288,7 +295,8 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
         diffuse_irradiance_texture_sampler,
         N
     ).rgb;
-    let diffuse = irradiance * surface_color;
+    let far_field_diffuse = irradiance * surface_color;
+    let near_field_diffuse = hbil_diffuse_irradiance * surface_color;
     let brdf = textureSample(
         brdf_lut,
         brdf_lut_sampler,
@@ -296,9 +304,22 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
     ).rg;
     let specular_env = prefiltered_color * (F_env * brdf.x + brdf.y);
     let final_ao = ao * gtao;
-    let ambient = (k_d2 * diffuse + specular_env) * final_ao * environment_map_intensity;
+    let ambient_far_diffuse = k_d2 * far_field_diffuse * final_ao * environment_map_intensity;
+    let ambient_far_specular = specular_env * final_ao * environment_map_intensity;
+    let ambient_near = k_d2 * near_field_diffuse * ao;
 
-    let final_color = vec4f(ambient + direct_diffuse + direct_specular + surface_emissive, 1.0);
-    let gi_source = vec4f(direct_diffuse + surface_emissive, 1.0);
+    let final_color = vec4f(
+        ambient_far_diffuse +
+        ambient_far_specular +
+        ambient_near +
+        direct_diffuse +
+        direct_specular +
+        surface_emissive,
+        1.0
+    );
+    let gi_source = vec4f(
+        direct_diffuse + ambient_far_diffuse + ambient_near + surface_emissive,
+        1.0
+    );
     return FragmentOutput(final_color, gi_source);
 }

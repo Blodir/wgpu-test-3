@@ -21,11 +21,7 @@ pub struct SnapshotInstanceCursor {
 }
 
 impl SnapshotInstanceCursor {
-    pub fn take_next(
-        &mut self,
-        snapshot_idx: u32,
-        links: &SnapshotInstanceLinks,
-    ) -> Option<u32> {
+    pub fn take_next(&mut self, snapshot_idx: u32, links: &SnapshotInstanceLinks) -> Option<u32> {
         let slot = self.next_by_snapshot.get_mut(snapshot_idx as usize)?;
         let current = *slot;
         if let Some(instance_idx) = current {

@@ -25,6 +25,7 @@ pub struct InterpolatedCameraState {
 #[derive(Clone, Copy)]
 pub struct PreparedCamera {
     pub state: InterpolatedCameraState,
+    pub view_proj: Mat4,
 }
 
 pub fn interpolate_camera_state(
@@ -130,5 +131,5 @@ pub fn prepare_camera(
         queue,
     );
 
-    PreparedCamera { state }
+    PreparedCamera { state, view_proj }
 }

@@ -7,6 +7,6 @@ pub mod world;
 
 pub use renderer::{
     DiagnosticsInfo, GtaoOptions, OpaqueRenderPath, RenderCommand, RenderDebugInfo, Renderer,
-    RendererOptions, RuntimeSettings, SsgiOptions, UiFrameInfo,
+    RendererOptions, RuntimeSettings, UiFrameInfo,
 };
 pub use world::UploadMaterialRequest;

@@ -15,8 +15,12 @@ pub const SHADER_G_BUFFER_FRAG_WGSL: &str =
 pub const SHADER_GTAO_WGSL: &str = "engine/src/host/renderer/world/shaders/gtao.wgsl";
 pub const SHADER_DEFERRED_LIGHTING_WGSL: &str =
     "engine/src/host/renderer/world/shaders/deferred_lighting.wgsl";
-pub const SHADER_SSGI_WGSL: &str = "engine/src/host/renderer/world/shaders/ssgi.wgsl";
 pub const SHADER_SKYBOX_WGSL: &str = "engine/src/host/renderer/world/shaders/skybox.wgsl";
+pub const SHADER_MOTION_VECTORS_STATIC_WGSL: &str =
+    "engine/src/host/renderer/world/shaders/motion_vectors_static.wgsl";
+pub const SHADER_MOTION_VECTORS_SKINNED_WGSL: &str =
+    "engine/src/host/renderer/world/shaders/motion_vectors_skinned.wgsl";
+pub const SHADER_HISTORY_WGSL: &str = "engine/src/host/renderer/world/shaders/history.wgsl";
 
 pub const ENV_MAP_PREFILTERED_DDS: &str = "assets/kloofendal_overcast_puresky_8k.prefiltered.dds";
 pub const ENV_MAP_DI_DDS: &str = "assets/kloofendal_overcast_puresky_8k.di.dds";

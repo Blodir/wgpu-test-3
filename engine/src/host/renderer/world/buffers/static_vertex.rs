@@ -103,4 +103,18 @@ impl StaticVertex {
             attributes: &Self::ATTRIBUTES,
         }
     }
+
+    const VELOCITY_ATTRIBUTES: [wgpu::VertexAttribute; 1] = [wgpu::VertexAttribute {
+        offset: Self::OFFSET_POS,
+        shader_location: 8,
+        format: wgpu::VertexFormat::Float32x3,
+    }];
+
+    pub fn velocity_desc() -> wgpu::VertexBufferLayout<'static> {
+        wgpu::VertexBufferLayout {
+            array_stride: size_of::<StaticVertex>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &Self::VELOCITY_ATTRIBUTES,
+        }
+    }
 }

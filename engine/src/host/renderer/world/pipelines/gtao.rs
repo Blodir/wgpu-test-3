@@ -2,7 +2,10 @@ use wgpu::util::DeviceExt;
 
 use crate::global_paths::SHADER_GTAO_WGSL;
 use crate::host::renderer::GtaoOptions;
-use crate::host::world::attachments::deferred::GBufferTargets;
+use crate::host::world::attachments::{
+    color::HdrColorTexture,
+    deferred::{GBufferTargets, GtaoTexture},
+};
 use crate::host::world::bindgroups::gtao_settings::{GtaoSettings, GtaoSettingsBinding};
 use crate::host::{shader_cache::ShaderCache, wgpu_context::WgpuContext};
 
@@ -23,6 +26,7 @@ impl GtaoPipeline {
         shader_cache: &mut ShaderCache,
         camera_bind_group_layout: &wgpu::BindGroupLayout,
         gbuffer_targets: &GBufferTargets,
+        gi_source_texture: &HdrColorTexture,
         gtao_options: &GtaoOptions,
     ) -> Self {
         let inputs_bind_group_layout =
@@ -62,6 +66,16 @@ impl GtaoPipeline {
                             ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                             count: None,
                         },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 4,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Texture {
+                                sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                                view_dimension: wgpu::TextureViewDimension::D2,
+                                multisampled: false,
+                            },
+                            count: None,
+                        },
                     ],
                     label: Some("GTAO Inputs Bind Group Layout"),
                 });
@@ -69,6 +83,7 @@ impl GtaoPipeline {
             &wgpu_context.device,
             &inputs_bind_group_layout,
             gbuffer_targets,
+            gi_source_texture,
         );
         let settings_bind_group_layout = wgpu_context
             .device
@@ -106,11 +121,18 @@ impl GtaoPipeline {
                     fragment: Some(wgpu::FragmentState {
                         module: &shader_module,
                         entry_point: Some("fs_main"),
-                        targets: &[Some(wgpu::ColorTargetState {
-                            format: wgpu::TextureFormat::Rgba16Float,
-                            blend: None,
-                            write_mask: wgpu::ColorWrites::ALL,
-                        })],
+                        targets: &[
+                            Some(wgpu::ColorTargetState {
+                                format: wgpu::TextureFormat::Rgba16Float,
+                                blend: None,
+                                write_mask: wgpu::ColorWrites::ALL,
+                            }),
+                            Some(wgpu::ColorTargetState {
+                                format: wgpu::TextureFormat::Rgba16Float,
+                                blend: None,
+                                write_mask: wgpu::ColorWrites::ALL,
+                            }),
+                        ],
                         compilation_options: wgpu::PipelineCompilationOptions::default(),
                     }),
                     primitive: wgpu::PrimitiveState {
@@ -148,6 +170,7 @@ impl GtaoPipeline {
         device: &wgpu::Device,
         bind_group_layout: &wgpu::BindGroupLayout,
         gbuffer_targets: &GBufferTargets,
+        gi_source_texture: &HdrColorTexture,
     ) -> wgpu::BindGroup {
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: bind_group_layout,
@@ -176,6 +199,10 @@ impl GtaoPipeline {
                         &gbuffer_targets.world_position.sampler,
                     ),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: wgpu::BindingResource::TextureView(&gi_source_texture.view),
+                },
             ],
             label: Some("GTAO Inputs Bind Group"),
         })
@@ -185,10 +212,15 @@ impl GtaoPipeline {
         &mut self,
         device: &wgpu::Device,
         gbuffer_targets: &GBufferTargets,
+        gi_source_texture: &HdrColorTexture,
         gtao_options: &GtaoOptions,
     ) {
-        self.inputs_bind_group =
-            Self::create_inputs_bind_group(device, &self.inputs_bind_group_layout, gbuffer_targets);
+        self.inputs_bind_group = Self::create_inputs_bind_group(
+            device,
+            &self.inputs_bind_group_layout,
+            gbuffer_targets,
+            gi_source_texture,
+        );
         self.settings_bind_group =
             GtaoSettings::upload(device, &self.settings_bind_group_layout, gtao_options);
     }
@@ -196,24 +228,34 @@ impl GtaoPipeline {
     pub fn render(
         &self,
         encoder: &mut wgpu::CommandEncoder,
-        gtao_view: &wgpu::TextureView,
+        gtao_texture: &GtaoTexture,
         camera_bind_group: &wgpu::BindGroup,
     ) {
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("GTAO Pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: gtao_view,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color {
-                        r: 0.0,
-                        g: 0.0,
-                        b: 0.0,
-                        a: 1.0,
-                    }),
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
+            color_attachments: &[
+                Some(wgpu::RenderPassColorAttachment {
+                    view: &gtao_texture.view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color {
+                            r: 0.0,
+                            g: 0.0,
+                            b: 0.0,
+                            a: 1.0,
+                        }),
+                        store: wgpu::StoreOp::Store,
+                    },
+                }),
+                Some(wgpu::RenderPassColorAttachment {
+                    view: &gtao_texture.hbil_diffuse_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                        store: wgpu::StoreOp::Store,
+                    },
+                }),
+            ],
             depth_stencil_attachment: None,
             occlusion_query_set: None,
             timestamp_writes: None,

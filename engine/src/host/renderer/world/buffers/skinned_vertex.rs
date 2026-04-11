@@ -121,4 +121,30 @@ impl SkinnedVertex {
             attributes: &Self::ATTRIBUTES,
         }
     }
+
+    const VELOCITY_ATTRIBUTES: [wgpu::VertexAttribute; 3] = [
+        wgpu::VertexAttribute {
+            offset: Self::OFFSET_WEI,
+            shader_location: 10,
+            format: wgpu::VertexFormat::Float32x4,
+        },
+        wgpu::VertexAttribute {
+            offset: Self::OFFSET_POS,
+            shader_location: 11,
+            format: wgpu::VertexFormat::Float32x3,
+        },
+        wgpu::VertexAttribute {
+            offset: Self::OFFSET_JOI,
+            shader_location: 12,
+            format: wgpu::VertexFormat::Uint8x4,
+        },
+    ];
+
+    pub fn velocity_desc() -> wgpu::VertexBufferLayout<'static> {
+        wgpu::VertexBufferLayout {
+            array_stride: size_of::<SkinnedVertex>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &Self::VELOCITY_ATTRIBUTES,
+        }
+    }
 }

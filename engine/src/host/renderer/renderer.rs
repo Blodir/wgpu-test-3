@@ -21,6 +21,7 @@ pub struct GtaoOptions {
     pub radius_pixels: f32,
     pub ao_radius: f32,
     pub power: f32,
+    pub hbil_radius: f32,
 }
 impl Default for GtaoOptions {
     fn default() -> Self {
@@ -28,26 +29,7 @@ impl Default for GtaoOptions {
             radius_pixels: 8.0,
             ao_radius: 30.0,
             power: 1.0,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct SsgiOptions {
-    pub radius_pixels: f32,
-    pub world_radius: f32,
-    pub thickness: f32,
-    pub depth_reject_scale: f32,
-    pub intensity: f32,
-}
-impl Default for SsgiOptions {
-    fn default() -> Self {
-        Self {
-            radius_pixels: 24.0,
-            world_radius: 2.0,
-            thickness: 0.2,
-            depth_reject_scale: 2.0,
-            intensity: 1.0,
+            hbil_radius: 2.0,
         }
     }
 }
@@ -56,7 +38,6 @@ impl Default for SsgiOptions {
 pub enum OpaqueRenderPath {
     Deferred {
         gtao: Option<GtaoOptions>,
-        ssgi: Option<SsgiOptions>,
     },
     CompactDeferred,
     #[default]
@@ -80,7 +61,6 @@ impl RendererOptions {
         let opaque_render_path = if limits.max_color_attachments >= 6 {
             OpaqueRenderPath::Deferred {
                 gtao: Some(GtaoOptions::default()),
-                ssgi: Some(SsgiOptions::default()),
             }
         } else if limits.max_color_attachments >= 4 {
             OpaqueRenderPath::CompactDeferred

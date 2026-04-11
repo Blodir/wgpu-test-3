@@ -1,26 +1,31 @@
 use std::{array, time::Instant};
 
+use glam::Mat4;
+
 use super::super::sampler_cache::SamplerCache;
 use super::super::shader_cache::ShaderCache;
 use super::anim_pose_store::AnimPoseStore;
 use super::attachments::color::HdrColorTexture;
 use super::attachments::deferred::{GBufferTargets, GtaoTexture};
 use super::attachments::depth::DepthTexture;
+use super::attachments::motion_vectors::MotionVectorsTexture;
 use super::attachments::skybox::SkyboxOutputTexture;
 use super::attachments::sun_shadow::SunShadowTexture;
 use super::bindgroups::bones::BonesBinding;
 use super::bindgroups::camera::CameraBinding;
 use super::bindgroups::lights::LightsBinding;
 use super::bindgroups::material::MaterialBinding;
+use super::bindgroups::motion_camera::MotionCameraBinding;
 use super::bindgroups::sun_shadow_matrix::SunShadowMatrixBindGroup;
 use super::buffers::skinned_instance::SkinnedInstances;
 use super::pipelines::deferred_lighting::DeferredLightingPipeline;
 use super::pipelines::g_buffer::GBufferPipeline;
 use super::pipelines::gtao::GtaoPipeline;
+use super::pipelines::history::HistoryPipeline;
+use super::pipelines::motion_vectors::MotionVectorsPipeline;
 use super::pipelines::post_processing::PostProcessingPipeline;
 use super::pipelines::skinned_pbr::SkinnedPbrPipeline;
 use super::pipelines::skybox::SkyboxPipeline;
-use super::pipelines::ssgi::SsgiPipeline;
 use super::pipelines::sun_shadow::SunShadowPipeline;
 use super::prepare::camera::prepare_camera;
 use super::prepare::lights::prepare_lights;
@@ -29,7 +34,7 @@ use super::prepare::sun_shadow::prepare_sun_shadow;
 
 use crate::host::assets::io::asset_formats::materialfile;
 use crate::host::assets::store::{PlaceholderTextureIds, RenderAssetStore, TextureRenderId};
-use crate::host::renderer::{GtaoOptions, OpaqueRenderPath, RendererOptions, SsgiOptions};
+use crate::host::renderer::{GtaoOptions, OpaqueRenderPath, RendererOptions};
 use crate::host::wgpu_context::WgpuContext;
 use crate::host::world::buffers::static_instance::StaticInstances;
 use crate::host::world::pipelines::static_pbr::StaticPbrPipeline;
@@ -39,10 +44,12 @@ use crate::{fixed_snapshot::FixedSnapshotGuard, var_snapshot::CameraSnapshotPair
 
 pub struct Layouts {
     pub camera: wgpu::BindGroupLayout,
+    pub motion_camera: wgpu::BindGroupLayout,
     pub lights: wgpu::BindGroupLayout,
     pub sun_shadow_matrix: wgpu::BindGroupLayout,
     pub material: wgpu::BindGroupLayout,
     pub bones: wgpu::BindGroupLayout,
+    pub motion_bones: wgpu::BindGroupLayout,
     pub pbr_material: wgpu::BindGroupLayout,
 }
 impl Layouts {
@@ -50,6 +57,9 @@ impl Layouts {
         let camera = wgpu_context
             .device
             .create_bind_group_layout(&CameraBinding::desc());
+        let motion_camera = wgpu_context
+            .device
+            .create_bind_group_layout(&MotionCameraBinding::desc());
         let lights = wgpu_context
             .device
             .create_bind_group_layout(&LightsBinding::desc());
@@ -62,16 +72,21 @@ impl Layouts {
         let bones = wgpu_context
             .device
             .create_bind_group_layout(&BonesBinding::desc());
+        let motion_bones = wgpu_context
+            .device
+            .create_bind_group_layout(&BonesBinding::motion_desc());
         let pbr_material = wgpu_context
             .device
             .create_bind_group_layout(&MaterialBinding::desc());
 
         Self {
             camera,
+            motion_camera,
             lights,
             sun_shadow_matrix,
             material,
             bones,
+            motion_bones,
             pbr_material,
         }
     }
@@ -90,9 +105,6 @@ struct WorldAttachments {
     skybox_output: SkyboxOutputTexture,
     depth_texture: DepthTexture,
     hdr_color: HdrColorTexture,
-    deferred_final_color: HdrColorTexture,
-    gi_source: HdrColorTexture,
-    ssgi_indirect: HdrColorTexture,
     sun_shadow: SunShadowTexture,
 }
 impl WorldAttachments {
@@ -104,15 +116,6 @@ impl WorldAttachments {
             ),
             depth_texture: DepthTexture::new(&wgpu_context.device, &wgpu_context.surface_config),
             hdr_color: HdrColorTexture::new(&wgpu_context.device, &wgpu_context.surface_config),
-            deferred_final_color: HdrColorTexture::new(
-                &wgpu_context.device,
-                &wgpu_context.surface_config,
-            ),
-            gi_source: HdrColorTexture::new(&wgpu_context.device, &wgpu_context.surface_config),
-            ssgi_indirect: HdrColorTexture::new_half_res(
-                &wgpu_context.device,
-                &wgpu_context.surface_config,
-            ),
             sun_shadow: SunShadowTexture::new(&wgpu_context.device),
         }
     }
@@ -122,11 +125,6 @@ impl WorldAttachments {
             SkyboxOutputTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
         self.depth_texture = DepthTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
         self.hdr_color = HdrColorTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
-        self.deferred_final_color =
-            HdrColorTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
-        self.gi_source = HdrColorTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
-        self.ssgi_indirect =
-            HdrColorTexture::new_half_res(&wgpu_context.device, &wgpu_context.surface_config);
     }
 }
 
@@ -134,6 +132,7 @@ struct WorldBindGroups {
     layouts: Layouts,
     bones: BonesBinding,
     camera: CameraBinding,
+    motion_camera: MotionCameraBinding,
     lights: LightsBinding,
     sun_shadow_matrices: [SunShadowMatrixBindGroup; SUN_SHADOW_MAX_CASCADE_COUNT],
 }
@@ -160,11 +159,13 @@ impl WorldBindGroups {
             SunShadowMatrixBindGroup::new(&wgpu_context.device, &layouts.sun_shadow_matrix)
         });
         let camera = CameraBinding::new(&wgpu_context.device, &layouts.camera);
-        let bones = BonesBinding::new(&layouts.bones, &wgpu_context.device);
+        let motion_camera = MotionCameraBinding::new(&wgpu_context.device, &layouts.motion_camera);
+        let bones = BonesBinding::new(&layouts.bones, &layouts.motion_bones, &wgpu_context.device);
         Self {
             layouts,
             bones,
             camera,
+            motion_camera,
             lights,
             sun_shadow_matrices,
         }
@@ -227,31 +228,45 @@ impl WorldPipelines {
 
 struct DeferredOpaqueRenderer {
     gtao_options: Option<GtaoOptions>,
-    ssgi_options: Option<SsgiOptions>,
     g_buffer_targets: GBufferTargets,
     gtao_texture: GtaoTexture,
+    motion_vectors: MotionVectorsTexture,
+    gi_source_write: HdrColorTexture,
+    gi_source_prev: HdrColorTexture,
+    history_write: HdrColorTexture,
+    history_prev: HdrColorTexture,
     gtao_pipeline: GtaoPipeline,
     g_buffer_pipeline: GBufferPipeline,
     deferred_lighting_pipeline: DeferredLightingPipeline,
-    ssgi_pipeline: SsgiPipeline,
+    history_pipeline: HistoryPipeline,
+    motion_vectors_pipeline: MotionVectorsPipeline,
+    history_valid: bool,
 }
 impl DeferredOpaqueRenderer {
     fn new(
         wgpu_context: &WgpuContext,
         shader_cache: &mut ShaderCache,
         layouts: &Layouts,
-        attachments: &WorldAttachments,
         gtao_options: Option<GtaoOptions>,
-        ssgi_options: Option<SsgiOptions>,
     ) -> Self {
         let g_buffer_targets =
             GBufferTargets::new(&wgpu_context.device, &wgpu_context.surface_config);
         let gtao_texture = GtaoTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
+        let motion_vectors =
+            MotionVectorsTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
+        let gi_source_write =
+            HdrColorTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
+        let gi_source_prev =
+            HdrColorTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
+        let history_write =
+            HdrColorTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
+        let history_prev = HdrColorTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
         let gtao_pipeline = GtaoPipeline::new(
             wgpu_context,
             shader_cache,
             &layouts.camera,
             &g_buffer_targets,
+            &history_write,
             &gtao_options.unwrap_or_default(),
         );
         let g_buffer_pipeline = GBufferPipeline::new(
@@ -262,6 +277,19 @@ impl DeferredOpaqueRenderer {
             &layouts.lights,
             &layouts.bones,
         );
+        let motion_vectors_pipeline = MotionVectorsPipeline::new(
+            wgpu_context,
+            shader_cache,
+            &layouts.motion_camera,
+            &layouts.motion_bones,
+        );
+        let history_pipeline = HistoryPipeline::new(
+            wgpu_context,
+            shader_cache,
+            &motion_vectors,
+            &gi_source_prev,
+            &history_prev,
+        );
         let deferred_lighting_pipeline = DeferredLightingPipeline::new(
             wgpu_context,
             shader_cache,
@@ -270,27 +298,65 @@ impl DeferredOpaqueRenderer {
             &g_buffer_targets,
             &gtao_texture,
         );
-        let ssgi_pipeline = SsgiPipeline::new(
-            wgpu_context,
-            shader_cache,
-            &layouts.camera,
-            &g_buffer_targets,
-            &gtao_texture,
-            &attachments.deferred_final_color,
-            &attachments.gi_source,
-            &attachments.ssgi_indirect,
-            &ssgi_options.unwrap_or_default(),
-        );
         Self {
             gtao_options,
-            ssgi_options,
             g_buffer_targets,
             gtao_texture,
+            motion_vectors,
+            gi_source_write,
+            gi_source_prev,
+            history_write,
+            history_prev,
             gtao_pipeline,
             g_buffer_pipeline,
             deferred_lighting_pipeline,
-            ssgi_pipeline,
+            history_pipeline,
+            motion_vectors_pipeline,
+            history_valid: false,
         }
+    }
+
+    fn refresh_temporal_bind_groups(&mut self, device: &wgpu::Device) {
+        self.history_pipeline.update_input_bindgroup(
+            device,
+            &self.motion_vectors,
+            &self.gi_source_prev,
+            &self.history_prev,
+        );
+        self.gtao_pipeline.update_input_bindgroups(
+            device,
+            &self.g_buffer_targets,
+            &self.history_write,
+            &self.gtao_options.unwrap_or_default(),
+        );
+    }
+
+    fn clear_temporal_inputs(&self, encoder: &mut wgpu::CommandEncoder) {
+        for (label, view) in [
+            ("Previous GI Source Clear Pass", &self.gi_source_prev.view),
+            ("Previous History Clear Pass", &self.history_prev.view),
+        ] {
+            let _clear_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some(label),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                occlusion_query_set: None,
+                timestamp_writes: None,
+            });
+        }
+    }
+
+    fn rotate_temporal_buffers(&mut self, device: &wgpu::Device) {
+        std::mem::swap(&mut self.gi_source_write, &mut self.gi_source_prev);
+        std::mem::swap(&mut self.history_write, &mut self.history_prev);
+        self.refresh_temporal_bind_groups(device);
     }
 
     fn render<'a>(
@@ -302,13 +368,13 @@ impl DeferredOpaqueRenderer {
         encoder: &mut wgpu::CommandEncoder,
         depth_texture_view: &wgpu::TextureView,
         hdr_color_view: &wgpu::TextureView,
-        deferred_final_color_view: &wgpu::TextureView,
-        gi_source_view: &wgpu::TextureView,
-        ssgi_indirect_view: &wgpu::TextureView,
         camera_bind_group: &wgpu::BindGroup,
+        motion_camera_bind_group: &wgpu::BindGroup,
         lights_bind_group: &wgpu::BindGroup,
         bones_bind_group: &wgpu::BindGroup,
+        motion_bones_bind_group: &wgpu::BindGroup,
         render_resources: &'a RenderAssetStore,
+        device: &wgpu::Device,
     ) {
         self.g_buffer_pipeline.render_skinned_opaque(
             skinned_opaque_pass,
@@ -331,25 +397,59 @@ impl DeferredOpaqueRenderer {
             lights_bind_group,
             render_resources,
         );
+        self.motion_vectors_pipeline.render_skinned_opaque(
+            skinned_opaque_pass,
+            skinned_instance_buffer,
+            encoder,
+            &self.motion_vectors.view,
+            depth_texture_view,
+            motion_camera_bind_group,
+            motion_bones_bind_group,
+            render_resources,
+        );
+        self.motion_vectors_pipeline.render_static_opaque(
+            static_opaque_pass,
+            static_instance_buffer,
+            encoder,
+            &self.motion_vectors.view,
+            depth_texture_view,
+            motion_camera_bind_group,
+            render_resources,
+        );
+        if !self.history_valid {
+            self.clear_temporal_inputs(encoder);
+        }
+        self.history_pipeline
+            .render(encoder, &self.history_write.view);
         if self.gtao_options.is_some() {
             self.gtao_pipeline
-                .render(encoder, &self.gtao_texture.view, camera_bind_group);
+                .render(encoder, &self.gtao_texture, camera_bind_group);
         } else {
             let _clear_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("GTAO Disabled Clear Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &self.gtao_texture.view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.0,
-                            g: 0.0,
-                            b: 0.0,
-                            a: 1.0,
-                        }),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
+                color_attachments: &[
+                    Some(wgpu::RenderPassColorAttachment {
+                        view: &self.gtao_texture.view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color {
+                                r: 0.0,
+                                g: 0.0,
+                                b: 0.0,
+                                a: 1.0,
+                            }),
+                            store: wgpu::StoreOp::Store,
+                        },
+                    }),
+                    Some(wgpu::RenderPassColorAttachment {
+                        view: &self.gtao_texture.hbil_diffuse_view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                            store: wgpu::StoreOp::Store,
+                        },
+                    }),
+                ],
                 depth_stencil_attachment: None,
                 occlusion_query_set: None,
                 timestamp_writes: None,
@@ -357,27 +457,33 @@ impl DeferredOpaqueRenderer {
         }
         self.deferred_lighting_pipeline.render(
             encoder,
-            deferred_final_color_view,
-            gi_source_view,
+            hdr_color_view,
+            &self.gi_source_write.view,
             camera_bind_group,
             lights_bind_group,
         );
-        self.ssgi_pipeline.render(
-            encoder,
-            ssgi_indirect_view,
-            hdr_color_view,
-            camera_bind_group,
-            self.ssgi_options.is_some(),
-        );
+        self.history_valid = true;
+        self.rotate_temporal_buffers(device);
     }
 
-    fn resize(&mut self, wgpu_context: &WgpuContext, attachments: &WorldAttachments) {
+    fn resize(&mut self, wgpu_context: &WgpuContext) {
         self.g_buffer_targets =
             GBufferTargets::new(&wgpu_context.device, &wgpu_context.surface_config);
         self.gtao_texture = GtaoTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
+        self.motion_vectors =
+            MotionVectorsTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
+        self.gi_source_write =
+            HdrColorTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
+        self.gi_source_prev =
+            HdrColorTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
+        self.history_write =
+            HdrColorTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
+        self.history_prev =
+            HdrColorTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
         self.gtao_pipeline.update_input_bindgroups(
             &wgpu_context.device,
             &self.g_buffer_targets,
+            &self.history_write,
             &self.gtao_options.unwrap_or_default(),
         );
         self.deferred_lighting_pipeline.update_input_bindgroup(
@@ -385,15 +491,13 @@ impl DeferredOpaqueRenderer {
             &self.g_buffer_targets,
             &self.gtao_texture,
         );
-        self.ssgi_pipeline.update_input_bindgroups(
+        self.history_pipeline.update_input_bindgroup(
             &wgpu_context.device,
-            &self.g_buffer_targets,
-            &self.gtao_texture,
-            &attachments.deferred_final_color,
-            &attachments.gi_source,
-            &attachments.ssgi_indirect,
-            &self.ssgi_options.unwrap_or_default(),
+            &self.motion_vectors,
+            &self.gi_source_prev,
+            &self.history_prev,
         );
+        self.history_valid = false;
     }
 }
 
@@ -416,12 +520,13 @@ impl CompactDeferredOpaqueRenderer {
         _encoder: &mut wgpu::CommandEncoder,
         _depth_texture_view: &wgpu::TextureView,
         _hdr_color_view: &wgpu::TextureView,
-        _deferred_final_color_view: &wgpu::TextureView,
-        _gi_source_view: &wgpu::TextureView,
         _camera_bind_group: &wgpu::BindGroup,
+        _motion_camera_bind_group: &wgpu::BindGroup,
         _lights_bind_group: &wgpu::BindGroup,
         _bones_bind_group: &wgpu::BindGroup,
+        _motion_bones_bind_group: &wgpu::BindGroup,
         _render_resources: &'a RenderAssetStore,
+        _device: &wgpu::Device,
     ) {
     }
 
@@ -444,6 +549,7 @@ pub struct WorldRenderer {
     skinned_instances: SkinnedInstances,
     static_instances: StaticInstances,
     pose_storage: AnimPoseStore,
+    prev_motion_view_proj: Option<Mat4>,
 }
 impl WorldRenderer {
     fn build_opaque_renderer(
@@ -451,18 +557,15 @@ impl WorldRenderer {
         wgpu_context: &WgpuContext,
         shader_cache: &mut ShaderCache,
         layouts: &Layouts,
-        attachments: &WorldAttachments,
     ) -> OpaqueRenderer {
         match options.opaque_render_path {
             OpaqueRenderPath::Forward => OpaqueRenderer::Forward,
-            OpaqueRenderPath::Deferred { gtao, ssgi } => {
+            OpaqueRenderPath::Deferred { gtao } => {
                 OpaqueRenderer::Deferred(DeferredOpaqueRenderer::new(
                     wgpu_context,
                     shader_cache,
                     layouts,
-                    attachments,
                     gtao,
-                    ssgi,
                 ))
             }
             OpaqueRenderPath::CompactDeferred => OpaqueRenderer::CompactDeferred(
@@ -503,7 +606,6 @@ impl WorldRenderer {
             wgpu_context,
             shader_cache,
             &bind_groups.layouts,
-            &attachments,
         );
 
         Self {
@@ -516,6 +618,7 @@ impl WorldRenderer {
             brdf_lut,
             static_instances,
             pose_storage,
+            prev_motion_view_proj: None,
         }
     }
 
@@ -530,7 +633,6 @@ impl WorldRenderer {
             wgpu_context,
             shader_cache,
             &self.bind_groups.layouts,
-            &self.attachments,
         );
     }
 
@@ -569,6 +671,14 @@ impl WorldRenderer {
             &wgpu_context.queue,
             &wgpu_context.surface_config,
         );
+        let prev_motion_view_proj = self
+            .prev_motion_view_proj
+            .unwrap_or(prepared_camera.view_proj);
+        self.bind_groups.motion_camera.update(
+            &prepared_camera.view_proj,
+            &prev_motion_view_proj,
+            &wgpu_context.queue,
+        );
         prepare_lights(
             &snaps,
             &mut self.bind_groups.lights,
@@ -596,6 +706,7 @@ impl WorldRenderer {
         let (skinned_opaque_pass, skinned_transparent_pass) = resolve_skinned_draw(
             &mut self.bind_groups.bones,
             &self.bind_groups.layouts.bones,
+            &self.bind_groups.layouts.motion_bones,
             &mut self.skinned_instances,
             render_resources,
             &snaps,
@@ -670,13 +781,13 @@ impl WorldRenderer {
                 encoder,
                 &self.attachments.depth_texture.view,
                 &self.attachments.hdr_color.view,
-                &self.attachments.deferred_final_color.view,
-                &self.attachments.gi_source.view,
-                &self.attachments.ssgi_indirect.view,
                 &self.bind_groups.camera.bind_group,
+                &self.bind_groups.motion_camera.bind_group,
                 &self.bind_groups.lights.bind_group,
                 &self.bind_groups.bones.bind_group,
+                &self.bind_groups.bones.motion_bind_group,
                 render_resources,
+                &wgpu_context.device,
             ),
             OpaqueRenderer::CompactDeferred(renderer) => renderer.render(
                 &skinned_opaque_pass,
@@ -686,12 +797,13 @@ impl WorldRenderer {
                 encoder,
                 &self.attachments.depth_texture.view,
                 &self.attachments.hdr_color.view,
-                &self.attachments.deferred_final_color.view,
-                &self.attachments.gi_source.view,
                 &self.bind_groups.camera.bind_group,
+                &self.bind_groups.motion_camera.bind_group,
                 &self.bind_groups.lights.bind_group,
                 &self.bind_groups.bones.bind_group,
+                &self.bind_groups.bones.motion_bind_group,
                 render_resources,
+                &wgpu_context.device,
             ),
         }
 
@@ -719,6 +831,7 @@ impl WorldRenderer {
         );
 
         self.pipelines.post.render(encoder, output_view);
+        self.prev_motion_view_proj = Some(prepared_camera.view_proj);
     }
 
     pub fn resize(&mut self, wgpu_context: &WgpuContext) {
@@ -730,7 +843,7 @@ impl WorldRenderer {
         );
         match &mut self.opaque_renderer {
             OpaqueRenderer::Forward => {}
-            OpaqueRenderer::Deferred(renderer) => renderer.resize(wgpu_context, &self.attachments),
+            OpaqueRenderer::Deferred(renderer) => renderer.resize(wgpu_context),
             OpaqueRenderer::CompactDeferred(renderer) => renderer.resize(wgpu_context),
         }
     }
