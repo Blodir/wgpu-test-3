@@ -268,6 +268,7 @@ impl DeferredOpaqueRenderer {
             &g_buffer_targets,
             &history_write,
             &gtao_options.unwrap_or_default(),
+            0,
         );
         let g_buffer_pipeline = GBufferPipeline::new(
             wgpu_context,
@@ -328,6 +329,7 @@ impl DeferredOpaqueRenderer {
             &self.g_buffer_targets,
             &self.history_write,
             &self.gtao_options.unwrap_or_default(),
+            0,
         );
     }
 
@@ -375,6 +377,7 @@ impl DeferredOpaqueRenderer {
         motion_bones_bind_group: &wgpu::BindGroup,
         render_resources: &'a RenderAssetStore,
         device: &wgpu::Device,
+        frame_idx: u32,
     ) {
         self.g_buffer_pipeline.render_skinned_opaque(
             skinned_opaque_pass,
@@ -422,6 +425,13 @@ impl DeferredOpaqueRenderer {
         self.history_pipeline
             .render(encoder, &self.history_write.view);
         if self.gtao_options.is_some() {
+            self.gtao_pipeline.update_input_bindgroups(
+                device,
+                &self.g_buffer_targets,
+                &self.history_write,
+                &self.gtao_options.unwrap_or_default(),
+                frame_idx,
+            );
             self.gtao_pipeline
                 .render(encoder, &self.gtao_texture, camera_bind_group);
         } else {
@@ -485,6 +495,7 @@ impl DeferredOpaqueRenderer {
             &self.g_buffer_targets,
             &self.history_write,
             &self.gtao_options.unwrap_or_default(),
+            0,
         );
         self.deferred_lighting_pipeline.update_input_bindgroup(
             &wgpu_context.device,
@@ -527,6 +538,7 @@ impl CompactDeferredOpaqueRenderer {
         _motion_bones_bind_group: &wgpu::BindGroup,
         _render_resources: &'a RenderAssetStore,
         _device: &wgpu::Device,
+        _frame_idx: u32,
     ) {
     }
 
@@ -788,6 +800,7 @@ impl WorldRenderer {
                 &self.bind_groups.bones.motion_bind_group,
                 render_resources,
                 &wgpu_context.device,
+                frame_idx,
             ),
             OpaqueRenderer::CompactDeferred(renderer) => renderer.render(
                 &skinned_opaque_pass,
@@ -804,6 +817,7 @@ impl WorldRenderer {
                 &self.bind_groups.bones.motion_bind_group,
                 render_resources,
                 &wgpu_context.device,
+                frame_idx,
             ),
         }
 

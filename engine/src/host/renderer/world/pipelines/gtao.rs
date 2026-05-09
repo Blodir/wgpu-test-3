@@ -28,6 +28,7 @@ impl GtaoPipeline {
         gbuffer_targets: &GBufferTargets,
         gi_source_texture: &HdrColorTexture,
         gtao_options: &GtaoOptions,
+        frame_index: u32,
     ) -> Self {
         let inputs_bind_group_layout =
             wgpu_context
@@ -98,6 +99,7 @@ impl GtaoPipeline {
             &wgpu_context.device,
             &settings_bind_group_layout,
             gtao_options,
+            frame_index,
         );
         let render_pipeline_layout =
             wgpu_context
@@ -224,6 +226,7 @@ impl GtaoPipeline {
         gbuffer_targets: &GBufferTargets,
         gi_source_texture: &HdrColorTexture,
         gtao_options: &GtaoOptions,
+        frame_index: u32,
     ) {
         self.inputs_bind_group = Self::create_inputs_bind_group(
             device,
@@ -232,7 +235,7 @@ impl GtaoPipeline {
             gi_source_texture,
         );
         self.settings_bind_group =
-            GtaoSettings::upload(device, &self.settings_bind_group_layout, gtao_options);
+            GtaoSettings::upload(device, &self.settings_bind_group_layout, gtao_options, frame_index);
     }
 
     pub fn render(

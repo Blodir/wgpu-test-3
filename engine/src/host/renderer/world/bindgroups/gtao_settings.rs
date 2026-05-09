@@ -6,6 +6,7 @@ use crate::host::renderer::GtaoOptions;
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct GtaoSettingsUniform {
     params0: [f32; 4],
+    params1: [u32; 4],
 }
 
 pub struct GtaoSettings {}
@@ -35,6 +36,7 @@ impl GtaoSettings {
         device: &wgpu::Device,
         bind_group_layout: &wgpu::BindGroupLayout,
         gtao_options: &GtaoOptions,
+        frame_index: u32,
     ) -> GtaoSettingsBinding {
         let settings_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("GTAO Settings Buffer"),
@@ -45,6 +47,7 @@ impl GtaoSettings {
                     gtao_options.power,
                     gtao_options.hbil_radius,
                 ],
+                params1: [frame_index, 0, 0, 0],
             }),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });

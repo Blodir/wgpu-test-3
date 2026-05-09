@@ -6,7 +6,13 @@
 @group(1) @binding(3) var gbuffer_world_position_sampler: sampler;
 @group(1) @binding(4) var gi_source_history_texture: texture_2d<f32>;
 @group(1) @binding(5) var gi_source_history_sampler: sampler;
-@group(2) @binding(0) var<uniform> gtao_settings: vec4<f32>;
+
+struct GtaoSettingsUniform {
+    params0: vec4<f32>,
+    params1: vec4<u32>,
+}
+
+@group(2) @binding(0) var<uniform> gtao_settings: GtaoSettingsUniform;
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
@@ -267,6 +273,10 @@ fn angle_between(a: vec3<f32>, b: vec3<f32>) -> f32 {
     return acos(d);
 }
 
+fn interleaved_gradient_noise(p: vec2<f32>) -> f32 {
+    return fract(52.9829189 * fract(dot(p, vec2<f32>(0.06711056, 0.00583715))));
+}
+
 fn gtao2(in: VertexOutput) -> FragmentOutput {
     let uv = in.tex_coords;
     let world_pos_sample = textureSample(
@@ -291,10 +301,12 @@ fn gtao2(in: VertexOutput) -> FragmentOutput {
     let TBN = build_basis_frisvad(N);
 
     // config
-    let radius_pixels = gtao_settings.x;
-    let ao_radius = gtao_settings.y;
-    let gtao_power = gtao_settings.z;
-    let hbil_radius = min(gtao_settings.w, ao_radius);
+    let frame_index = gtao_settings.params1.x;
+    let jitter = interleaved_gradient_noise(uv + vec2<f32>(f32(frame_index), 0.0));
+    let radius_pixels = gtao_settings.params0.x;
+    let ao_radius = gtao_settings.params0.y;
+    let gtao_power = gtao_settings.params0.z;
+    let hbil_radius = min(gtao_settings.params0.w, ao_radius);
 
     let dims = vec2<f32>(textureDimensions(gbuffer_world_position, 0));
     let inv_dims = 1.0 / dims;
@@ -310,7 +322,7 @@ fn gtao2(in: VertexOutput) -> FragmentOutput {
     for (var dir_idx: u32 = 0u; dir_idx < DIRECTIONS; dir_idx += 1u) {
         // Note: this was wrong previously with 2PI, we only need to cover half of the hemisphere
         // since we are taking samples from both sides of each slice
-        let azimuth = PI * (f32(dir_idx) / f32(DIRECTIONS));
+        let azimuth = PI * ((f32(dir_idx) + jitter) / f32(DIRECTIONS));
         let slice_dir_uv = vec2<f32>(cos(azimuth), sin(azimuth));
         let uv_step = slice_dir_uv * inv_dims;
         let history_uv_step = slice_dir_uv * inv_history_dims;
@@ -334,14 +346,17 @@ fn gtao2(in: VertexOutput) -> FragmentOutput {
                 // calculate angle between N and D
                 // let's assume length(D) can't be 0 (radius_pixels needs to be larger than 0)
                 let D_normalized = normalize(D);
-                let angle = angle_between(N, D);
+                let angle = angle_between(N, D_normalized);
                 let horizon_angle = max(PI / 2.0 - angle, 0.0);
-                horizon_angle_fwd = max(horizon_angle_fwd, horizon_angle);
 
-                // TODO not proper HBIL, work on this later
-                let radiance_sample = load_history_radiance(uv + step_history_uv_offset);
-                irradiance_acc += radiance_sample;
-                irradiance_samples += 1;
+                if (horizon_angle > horizon_angle_fwd) {
+                    horizon_angle_fwd = horizon_angle;
+
+                    // TODO not proper HBIL, work on this later
+                    let radiance_sample = load_history_radiance(uv + step_history_uv_offset);
+                    irradiance_acc += radiance_sample;
+                    irradiance_samples += 1;
+                }
             }
 
             let sample_bwd_world = textureSample(
@@ -353,13 +368,16 @@ fn gtao2(in: VertexOutput) -> FragmentOutput {
             if (sample_bwd_world.w >= 0.5) {
                 let D = sample_bwd_world.xyz - P;
                 let D_normalized = normalize(D);
-                let angle = angle_between(N, D);
+                let angle = angle_between(N, D_normalized);
                 let horizon_angle = max(PI / 2.0 - angle, 0.0);
-                horizon_angle_bwd = max(horizon_angle_bwd, horizon_angle);
 
-                let radiance_sample = load_history_radiance(uv - step_history_uv_offset);
-                irradiance_acc += radiance_sample;
-                irradiance_samples += 1;
+                if (horizon_angle > horizon_angle_bwd) {
+                    horizon_angle_bwd = horizon_angle;
+
+                    let radiance_sample = load_history_radiance(uv - step_history_uv_offset);
+                    irradiance_acc += radiance_sample;
+                    irradiance_samples += 1;
+                }
             }
         }
 
@@ -373,8 +391,6 @@ fn gtao2(in: VertexOutput) -> FragmentOutput {
         // Simple visibility gathering TODO actual gtao
         visibility_acc += alpha / PI;
     }
-
-    // ..........
 
     let ao = visibility_acc / f32(DIRECTIONS);
     let bent_normal = bent_normal_acc / f32(DIRECTIONS);
