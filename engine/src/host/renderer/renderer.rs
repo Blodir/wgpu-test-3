@@ -27,7 +27,7 @@ impl Default for GtaoOptions {
     fn default() -> Self {
         Self {
             radius_pixels: 8.0,
-            ao_radius: 30.0,
+            ao_radius: 8.0,
             power: 1.0,
             hbil_radius: 2.0,
         }

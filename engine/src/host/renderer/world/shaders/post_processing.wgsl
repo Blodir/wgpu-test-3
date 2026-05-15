@@ -25,6 +25,7 @@ fn sample_post_color(uv: vec2f) -> vec3f {
     // Composite with skybox using premultiplied-alpha math.
     var col = scene_color_sample.xyz + skybox_sample.xyz * (1.0 - scene_color_sample.w);
 
+    /*
     // exposure
     let exposure = -2.0;
     let exposure_factor = pow(2.0, exposure);
@@ -32,6 +33,7 @@ fn sample_post_color(uv: vec2f) -> vec3f {
 
     // reinhard tone mapping
     col = col / (col + vec3f(1.0));
+     */
     return col;
 }
 

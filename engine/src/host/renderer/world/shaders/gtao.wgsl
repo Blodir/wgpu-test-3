@@ -1,4 +1,5 @@
 @group(0) @binding(1) var<uniform> camera_pos: vec3<f32>;
+@group(0) @binding(4) var<uniform> camera_view_rotation: mat3x3<f32>;
 
 @group(1) @binding(0) var gbuffer_normal_roughness: texture_2d<f32>;
 @group(1) @binding(1) var gbuffer_normal_roughness_sampler: sampler;
@@ -48,551 +49,282 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
     return out;
 }
 
-fn safe_normalize(v: vec3<f32>) -> vec3<f32> {
-    let len2 = dot(v, v);
-    if (len2 < 1e-8) {
-        return vec3<f32>(0.0, 0.0, 1.0);
+fn safe_normalize2(v: vec2<f32>) -> vec2<f32> {
+    let len = length(v);
+    if (len > 1e-8) {
+        return v / len;
     }
-    return v * inverseSqrt(len2);
-}
-
-fn saturate(x: f32) -> f32 {
-    return clamp(x, 0.0, 1.0);
-}
-
-// Primitive of the cosine-weighted horizon slice integral.
-fn integrate_arc_cos_weighted(h: f32, n: f32) -> f32 {
-    return 0.25 * (-cos(2.0 * h - n) + cos(n) + 2.0 * h * sin(n));
-}
-
-fn clamped_slice_interval(
-    horizon_angle_bwd: f32,
-    horizon_angle_fwd: f32,
-    slice_tangent: vec3<f32>,
-    view_dir: vec3<f32>,
-    normal: vec3<f32>
-) -> vec4<f32> {
-    let nx = dot(normal, slice_tangent);
-    let ny = dot(normal, view_dir);
-    let proj_n = vec2<f32>(nx, ny);
-    let proj_n_len = length(proj_n);
-
-    if (proj_n_len < 1e-5) {
-        return vec4<f32>(0.0, 0.0, 0.0, 0.0);
-    }
-
-    let n_angle = atan2(ny, nx);
-    let min_angle = n_angle - 0.5 * PI;
-    let max_angle = n_angle + 0.5 * PI;
-    let h1 = clamp(horizon_angle_bwd, min_angle, max_angle);
-    let h2 = clamp(horizon_angle_fwd, min_angle, max_angle);
-
-    if (h2 <= h1) {
-        return vec4<f32>(0.0, 0.0, proj_n_len, 0.0);
-    }
-
-    return vec4<f32>(h1, h2, proj_n_len, n_angle);
-}
-
-fn evaluate_slice_visibility(
-    horizon_angle_bwd: f32,
-    horizon_angle_fwd: f32,
-    slice_tangent: vec3<f32>,
-    view_dir: vec3<f32>,
-    normal: vec3<f32>
-) -> f32 {
-    let interval = clamped_slice_interval(
-        horizon_angle_bwd,
-        horizon_angle_fwd,
-        slice_tangent,
-        view_dir,
-        normal,
-    );
-    let h1 = interval.x;
-    let h2 = interval.y;
-    let proj_n_len = interval.z;
-    let n_angle = interval.w;
-
-    if (proj_n_len < 1e-5 || h2 <= h1) {
-        return 0.0;
-    }
-
-    let arc =
-        integrate_arc_cos_weighted(h2, n_angle) -
-        integrate_arc_cos_weighted(h1, n_angle);
-
-    return max(0.0, proj_n_len * arc);
-}
-
-fn evaluate_slice_bent_contribution(
-    horizon_angle_bwd: f32,
-    horizon_angle_fwd: f32,
-    slice_tangent: vec3<f32>,
-    view_dir: vec3<f32>,
-    normal: vec3<f32>
-) -> vec3<f32> {
-    // Horizon search stores angles from the slice tangent axis. Convert them to the
-    // paper's slice-space convention, where theta = 0 lies on the view axis.
-    let theta0 = horizon_angle_bwd - 0.5 * PI;
-    let theta1 = 0.5 * PI - horizon_angle_fwd;
-
-    if (theta1 <= theta0) {
-        return vec3<f32>(0.0);
-    }
-
-    let bent_tangent =
-        0.5 * (
-            theta1 - theta0 +
-            sin(theta0) * cos(theta0) -
-            sin(theta1) * cos(theta1)
-        );
-    let bent_view =
-        0.5 * (
-            2.0 -
-            cos(theta0) * cos(theta0) -
-            cos(theta1) * cos(theta1)
-        );
-
-    return
-        slice_tangent * bent_tangent +
-        view_dir * bent_view;
-}
-
-fn initialize_horizon_angles(
-    slice_tangent: vec3<f32>,
-    view_dir: vec3<f32>,
-    normal: vec3<f32>
-) -> vec2<f32> {
-    let nx = dot(normal, slice_tangent);
-    let ny = dot(normal, view_dir);
-
-    if (abs(nx) < 1e-5 && abs(ny) < 1e-5) {
-        return vec2<f32>(-0.5 * PI, -0.5 * PI);
-    }
-
-    let horizon_bwd = clamp(atan2(nx, ny), -0.5 * PI, 0.5 * PI);
-    let horizon_fwd = clamp(atan2(-nx, ny), -0.5 * PI, 0.5 * PI);
-    return vec2<f32>(horizon_bwd, horizon_fwd);
-}
-
-// HBIL integrates the radiance gathered when the horizon rises over a slice interval.
-fn evaluate_hbil_interval(
-    prev_horizon_angle: f32,
-    new_horizon_angle: f32,
-    slice_tangent: vec3<f32>,
-    view_dir: vec3<f32>,
-    normal: vec3<f32>
-) -> f32 {
-    let nx = dot(normal, slice_tangent);
-    let ny = dot(normal, view_dir);
-    let proj_n = vec2<f32>(nx, ny);
-
-    if (length(proj_n) < 1e-5) {
-        return 0.0;
-    }
-
-    let n_angle = atan2(ny, nx);
-    let min_angle = n_angle - 0.5 * PI;
-    let max_angle = n_angle + 0.5 * PI;
-    let theta0 = clamp(prev_horizon_angle, min_angle, max_angle);
-    let theta1 = clamp(new_horizon_angle, min_angle, max_angle);
-
-    if (theta1 <= theta0) {
-        return 0.0;
-    }
-
-    let term_x =
-        0.5 * (
-            theta1 - theta0 +
-            sin(theta0) * cos(theta0) -
-            sin(theta1) * cos(theta1)
-        );
-    let term_y =
-        0.5 * (
-            cos(theta0) * cos(theta0) -
-            cos(theta1) * cos(theta1)
-        );
-
-    return max(0.0, nx * term_x + ny * term_y);
-}
-
-fn load_history_radiance(uv: vec2<f32>) -> vec3<f32> {
-    let history_uv = clamp(uv, vec2f(0.0), vec2f(1.0));
-    return textureSample(
-        gi_source_history_texture,
-        gi_source_history_sampler,
-        history_uv
-    ).rgb;
-}
-
-fn sample_filtered_history_radiance(
-    sample_uv: vec2<f32>,
-    wi: vec3<f32>,
-    fallback_radiance: vec3<f32>,
-    history_dims: vec2<f32>
-) -> vec3<f32> {
-    let history_radiance = load_history_radiance(sample_uv);
-    let sample_normal = safe_normalize(textureSample(
-        gbuffer_normal_roughness,
-        gbuffer_normal_roughness_sampler,
-        sample_uv
-    ).xyz);
-    let facing_weight = smoothstep(0.0, 0.25, dot(sample_normal, -wi));
-    return mix(fallback_radiance, history_radiance, facing_weight);
+    return vec2<f32>(0.0);
 }
 
 fn safe_normalize3(v: vec3<f32>) -> vec3<f32> {
     let len = length(v);
-    return select(vec3<f32>(0.0), v / len, len > 0.0001);
+    if (len > 1e-8) {
+        return v / len;
+    }
+    return vec3<f32>(0.0);
 }
 
-fn build_basis_frisvad(n: vec3<f32>) -> mat3x3<f32> {
-    let N = normalize(n);
+fn sanitize_rgb(v: vec3f) -> vec3f {
+    let cap = 100.0;
 
-    let sign = select(-1.0, 1.0, N.z >= 0.0);
-    let a = -1.0 / (sign + N.z);
-    let b = N.x * N.y * a;
+    // WGSL NaN check: NaN != NaN
+    let finiteish = all(v == v) && all(abs(v) < vec3f(1e20));
 
-    let T = vec3<f32>(
-        1.0 + sign * N.x * N.x * a,
-        sign * b,
-        -sign * N.x
+    return select(
+        vec3f(0.0),
+        clamp(v, vec3f(0.0), vec3f(cap)),
+        finiteish && all(v >= vec3f(0.0))
     );
-
-    let B = vec3<f32>(
-        b,
-        sign + N.y * N.y * a,
-        -N.y
-    );
-
-    return mat3x3<f32>(T, B, N);
 }
 
-fn angle_between(a: vec3<f32>, b: vec3<f32>) -> f32 {
-    let d = dot(a, b);
-    return acos(d);
-}
-
-fn interleaved_gradient_noise(p: vec2<f32>) -> f32 {
-    return fract(52.9829189 * fract(dot(p, vec2<f32>(0.06711056, 0.00583715))));
-}
-
-fn gtao2(in: VertexOutput) -> FragmentOutput {
+/**
+    Based on Horizon-Based Indirect Lighting (HBIL) - Benoit Mayaux
+*/
+fn hbil4(in: VertexOutput) -> FragmentOutput {
+    let radius_pixels = gtao_settings.params0.x;
+    let radius_world = gtao_settings.params0.y;
     let uv = in.tex_coords;
-    let world_pos_sample = textureSample(
+    let P_sample = textureSample(
         gbuffer_world_position,
         gbuffer_world_position_sampler,
         uv
     );
-    if (world_pos_sample.w < 0.5) {
+    if (P_sample.w < 0.5) {
         // invalid sample
         return FragmentOutput(vec4<f32>(0.0, 0.0, 0.0, 1.0), vec4<f32>(0.0));
     }
-    let P = world_pos_sample.xyz;
-
-    let normal = textureSample(
-        gbuffer_normal_roughness,
-        gbuffer_normal_roughness_sampler,
-        uv
-    ).xyz;
-    let V = safe_normalize3(camera_pos - P);
-    // view facing normal:
-    let N = select(normal, -normal, dot(normal, V) < 0.0);
-    let TBN = build_basis_frisvad(N);
-
-    // config
-    let frame_index = gtao_settings.params1.x;
-    let jitter = interleaved_gradient_noise(uv + vec2<f32>(f32(frame_index), 0.0));
-    let radius_pixels = gtao_settings.params0.x;
-    let ao_radius = gtao_settings.params0.y;
-    let gtao_power = gtao_settings.params0.z;
-    let hbil_radius = min(gtao_settings.params0.w, ao_radius);
-
-    let dims = vec2<f32>(textureDimensions(gbuffer_world_position, 0));
-    let inv_dims = 1.0 / dims;
-    // history can be half res, quarter, or something else
-    let history_dims = vec2<f32>(textureDimensions(gi_source_history_texture, 0));
-    let inv_history_dims = 1.0 / history_dims;
-
-    var visibility_acc = 0.0;
-    var bent_normal_acc = vec3f(0.0, 0.0, 0.0);
-    var irradiance_acc = vec3f(0.0, 0.0, 0.0);
-    var irradiance_samples: u32 = 0;
-
-    for (var dir_idx: u32 = 0u; dir_idx < DIRECTIONS; dir_idx += 1u) {
-        // Note: this was wrong previously with 2PI, we only need to cover half of the hemisphere
-        // since we are taking samples from both sides of each slice
-        let azimuth = PI * ((f32(dir_idx) + jitter) / f32(DIRECTIONS));
-        let slice_dir_uv = vec2<f32>(cos(azimuth), sin(azimuth));
-        let uv_step = slice_dir_uv * inv_dims;
-        let history_uv_step = slice_dir_uv * inv_history_dims;
-
-        var horizon_angle_fwd = 0.0;
-        var horizon_angle_bwd = 0.0;
-
-        for (var step_idx: u32 = 1u; step_idx <= STEPS_PER_DIRECTION; step_idx += 1u) {
-            let step_t = f32(step_idx) / f32(STEPS_PER_DIRECTION);
-            let step_uv_offset = uv_step * step_t * radius_pixels;
-            let step_history_uv_offset = history_uv_step * step_t * radius_pixels;
-
-            let sample_fwd_world = textureSample(
-                gbuffer_world_position,
-                gbuffer_world_position_sampler,
-                uv + step_uv_offset
-            );
-
-            if (sample_fwd_world.w >= 0.5) {
-                let D = sample_fwd_world.xyz - P;
-                // calculate angle between N and D
-                // let's assume length(D) can't be 0 (radius_pixels needs to be larger than 0)
-                let D_normalized = normalize(D);
-                let angle = angle_between(N, D_normalized);
-                let horizon_angle = max(PI / 2.0 - angle, 0.0);
-
-                if (horizon_angle > horizon_angle_fwd) {
-                    horizon_angle_fwd = horizon_angle;
-
-                    // TODO not proper HBIL, work on this later
-                    let radiance_sample = load_history_radiance(uv + step_history_uv_offset);
-                    irradiance_acc += radiance_sample;
-                    irradiance_samples += 1;
-                }
-            }
-
-            let sample_bwd_world = textureSample(
-                gbuffer_world_position,
-                gbuffer_world_position_sampler,
-                uv - step_uv_offset
-            );
-
-            if (sample_bwd_world.w >= 0.5) {
-                let D = sample_bwd_world.xyz - P;
-                let D_normalized = normalize(D);
-                let angle = angle_between(N, D_normalized);
-                let horizon_angle = max(PI / 2.0 - angle, 0.0);
-
-                if (horizon_angle > horizon_angle_bwd) {
-                    horizon_angle_bwd = horizon_angle;
-
-                    let radiance_sample = load_history_radiance(uv - step_history_uv_offset);
-                    irradiance_acc += radiance_sample;
-                    irradiance_samples += 1;
-                }
-            }
-        }
-
-        // average angle from N along slice plane
-        let alpha = PI - horizon_angle_fwd - horizon_angle_bwd;
-        // reconstruct vec3 from the angle
-        let dist = select(-tan(alpha), tan(alpha), alpha > 0.0);
-        let normal_contribution = normalize(N + TBN * dist * vec3f(slice_dir_uv, 0.0));
-        bent_normal_acc += normal_contribution;
-
-        // Simple visibility gathering TODO actual gtao
-        visibility_acc += alpha / PI;
-    }
-
-    let ao = visibility_acc / f32(DIRECTIONS);
-    let bent_normal = bent_normal_acc / f32(DIRECTIONS);
-    let irradiance = select(
-        vec3f(0.0, 0.0, 0.0),
-        irradiance_acc / f32(irradiance_samples),
-        irradiance_samples > 0
-    );
-    return FragmentOutput(vec4f(bent_normal, ao), vec4f(irradiance, 1.0));
-}
-
-@fragment
-fn fs_main(in: VertexOutput) -> FragmentOutput {
-    return gtao2(in);
-    /*
-    let uv = in.tex_coords;
-
-    let world_pos_sample = textureSample(
-        gbuffer_world_position,
-        gbuffer_world_position_sampler,
-        uv
-    );
-    if (world_pos_sample.w < 0.5) {
-        return FragmentOutput(vec4<f32>(0.0, 0.0, 0.0, 1.0), vec4<f32>(0.0));
-    }
-
-    let P = world_pos_sample.xyz;
+    let P_w = P_sample.xyz;
 
     let normal_sample = textureSample(
         gbuffer_normal_roughness,
         gbuffer_normal_roughness_sampler,
         uv
-    );
-    let V = safe_normalize(camera_pos - P);
-    let base_normal = safe_normalize(normal_sample.xyz);
-    let N = select(base_normal, -base_normal, dot(base_normal, V) < 0.0);
+    ).xyz;
 
     let dims = vec2<f32>(textureDimensions(gbuffer_world_position, 0));
-    let inv_resolution = 1.0 / dims;
-    let history_dims = vec2<f32>(textureDimensions(gi_source_history_texture, 0));
-    let gi_source_history = textureLoad(
-        gi_source_history_texture,
-        vec2i(clamp(uv * history_dims, vec2f(0.0), history_dims - vec2f(1.0))),
-        0
-    );
-    let radius_pixels = gtao_settings.x;
-    let ao_radius = gtao_settings.y;
-    let gtao_power = gtao_settings.z;
-    let hbil_radius = min(gtao_settings.w, ao_radius);
+    let inv_dims = 1.0 / dims;
+    let F0 = vec3f(0.04); // TODO get from surface metallic
+    let step_length = inv_dims * radius_pixels * (1.0 / f32(STEPS_PER_DIRECTION));
 
-    var visibility_accum: f32 = 0.0;
-    var bent_accum = vec3<f32>(0.0);
-    var hbil_accum = vec3<f32>(0.0);
+    // 1.1. Camera Spaces ---
+    let X_w = camera_view_rotation[0];
+    let Y_w = camera_view_rotation[1];
+    let Z_w = camera_view_rotation[2];
+
+    let omega_o_w = safe_normalize3(camera_pos - P_w);
+    let omega_x_w = safe_normalize3(cross(Y_w, omega_o_w));
+    let omega_y_w = cross(omega_o_w, omega_x_w);
+    // ---
+
+    // view facing normal:
+    let n_w = select(omega_o_w, normal_sample, all(normal_sample == normal_sample));
+
+    var visibility_acc = 0.0;
+    var bent_acc_w = vec3f(0.0);
+    var irradiance_acc = vec3f(0.0);
+    var debug = 0.0;
 
     for (var dir_idx: u32 = 0u; dir_idx < DIRECTIONS; dir_idx += 1u) {
-        let azimuth = 2.0 * PI * (f32(dir_idx) / f32(DIRECTIONS));
-        let slice_dir_uv = vec2<f32>(cos(azimuth), sin(azimuth));
-        let uv_step = slice_dir_uv * inv_resolution;
+        // rotate around half of the hemisphere (since we sample both front/back)
+        let phi = PI * ((f32(dir_idx) + 0.5) / f32(DIRECTIONS));
 
-        let neigh_pos_sample = textureSample(
-            gbuffer_world_position,
-            gbuffer_world_position_sampler,
-            clamp(uv + uv_step, vec2<f32>(0.0), vec2<f32>(1.0))
-        );
+        // 1.2. Slice Space ---
+        let D_w = cos(phi) * omega_x_w + sin(phi) * omega_y_w;
+        // w = world space
+        // cs = local camera space
+        // ss = slice space
+        let D_cs = vec3f(cos(phi), sin(phi), 0.0);
+        let omega_o_cs = vec3f(0.0, 0.0, 1.0);
+        let D_ss = vec2f(1.0, 0.0);
+        let omega_o_ss = vec2f(0.0, 1.0);
+        let x_ss = vec2f(0.0, 0.0);
+        let n_ss = vec2f(dot(n_w, D_w), dot(n_w, omega_o_w));
+        // ---
 
-        var slice_tangent = vec3<f32>(0.0, 0.0, 0.0);
-        if (neigh_pos_sample.w >= 0.5) {
-            slice_tangent = neigh_pos_sample.xyz - P;
-        }
+        let step_cs = vec2f(D_cs.x, -D_cs.y) * step_length;
 
-        slice_tangent = slice_tangent - V * dot(slice_tangent, V);
-
-        if (dot(slice_tangent, slice_tangent) < 1e-8) {
-            let fallback_axis =
-                select(vec3<f32>(0.0, 1.0, 0.0), vec3<f32>(1.0, 0.0, 0.0), abs(V.y) > 0.99);
-            slice_tangent = cross(fallback_axis, V);
-        }
-
-        slice_tangent = safe_normalize(slice_tangent);
-        let slice_plane_normal = safe_normalize(cross(V, slice_tangent));
-
-        let initial_horizons = initialize_horizon_angles(slice_tangent, V, N);
-        var horizon_angle_bwd: f32 = initial_horizons.x;
-        var horizon_angle_fwd: f32 = initial_horizons.y;
-        var history_radiance_fwd = gi_source_history.rgb;
-        var history_radiance_bwd = gi_source_history.rgb;
+        // 2.1. ---
+        // HORIZON INITIALIZER ACCORDING TO PAPER
+        /*
+        let denom = max(dot(omega_o_w, n_w), 1e-4);
+        let t = -1.0 * (dot(D_w, n_w) / denom);
+        let cos_theta_front_init = t / sqrt(1 + t*t);
+        let cos_theta_back_init = -cos_theta_front_init;
+        var theta_front =  acos(clamp(cos_theta_front_init, -1.0, 1.0)); // [0, PI]
+        var theta_back  = -acos(clamp(cos_theta_back_init,  -1.0, 1.0)); // [-PI, 0]
+         */
+        // ---
+        // based on my own horizon initialization drawing...
+        let k_ss = safe_normalize2(vec2f(n_ss.y, -n_ss.x));
+        var theta_front = acos(clamp(dot(omega_o_ss, k_ss), -1.0, 1.0));
+        var theta_back = -PI + theta_front;
 
         for (var step_idx: u32 = 1u; step_idx <= STEPS_PER_DIRECTION; step_idx += 1u) {
-            let step_t = f32(step_idx) / f32(STEPS_PER_DIRECTION);
-            let offset = slice_dir_uv * (radius_pixels * step_t) * inv_resolution;
+            let current_step_cs = f32(step_idx) * step_cs;
 
-            let sample_fwd_uv = clamp(uv + offset, vec2<f32>(0.0), vec2<f32>(1.0));
-            let sample_fwd_world = textureSample(
+            // FRONT ----------------------------
+
+            // 1.3. Computing Horizon Angles ---
+            // Can be skipped, because we are sampling real world space coordinates from gbuffer, not depth buffer values
+            // ---
+            let x_1_sample = textureSample(
                 gbuffer_world_position,
                 gbuffer_world_position_sampler,
-                sample_fwd_uv
+                uv + current_step_cs
             );
 
-            if (sample_fwd_world.w >= 0.5) {
-                let D = sample_fwd_world.xyz - P;
-                let dist2 = dot(D, D);
-                if (dist2 <= ao_radius * ao_radius) {
-                    let D_plane = D - slice_plane_normal * dot(D, slice_plane_normal);
-                    let x = dot(D_plane, slice_tangent);
-                    let y = dot(D_plane, V);
-                    let wi = D * inverseSqrt(max(dist2, 1e-8));
-                    let sample_radiance = sample_filtered_history_radiance(
-                        sample_fwd_uv,
-                        wi,
-                        history_radiance_fwd,
-                        history_dims,
-                    );
-                    history_radiance_fwd = sample_radiance;
+            if (x_1_sample.w > 0.5) {
+                let x_1_w = x_1_sample.xyz;
+                let to_sample = x_1_w - P_w;
+                // reject samples that are too far away, this should reduce halo-ing around objects
+                if (length(to_sample) < radius_world) {
+                    let sample_dir_w = safe_normalize3(to_sample);
 
-                    if (x > 1e-5) {
-                        let angle = atan2(y, x);
-                        if (angle > horizon_angle_fwd) {
-                            if (dist2 <= hbil_radius * hbil_radius) {
-                                hbil_accum += sample_radiance * evaluate_hbil_interval(
-                                    horizon_angle_fwd,
-                                    angle,
-                                    slice_tangent,
-                                    V,
-                                    N,
-                                );
-                            }
-                            horizon_angle_fwd = angle;
-                        }
+                    // Project to slice space
+                    let sample_dir_ss = safe_normalize2(
+                        vec2f(
+                            dot(sample_dir_w, D_w),
+                            dot(sample_dir_w, omega_o_w)
+                        )
+                    );
+
+                    let theta = atan2(sample_dir_ss.x, sample_dir_ss.y);
+                    debug += theta;
+
+                    if (theta > 0.0 && theta < theta_front) {
+                        let L_d = sanitize_rgb(textureSample(
+                            gi_source_history_texture,
+                            gi_source_history_sampler,
+                            uv + current_step_cs
+                        ).rgb);
+
+                        // equation 18
+                        let theta_0 = theta;
+                        let theta_1 = theta_front;
+                        let cos_theta_0 = cos(theta_0);
+                        let cos_theta_1 = cos(theta_1);
+                        let cos2_theta_0 = cos_theta_0 * cos_theta_0;
+                        let cos2_theta_1 = cos_theta_1 * cos_theta_1;
+                        let sin_theta_0 = sin(theta_0);
+                        let sin_theta_1 = sin(theta_1);
+
+                        let left = n_ss.x * 0.5 * (
+                            theta_1 - theta_0
+                            + sin_theta_0 * cos_theta_0
+                            - sin_theta_1 * cos_theta_1
+                        );
+                        let right = n_ss.y * 0.5 * (cos2_theta_0 - cos2_theta_1);
+
+                        // equation 19
+                        irradiance_acc += L_d * (1 - F0) * (left + right);
+                        theta_front = theta;
                     }
                 }
             }
 
-            let sample_bwd_uv = clamp(uv - offset, vec2<f32>(0.0), vec2<f32>(1.0));
-            let sample_bwd_world = textureSample(
+            // BACK ------------------------------
+            let x_1_back_sample = textureSample(
                 gbuffer_world_position,
                 gbuffer_world_position_sampler,
-                sample_bwd_uv
+                uv - current_step_cs
             );
 
-            if (sample_bwd_world.w >= 0.5) {
-                let D = sample_bwd_world.xyz - P;
-                let dist2 = dot(D, D);
-                if (dist2 <= ao_radius * ao_radius) {
-                    let D_plane = D - slice_plane_normal * dot(D, slice_plane_normal);
-                    let x = dot(D_plane, -slice_tangent);
-                    let y = dot(D_plane, V);
-                    let wi = D * inverseSqrt(max(dist2, 1e-8));
-                    let sample_radiance = sample_filtered_history_radiance(
-                        sample_bwd_uv,
-                        wi,
-                        history_radiance_bwd,
-                        history_dims,
+            if (x_1_back_sample.w > 0.5) {
+                let x_1_back_w = x_1_back_sample.xyz;
+                let to_sample = x_1_back_w - P_w;
+                // reject samples that are too far away, this should reduce halo-ing around objects
+                if (length(to_sample) < radius_world) {
+                    let sample_dir_w = safe_normalize3(to_sample);
+                    let sample_dir_ss = safe_normalize2(
+                        vec2f(
+                            dot(sample_dir_w, D_w),
+                            dot(sample_dir_w, omega_o_w)
+                        )
                     );
-                    history_radiance_bwd = sample_radiance;
 
-                    if (x > 1e-5) {
-                        let angle = atan2(y, x);
-                        if (angle > horizon_angle_bwd) {
-                            if (dist2 <= hbil_radius * hbil_radius) {
-                                hbil_accum += sample_radiance * evaluate_hbil_interval(
-                                    horizon_angle_bwd,
-                                    angle,
-                                    -slice_tangent,
-                                    V,
-                                    N,
-                                );
-                            }
-                            horizon_angle_bwd = angle;
-                        }
+                    let theta = atan2(sample_dir_ss.x, sample_dir_ss.y);
+
+                    if (theta < 0.0 && theta > theta_back) {
+                        let L_d = sanitize_rgb(textureSample(
+                            gi_source_history_texture,
+                            gi_source_history_sampler,
+                            uv - current_step_cs
+                        ).rgb);
+
+                        // equation 18
+                        let theta_0 = theta_back;
+                        let theta_1 = theta;
+                        let cos_theta_0 = cos(theta_0);
+                        let cos_theta_1 = cos(theta_1);
+                        let cos2_theta_0 = cos_theta_0 * cos_theta_0;
+                        let cos2_theta_1 = cos_theta_1 * cos_theta_1;
+                        let sin_theta_0 = sin(theta_0);
+                        let sin_theta_1 = sin(theta_1);
+
+                        let left = -n_ss.x * 0.5 * (
+                            theta_1 - theta_0
+                            + sin_theta_0 * cos_theta_0
+                            - sin_theta_1 * cos_theta_1
+                        );
+                        let right = n_ss.y * 0.5 * (cos2_theta_0 - cos2_theta_1);
+
+                        // equation 19
+                        irradiance_acc += L_d * (1 - F0) * (left + right);
+                        theta_back = theta;
                     }
                 }
             }
         }
 
-        let slice_vis = evaluate_slice_visibility(
-            horizon_angle_bwd,
-            horizon_angle_fwd,
-            slice_tangent,
-            V,
-            N
-        );
-        let slice_bent = evaluate_slice_bent_contribution(
-            horizon_angle_bwd,
-            horizon_angle_fwd,
-            slice_tangent,
-            V,
-            N
-        );
+        // 2.2.1. ---
+        let theta_0 = theta_back;
+        let theta_1 = theta_front;
+        let cos_theta_0 = cos(theta_0);
+        let cos_theta_1 = cos(theta_1);
+        let cos2_theta_0 = cos_theta_0 * cos_theta_0;
+        let cos2_theta_1 = cos_theta_1 * cos_theta_1;
+        let sin_theta_0 = sin(theta_0);
+        let sin_theta_1 = sin(theta_1);
 
-        visibility_accum += slice_vis;
-        bent_accum += slice_bent;
+        let n_bent_x = 0.5 * (
+            theta_1 + theta_0
+            - sin_theta_1 * cos_theta_1
+            - sin_theta_0 * cos_theta_0
+        );
+        let n_bent_y = 0.5 * (2.0 - cos2_theta_0 - cos2_theta_1);
+
+        let bent_contrib_w = D_w * n_bent_x + omega_o_w * n_bent_y;
+
+        // from reference impl:
+        /*
+        let average_x = theta_1 + theta_0 - sin_theta_0 * cos_theta_0 - sin_theta_1 * cos_theta_1;
+        let average_y = 2.0 - cos2_theta_0 - cos2_theta_1;
+        let bent_contrib_w = average_x * D_w + average_y * omega_o_w;
+         */
+
+        bent_acc_w += bent_contrib_w;
+        // ---
+
+        // 2.2.2. equation 11
+        visibility_acc += n_ss.x * n_bent_x + n_ss.y * n_bent_y;
     }
 
-    let visibility = visibility_accum / f32(DIRECTIONS);
-    let raw_ao = 1.0 - saturate(visibility);
-    let ao = pow(max(raw_ao, 1e-4), gtao_power);
-    let bent_normal = select(N, safe_normalize(bent_accum), dot(bent_accum, bent_accum) > 1e-8);
-    let hbil_diffuse_irradiance = vec4<f32>(hbil_accum / f32(DIRECTIONS), 1.0);
+    let S = f32(DIRECTIONS);
+    // 2.2.2. equation 11
+    let ao = (1.0 / S) * visibility_acc;
 
-    return FragmentOutput(
-        vec4<f32>(bent_normal, ao * max(gi_source_history.a, 1.0)),
-        hbil_diffuse_irradiance,
-    );
-    */
+    let bent_n_w = safe_normalize3(bent_acc_w);
+
+    let E_near = sanitize_rgb(irradiance_acc * (PI / S));
+    //debug = (debug + PI) / (2.0 * PI);
+    debug = select(0.0, 1.0, debug > 0.0);
+
+    return FragmentOutput(vec4f(bent_n_w, ao), vec4f(E_near, debug));
+    //return FragmentOutput(vec4f(bent_n_w, ao), vec4f((omega_o_w + 1.0) / 2.0, 1.0));
+}
+
+@fragment
+fn fs_main(in: VertexOutput) -> FragmentOutput {
+    return hbil4(in);
 }

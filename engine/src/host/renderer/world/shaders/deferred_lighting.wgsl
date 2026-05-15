@@ -160,6 +160,17 @@ fn sample_sun_shadow(world_position: vec3f, N: vec3f, L: vec3f) -> f32 {
     return visibility / 9.0;
 }
 
+fn hbil_F0_compensation(ao: f32) -> f32 {
+    let alpha = acos(clamp(1.0 - ao, -1.0, 1.0));
+
+    // Normalize aperture: 0 = closed cone, 1 = full hemisphere aperture PI/2
+    let a = clamp(alpha / (0.5 * PI), 0.0, 1.0);
+
+    return a * (
+        1.0 + pow(1.0 - a, 0.75) * 0.5
+    );
+}
+
 @vertex
 fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
     var out: VertexOutput;
@@ -208,11 +219,11 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
         gtao_texture_sampler,
         uv
     );
-    let hbil_diffuse_irradiance = textureSample(
+    let hbil_sample = textureSample(
         hbil_diffuse_irradiance_texture,
         hbil_diffuse_irradiance_sampler,
         uv
-    ).rgb;
+    ).rgba;
     if (world_position.w < 0.5) {
         return FragmentOutput(vec4f(0.0, 0.0, 0.0, 0.0), vec4f(0.0, 0.0, 0.0, 0.0));
     }
@@ -290,37 +301,44 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
     var k_d2 = 1.0 - k_s2;
     k_d2 *= 1.0 - surface_metallic;
 
-    let irradiance = textureSample(
+    let far_field_sample = textureSample(
         diffuse_irradiance_texture,
         diffuse_irradiance_texture_sampler,
-        N
-    ).rgb;
-    let far_field_diffuse = irradiance * surface_color;
-    let near_field_diffuse = hbil_diffuse_irradiance * surface_color;
-    let brdf = textureSample(
+        gtao.xyz // Use bent normal from HBIL
+    );
+
+    let brdf_specular_lut = textureSample(
         brdf_lut,
         brdf_lut_sampler,
         vec2(max(dot(N, V), 0.0), 1.0 - surface_roughness)
     ).rg;
-    let specular_env = prefiltered_color * (F_env * brdf.x + brdf.y);
+    let far_specular = prefiltered_color * (F_env * brdf_specular_lut.x + brdf_specular_lut.y) * environment_map_intensity;
+
     let final_ao = ao * gtao.w;
-    let ambient_far_diffuse = k_d2 * far_field_diffuse * final_ao * environment_map_intensity;
-    let ambient_far_specular = specular_env * final_ao * environment_map_intensity;
-    let ambient_near = k_d2 * near_field_diffuse * ao;
+
+    // Horizon-Based Indirect Lighting (HBIL) - Benoit Mayaux - Section 2.2.3, 2.3.
+    let E_far = far_field_sample.rgb * hbil_F0_compensation(gtao.w) * environment_map_intensity;
+    let E_near = hbil_sample.rgb;
+    let E_ambient = E_far * final_ao + E_near;
+    let ambient_diffuse = E_ambient * k_d2 * surface_color / PI;
+
+    let final_diffuse = ambient_diffuse + direct_diffuse;
+    let final_specular = direct_specular + far_specular;
 
     let final_color = vec4f(
-        ambient_far_diffuse +
-        ambient_far_specular +
-        ambient_near +
-        direct_diffuse +
-        direct_specular +
+        final_diffuse +
+        final_specular +
         surface_emissive,
         1.0
     );
     let gi_source = vec4f(
-        direct_diffuse + ambient_far_diffuse + ambient_near + surface_emissive,
+        final_diffuse + surface_emissive,
         1.0
     );
+    //return FragmentOutput(vec4f(E_near, 1.0), gi_source);
+    //return FragmentOutput(vec4f(vec3f(hbil_sample.w), 1.0), gi_source);
     return FragmentOutput(final_color, gi_source);
+    //return FragmentOutput(vec4f(vec3f(gtao.w), 1.0), gi_source);
     //return FragmentOutput(vec4f(gtao.xyz, 1.0), gi_source);
+    //return FragmentOutput(vec4f((gtao.xyz + 1.0) / 2.0, 1.0), gi_source);
 }
