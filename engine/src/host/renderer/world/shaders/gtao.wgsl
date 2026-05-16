@@ -26,7 +26,7 @@ struct FragmentOutput {
 }
 
 const PI: f32 = 3.14159265358979323846;
-const DIRECTIONS: u32 = 8u;
+const DIRECTIONS: u32 = 2u;
 const STEPS_PER_DIRECTION: u32 = 4u;
 
 @vertex
@@ -83,6 +83,16 @@ fn gradient_noise(position: vec2f) -> f32 {
     return fract(52.9829189 * fract(dot(position, vec2f(0.06711056, 0.00583715))));
 }
 
+fn hash12(p: vec2f) -> f32 {
+    let h = dot(p, vec2f(127.1, 311.7));
+    return fract(sin(h) * 43758.5453123);
+}
+
+fn hash13(p: vec3f) -> f32 {
+    let h = dot(p, vec3f(127.1, 311.7, 191.999));
+    return fract(sin(h) * 43758.5453123);
+}
+
 /**
     Based on Horizon-Based Indirect Lighting (HBIL) - Benoit Mayaux
 */
@@ -93,9 +103,6 @@ fn hbil4(in: VertexOutput) -> FragmentOutput {
     let far_field_radius = gtao_settings.params0.w;
     let frame_index = gtao_settings.params1.x;
     let uv = in.tex_coords;
-
-    // https://github.com/cdrinmatane/SSRT3/blob/main/HDRP/Shaders/Resources/SSRTCS.compute
-    let noise_direction = gradient_noise(uv);
 
     let P_sample = textureSample(
         gbuffer_world_position,
@@ -115,8 +122,14 @@ fn hbil4(in: VertexOutput) -> FragmentOutput {
     ).xyz;
 
     let dims = vec2<f32>(textureDimensions(gbuffer_world_position, 0));
-    let inv_dims = 1.0 / dims;
-    let max_step_dist = inv_dims * radius_pixels;
+
+    // https://github.com/cdrinmatane/SSRT3/blob/main/HDRP/Shaders/Resources/SSRTCS.compute
+    let pixel = floor(uv * dims);
+    let spatial_noise = gradient_noise(pixel);
+    let angular_jitter = hash13(vec3f(pixel, f32(frame_index)));
+    let radial_jitter = hash13(vec3f(pixel.yx, f32(frame_index) + 37.0));
+
+    let max_step_dist = radius_pixels / dims;
 
     // 1.1. Camera Spaces ---
     let X_w = camera_view_rotation[0];
@@ -134,11 +147,11 @@ fn hbil4(in: VertexOutput) -> FragmentOutput {
     var visibility_acc = 0.0;
     var bent_acc_w = vec3f(0.0);
     var irradiance_acc = vec3f(0.0);
-    var debug = 0.0;
+    var debug = vec2f(0.0);
 
     for (var dir_idx: u32 = 0u; dir_idx < DIRECTIONS; dir_idx += 1u) {
         // rotate around half of the hemisphere (since we sample both front/back)
-        let phi = (f32(dir_idx) + noise_direction) * (PI / f32(DIRECTIONS));
+        let phi = (f32(dir_idx) + spatial_noise + angular_jitter) * (PI / f32(DIRECTIONS));
 
         // 1.2. Slice Space ---
         let D_w = cos(phi) * omega_x_w + sin(phi) * omega_y_w;
@@ -177,7 +190,8 @@ fn hbil4(in: VertexOutput) -> FragmentOutput {
         var fallback_radiance_back = vec3f(0.0);
 
         for (var step_idx: u32 = 1u; step_idx <= STEPS_PER_DIRECTION; step_idx += 1u) {
-            let current_step_cs = pow(f32(step_idx) / f32(STEPS_PER_DIRECTION), power) * max_step_cs;
+            let step_t = (f32(step_idx - 1u) + radial_jitter) / f32(STEPS_PER_DIRECTION);
+            let current_step_cs = pow(step_t, power) * max_step_cs;
 
             // FRONT ----------------------------
 
@@ -207,13 +221,12 @@ fn hbil4(in: VertexOutput) -> FragmentOutput {
                     );
 
                     let theta = atan2(sample_dir_ss.x, sample_dir_ss.y);
-                    debug += theta;
 
                     if (theta > 0.0 && theta < theta_front) {
                         let L_d = sanitize_rgb(textureSample(
                             gi_source_history_texture,
                             gi_source_history_sampler,
-                            uv + current_step_cs
+                            sample_uv_front
                         ).rgb);
 
                         // equation 18
@@ -279,7 +292,7 @@ fn hbil4(in: VertexOutput) -> FragmentOutput {
                         let L_d = sanitize_rgb(textureSample(
                             gi_source_history_texture,
                             gi_source_history_sampler,
-                            uv - current_step_cs
+                            sample_uv_back
                         ).rgb);
 
                         let theta_0 = theta_back;
@@ -357,11 +370,8 @@ fn hbil4(in: VertexOutput) -> FragmentOutput {
     let bent_n_w = safe_normalize3(bent_acc_w);
 
     let E_near = sanitize_rgb(irradiance_acc * (PI / S));
-    //debug = (debug + PI) / (2.0 * PI);
-    debug = select(0.0, 1.0, debug > 0.0);
 
-    return FragmentOutput(vec4f(bent_n_w, ao), vec4f(E_near, debug));
-    //return FragmentOutput(vec4f(bent_n_w, ao), vec4f((omega_o_w + 1.0) / 2.0, 1.0));
+    return FragmentOutput(vec4f(bent_n_w, ao), vec4f(E_near, 1.0));
 }
 
 @fragment

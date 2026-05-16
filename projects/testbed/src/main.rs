@@ -1150,7 +1150,7 @@ impl UiTrait for Game {
                             .changed();
                         render_settings_changed |= ui
                             .add(
-                                egui::Slider::new(&mut gtao_options.ao_radius, 0.05..=100.0)
+                                egui::Slider::new(&mut gtao_options.ao_radius, 0.05..=1000.0)
                                     .text("GTAO World Radius")
                                     .logarithmic(true)
                                     .clamping(egui::SliderClamping::Always),

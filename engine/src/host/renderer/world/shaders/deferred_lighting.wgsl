@@ -308,19 +308,24 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
         bent_n_w // Use bent normal from HBIL
     );
 
+    // TODO: this is a temp function to scale back the (brutal) effect of large radius HBIL AO
+    let diffuse_ao = pow(
+        clamp(0.0, 1.0, hbil_F0_compensation(gtao.w) * gtao.w - 0.1) + 0.1,
+        0.4
+    ) * ao;
+
     let brdf_specular_lut = textureSample(
         brdf_lut,
         brdf_lut_sampler,
-        vec2(max(dot(N, V), 0.0), 1.0 - surface_roughness)
+        vec2(max(dot(bent_n_w, V), 0.0), 1.0 - surface_roughness)
     ).rg;
-    let far_specular = prefiltered_color * (F_env * brdf_specular_lut.x + brdf_specular_lut.y) * environment_map_intensity;
-
-    let final_ao = ao * gtao.w;
+    let specular_ao = diffuse_ao; // TODO figure out a realistic ao function for specular?
+    let far_specular = prefiltered_color * (F_env * brdf_specular_lut.x + brdf_specular_lut.y) * specular_ao * environment_map_intensity;
 
     // Horizon-Based Indirect Lighting (HBIL) - Benoit Mayaux - Section 2.2.3, 2.3.
-    let E_far = far_field_sample.rgb * hbil_F0_compensation(gtao.w) * environment_map_intensity;
+    let E_far = far_field_sample.rgb * diffuse_ao * environment_map_intensity;
     let E_near = hbil_sample.rgb * (1 - F0);
-    let far_diffuse  = E_far * final_ao * k_d2 * surface_color / PI;
+    let far_diffuse  = E_far * k_d2 * surface_color / PI;
     let near_diffuse = E_near * surface_color / PI;
 
     let final_diffuse = far_diffuse + near_diffuse + direct_diffuse;
