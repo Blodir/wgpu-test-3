@@ -26,8 +26,8 @@ struct FragmentOutput {
 }
 
 const PI: f32 = 3.14159265358979323846;
-const DIRECTIONS: u32 = 2u;
-const STEPS_PER_DIRECTION: u32 = 4u;
+const DIRECTIONS: u32 = 4u;
+const STEPS_PER_DIRECTION: u32 = 8u;
 
 @vertex
 fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
@@ -93,6 +93,24 @@ fn hash13(p: vec3f) -> f32 {
     return fract(sin(h) * 43758.5453123);
 }
 
+fn sample_history(uv: vec2f, lod: f32) -> vec3f {
+    return sanitize_rgb(textureSampleLevel(
+        gi_source_history_texture,
+        gi_source_history_sampler,
+        uv,
+        lod
+    ).rgb);
+}
+
+fn sample_history_ao(uv: vec2f, lod: f32) -> f32 {
+    return textureSampleLevel(
+        gi_source_history_texture,
+        gi_source_history_sampler,
+        uv,
+        lod
+    ).a;
+}
+
 /**
     Based on Horizon-Based Indirect Lighting (HBIL) - Benoit Mayaux
 */
@@ -100,7 +118,7 @@ fn hbil4(in: VertexOutput) -> FragmentOutput {
     let radius_pixels = gtao_settings.params0.x;
     let radius_world = gtao_settings.params0.y;
     let power = gtao_settings.params0.z;
-    let far_field_radius = gtao_settings.params0.w;
+    let gi_intensity = gtao_settings.params0.w;
     let frame_index = gtao_settings.params1.x;
     let uv = in.tex_coords;
 
@@ -122,6 +140,7 @@ fn hbil4(in: VertexOutput) -> FragmentOutput {
     ).xyz;
 
     let dims = vec2<f32>(textureDimensions(gbuffer_world_position, 0));
+    let max_history_lod = f32(textureNumLevels(gi_source_history_texture) - 1u);
 
     // https://github.com/cdrinmatane/SSRT3/blob/main/HDRP/Shaders/Resources/SSRTCS.compute
     let pixel = floor(uv * dims);
@@ -147,7 +166,7 @@ fn hbil4(in: VertexOutput) -> FragmentOutput {
     var visibility_acc = 0.0;
     var bent_acc_w = vec3f(0.0);
     var irradiance_acc = vec3f(0.0);
-    var debug = vec2f(0.0);
+    var debug = 0.0;
 
     for (var dir_idx: u32 = 0u; dir_idx < DIRECTIONS; dir_idx += 1u) {
         // rotate around half of the hemisphere (since we sample both front/back)
@@ -192,6 +211,10 @@ fn hbil4(in: VertexOutput) -> FragmentOutput {
         for (var step_idx: u32 = 1u; step_idx <= STEPS_PER_DIRECTION; step_idx += 1u) {
             let step_t = (f32(step_idx - 1u) + radial_jitter) / f32(STEPS_PER_DIRECTION);
             let current_step_cs = pow(step_t, power) * max_step_cs;
+            let sample_distance_pixels = max(length(current_step_cs * dims), 1.0);
+            // similar simple heuristic: https://github.com/cdrinmatane/SSRT3/blob/main/HDRP/Shaders/Resources/SSRTCS.compute
+            // TODO play around with this heuristic for best results relative to step count
+            let history_lod = f32(min((step_idx + 1) / 2, 4));
 
             // FRONT ----------------------------
 
@@ -223,11 +246,7 @@ fn hbil4(in: VertexOutput) -> FragmentOutput {
                     let theta = atan2(sample_dir_ss.x, sample_dir_ss.y);
 
                     if (theta > 0.0 && theta < theta_front) {
-                        let L_d = sanitize_rgb(textureSample(
-                            gi_source_history_texture,
-                            gi_source_history_sampler,
-                            sample_uv_front
-                        ).rgb);
+                        let L_d = sample_history(sample_uv_front, history_lod);
 
                         // equation 18
                         let theta_0 = theta;
@@ -256,7 +275,7 @@ fn hbil4(in: VertexOutput) -> FragmentOutput {
                         let L_new = mix(fallback_radiance_front, L_d, t);
 
                         // equation 19
-                        irradiance_acc += L_new * (left + right);
+                        irradiance_acc += pow(L_new * (left + right), 1.0 / vec3f(gi_intensity));
                         theta_front = theta;
 
                         if (t > 0.0) {
@@ -289,11 +308,7 @@ fn hbil4(in: VertexOutput) -> FragmentOutput {
                     let theta = atan2(sample_dir_ss.x, sample_dir_ss.y);
 
                     if (theta < 0.0 && theta > theta_back) {
-                        let L_d = sanitize_rgb(textureSample(
-                            gi_source_history_texture,
-                            gi_source_history_sampler,
-                            sample_uv_back
-                        ).rgb);
+                        let L_d = sample_history(sample_uv_back, history_lod);
 
                         let theta_0 = theta_back;
                         let theta_1 = theta;
@@ -319,7 +334,7 @@ fn hbil4(in: VertexOutput) -> FragmentOutput {
                         let t = smoothstep(0.0, 1.0, dot(sample_dir_w, -x_1_normal_w));
                         let L_new = mix(fallback_radiance_back, L_d, t);
 
-                        irradiance_acc += L_new * (left + right);
+                        irradiance_acc += pow(L_new * (left + right), 1.0 / vec3f(gi_intensity));
                         theta_back = theta;
 
                         if (t > 0.0) {
@@ -365,13 +380,20 @@ fn hbil4(in: VertexOutput) -> FragmentOutput {
 
     let S = f32(DIRECTIONS);
     // 2.2.2. equation 11
-    let ao = (1.0 / S) * visibility_acc;
+    var ao = (1.0 / S) * visibility_acc;
+
+    let prev_ao = sample_history_ao(uv, 3.0);
+    // TODO experiment with weight for best results
+    // TODO, technically we are mixing twice here (once in the history pass...), kinda pointless?
+    ao = mix(prev_ao, ao, 0.9);
 
     let bent_n_w = safe_normalize3(bent_acc_w);
 
     let E_near = sanitize_rgb(irradiance_acc * (PI / S));
 
-    return FragmentOutput(vec4f(bent_n_w, ao), vec4f(E_near, 1.0));
+    debug /= S * f32(STEPS_PER_DIRECTION) * max_history_lod;
+
+    return FragmentOutput(vec4f(bent_n_w, ao), vec4f(E_near, debug));
 }
 
 @fragment

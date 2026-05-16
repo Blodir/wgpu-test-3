@@ -46,8 +46,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let prev_coord = vec2i(clamp(prev_uv * dims, vec2f(0.0), max_coord));
     let prev_gi = textureLoad(prev_gi_source_texture, prev_coord, 0);
     let prev_history = textureLoad(prev_history_texture, prev_coord, 0);
-    let history_weight = 0.9 * saturate(prev_history.a);
+    let history_weight = 0.1;
     let blended_rgb = mix(prev_gi.rgb, prev_history.rgb, history_weight);
-    let blended_alpha = max(prev_gi.a, prev_history.a * history_weight);
-    return vec4f(blended_rgb, blended_alpha);
+    // no need to blend ao since hbil pass already does that
+    //let blended_alpha = mix(prev_gi.a, prev_history.a, history_weight);
+    return vec4f(blended_rgb, prev_gi.a);
 }

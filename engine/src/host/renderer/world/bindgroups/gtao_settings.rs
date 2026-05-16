@@ -45,7 +45,7 @@ impl GtaoSettings {
                     gtao_options.radius_pixels,
                     gtao_options.ao_radius,
                     gtao_options.power,
-                    gtao_options.hbil_radius,
+                    gtao_options.gi_intensity,
                 ],
                 params1: [frame_index, 0, 0, 0],
             }),

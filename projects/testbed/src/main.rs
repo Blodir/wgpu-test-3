@@ -1165,7 +1165,7 @@ impl UiTrait for Game {
                             .changed();
                         render_settings_changed |= ui
                             .add(
-                                egui::Slider::new(&mut gtao_options.hbil_radius, 0.05..=16.0)
+                                egui::Slider::new(&mut gtao_options.gi_intensity, 0.05..=16.0)
                                     .text("HBIL World Radius")
                                     .logarithmic(true)
                                     .clamping(egui::SliderClamping::Always),

@@ -339,7 +339,7 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
     );
     let gi_source = vec4f(
         final_diffuse + surface_emissive,
-        1.0
+        gtao.w
     );
     //return FragmentOutput(vec4f(E_near, 1.0), gi_source);
     //return FragmentOutput(vec4f(vec3f(hbil_sample.w), 1.0), gi_source);

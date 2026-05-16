@@ -21,7 +21,7 @@ pub struct GtaoOptions {
     pub radius_pixels: f32,
     pub ao_radius: f32,
     pub power: f32,
-    pub hbil_radius: f32,
+    pub gi_intensity: f32,
 }
 impl Default for GtaoOptions {
     fn default() -> Self {
@@ -29,7 +29,7 @@ impl Default for GtaoOptions {
             radius_pixels: 2000.0,
             ao_radius: 1000.0,
             power: 2.0,
-            hbil_radius: 2.0,
+            gi_intensity: 2.0,
         }
     }
 }

@@ -16,6 +16,7 @@ pub const SHADER_GTAO_WGSL: &str = "engine/src/host/renderer/world/shaders/gtao.
 pub const SHADER_DEFERRED_LIGHTING_WGSL: &str =
     "engine/src/host/renderer/world/shaders/deferred_lighting.wgsl";
 pub const SHADER_SKYBOX_WGSL: &str = "engine/src/host/renderer/world/shaders/skybox.wgsl";
+pub const SHADER_MIPMAP_WGSL: &str = "engine/src/host/renderer/world/shaders/mipmap.wgsl";
 pub const SHADER_MOTION_VECTORS_STATIC_WGSL: &str =
     "engine/src/host/renderer/world/shaders/motion_vectors_static.wgsl";
 pub const SHADER_MOTION_VECTORS_SKINNED_WGSL: &str =

@@ -22,6 +22,7 @@ use super::pipelines::deferred_lighting::DeferredLightingPipeline;
 use super::pipelines::g_buffer::GBufferPipeline;
 use super::pipelines::gtao::GtaoPipeline;
 use super::pipelines::history::HistoryPipeline;
+use super::pipelines::mipmap::MipmapPipeline;
 use super::pipelines::motion_vectors::MotionVectorsPipeline;
 use super::pipelines::post_processing::PostProcessingPipeline;
 use super::pipelines::skinned_pbr::SkinnedPbrPipeline;
@@ -239,6 +240,7 @@ struct DeferredOpaqueRenderer {
     g_buffer_pipeline: GBufferPipeline,
     deferred_lighting_pipeline: DeferredLightingPipeline,
     history_pipeline: HistoryPipeline,
+    history_mipmap_pipeline: MipmapPipeline,
     motion_vectors_pipeline: MotionVectorsPipeline,
     history_valid: bool,
 }
@@ -258,9 +260,16 @@ impl DeferredOpaqueRenderer {
             HdrColorTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
         let gi_source_prev =
             HdrColorTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
-        let history_write =
-            HdrColorTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
-        let history_prev = HdrColorTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
+        let history_write = HdrColorTexture::new_mipmapped(
+            &wgpu_context.device,
+            &wgpu_context.surface_config,
+            "History Write Texture",
+        );
+        let history_prev = HdrColorTexture::new_mipmapped(
+            &wgpu_context.device,
+            &wgpu_context.surface_config,
+            "History Previous Texture",
+        );
         let gtao_pipeline = GtaoPipeline::new(
             wgpu_context,
             shader_cache,
@@ -291,6 +300,7 @@ impl DeferredOpaqueRenderer {
             &gi_source_prev,
             &history_prev,
         );
+        let history_mipmap_pipeline = MipmapPipeline::new(wgpu_context, shader_cache);
         let deferred_lighting_pipeline = DeferredLightingPipeline::new(
             wgpu_context,
             shader_cache,
@@ -312,6 +322,7 @@ impl DeferredOpaqueRenderer {
             g_buffer_pipeline,
             deferred_lighting_pipeline,
             history_pipeline,
+            history_mipmap_pipeline,
             motion_vectors_pipeline,
             history_valid: false,
         }
@@ -422,8 +433,9 @@ impl DeferredOpaqueRenderer {
         if !self.history_valid {
             self.clear_temporal_inputs(encoder);
         }
-        self.history_pipeline
-            .render(encoder, &self.history_write.view);
+        self.history_pipeline.render(encoder, &self.history_write.view);
+        self.history_mipmap_pipeline
+            .generate(device, encoder, &self.history_write);
         if self.gtao_options.is_some() {
             self.gtao_pipeline.update_input_bindgroups(
                 device,
@@ -486,10 +498,16 @@ impl DeferredOpaqueRenderer {
             HdrColorTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
         self.gi_source_prev =
             HdrColorTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
-        self.history_write =
-            HdrColorTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
-        self.history_prev =
-            HdrColorTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
+        self.history_write = HdrColorTexture::new_mipmapped(
+            &wgpu_context.device,
+            &wgpu_context.surface_config,
+            "History Write Texture",
+        );
+        self.history_prev = HdrColorTexture::new_mipmapped(
+            &wgpu_context.device,
+            &wgpu_context.surface_config,
+            "History Previous Texture",
+        );
         self.gtao_pipeline.update_input_bindgroups(
             &wgpu_context.device,
             &self.g_buffer_targets,

@@ -209,7 +209,7 @@ impl GtaoPipeline {
                 },
                 wgpu::BindGroupEntry {
                     binding: 4,
-                    resource: wgpu::BindingResource::TextureView(&gi_source_texture.view),
+                    resource: wgpu::BindingResource::TextureView(&gi_source_texture.sampled_view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 5,

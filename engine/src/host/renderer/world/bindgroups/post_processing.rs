@@ -64,7 +64,7 @@ impl PostProcessingInputs {
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: wgpu::BindingResource::TextureView(&hdr_color_texture.view),
+                    resource: wgpu::BindingResource::TextureView(&hdr_color_texture.sampled_view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 3,
