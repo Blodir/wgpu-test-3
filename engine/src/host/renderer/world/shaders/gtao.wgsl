@@ -78,13 +78,25 @@ fn sanitize_rgb(v: vec3f) -> vec3f {
     );
 }
 
+// Interleaved gradient function from Jimenez 2014 http://goo.gl/eomGso
+fn gradient_noise(position: vec2f) -> f32 {
+    return fract(52.9829189 * fract(dot(position, vec2f(0.06711056, 0.00583715))));
+}
+
 /**
     Based on Horizon-Based Indirect Lighting (HBIL) - Benoit Mayaux
 */
 fn hbil4(in: VertexOutput) -> FragmentOutput {
     let radius_pixels = gtao_settings.params0.x;
     let radius_world = gtao_settings.params0.y;
+    let power = gtao_settings.params0.z;
+    let far_field_radius = gtao_settings.params0.w;
+    let frame_index = gtao_settings.params1.x;
     let uv = in.tex_coords;
+
+    // https://github.com/cdrinmatane/SSRT3/blob/main/HDRP/Shaders/Resources/SSRTCS.compute
+    let noise_direction = gradient_noise(uv);
+
     let P_sample = textureSample(
         gbuffer_world_position,
         gbuffer_world_position_sampler,
@@ -104,8 +116,7 @@ fn hbil4(in: VertexOutput) -> FragmentOutput {
 
     let dims = vec2<f32>(textureDimensions(gbuffer_world_position, 0));
     let inv_dims = 1.0 / dims;
-    let F0 = vec3f(0.04); // TODO get from surface metallic
-    let step_length = inv_dims * radius_pixels * (1.0 / f32(STEPS_PER_DIRECTION));
+    let max_step_dist = inv_dims * radius_pixels;
 
     // 1.1. Camera Spaces ---
     let X_w = camera_view_rotation[0];
@@ -127,7 +138,7 @@ fn hbil4(in: VertexOutput) -> FragmentOutput {
 
     for (var dir_idx: u32 = 0u; dir_idx < DIRECTIONS; dir_idx += 1u) {
         // rotate around half of the hemisphere (since we sample both front/back)
-        let phi = PI * ((f32(dir_idx) + 0.5) / f32(DIRECTIONS));
+        let phi = (f32(dir_idx) + noise_direction) * (PI / f32(DIRECTIONS));
 
         // 1.2. Slice Space ---
         let D_w = cos(phi) * omega_x_w + sin(phi) * omega_y_w;
@@ -142,7 +153,7 @@ fn hbil4(in: VertexOutput) -> FragmentOutput {
         let n_ss = vec2f(dot(n_w, D_w), dot(n_w, omega_o_w));
         // ---
 
-        let step_cs = vec2f(D_cs.x, -D_cs.y) * step_length;
+        let max_step_cs = vec2f(D_cs.x, -D_cs.y) * max_step_dist;
 
         // 2.1. ---
         // HORIZON INITIALIZER ACCORDING TO PAPER
@@ -155,23 +166,29 @@ fn hbil4(in: VertexOutput) -> FragmentOutput {
         var theta_back  = -acos(clamp(cos_theta_back_init,  -1.0, 1.0)); // [-PI, 0]
          */
         // ---
+
         // based on my own horizon initialization drawing...
         let k_ss = safe_normalize2(vec2f(n_ss.y, -n_ss.x));
+
         var theta_front = acos(clamp(dot(omega_o_ss, k_ss), -1.0, 1.0));
         var theta_back = -PI + theta_front;
 
+        var fallback_radiance_front = vec3f(0.0);
+        var fallback_radiance_back = vec3f(0.0);
+
         for (var step_idx: u32 = 1u; step_idx <= STEPS_PER_DIRECTION; step_idx += 1u) {
-            let current_step_cs = f32(step_idx) * step_cs;
+            let current_step_cs = pow(f32(step_idx) / f32(STEPS_PER_DIRECTION), power) * max_step_cs;
 
             // FRONT ----------------------------
 
             // 1.3. Computing Horizon Angles ---
             // Can be skipped, because we are sampling real world space coordinates from gbuffer, not depth buffer values
             // ---
+            let sample_uv_front = uv + current_step_cs;
             let x_1_sample = textureSample(
                 gbuffer_world_position,
                 gbuffer_world_position_sampler,
-                uv + current_step_cs
+                sample_uv_front
             );
 
             if (x_1_sample.w > 0.5) {
@@ -216,24 +233,37 @@ fn hbil4(in: VertexOutput) -> FragmentOutput {
                         );
                         let right = n_ss.y * 0.5 * (cos2_theta_0 - cos2_theta_1);
 
+                        // 3.4.
+                        let x_1_normal_w = textureSample(
+                            gbuffer_normal_roughness,
+                            gbuffer_normal_roughness_sampler,
+                            sample_uv_front
+                        ).xyz;
+                        let t = smoothstep(0.0, 1.0, dot(sample_dir_w, -x_1_normal_w));
+                        let L_new = mix(fallback_radiance_front, L_d, t);
+
                         // equation 19
-                        irradiance_acc += L_d * (1 - F0) * (left + right);
+                        irradiance_acc += L_new * (left + right);
                         theta_front = theta;
+
+                        if (t > 0.0) {
+                            fallback_radiance_front = L_d;
+                        }
                     }
                 }
             }
 
             // BACK ------------------------------
+            let sample_uv_back = uv - current_step_cs;
             let x_1_back_sample = textureSample(
                 gbuffer_world_position,
                 gbuffer_world_position_sampler,
-                uv - current_step_cs
+                sample_uv_back
             );
 
             if (x_1_back_sample.w > 0.5) {
                 let x_1_back_w = x_1_back_sample.xyz;
                 let to_sample = x_1_back_w - P_w;
-                // reject samples that are too far away, this should reduce halo-ing around objects
                 if (length(to_sample) < radius_world) {
                     let sample_dir_w = safe_normalize3(to_sample);
                     let sample_dir_ss = safe_normalize2(
@@ -252,7 +282,6 @@ fn hbil4(in: VertexOutput) -> FragmentOutput {
                             uv - current_step_cs
                         ).rgb);
 
-                        // equation 18
                         let theta_0 = theta_back;
                         let theta_1 = theta;
                         let cos_theta_0 = cos(theta_0);
@@ -269,9 +298,20 @@ fn hbil4(in: VertexOutput) -> FragmentOutput {
                         );
                         let right = n_ss.y * 0.5 * (cos2_theta_0 - cos2_theta_1);
 
-                        // equation 19
-                        irradiance_acc += L_d * (1 - F0) * (left + right);
+                        let x_1_normal_w = textureSample(
+                            gbuffer_normal_roughness,
+                            gbuffer_normal_roughness_sampler,
+                            sample_uv_back
+                        ).xyz;
+                        let t = smoothstep(0.0, 1.0, dot(sample_dir_w, -x_1_normal_w));
+                        let L_new = mix(fallback_radiance_back, L_d, t);
+
+                        irradiance_acc += L_new * (left + right);
                         theta_back = theta;
+
+                        if (t > 0.0) {
+                            fallback_radiance_back = L_d;
+                        }
                     }
                 }
             }

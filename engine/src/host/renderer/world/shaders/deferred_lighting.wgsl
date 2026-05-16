@@ -296,7 +296,8 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
         direct_specular += specular * radiance * NdotL;
     }
 
-    let F_env = fresnel_schlick_roughness(max(dot(N, V), 0.0), F0, surface_roughness);
+    let bent_n_w = gtao.xyz;
+    let F_env = fresnel_schlick_roughness(max(dot(bent_n_w, V), 0.0), F0, surface_roughness);
     let k_s2 = F_env;
     var k_d2 = 1.0 - k_s2;
     k_d2 *= 1.0 - surface_metallic;
@@ -304,7 +305,7 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
     let far_field_sample = textureSample(
         diffuse_irradiance_texture,
         diffuse_irradiance_texture_sampler,
-        gtao.xyz // Use bent normal from HBIL
+        bent_n_w // Use bent normal from HBIL
     );
 
     let brdf_specular_lut = textureSample(
@@ -318,11 +319,11 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
 
     // Horizon-Based Indirect Lighting (HBIL) - Benoit Mayaux - Section 2.2.3, 2.3.
     let E_far = far_field_sample.rgb * hbil_F0_compensation(gtao.w) * environment_map_intensity;
-    let E_near = hbil_sample.rgb;
-    let E_ambient = E_far * final_ao + E_near;
-    let ambient_diffuse = E_ambient * k_d2 * surface_color / PI;
+    let E_near = hbil_sample.rgb * (1 - F0);
+    let far_diffuse  = E_far * final_ao * k_d2 * surface_color / PI;
+    let near_diffuse = E_near * surface_color / PI;
 
-    let final_diffuse = ambient_diffuse + direct_diffuse;
+    let final_diffuse = far_diffuse + near_diffuse + direct_diffuse;
     let final_specular = direct_specular + far_specular;
 
     let final_color = vec4f(

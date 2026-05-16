@@ -1143,7 +1143,7 @@ impl UiTrait for Game {
                         let mut gtao_options = deferred_gtao.unwrap_or_default();
                         render_settings_changed |= ui
                             .add(
-                                egui::Slider::new(&mut gtao_options.radius_pixels, 1.0..=64.0)
+                                egui::Slider::new(&mut gtao_options.radius_pixels, 1.0..=2000.0)
                                     .text("GTAO Radius Pixels")
                                     .clamping(egui::SliderClamping::Always),
                             )
