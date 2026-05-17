@@ -4,7 +4,7 @@ use wgpu::util::DeviceExt as _;
 pub struct CameraMatrices {
     pub view_proj: [[f32; 4]; 4],
     pub position: [f32; 3],
-    pub inverse_view_proj_rot: [[f32; 4]; 4],
+    pub inverse_view_proj: [[f32; 4]; 4],
     pub forward: [f32; 3],
     pub view_rotation: [[f32; 4]; 3],
 }
@@ -12,7 +12,7 @@ pub struct CameraMatrices {
 pub struct CameraBinding {
     view_proj_buffer: wgpu::Buffer,
     position_buffer: wgpu::Buffer,
-    inverse_view_proj_rot_buffer: wgpu::Buffer,
+    inverse_view_proj_buffer: wgpu::Buffer,
     forward_buffer: wgpu::Buffer,
     view_rotation_buffer: wgpu::Buffer,
     pub bind_group: wgpu::BindGroup,
@@ -37,7 +37,7 @@ impl CameraBinding {
             contents: bytemuck::cast_slice(&Vec3::ZERO.to_array()),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
-        let inverse_view_proj_rot_buffer =
+        let inverse_view_proj_buffer =
             device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("Inverse View Projection Buffer"),
                 contents: bytemuck::cast_slice(&Mat4::IDENTITY.to_cols_array()),
@@ -50,11 +50,7 @@ impl CameraBinding {
         });
         let view_rotation_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Camera View Rotation Buffer"),
-            contents: bytemuck::cast_slice(&Self::padded_view_rotation(
-                Vec3::X,
-                Vec3::Y,
-                -Vec3::Z,
-            )),
+            contents: bytemuck::cast_slice(&Self::padded_view_rotation(Vec3::X, Vec3::Y, -Vec3::Z)),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -70,7 +66,7 @@ impl CameraBinding {
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: inverse_view_proj_rot_buffer.as_entire_binding(),
+                    resource: inverse_view_proj_buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 3,
@@ -88,7 +84,7 @@ impl CameraBinding {
             bind_group,
             view_proj_buffer,
             position_buffer,
-            inverse_view_proj_rot_buffer,
+            inverse_view_proj_buffer,
             forward_buffer,
             view_rotation_buffer,
         }
@@ -109,7 +105,7 @@ impl CameraBinding {
                 },
                 wgpu::BindGroupLayoutEntry {
                     binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: false,
@@ -119,7 +115,7 @@ impl CameraBinding {
                 },
                 wgpu::BindGroupLayoutEntry {
                     binding: 2,
-                    visibility: wgpu::ShaderStages::VERTEX,
+                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: false,
@@ -156,7 +152,7 @@ impl CameraBinding {
         &self,
         view_proj: &[f32; 16],
         position: &[f32; 3],
-        inverse_view_proj_rot: &[f32; 16],
+        inverse_view_proj: &[f32; 16],
         forward: &[f32; 3],
         view_rotation: &[[f32; 4]; 3],
         queue: &wgpu::Queue,
@@ -164,9 +160,9 @@ impl CameraBinding {
         queue.write_buffer(&self.view_proj_buffer, 0, bytemuck::cast_slice(view_proj));
         queue.write_buffer(&self.position_buffer, 0, bytemuck::cast_slice(position));
         queue.write_buffer(
-            &self.inverse_view_proj_rot_buffer,
+            &self.inverse_view_proj_buffer,
             0,
-            bytemuck::cast_slice(inverse_view_proj_rot),
+            bytemuck::cast_slice(inverse_view_proj),
         );
         queue.write_buffer(&self.forward_buffer, 0, bytemuck::cast_slice(forward));
         queue.write_buffer(

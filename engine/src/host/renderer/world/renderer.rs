@@ -252,6 +252,7 @@ impl DeferredOpaqueRenderer {
         shader_cache: &mut ShaderCache,
         layouts: &Layouts,
         gtao_options: Option<GtaoOptions>,
+        depth_texture_view: &wgpu::TextureView,
     ) -> Self {
         let g_buffer_targets =
             GBufferTargets::new(&wgpu_context.device, &wgpu_context.surface_config);
@@ -277,6 +278,7 @@ impl DeferredOpaqueRenderer {
             shader_cache,
             &layouts.camera,
             &g_buffer_targets,
+            depth_texture_view,
             &history_write,
             &gtao_options.unwrap_or_default(),
             0,
@@ -333,7 +335,11 @@ impl DeferredOpaqueRenderer {
         }
     }
 
-    fn refresh_temporal_bind_groups(&mut self, device: &wgpu::Device) {
+    fn refresh_temporal_bind_groups(
+        &mut self,
+        device: &wgpu::Device,
+        depth_texture_view: &wgpu::TextureView,
+    ) {
         self.history_pipeline.update_input_bindgroup(
             device,
             &self.motion_vectors,
@@ -343,6 +349,7 @@ impl DeferredOpaqueRenderer {
         self.gtao_pipeline.update_input_bindgroups(
             device,
             &self.g_buffer_targets,
+            depth_texture_view,
             &self.history_write,
             &self.gtao_options.unwrap_or_default(),
             0,
@@ -371,10 +378,14 @@ impl DeferredOpaqueRenderer {
         }
     }
 
-    fn rotate_temporal_buffers(&mut self, device: &wgpu::Device) {
+    fn rotate_temporal_buffers(
+        &mut self,
+        device: &wgpu::Device,
+        depth_texture_view: &wgpu::TextureView,
+    ) {
         std::mem::swap(&mut self.gi_source_write, &mut self.gi_source_prev);
         std::mem::swap(&mut self.history_write, &mut self.history_prev);
-        self.refresh_temporal_bind_groups(device);
+        self.refresh_temporal_bind_groups(device, depth_texture_view);
     }
 
     fn render<'a>(
@@ -438,13 +449,15 @@ impl DeferredOpaqueRenderer {
         if !self.history_valid {
             self.clear_temporal_inputs(encoder);
         }
-        self.history_pipeline.render(encoder, &self.history_write.view);
+        self.history_pipeline
+            .render(encoder, &self.history_write.view);
         self.history_mipmap_pipeline
             .generate(device, encoder, &self.history_write);
         if self.gtao_options.is_some() {
             self.gtao_pipeline.update_input_bindgroups(
                 device,
                 &self.g_buffer_targets,
+                depth_texture_view,
                 &self.history_write,
                 &self.gtao_options.unwrap_or_default(),
                 frame_idx,
@@ -512,10 +525,10 @@ impl DeferredOpaqueRenderer {
             lights_bind_group,
         );
         self.history_valid = true;
-        self.rotate_temporal_buffers(device);
+        self.rotate_temporal_buffers(device, depth_texture_view);
     }
 
-    fn resize(&mut self, wgpu_context: &WgpuContext) {
+    fn resize(&mut self, wgpu_context: &WgpuContext, depth_texture_view: &wgpu::TextureView) {
         self.g_buffer_targets =
             GBufferTargets::new(&wgpu_context.device, &wgpu_context.surface_config);
         self.gtao_texture = GtaoTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
@@ -538,6 +551,7 @@ impl DeferredOpaqueRenderer {
         self.gtao_pipeline.update_input_bindgroups(
             &wgpu_context.device,
             &self.g_buffer_targets,
+            depth_texture_view,
             &self.history_write,
             &self.gtao_options.unwrap_or_default(),
             0,
@@ -619,6 +633,7 @@ impl WorldRenderer {
         wgpu_context: &WgpuContext,
         shader_cache: &mut ShaderCache,
         layouts: &Layouts,
+        depth_texture_view: &wgpu::TextureView,
     ) -> OpaqueRenderer {
         match options.opaque_render_path {
             OpaqueRenderPath::Forward => OpaqueRenderer::Forward,
@@ -628,6 +643,7 @@ impl WorldRenderer {
                     shader_cache,
                     layouts,
                     gtao,
+                    depth_texture_view,
                 ))
             }
             OpaqueRenderPath::CompactDeferred => OpaqueRenderer::CompactDeferred(
@@ -668,6 +684,7 @@ impl WorldRenderer {
             wgpu_context,
             shader_cache,
             &bind_groups.layouts,
+            &attachments.depth_texture.view,
         );
 
         Self {
@@ -695,6 +712,7 @@ impl WorldRenderer {
             wgpu_context,
             shader_cache,
             &self.bind_groups.layouts,
+            &self.attachments.depth_texture.view,
         );
     }
 
@@ -907,7 +925,9 @@ impl WorldRenderer {
         );
         match &mut self.opaque_renderer {
             OpaqueRenderer::Forward => {}
-            OpaqueRenderer::Deferred(renderer) => renderer.resize(wgpu_context),
+            OpaqueRenderer::Deferred(renderer) => {
+                renderer.resize(wgpu_context, &self.attachments.depth_texture.view)
+            }
             OpaqueRenderer::CompactDeferred(renderer) => renderer.resize(wgpu_context),
         }
     }

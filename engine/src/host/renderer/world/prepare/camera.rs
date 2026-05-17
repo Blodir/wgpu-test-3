@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use glam::{Mat3, Mat4, Quat, Vec3, Vec4};
+use glam::{Mat4, Quat, Vec3};
 
 use crate::{
     host::{
@@ -122,18 +122,12 @@ pub fn prepare_camera(
         [up.x, up.y, up.z, 0.0],
         [forward.x, forward.y, forward.z, 0.0],
     ];
-    let m3 = Mat3::from_mat4(view_proj).inverse();
-    let inverse_view_proj_rot = Mat4::from_cols(
-        Vec4::new(m3.x_axis.x, m3.x_axis.y, m3.x_axis.z, 0.0),
-        Vec4::new(m3.y_axis.x, m3.y_axis.y, m3.y_axis.z, 0.0),
-        Vec4::new(m3.z_axis.x, m3.z_axis.y, m3.z_axis.z, 0.0),
-        Vec4::ZERO,
-    );
+    let inverse_view_proj = view_proj.inverse();
 
     camera.update(
         &view_proj.to_cols_array(),
         &state.position.to_array(),
-        &inverse_view_proj_rot.to_cols_array(),
+        &inverse_view_proj.to_cols_array(),
         &forward.to_array(),
         &view_rotation,
         queue,

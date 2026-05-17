@@ -12,9 +12,7 @@ use engine::{
         },
         sim::InputEvent,
     },
-    host::renderer::{
-        GtaoOptions, OpaqueRenderPath, RenderCommand, RendererOptions, UiFrameInfo,
-    },
+    host::renderer::{GtaoOptions, OpaqueRenderPath, RenderCommand, RendererOptions, UiFrameInfo},
     host::world::sun_shadow::SUN_SHADOW_MAX_CASCADE_COUNT,
     run,
 };
@@ -1181,7 +1179,9 @@ impl UiTrait for Game {
                     opaque_render_path: match opaque_path_kind {
                         0 => OpaqueRenderPath::Forward,
                         1 => OpaqueRenderPath::CompactDeferred,
-                        2 => OpaqueRenderPath::Deferred { gtao: deferred_gtao },
+                        2 => OpaqueRenderPath::Deferred {
+                            gtao: deferred_gtao,
+                        },
                         _ => OpaqueRenderPath::Forward,
                     },
                 };

@@ -23,7 +23,13 @@ impl HdrColorTexture {
         device: &wgpu::Device,
         surface_config: &wgpu::SurfaceConfiguration,
     ) -> Self {
-        Self::new_scaled(device, surface_config, 2, "Half Resolution HDR Color Texture", false)
+        Self::new_scaled(
+            device,
+            surface_config,
+            2,
+            "Half Resolution HDR Color Texture",
+            false,
+        )
     }
 
     fn new_scaled(
@@ -86,7 +92,8 @@ impl HdrColorTexture {
                     format: Some(hdr_format),
                     dimension: Some(wgpu::TextureViewDimension::D2),
                     usage: Some(
-                        wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+                        wgpu::TextureUsages::RENDER_ATTACHMENT
+                            | wgpu::TextureUsages::TEXTURE_BINDING,
                     ),
                     aspect: wgpu::TextureAspect::All,
                     base_mip_level: mip_level,

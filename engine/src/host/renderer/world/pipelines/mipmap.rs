@@ -2,8 +2,7 @@ use wgpu::util::DeviceExt;
 
 use crate::global_paths::SHADER_MIPMAP_WGSL;
 use crate::host::{
-    renderer::shader_cache::ShaderCache,
-    wgpu_context::WgpuContext,
+    renderer::shader_cache::ShaderCache, wgpu_context::WgpuContext,
     world::attachments::color::HdrColorTexture,
 };
 
@@ -93,11 +92,13 @@ impl MipmapPipeline {
                     contents: bytemuck::cast_slice(INDICES),
                     usage: wgpu::BufferUsages::INDEX,
                 });
-        let sampler = wgpu_context.device.create_sampler(&wgpu::SamplerDescriptor {
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
-            ..Default::default()
-        });
+        let sampler = wgpu_context
+            .device
+            .create_sampler(&wgpu::SamplerDescriptor {
+                mag_filter: wgpu::FilterMode::Linear,
+                min_filter: wgpu::FilterMode::Linear,
+                ..Default::default()
+            });
 
         Self {
             render_pipeline,

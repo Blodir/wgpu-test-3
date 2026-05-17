@@ -207,11 +207,15 @@ impl GiBlurPipeline {
                 },
                 wgpu::BindGroupEntry {
                     binding: 6,
-                    resource: wgpu::BindingResource::TextureView(&gbuffer_targets.world_position.view),
+                    resource: wgpu::BindingResource::TextureView(
+                        &gbuffer_targets.world_position.view,
+                    ),
                 },
                 wgpu::BindGroupEntry {
                     binding: 7,
-                    resource: wgpu::BindingResource::Sampler(&gbuffer_targets.world_position.sampler),
+                    resource: wgpu::BindingResource::Sampler(
+                        &gbuffer_targets.world_position.sampler,
+                    ),
                 },
             ],
             label: Some("GI Blur Bind Group"),

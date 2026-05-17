@@ -26,6 +26,7 @@ impl GtaoPipeline {
         shader_cache: &mut ShaderCache,
         camera_bind_group_layout: &wgpu::BindGroupLayout,
         gbuffer_targets: &GBufferTargets,
+        depth_texture_view: &wgpu::TextureView,
         gi_source_texture: &HdrColorTexture,
         gtao_options: &GtaoOptions,
         frame_index: u32,
@@ -55,7 +56,7 @@ impl GtaoPipeline {
                             binding: 2,
                             visibility: wgpu::ShaderStages::FRAGMENT,
                             ty: wgpu::BindingType::Texture {
-                                sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                                sample_type: wgpu::TextureSampleType::Depth,
                                 view_dimension: wgpu::TextureViewDimension::D2,
                                 multisampled: false,
                             },
@@ -63,12 +64,6 @@ impl GtaoPipeline {
                         },
                         wgpu::BindGroupLayoutEntry {
                             binding: 3,
-                            visibility: wgpu::ShaderStages::FRAGMENT,
-                            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                            count: None,
-                        },
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 4,
                             visibility: wgpu::ShaderStages::FRAGMENT,
                             ty: wgpu::BindingType::Texture {
                                 sample_type: wgpu::TextureSampleType::Float { filterable: true },
@@ -78,7 +73,7 @@ impl GtaoPipeline {
                             count: None,
                         },
                         wgpu::BindGroupLayoutEntry {
-                            binding: 5,
+                            binding: 4,
                             visibility: wgpu::ShaderStages::FRAGMENT,
                             ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                             count: None,
@@ -90,6 +85,7 @@ impl GtaoPipeline {
             &wgpu_context.device,
             &inputs_bind_group_layout,
             gbuffer_targets,
+            depth_texture_view,
             gi_source_texture,
         );
         let settings_bind_group_layout = wgpu_context
@@ -178,6 +174,7 @@ impl GtaoPipeline {
         device: &wgpu::Device,
         bind_group_layout: &wgpu::BindGroupLayout,
         gbuffer_targets: &GBufferTargets,
+        depth_texture_view: &wgpu::TextureView,
         gi_source_texture: &HdrColorTexture,
     ) -> wgpu::BindGroup {
         device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -197,22 +194,14 @@ impl GtaoPipeline {
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: wgpu::BindingResource::TextureView(
-                        &gbuffer_targets.world_position.view,
-                    ),
+                    resource: wgpu::BindingResource::TextureView(depth_texture_view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 3,
-                    resource: wgpu::BindingResource::Sampler(
-                        &gbuffer_targets.world_position.sampler,
-                    ),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 4,
                     resource: wgpu::BindingResource::TextureView(&gi_source_texture.sampled_view),
                 },
                 wgpu::BindGroupEntry {
-                    binding: 5,
+                    binding: 4,
                     resource: wgpu::BindingResource::Sampler(&gi_source_texture.sampler),
                 },
             ],
@@ -224,6 +213,7 @@ impl GtaoPipeline {
         &mut self,
         device: &wgpu::Device,
         gbuffer_targets: &GBufferTargets,
+        depth_texture_view: &wgpu::TextureView,
         gi_source_texture: &HdrColorTexture,
         gtao_options: &GtaoOptions,
         frame_index: u32,
@@ -232,10 +222,15 @@ impl GtaoPipeline {
             device,
             &self.inputs_bind_group_layout,
             gbuffer_targets,
+            depth_texture_view,
             gi_source_texture,
         );
-        self.settings_bind_group =
-            GtaoSettings::upload(device, &self.settings_bind_group_layout, gtao_options, frame_index);
+        self.settings_bind_group = GtaoSettings::upload(
+            device,
+            &self.settings_bind_group_layout,
+            gtao_options,
+            frame_index,
+        );
     }
 
     pub fn render(

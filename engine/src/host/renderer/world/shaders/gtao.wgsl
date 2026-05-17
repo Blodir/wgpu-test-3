@@ -1,12 +1,12 @@
 @group(0) @binding(1) var<uniform> camera_pos: vec3<f32>;
+@group(0) @binding(2) var<uniform> inverse_view_proj: mat4x4<f32>;
 @group(0) @binding(4) var<uniform> camera_view_rotation: mat3x3<f32>;
 
 @group(1) @binding(0) var gbuffer_normal_roughness: texture_2d<f32>;
 @group(1) @binding(1) var gbuffer_normal_roughness_sampler: sampler;
-@group(1) @binding(2) var gbuffer_world_position: texture_2d<f32>;
-@group(1) @binding(3) var gbuffer_world_position_sampler: sampler;
-@group(1) @binding(4) var gi_source_history_texture: texture_2d<f32>;
-@group(1) @binding(5) var gi_source_history_sampler: sampler;
+@group(1) @binding(2) var gbuffer_depth: texture_depth_2d;
+@group(1) @binding(3) var gi_source_history_texture: texture_2d<f32>;
+@group(1) @binding(4) var gi_source_history_sampler: sampler;
 
 struct GtaoSettingsUniform {
     params0: vec4<f32>,
@@ -106,6 +106,34 @@ fn sample_history_ao(uv: vec2f, lod: f32) -> f32 {
     ).a;
 }
 
+fn reconstruct_world_position_from_depth(uv: vec2f, depth: f32) -> vec3f {
+    let clip = vec4f(
+        uv.x * 2.0 - 1.0,
+        1.0 - uv.y * 2.0,
+        depth,
+        1.0
+    );
+    let world = inverse_view_proj * clip;
+    if (abs(world.w) > 1e-8) {
+        return world.xyz / world.w;
+    }
+    return vec3f(0.0);
+}
+
+fn sample_world_position_from_depth(uv: vec2f) -> vec4f {
+    let dims = textureDimensions(gbuffer_depth);
+    let max_uv = vec2f(1.0) - 1.0 / vec2f(dims);
+    let clamped_uv = clamp(uv, vec2f(0.0), max_uv);
+    let depth_coord = vec2i(clamped_uv * vec2f(dims));
+    let depth = textureLoad(gbuffer_depth, depth_coord, 0);
+
+    if (depth >= 1.0) {
+        return vec4f(0.0);
+    }
+
+    return vec4f(reconstruct_world_position_from_depth(clamped_uv, depth), 1.0);
+}
+
 /**
     Based on Horizon-Based Indirect Lighting (HBIL) - Benoit Mayaux
 */
@@ -117,11 +145,7 @@ fn hbil4(in: VertexOutput) -> FragmentOutput {
     let frame_index = gtao_settings.params1.x;
     let uv = in.tex_coords;
 
-    let P_sample = textureSample(
-        gbuffer_world_position,
-        gbuffer_world_position_sampler,
-        uv
-    );
+    let P_sample = sample_world_position_from_depth(uv);
     if (P_sample.w < 0.5) {
         // invalid sample
         return FragmentOutput(vec4<f32>(0.0, 0.0, 0.0, 1.0), vec4<f32>(0.0));
@@ -134,7 +158,7 @@ fn hbil4(in: VertexOutput) -> FragmentOutput {
         uv
     ).xyz;
 
-    let dims = vec2<f32>(textureDimensions(gbuffer_world_position, 0));
+    let dims = vec2<f32>(textureDimensions(gbuffer_depth));
     let max_history_lod = f32(textureNumLevels(gi_source_history_texture) - 1u);
 
     // https://github.com/cdrinmatane/SSRT3/blob/main/HDRP/Shaders/Resources/SSRTCS.compute
@@ -214,14 +238,10 @@ fn hbil4(in: VertexOutput) -> FragmentOutput {
             // FRONT ----------------------------
 
             // 1.3. Computing Horizon Angles ---
-            // Can be skipped, because we are sampling real world space coordinates from gbuffer, not depth buffer values
+            // Can be skipped, because we are reconstructing real world space coordinates from depth
             // ---
             let sample_uv_front = uv + current_step_cs;
-            let x_1_sample = textureSample(
-                gbuffer_world_position,
-                gbuffer_world_position_sampler,
-                sample_uv_front
-            );
+            let x_1_sample = sample_world_position_from_depth(sample_uv_front);
 
             if (x_1_sample.w > 0.5) {
                 let x_1_w = x_1_sample.xyz;
@@ -282,11 +302,7 @@ fn hbil4(in: VertexOutput) -> FragmentOutput {
 
             // BACK ------------------------------
             let sample_uv_back = uv - current_step_cs;
-            let x_1_back_sample = textureSample(
-                gbuffer_world_position,
-                gbuffer_world_position_sampler,
-                sample_uv_back
-            );
+            let x_1_back_sample = sample_world_position_from_depth(sample_uv_back);
 
             if (x_1_back_sample.w > 0.5) {
                 let x_1_back_w = x_1_back_sample.xyz;
