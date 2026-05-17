@@ -32,8 +32,8 @@ struct SunShadowUniform {
 @group(2) @binding(6) var gbuffer_world_position: texture_2d<f32>;
 @group(2) @binding(7) var gbuffer_world_position_sampler: sampler;
 
-@group(3) @binding(0) var gtao_texture: texture_2d<f32>;
-@group(3) @binding(1) var gtao_texture_sampler: sampler;
+@group(3) @binding(0) var hbgi_texture: texture_2d<f32>;
+@group(3) @binding(1) var hbgi_texture_sampler: sampler;
 @group(3) @binding(2) var hbil_diffuse_irradiance_texture: texture_2d<f32>;
 @group(3) @binding(3) var hbil_diffuse_irradiance_sampler: sampler;
 
@@ -214,9 +214,9 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
         gbuffer_world_position_sampler,
         uv
     );
-    let gtao = textureSample(
-        gtao_texture,
-        gtao_texture_sampler,
+    let hbgi = textureSample(
+        hbgi_texture,
+        hbgi_texture_sampler,
         uv
     );
     let hbil_sample = textureSample(
@@ -296,7 +296,7 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
         direct_specular += specular * radiance * NdotL;
     }
 
-    let bent_n_w = gtao.xyz;
+    let bent_n_w = hbgi.xyz;
     let F_env = fresnel_schlick_roughness(max(dot(bent_n_w, V), 0.0), F0, surface_roughness);
     let k_s2 = F_env;
     var k_d2 = 1.0 - k_s2;
@@ -310,7 +310,7 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
 
     // TODO: this is a temp function to scale back the (brutal) effect of large radius HBIL AO
     let diffuse_ao = pow(
-        clamp(0.0, 1.0, hbil_F0_compensation(gtao.w) * gtao.w - 0.1) + 0.1,
+        clamp(0.0, 1.0, hbil_F0_compensation(hbgi.w) * hbgi.w - 0.1) + 0.1,
         0.4
     ) * ao;
 
@@ -339,12 +339,12 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
     );
     let gi_source = vec4f(
         final_diffuse + surface_emissive,
-        gtao.w
+        hbgi.w
     );
     //return FragmentOutput(vec4f(E_near, 1.0), gi_source);
     //return FragmentOutput(vec4f(vec3f(hbil_sample.w), 1.0), gi_source);
     return FragmentOutput(final_color, gi_source);
-    //return FragmentOutput(vec4f(vec3f(gtao.w), 1.0), gi_source);
-    //return FragmentOutput(vec4f(gtao.xyz, 1.0), gi_source);
-    //return FragmentOutput(vec4f((gtao.xyz + 1.0) / 2.0, 1.0), gi_source);
+    //return FragmentOutput(vec4f(vec3f(hbgi.w), 1.0), gi_source);
+    //return FragmentOutput(vec4f(hbgi.xyz, 1.0), gi_source);
+    //return FragmentOutput(vec4f((hbgi.xyz + 1.0) / 2.0, 1.0), gi_source);
 }

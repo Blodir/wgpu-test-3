@@ -17,18 +17,18 @@ use crate::var_snapshot::CameraSnapshotPair;
 use crate::workers::anim_pose::PoseJobResult;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct GtaoOptions {
+pub struct HbgiOptions {
     pub radius_pixels: f32,
-    pub ao_radius: f32,
-    pub power: f32,
+    pub radius_world: f32,
+    pub step_size_exponent: f32,
     pub gi_intensity: f32,
 }
-impl Default for GtaoOptions {
+impl Default for HbgiOptions {
     fn default() -> Self {
         Self {
             radius_pixels: 2000.0,
-            ao_radius: 1000.0,
-            power: 2.0,
+            radius_world: 1000.0,
+            step_size_exponent: 2.0,
             gi_intensity: 2.0,
         }
     }
@@ -37,7 +37,7 @@ impl Default for GtaoOptions {
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum OpaqueRenderPath {
     Deferred {
-        gtao: Option<GtaoOptions>,
+        hbgi: Option<HbgiOptions>,
     },
     CompactDeferred,
     #[default]
@@ -60,7 +60,7 @@ impl RendererOptions {
         // Conservative heuristic based on MRT availability for deferred paths.
         let opaque_render_path = if limits.max_color_attachments >= 6 {
             OpaqueRenderPath::Deferred {
-                gtao: Some(GtaoOptions::default()),
+                hbgi: Some(HbgiOptions::default()),
             }
         } else if limits.max_color_attachments >= 4 {
             OpaqueRenderPath::CompactDeferred

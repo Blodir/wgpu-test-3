@@ -1,5 +1,5 @@
-@group(0) @binding(0) var raw_gtao_texture: texture_2d<f32>;
-@group(0) @binding(1) var raw_gtao_sampler: sampler;
+@group(0) @binding(0) var raw_hbgi_texture: texture_2d<f32>;
+@group(0) @binding(1) var raw_hbgi_sampler: sampler;
 @group(0) @binding(2) var raw_hbil_texture: texture_2d<f32>;
 @group(0) @binding(3) var raw_hbil_sampler: sampler;
 @group(0) @binding(4) var gbuffer_normal_roughness: texture_2d<f32>;
@@ -13,7 +13,7 @@ struct VertexOutput {
 }
 
 struct FragmentOutput {
-    @location(0) gtao: vec4<f32>,
+    @location(0) hbgi: vec4<f32>,
     @location(1) hbil_diffuse_irradiance: vec4<f32>,
 }
 
@@ -70,7 +70,7 @@ fn bilateral_weight(
 
 @fragment
 fn fs_main(in: VertexOutput) -> FragmentOutput {
-    let half_dims = vec2i(textureDimensions(raw_gtao_texture, 0));
+    let half_dims = vec2i(textureDimensions(raw_hbgi_texture, 0));
     let pixel_f = in.tex_coords * vec2f(half_dims);
     let pixel = clamp(vec2i(pixel_f), vec2i(0), half_dims - vec2i(1));
     let uv = sample_half_res_uv(pixel, half_dims);
@@ -93,7 +93,7 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
     ).xyz);
     let center_position = center_world.xyz;
 
-    var gtao_acc = vec4f(0.0);
+    var hbgi_acc = vec4f(0.0);
     var hbil_acc = vec4f(0.0);
     var weight_acc = 0.0;
 
@@ -126,22 +126,22 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
                 offset
             );
 
-            gtao_acc += textureSampleLevel(raw_gtao_texture, raw_gtao_sampler, sample_uv, 0.0) * weight;
+            hbgi_acc += textureSampleLevel(raw_hbgi_texture, raw_hbgi_sampler, sample_uv, 0.0) * weight;
             hbil_acc += textureSampleLevel(raw_hbil_texture, raw_hbil_sampler, sample_uv, 0.0) * weight;
             weight_acc += weight;
         }
     }
 
     if (weight_acc <= 1e-6) {
-        let raw_gtao = textureSampleLevel(raw_gtao_texture, raw_gtao_sampler, uv, 0.0);
+        let raw_hbgi = textureSampleLevel(raw_hbgi_texture, raw_hbgi_sampler, uv, 0.0);
         let raw_hbil = textureSampleLevel(raw_hbil_texture, raw_hbil_sampler, uv, 0.0);
-        return FragmentOutput(vec4f(safe_normalize3(raw_gtao.xyz), raw_gtao.w), raw_hbil);
+        return FragmentOutput(vec4f(safe_normalize3(raw_hbgi.xyz), raw_hbgi.w), raw_hbil);
     }
 
-    let blurred_gtao = gtao_acc / weight_acc;
+    let blurred_hbgi = hbgi_acc / weight_acc;
     let blurred_hbil = hbil_acc / weight_acc;
     return FragmentOutput(
-        vec4f(safe_normalize3(blurred_gtao.xyz), blurred_gtao.w),
+        vec4f(safe_normalize3(blurred_hbgi.xyz), blurred_hbgi.w),
         blurred_hbil
     );
 }

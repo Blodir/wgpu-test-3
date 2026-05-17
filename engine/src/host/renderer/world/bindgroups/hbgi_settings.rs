@@ -1,21 +1,21 @@
 use wgpu::util::DeviceExt as _;
 
-use crate::host::renderer::GtaoOptions;
+use crate::host::renderer::HbgiOptions;
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-struct GtaoSettingsUniform {
+struct HbgiSettingsUniform {
     params0: [f32; 4],
     params1: [u32; 4],
 }
 
-pub struct GtaoSettings {}
-pub struct GtaoSettingsBinding {
+pub struct HbgiSettings {}
+pub struct HbgiSettingsBinding {
     pub bind_group: wgpu::BindGroup,
     _settings_buffer: wgpu::Buffer,
 }
 
-impl GtaoSettings {
+impl HbgiSettings {
     pub fn desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
         wgpu::BindGroupLayoutDescriptor {
             entries: &[wgpu::BindGroupLayoutEntry {
@@ -28,24 +28,24 @@ impl GtaoSettings {
                 },
                 count: None,
             }],
-            label: Some("GTAO Settings Bind Group Layout"),
+            label: Some("HBGI Settings Bind Group Layout"),
         }
     }
 
     pub fn upload(
         device: &wgpu::Device,
         bind_group_layout: &wgpu::BindGroupLayout,
-        gtao_options: &GtaoOptions,
+        hbgi_options: &HbgiOptions,
         frame_index: u32,
-    ) -> GtaoSettingsBinding {
+    ) -> HbgiSettingsBinding {
         let settings_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("GTAO Settings Buffer"),
-            contents: bytemuck::bytes_of(&GtaoSettingsUniform {
+            label: Some("HBGI Settings Buffer"),
+            contents: bytemuck::bytes_of(&HbgiSettingsUniform {
                 params0: [
-                    gtao_options.radius_pixels,
-                    gtao_options.ao_radius,
-                    gtao_options.power,
-                    gtao_options.gi_intensity,
+                    hbgi_options.radius_pixels,
+                    hbgi_options.radius_world,
+                    hbgi_options.step_size_exponent,
+                    hbgi_options.gi_intensity,
                 ],
                 params1: [frame_index, 0, 0, 0],
             }),
@@ -57,10 +57,10 @@ impl GtaoSettings {
                 binding: 0,
                 resource: settings_buffer.as_entire_binding(),
             }],
-            label: Some("GTAO Settings Bind Group"),
+            label: Some("HBGI Settings Bind Group"),
         });
 
-        GtaoSettingsBinding {
+        HbgiSettingsBinding {
             bind_group,
             _settings_buffer: settings_buffer,
         }

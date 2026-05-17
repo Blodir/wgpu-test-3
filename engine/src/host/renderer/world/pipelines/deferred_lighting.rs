@@ -5,10 +5,10 @@ use crate::host::{
     shader_cache::ShaderCache,
     wgpu_context::WgpuContext,
     world::{
-        attachments::deferred::{GBufferTargets, GtaoTexture},
+        attachments::deferred::{GBufferTargets, HbgiTexture},
         bindgroups::{
             g_buffer::{GBufferInputs, GBufferInputsBinding},
-            gtao::{GtaoInputs, GtaoInputsBinding},
+            hbgi::{HbgiInputs, HbgiInputsBinding},
         },
     },
 };
@@ -20,8 +20,8 @@ pub struct DeferredLightingPipeline {
     index_buffer: wgpu::Buffer,
     gbuffer_inputs_bind_group_layout: wgpu::BindGroupLayout,
     gbuffer_inputs_bind_group: GBufferInputsBinding,
-    gtao_inputs_bind_group_layout: wgpu::BindGroupLayout,
-    gtao_inputs_bind_group: GtaoInputsBinding,
+    hbgi_inputs_bind_group_layout: wgpu::BindGroupLayout,
+    hbgi_inputs_bind_group: HbgiInputsBinding,
 }
 
 impl DeferredLightingPipeline {
@@ -31,7 +31,7 @@ impl DeferredLightingPipeline {
         camera_bind_group_layout: &wgpu::BindGroupLayout,
         lights_bind_group_layout: &wgpu::BindGroupLayout,
         gbuffer_targets: &GBufferTargets,
-        gtao_texture: &GtaoTexture,
+        hbgi_texture: &HbgiTexture,
     ) -> Self {
         let gbuffer_inputs_bind_group_layout = wgpu_context
             .device
@@ -41,20 +41,20 @@ impl DeferredLightingPipeline {
             &gbuffer_inputs_bind_group_layout,
             gbuffer_targets,
         );
-        let gtao_inputs_bind_group_layout = wgpu_context
+        let hbgi_inputs_bind_group_layout = wgpu_context
             .device
-            .create_bind_group_layout(&GtaoInputs::desc());
-        let gtao_inputs_bind_group = GtaoInputs::upload(
+            .create_bind_group_layout(&HbgiInputs::desc());
+        let hbgi_inputs_bind_group = HbgiInputs::upload(
             &wgpu_context.device,
-            &gtao_inputs_bind_group_layout,
-            gtao_texture,
+            &hbgi_inputs_bind_group_layout,
+            hbgi_texture,
         );
 
         let bind_group_layouts = &[
             camera_bind_group_layout,
             lights_bind_group_layout,
             &gbuffer_inputs_bind_group_layout,
-            &gtao_inputs_bind_group_layout,
+            &hbgi_inputs_bind_group_layout,
         ];
         let render_pipeline_layout =
             wgpu_context
@@ -121,8 +121,8 @@ impl DeferredLightingPipeline {
             index_buffer,
             gbuffer_inputs_bind_group_layout,
             gbuffer_inputs_bind_group,
-            gtao_inputs_bind_group_layout,
-            gtao_inputs_bind_group,
+            hbgi_inputs_bind_group_layout,
+            hbgi_inputs_bind_group,
         }
     }
 
@@ -130,15 +130,15 @@ impl DeferredLightingPipeline {
         &mut self,
         device: &wgpu::Device,
         gbuffer_targets: &GBufferTargets,
-        gtao_texture: &GtaoTexture,
+        hbgi_texture: &HbgiTexture,
     ) {
         self.gbuffer_inputs_bind_group = GBufferInputs::upload(
             device,
             &self.gbuffer_inputs_bind_group_layout,
             gbuffer_targets,
         );
-        self.gtao_inputs_bind_group =
-            GtaoInputs::upload(device, &self.gtao_inputs_bind_group_layout, gtao_texture);
+        self.hbgi_inputs_bind_group =
+            HbgiInputs::upload(device, &self.hbgi_inputs_bind_group_layout, hbgi_texture);
     }
 
     pub fn render(
@@ -178,7 +178,7 @@ impl DeferredLightingPipeline {
         render_pass.set_bind_group(0u32, camera_bind_group, &[]);
         render_pass.set_bind_group(1u32, lights_bind_group, &[]);
         render_pass.set_bind_group(2u32, &self.gbuffer_inputs_bind_group.bind_group, &[]);
-        render_pass.set_bind_group(3u32, &self.gtao_inputs_bind_group.bind_group, &[]);
+        render_pass.set_bind_group(3u32, &self.hbgi_inputs_bind_group.bind_group, &[]);
         render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
         render_pass.draw_indexed(0..INDICES.len() as u32, 0, 0..1);
     }

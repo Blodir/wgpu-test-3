@@ -8,12 +8,12 @@
 @group(1) @binding(3) var gi_source_history_texture: texture_2d<f32>;
 @group(1) @binding(4) var gi_source_history_sampler: sampler;
 
-struct GtaoSettingsUniform {
+struct HbgiSettingsUniform {
     params0: vec4<f32>,
     params1: vec4<u32>,
 }
 
-@group(2) @binding(0) var<uniform> gtao_settings: GtaoSettingsUniform;
+@group(2) @binding(0) var<uniform> hbgi_settings: HbgiSettingsUniform;
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
@@ -21,7 +21,7 @@ struct VertexOutput {
 }
 
 struct FragmentOutput {
-    @location(0) gtao: vec4<f32>,
+    @location(0) hbgi: vec4<f32>,
     @location(1) hbil_diffuse_irradiance: vec4<f32>,
 }
 
@@ -135,14 +135,14 @@ fn sample_world_position_from_depth(uv: vec2f) -> vec4f {
 }
 
 /**
-    Based on Horizon-Based Indirect Lighting (HBIL) - Benoit Mayaux
+    Based on Horizon-Based Global Illumination (HBGI) / Horizon-Based Indirect Lighting (HBIL) - Benoit Mayaux
 */
-fn hbil4(in: VertexOutput) -> FragmentOutput {
-    let radius_pixels = gtao_settings.params0.x;
-    let radius_world = gtao_settings.params0.y;
-    let power = gtao_settings.params0.z;
-    let gi_intensity = gtao_settings.params0.w;
-    let frame_index = gtao_settings.params1.x;
+fn hbgi(in: VertexOutput) -> FragmentOutput {
+    let radius_pixels = hbgi_settings.params0.x;
+    let radius_world = hbgi_settings.params0.y;
+    let step_size_exponent = hbgi_settings.params0.z;
+    let gi_intensity = hbgi_settings.params0.w;
+    let frame_index = hbgi_settings.params1.x;
     let uv = in.tex_coords;
 
     let P_sample = sample_world_position_from_depth(uv);
@@ -229,7 +229,7 @@ fn hbil4(in: VertexOutput) -> FragmentOutput {
 
         for (var step_idx: u32 = 1u; step_idx <= STEPS_PER_DIRECTION; step_idx += 1u) {
             let step_t = (f32(step_idx - 1u) + radial_jitter) / f32(STEPS_PER_DIRECTION);
-            let current_step_cs = pow(step_t, power) * max_step_cs;
+            let current_step_cs = pow(step_t, step_size_exponent) * max_step_cs;
             let sample_distance_pixels = max(length(current_step_cs * dims), 1.0);
             // similar simple heuristic: https://github.com/cdrinmatane/SSRT3/blob/main/HDRP/Shaders/Resources/SSRTCS.compute
             // TODO play around with this heuristic for best results relative to step count
@@ -409,5 +409,5 @@ fn hbil4(in: VertexOutput) -> FragmentOutput {
 
 @fragment
 fn fs_main(in: VertexOutput) -> FragmentOutput {
-    return hbil4(in);
+    return hbgi(in);
 }

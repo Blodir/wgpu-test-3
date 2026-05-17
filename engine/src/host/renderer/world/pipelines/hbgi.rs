@@ -1,26 +1,26 @@
 use wgpu::util::DeviceExt;
 
-use crate::global_paths::SHADER_GTAO_WGSL;
-use crate::host::renderer::GtaoOptions;
+use crate::global_paths::SHADER_HBGI_WGSL;
+use crate::host::renderer::HbgiOptions;
 use crate::host::world::attachments::{
     color::HdrColorTexture,
-    deferred::{GBufferTargets, GtaoTexture},
+    deferred::{GBufferTargets, HbgiTexture},
 };
-use crate::host::world::bindgroups::gtao_settings::{GtaoSettings, GtaoSettingsBinding};
+use crate::host::world::bindgroups::hbgi_settings::{HbgiSettings, HbgiSettingsBinding};
 use crate::host::{shader_cache::ShaderCache, wgpu_context::WgpuContext};
 
 const INDICES: &[u16] = &[0, 2, 1, 3, 2, 0];
 
-pub struct GtaoPipeline {
+pub struct HbgiPipeline {
     render_pipeline: wgpu::RenderPipeline,
     index_buffer: wgpu::Buffer,
     inputs_bind_group_layout: wgpu::BindGroupLayout,
     inputs_bind_group: wgpu::BindGroup,
     settings_bind_group_layout: wgpu::BindGroupLayout,
-    settings_bind_group: GtaoSettingsBinding,
+    settings_bind_group: HbgiSettingsBinding,
 }
 
-impl GtaoPipeline {
+impl HbgiPipeline {
     pub fn new(
         wgpu_context: &WgpuContext,
         shader_cache: &mut ShaderCache,
@@ -28,7 +28,7 @@ impl GtaoPipeline {
         gbuffer_targets: &GBufferTargets,
         depth_texture_view: &wgpu::TextureView,
         gi_source_texture: &HdrColorTexture,
-        gtao_options: &GtaoOptions,
+        hbgi_options: &HbgiOptions,
         frame_index: u32,
     ) -> Self {
         let inputs_bind_group_layout =
@@ -79,7 +79,7 @@ impl GtaoPipeline {
                             count: None,
                         },
                     ],
-                    label: Some("GTAO Inputs Bind Group Layout"),
+                    label: Some("HBGI Inputs Bind Group Layout"),
                 });
         let inputs_bind_group = Self::create_inputs_bind_group(
             &wgpu_context.device,
@@ -90,18 +90,18 @@ impl GtaoPipeline {
         );
         let settings_bind_group_layout = wgpu_context
             .device
-            .create_bind_group_layout(&GtaoSettings::desc());
-        let settings_bind_group = GtaoSettings::upload(
+            .create_bind_group_layout(&HbgiSettings::desc());
+        let settings_bind_group = HbgiSettings::upload(
             &wgpu_context.device,
             &settings_bind_group_layout,
-            gtao_options,
+            hbgi_options,
             frame_index,
         );
         let render_pipeline_layout =
             wgpu_context
                 .device
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                    label: Some("GTAO Pipeline Layout"),
+                    label: Some("HBGI Pipeline Layout"),
                     bind_group_layouts: &[
                         camera_bind_group_layout,
                         &inputs_bind_group_layout,
@@ -109,12 +109,12 @@ impl GtaoPipeline {
                     ],
                     push_constant_ranges: &[],
                 });
-        let shader_module = shader_cache.get(SHADER_GTAO_WGSL.to_string(), wgpu_context);
+        let shader_module = shader_cache.get(SHADER_HBGI_WGSL.to_string(), wgpu_context);
         let render_pipeline =
             wgpu_context
                 .device
                 .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                    label: Some("GTAO Pipeline"),
+                    label: Some("HBGI Pipeline"),
                     layout: Some(&render_pipeline_layout),
                     vertex: wgpu::VertexState {
                         module: &shader_module,
@@ -155,7 +155,7 @@ impl GtaoPipeline {
             wgpu_context
                 .device
                 .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("GTAO Index Buffer"),
+                    label: Some("HBGI Index Buffer"),
                     contents: bytemuck::cast_slice(INDICES),
                     usage: wgpu::BufferUsages::INDEX,
                 });
@@ -205,7 +205,7 @@ impl GtaoPipeline {
                     resource: wgpu::BindingResource::Sampler(&gi_source_texture.sampler),
                 },
             ],
-            label: Some("GTAO Inputs Bind Group"),
+            label: Some("HBGI Inputs Bind Group"),
         })
     }
 
@@ -215,7 +215,7 @@ impl GtaoPipeline {
         gbuffer_targets: &GBufferTargets,
         depth_texture_view: &wgpu::TextureView,
         gi_source_texture: &HdrColorTexture,
-        gtao_options: &GtaoOptions,
+        hbgi_options: &HbgiOptions,
         frame_index: u32,
     ) {
         self.inputs_bind_group = Self::create_inputs_bind_group(
@@ -225,10 +225,10 @@ impl GtaoPipeline {
             depth_texture_view,
             gi_source_texture,
         );
-        self.settings_bind_group = GtaoSettings::upload(
+        self.settings_bind_group = HbgiSettings::upload(
             device,
             &self.settings_bind_group_layout,
-            gtao_options,
+            hbgi_options,
             frame_index,
         );
     }
@@ -236,14 +236,14 @@ impl GtaoPipeline {
     pub fn render(
         &self,
         encoder: &mut wgpu::CommandEncoder,
-        gtao_texture: &GtaoTexture,
+        hbgi_texture: &HbgiTexture,
         camera_bind_group: &wgpu::BindGroup,
     ) {
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("GTAO Pass"),
+            label: Some("HBGI Pass"),
             color_attachments: &[
                 Some(wgpu::RenderPassColorAttachment {
-                    view: &gtao_texture.view,
+                    view: &hbgi_texture.view,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color {
@@ -256,7 +256,7 @@ impl GtaoPipeline {
                     },
                 }),
                 Some(wgpu::RenderPassColorAttachment {
-                    view: &gtao_texture.hbil_diffuse_view,
+                    view: &hbgi_texture.hbil_diffuse_view,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),

@@ -12,7 +12,7 @@ pub const SHADER_SUN_SHADOW_STATIC_VERT_WGSL: &str =
 pub const SHADER_PBR_FRAG_WGSL: &str = "engine/src/host/renderer/world/shaders/pbr.frag.wgsl";
 pub const SHADER_G_BUFFER_FRAG_WGSL: &str =
     "engine/src/host/renderer/world/shaders/g_buffer.frag.wgsl";
-pub const SHADER_GTAO_WGSL: &str = "engine/src/host/renderer/world/shaders/gtao.wgsl";
+pub const SHADER_HBGI_WGSL: &str = "engine/src/host/renderer/world/shaders/hbgi.wgsl";
 pub const SHADER_GI_BLUR_WGSL: &str = "engine/src/host/renderer/world/shaders/gi_blur.wgsl";
 pub const SHADER_DEFERRED_LIGHTING_WGSL: &str =
     "engine/src/host/renderer/world/shaders/deferred_lighting.wgsl";

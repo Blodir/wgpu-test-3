@@ -1,8 +1,8 @@
 pub mod bones;
 pub mod camera;
 pub mod g_buffer;
-pub mod gtao;
-pub mod gtao_settings;
+pub mod hbgi;
+pub mod hbgi_settings;
 pub mod lights;
 pub mod material;
 pub mod motion_camera;

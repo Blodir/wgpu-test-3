@@ -1,11 +1,11 @@
-use crate::host::world::attachments::deferred::GtaoTexture;
+use crate::host::world::attachments::deferred::HbgiTexture;
 
-pub struct GtaoInputs {}
-pub struct GtaoInputsBinding {
+pub struct HbgiInputs {}
+pub struct HbgiInputsBinding {
     pub bind_group: wgpu::BindGroup,
 }
 
-impl GtaoInputs {
+impl HbgiInputs {
     pub fn desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
         wgpu::BindGroupLayoutDescriptor {
             entries: &[
@@ -42,42 +42,42 @@ impl GtaoInputs {
                     count: None,
                 },
             ],
-            label: Some("GTAO Inputs Bind Group Layout"),
+            label: Some("HBGI Inputs Bind Group Layout"),
         }
     }
 
     pub fn upload(
         device: &wgpu::Device,
         bind_group_layout: &wgpu::BindGroupLayout,
-        gtao_texture: &GtaoTexture,
-    ) -> GtaoInputsBinding {
+        hbgi_texture: &HbgiTexture,
+    ) -> HbgiInputsBinding {
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&gtao_texture.blurred_view),
+                    resource: wgpu::BindingResource::TextureView(&hbgi_texture.blurred_view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&gtao_texture.blurred_sampler),
+                    resource: wgpu::BindingResource::Sampler(&hbgi_texture.blurred_sampler),
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
                     resource: wgpu::BindingResource::TextureView(
-                        &gtao_texture.blurred_hbil_diffuse_view,
+                        &hbgi_texture.blurred_hbil_diffuse_view,
                     ),
                 },
                 wgpu::BindGroupEntry {
                     binding: 3,
                     resource: wgpu::BindingResource::Sampler(
-                        &gtao_texture.blurred_hbil_diffuse_sampler,
+                        &hbgi_texture.blurred_hbil_diffuse_sampler,
                     ),
                 },
             ],
-            label: Some("GTAO Inputs Bind Group"),
+            label: Some("HBGI Inputs Bind Group"),
         });
 
-        GtaoInputsBinding { bind_group }
+        HbgiInputsBinding { bind_group }
     }
 }

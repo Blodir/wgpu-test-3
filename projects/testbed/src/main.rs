@@ -12,7 +12,7 @@ use engine::{
         },
         sim::InputEvent,
     },
-    host::renderer::{GtaoOptions, OpaqueRenderPath, RenderCommand, RendererOptions, UiFrameInfo},
+    host::renderer::{HbgiOptions, OpaqueRenderPath, RenderCommand, RendererOptions, UiFrameInfo},
     host::world::sun_shadow::SUN_SHADOW_MAX_CASCADE_COUNT,
     run,
 };
@@ -1128,50 +1128,50 @@ impl UiTrait for Game {
                     .radio_value(&mut opaque_path_kind, 2, "Deferred")
                     .changed();
 
-                let mut deferred_gtao = match renderer_options.opaque_render_path {
-                    OpaqueRenderPath::Deferred { gtao } => gtao,
-                    _ => Some(GtaoOptions::default()),
+                let mut deferred_hbgi = match renderer_options.opaque_render_path {
+                    OpaqueRenderPath::Deferred { hbgi } => hbgi,
+                    _ => Some(HbgiOptions::default()),
                 };
                 if opaque_path_kind == 2 {
-                    let mut deferred_gtao_enabled = deferred_gtao.is_some();
+                    let mut deferred_hbgi_enabled = deferred_hbgi.is_some();
                     render_settings_changed |= ui
-                        .checkbox(&mut deferred_gtao_enabled, "Enable GTAO")
+                        .checkbox(&mut deferred_hbgi_enabled, "Enable HBGI")
                         .changed();
-                    if deferred_gtao_enabled {
-                        let mut gtao_options = deferred_gtao.unwrap_or_default();
+                    if deferred_hbgi_enabled {
+                        let mut hbgi_options = deferred_hbgi.unwrap_or_default();
                         render_settings_changed |= ui
                             .add(
-                                egui::Slider::new(&mut gtao_options.radius_pixels, 1.0..=2000.0)
-                                    .text("GTAO Radius Pixels")
+                                egui::Slider::new(&mut hbgi_options.radius_pixels, 1.0..=2000.0)
+                                    .text("HBGI Radius Pixels")
                                     .clamping(egui::SliderClamping::Always),
                             )
                             .changed();
                         render_settings_changed |= ui
                             .add(
-                                egui::Slider::new(&mut gtao_options.ao_radius, 0.05..=1000.0)
-                                    .text("GTAO World Radius")
+                                egui::Slider::new(&mut hbgi_options.radius_world, 0.05..=1000.0)
+                                    .text("HBGI World Radius")
                                     .logarithmic(true)
                                     .clamping(egui::SliderClamping::Always),
                             )
                             .changed();
                         render_settings_changed |= ui
                             .add(
-                                egui::Slider::new(&mut gtao_options.power, 0.1..=8.0)
-                                    .text("GTAO Power")
+                                egui::Slider::new(&mut hbgi_options.step_size_exponent, 0.1..=8.0)
+                                    .text("HBGI Step Size Exponent")
                                     .clamping(egui::SliderClamping::Always),
                             )
                             .changed();
                         render_settings_changed |= ui
                             .add(
-                                egui::Slider::new(&mut gtao_options.gi_intensity, 0.05..=16.0)
-                                    .text("HBIL World Radius")
+                                egui::Slider::new(&mut hbgi_options.gi_intensity, 0.05..=16.0)
+                                    .text("HBGI GI Intensity")
                                     .logarithmic(true)
                                     .clamping(egui::SliderClamping::Always),
                             )
                             .changed();
-                        deferred_gtao = Some(gtao_options);
+                        deferred_hbgi = Some(hbgi_options);
                     } else {
-                        deferred_gtao = None;
+                        deferred_hbgi = None;
                     }
                 }
 
@@ -1180,7 +1180,7 @@ impl UiTrait for Game {
                         0 => OpaqueRenderPath::Forward,
                         1 => OpaqueRenderPath::CompactDeferred,
                         2 => OpaqueRenderPath::Deferred {
-                            gtao: deferred_gtao,
+                            hbgi: deferred_hbgi,
                         },
                         _ => OpaqueRenderPath::Forward,
                     },

@@ -4,7 +4,7 @@ use crate::global_paths::SHADER_GI_BLUR_WGSL;
 use crate::host::{
     renderer::shader_cache::ShaderCache,
     wgpu_context::WgpuContext,
-    world::attachments::deferred::{GBufferTargets, GtaoTexture},
+    world::attachments::deferred::{GBufferTargets, HbgiTexture},
 };
 
 const INDICES: &[u16] = &[0, 2, 1, 3, 2, 0];
@@ -21,7 +21,7 @@ impl GiBlurPipeline {
         wgpu_context: &WgpuContext,
         shader_cache: &mut ShaderCache,
         gbuffer_targets: &GBufferTargets,
-        gtao_texture: &GtaoTexture,
+        hbgi_texture: &HbgiTexture,
     ) -> Self {
         let bind_group_layout =
             wgpu_context
@@ -99,7 +99,7 @@ impl GiBlurPipeline {
             &wgpu_context.device,
             &bind_group_layout,
             gbuffer_targets,
-            gtao_texture,
+            hbgi_texture,
         );
         let render_pipeline_layout =
             wgpu_context
@@ -172,26 +172,26 @@ impl GiBlurPipeline {
         device: &wgpu::Device,
         bind_group_layout: &wgpu::BindGroupLayout,
         gbuffer_targets: &GBufferTargets,
-        gtao_texture: &GtaoTexture,
+        hbgi_texture: &HbgiTexture,
     ) -> wgpu::BindGroup {
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&gtao_texture.view),
+                    resource: wgpu::BindingResource::TextureView(&hbgi_texture.view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&gtao_texture.sampler),
+                    resource: wgpu::BindingResource::Sampler(&hbgi_texture.sampler),
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: wgpu::BindingResource::TextureView(&gtao_texture.hbil_diffuse_view),
+                    resource: wgpu::BindingResource::TextureView(&hbgi_texture.hbil_diffuse_view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 3,
-                    resource: wgpu::BindingResource::Sampler(&gtao_texture.hbil_diffuse_sampler),
+                    resource: wgpu::BindingResource::Sampler(&hbgi_texture.hbil_diffuse_sampler),
                 },
                 wgpu::BindGroupEntry {
                     binding: 4,
@@ -226,22 +226,22 @@ impl GiBlurPipeline {
         &mut self,
         device: &wgpu::Device,
         gbuffer_targets: &GBufferTargets,
-        gtao_texture: &GtaoTexture,
+        hbgi_texture: &HbgiTexture,
     ) {
         self.bind_group = Self::create_bind_group(
             device,
             &self.bind_group_layout,
             gbuffer_targets,
-            gtao_texture,
+            hbgi_texture,
         );
     }
 
-    pub fn render(&self, encoder: &mut wgpu::CommandEncoder, gtao_texture: &GtaoTexture) {
+    pub fn render(&self, encoder: &mut wgpu::CommandEncoder, hbgi_texture: &HbgiTexture) {
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("GI Blur Pass"),
             color_attachments: &[
                 Some(wgpu::RenderPassColorAttachment {
-                    view: &gtao_texture.blurred_view,
+                    view: &hbgi_texture.blurred_view,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color {
@@ -254,7 +254,7 @@ impl GiBlurPipeline {
                     },
                 }),
                 Some(wgpu::RenderPassColorAttachment {
-                    view: &gtao_texture.blurred_hbil_diffuse_view,
+                    view: &hbgi_texture.blurred_hbil_diffuse_view,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),

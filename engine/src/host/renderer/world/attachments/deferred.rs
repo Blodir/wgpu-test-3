@@ -61,7 +61,7 @@ impl GBufferTargets {
     }
 }
 
-pub struct GtaoTexture {
+pub struct HbgiTexture {
     _ao_texture: wgpu::Texture,
     pub view: wgpu::TextureView,
     pub sampler: wgpu::Sampler,
@@ -76,9 +76,9 @@ pub struct GtaoTexture {
     pub blurred_hbil_diffuse_sampler: wgpu::Sampler,
 }
 
-impl GtaoTexture {
+impl HbgiTexture {
     pub fn new(device: &wgpu::Device, surface_config: &wgpu::SurfaceConfiguration) -> Self {
-        Self::new_scaled(device, surface_config, 2, "Half Resolution GTAO Texture")
+        Self::new_scaled(device, surface_config, 2, "Half Resolution HBGI Texture")
     }
 
     fn new_scaled(
@@ -129,7 +129,7 @@ impl GtaoTexture {
             ..Default::default()
         });
         let blurred_ao_texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("Half Resolution GTAO Blur Texture"),
+            label: Some("Half Resolution HBGI Blur Texture"),
             size: wgpu::Extent3d {
                 width: (surface_config.width / scale_divisor).max(1),
                 height: (surface_config.height / scale_divisor).max(1),

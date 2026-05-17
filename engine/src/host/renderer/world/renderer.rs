@@ -6,7 +6,7 @@ use super::super::sampler_cache::SamplerCache;
 use super::super::shader_cache::ShaderCache;
 use super::anim_pose_store::AnimPoseStore;
 use super::attachments::color::HdrColorTexture;
-use super::attachments::deferred::{GBufferTargets, GtaoTexture};
+use super::attachments::deferred::{GBufferTargets, HbgiTexture};
 use super::attachments::depth::DepthTexture;
 use super::attachments::motion_vectors::MotionVectorsTexture;
 use super::attachments::skybox::SkyboxOutputTexture;
@@ -21,7 +21,7 @@ use super::buffers::skinned_instance::SkinnedInstances;
 use super::pipelines::deferred_lighting::DeferredLightingPipeline;
 use super::pipelines::g_buffer::GBufferPipeline;
 use super::pipelines::gi_blur::GiBlurPipeline;
-use super::pipelines::gtao::GtaoPipeline;
+use super::pipelines::hbgi::HbgiPipeline;
 use super::pipelines::history::HistoryPipeline;
 use super::pipelines::mipmap::MipmapPipeline;
 use super::pipelines::motion_vectors::MotionVectorsPipeline;
@@ -36,7 +36,7 @@ use super::prepare::sun_shadow::prepare_sun_shadow;
 
 use crate::host::assets::io::asset_formats::materialfile;
 use crate::host::assets::store::{PlaceholderTextureIds, RenderAssetStore, TextureRenderId};
-use crate::host::renderer::{GtaoOptions, OpaqueRenderPath, RendererOptions};
+use crate::host::renderer::{HbgiOptions, OpaqueRenderPath, RendererOptions};
 use crate::host::wgpu_context::WgpuContext;
 use crate::host::world::buffers::static_instance::StaticInstances;
 use crate::host::world::pipelines::static_pbr::StaticPbrPipeline;
@@ -229,16 +229,16 @@ impl WorldPipelines {
 }
 
 struct DeferredOpaqueRenderer {
-    gtao_options: Option<GtaoOptions>,
+    hbgi_options: Option<HbgiOptions>,
     g_buffer_targets: GBufferTargets,
-    gtao_texture: GtaoTexture,
+    hbgi_texture: HbgiTexture,
     motion_vectors: MotionVectorsTexture,
     gi_source_write: HdrColorTexture,
     gi_source_prev: HdrColorTexture,
     history_write: HdrColorTexture,
     history_prev: HdrColorTexture,
     g_buffer_pipeline: GBufferPipeline,
-    gtao_pipeline: GtaoPipeline,
+    hbgi_pipeline: HbgiPipeline,
     gi_blur_pipeline: GiBlurPipeline,
     deferred_lighting_pipeline: DeferredLightingPipeline,
     history_pipeline: HistoryPipeline,
@@ -251,12 +251,12 @@ impl DeferredOpaqueRenderer {
         wgpu_context: &WgpuContext,
         shader_cache: &mut ShaderCache,
         layouts: &Layouts,
-        gtao_options: Option<GtaoOptions>,
+        hbgi_options: Option<HbgiOptions>,
         depth_texture_view: &wgpu::TextureView,
     ) -> Self {
         let g_buffer_targets =
             GBufferTargets::new(&wgpu_context.device, &wgpu_context.surface_config);
-        let gtao_texture = GtaoTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
+        let hbgi_texture = HbgiTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
         let motion_vectors =
             MotionVectorsTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
         let gi_source_write =
@@ -273,18 +273,18 @@ impl DeferredOpaqueRenderer {
             &wgpu_context.surface_config,
             "History Previous Texture",
         );
-        let gtao_pipeline = GtaoPipeline::new(
+        let hbgi_pipeline = HbgiPipeline::new(
             wgpu_context,
             shader_cache,
             &layouts.camera,
             &g_buffer_targets,
             depth_texture_view,
             &history_write,
-            &gtao_options.unwrap_or_default(),
+            &hbgi_options.unwrap_or_default(),
             0,
         );
         let gi_blur_pipeline =
-            GiBlurPipeline::new(wgpu_context, shader_cache, &g_buffer_targets, &gtao_texture);
+            GiBlurPipeline::new(wgpu_context, shader_cache, &g_buffer_targets, &hbgi_texture);
         let g_buffer_pipeline = GBufferPipeline::new(
             wgpu_context,
             shader_cache,
@@ -313,19 +313,19 @@ impl DeferredOpaqueRenderer {
             &layouts.camera,
             &layouts.lights,
             &g_buffer_targets,
-            &gtao_texture,
+            &hbgi_texture,
         );
         Self {
-            gtao_options,
+            hbgi_options,
             g_buffer_targets,
-            gtao_texture,
+            hbgi_texture,
             motion_vectors,
             gi_source_write,
             gi_source_prev,
             history_write,
             history_prev,
             g_buffer_pipeline,
-            gtao_pipeline,
+            hbgi_pipeline,
             gi_blur_pipeline,
             deferred_lighting_pipeline,
             history_pipeline,
@@ -346,12 +346,12 @@ impl DeferredOpaqueRenderer {
             &self.gi_source_prev,
             &self.history_prev,
         );
-        self.gtao_pipeline.update_input_bindgroups(
+        self.hbgi_pipeline.update_input_bindgroups(
             device,
             &self.g_buffer_targets,
             depth_texture_view,
             &self.history_write,
-            &self.gtao_options.unwrap_or_default(),
+            &self.hbgi_options.unwrap_or_default(),
             0,
         );
     }
@@ -453,24 +453,24 @@ impl DeferredOpaqueRenderer {
             .render(encoder, &self.history_write.view);
         self.history_mipmap_pipeline
             .generate(device, encoder, &self.history_write);
-        if self.gtao_options.is_some() {
-            self.gtao_pipeline.update_input_bindgroups(
+        if self.hbgi_options.is_some() {
+            self.hbgi_pipeline.update_input_bindgroups(
                 device,
                 &self.g_buffer_targets,
                 depth_texture_view,
                 &self.history_write,
-                &self.gtao_options.unwrap_or_default(),
+                &self.hbgi_options.unwrap_or_default(),
                 frame_idx,
             );
-            self.gtao_pipeline
-                .render(encoder, &self.gtao_texture, camera_bind_group);
-            self.gi_blur_pipeline.render(encoder, &self.gtao_texture);
+            self.hbgi_pipeline
+                .render(encoder, &self.hbgi_texture, camera_bind_group);
+            self.gi_blur_pipeline.render(encoder, &self.hbgi_texture);
         } else {
             let _clear_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("GTAO Disabled Clear Pass"),
+                label: Some("HBGI Disabled Clear Pass"),
                 color_attachments: &[
                     Some(wgpu::RenderPassColorAttachment {
-                        view: &self.gtao_texture.view,
+                        view: &self.hbgi_texture.view,
                         resolve_target: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Clear(wgpu::Color {
@@ -483,7 +483,7 @@ impl DeferredOpaqueRenderer {
                         },
                     }),
                     Some(wgpu::RenderPassColorAttachment {
-                        view: &self.gtao_texture.hbil_diffuse_view,
+                        view: &self.hbgi_texture.hbil_diffuse_view,
                         resolve_target: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
@@ -491,7 +491,7 @@ impl DeferredOpaqueRenderer {
                         },
                     }),
                     Some(wgpu::RenderPassColorAttachment {
-                        view: &self.gtao_texture.blurred_view,
+                        view: &self.hbgi_texture.blurred_view,
                         resolve_target: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Clear(wgpu::Color {
@@ -504,7 +504,7 @@ impl DeferredOpaqueRenderer {
                         },
                     }),
                     Some(wgpu::RenderPassColorAttachment {
-                        view: &self.gtao_texture.blurred_hbil_diffuse_view,
+                        view: &self.hbgi_texture.blurred_hbil_diffuse_view,
                         resolve_target: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
@@ -531,7 +531,7 @@ impl DeferredOpaqueRenderer {
     fn resize(&mut self, wgpu_context: &WgpuContext, depth_texture_view: &wgpu::TextureView) {
         self.g_buffer_targets =
             GBufferTargets::new(&wgpu_context.device, &wgpu_context.surface_config);
-        self.gtao_texture = GtaoTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
+        self.hbgi_texture = HbgiTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
         self.motion_vectors =
             MotionVectorsTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
         self.gi_source_write =
@@ -548,23 +548,23 @@ impl DeferredOpaqueRenderer {
             &wgpu_context.surface_config,
             "History Previous Texture",
         );
-        self.gtao_pipeline.update_input_bindgroups(
+        self.hbgi_pipeline.update_input_bindgroups(
             &wgpu_context.device,
             &self.g_buffer_targets,
             depth_texture_view,
             &self.history_write,
-            &self.gtao_options.unwrap_or_default(),
+            &self.hbgi_options.unwrap_or_default(),
             0,
         );
         self.gi_blur_pipeline.update_input_bindgroup(
             &wgpu_context.device,
             &self.g_buffer_targets,
-            &self.gtao_texture,
+            &self.hbgi_texture,
         );
         self.deferred_lighting_pipeline.update_input_bindgroup(
             &wgpu_context.device,
             &self.g_buffer_targets,
-            &self.gtao_texture,
+            &self.hbgi_texture,
         );
         self.history_pipeline.update_input_bindgroup(
             &wgpu_context.device,
@@ -637,12 +637,12 @@ impl WorldRenderer {
     ) -> OpaqueRenderer {
         match options.opaque_render_path {
             OpaqueRenderPath::Forward => OpaqueRenderer::Forward,
-            OpaqueRenderPath::Deferred { gtao } => {
+            OpaqueRenderPath::Deferred { hbgi } => {
                 OpaqueRenderer::Deferred(DeferredOpaqueRenderer::new(
                     wgpu_context,
                     shader_cache,
                     layouts,
-                    gtao,
+                    hbgi,
                     depth_texture_view,
                 ))
             }
