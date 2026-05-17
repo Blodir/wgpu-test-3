@@ -8,6 +8,7 @@ use super::anim_pose_store::AnimPoseStore;
 use super::attachments::color::HdrColorTexture;
 use super::attachments::deferred::{GBufferTargets, HbgiTexture};
 use super::attachments::depth::DepthTexture;
+use super::attachments::hbgi_pyramid::HbgiPyramidTextures;
 use super::attachments::motion_vectors::MotionVectorsTexture;
 use super::attachments::skybox::SkyboxOutputTexture;
 use super::attachments::sun_shadow::SunShadowTexture;
@@ -22,8 +23,8 @@ use super::pipelines::deferred_lighting::DeferredLightingPipeline;
 use super::pipelines::g_buffer::GBufferPipeline;
 use super::pipelines::gi_blur::GiBlurPipeline;
 use super::pipelines::hbgi::HbgiPipeline;
+use super::pipelines::hbgi_pyramid::HbgiPyramidPipeline;
 use super::pipelines::hbgi_reproject::HbgiReprojectPipeline;
-use super::pipelines::mipmap::MipmapPipeline;
 use super::pipelines::motion_vectors::MotionVectorsPipeline;
 use super::pipelines::post_processing::PostProcessingPipeline;
 use super::pipelines::skinned_pbr::SkinnedPbrPipeline;
@@ -237,12 +238,13 @@ struct DeferredOpaqueRenderer {
     gi_source_prev: HdrColorTexture,
     hbgi_reproject_write: HdrColorTexture,
     hbgi_reproject_prev: HdrColorTexture,
+    hbgi_pyramids: HbgiPyramidTextures,
     g_buffer_pipeline: GBufferPipeline,
     hbgi_pipeline: HbgiPipeline,
+    hbgi_pyramid_pipeline: HbgiPyramidPipeline,
     gi_blur_pipeline: GiBlurPipeline,
     deferred_lighting_pipeline: DeferredLightingPipeline,
     hbgi_reproject_pipeline: HbgiReprojectPipeline,
-    hbgi_reproject_mipmap_pipeline: MipmapPipeline,
     motion_vectors_pipeline: MotionVectorsPipeline,
     hbgi_reproject_valid: bool,
 }
@@ -252,7 +254,7 @@ impl DeferredOpaqueRenderer {
         shader_cache: &mut ShaderCache,
         layouts: &Layouts,
         hbgi_options: Option<HbgiOptions>,
-        depth_texture_view: &wgpu::TextureView,
+        _depth_texture_view: &wgpu::TextureView,
     ) -> Self {
         let g_buffer_targets =
             GBufferTargets::new(&wgpu_context.device, &wgpu_context.surface_config);
@@ -263,26 +265,21 @@ impl DeferredOpaqueRenderer {
             HdrColorTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
         let gi_source_prev =
             HdrColorTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
-        let hbgi_reproject_write = HdrColorTexture::new_mipmapped(
-            &wgpu_context.device,
-            &wgpu_context.surface_config,
-            "HBGI Reproject Write Texture",
-        );
-        let hbgi_reproject_prev = HdrColorTexture::new_mipmapped(
-            &wgpu_context.device,
-            &wgpu_context.surface_config,
-            "HBGI Reproject Previous Texture",
-        );
+        let hbgi_reproject_write =
+            HdrColorTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
+        let hbgi_reproject_prev =
+            HdrColorTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
+        let hbgi_pyramids =
+            HbgiPyramidTextures::new(&wgpu_context.device, &wgpu_context.surface_config);
         let hbgi_pipeline = HbgiPipeline::new(
             wgpu_context,
             shader_cache,
             &layouts.camera,
-            &g_buffer_targets,
-            depth_texture_view,
-            &hbgi_reproject_write,
+            &hbgi_pyramids,
             &hbgi_options.unwrap_or_default(),
             0,
         );
+        let hbgi_pyramid_pipeline = HbgiPyramidPipeline::new(wgpu_context, shader_cache);
         let gi_blur_pipeline =
             GiBlurPipeline::new(wgpu_context, shader_cache, &g_buffer_targets, &hbgi_texture);
         let g_buffer_pipeline = GBufferPipeline::new(
@@ -306,7 +303,6 @@ impl DeferredOpaqueRenderer {
             &gi_source_prev,
             &hbgi_reproject_prev,
         );
-        let hbgi_reproject_mipmap_pipeline = MipmapPipeline::new(wgpu_context, shader_cache);
         let deferred_lighting_pipeline = DeferredLightingPipeline::new(
             wgpu_context,
             shader_cache,
@@ -324,12 +320,13 @@ impl DeferredOpaqueRenderer {
             gi_source_prev,
             hbgi_reproject_write,
             hbgi_reproject_prev,
+            hbgi_pyramids,
             g_buffer_pipeline,
             hbgi_pipeline,
+            hbgi_pyramid_pipeline,
             gi_blur_pipeline,
             deferred_lighting_pipeline,
             hbgi_reproject_pipeline,
-            hbgi_reproject_mipmap_pipeline,
             motion_vectors_pipeline,
             hbgi_reproject_valid: false,
         }
@@ -338,7 +335,7 @@ impl DeferredOpaqueRenderer {
     fn refresh_temporal_bind_groups(
         &mut self,
         device: &wgpu::Device,
-        depth_texture_view: &wgpu::TextureView,
+        _depth_texture_view: &wgpu::TextureView,
     ) {
         self.hbgi_reproject_pipeline.update_input_bindgroup(
             device,
@@ -348,9 +345,7 @@ impl DeferredOpaqueRenderer {
         );
         self.hbgi_pipeline.update_input_bindgroups(
             device,
-            &self.g_buffer_targets,
-            depth_texture_view,
-            &self.hbgi_reproject_prev,
+            &self.hbgi_pyramids,
             &self.hbgi_options.unwrap_or_default(),
             0,
         );
@@ -452,12 +447,21 @@ impl DeferredOpaqueRenderer {
             motion_camera_bind_group,
             render_resources,
         );
+        if !self.hbgi_reproject_valid {
+            self.clear_temporal_inputs(encoder);
+        }
         if self.hbgi_options.is_some() {
+            self.hbgi_pyramid_pipeline.generate(
+                device,
+                encoder,
+                &self.hbgi_reproject_prev,
+                depth_texture_view,
+                &self.g_buffer_targets,
+                &self.hbgi_pyramids,
+            );
             self.hbgi_pipeline.update_input_bindgroups(
                 device,
-                &self.g_buffer_targets,
-                depth_texture_view,
-                &self.hbgi_reproject_prev,
+                &self.hbgi_pyramids,
                 &self.hbgi_options.unwrap_or_default(),
                 frame_idx,
             );
@@ -523,18 +527,13 @@ impl DeferredOpaqueRenderer {
             camera_bind_group,
             lights_bind_group,
         );
-        if !self.hbgi_reproject_valid {
-            self.clear_temporal_inputs(encoder);
-        }
         self.hbgi_reproject_pipeline
             .render(encoder, &self.hbgi_reproject_write.view);
-        self.hbgi_reproject_mipmap_pipeline
-            .generate(device, encoder, &self.hbgi_reproject_write);
         self.hbgi_reproject_valid = true;
         self.rotate_temporal_buffers(device, depth_texture_view);
     }
 
-    fn resize(&mut self, wgpu_context: &WgpuContext, depth_texture_view: &wgpu::TextureView) {
+    fn resize(&mut self, wgpu_context: &WgpuContext, _depth_texture_view: &wgpu::TextureView) {
         self.g_buffer_targets =
             GBufferTargets::new(&wgpu_context.device, &wgpu_context.surface_config);
         self.hbgi_texture = HbgiTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
@@ -544,21 +543,15 @@ impl DeferredOpaqueRenderer {
             HdrColorTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
         self.gi_source_prev =
             HdrColorTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
-        self.hbgi_reproject_write = HdrColorTexture::new_mipmapped(
-            &wgpu_context.device,
-            &wgpu_context.surface_config,
-            "HBGI Reproject Write Texture",
-        );
-        self.hbgi_reproject_prev = HdrColorTexture::new_mipmapped(
-            &wgpu_context.device,
-            &wgpu_context.surface_config,
-            "HBGI Reproject Previous Texture",
-        );
+        self.hbgi_reproject_write =
+            HdrColorTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
+        self.hbgi_reproject_prev =
+            HdrColorTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
+        self.hbgi_pyramids =
+            HbgiPyramidTextures::new(&wgpu_context.device, &wgpu_context.surface_config);
         self.hbgi_pipeline.update_input_bindgroups(
             &wgpu_context.device,
-            &self.g_buffer_targets,
-            depth_texture_view,
-            &self.hbgi_reproject_prev,
+            &self.hbgi_pyramids,
             &self.hbgi_options.unwrap_or_default(),
             0,
         );

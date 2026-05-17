@@ -2,11 +2,11 @@
 @group(0) @binding(2) var<uniform> inverse_view_proj: mat4x4<f32>;
 @group(0) @binding(4) var<uniform> camera_view_rotation: mat3x3<f32>;
 
-@group(1) @binding(0) var gbuffer_normal_roughness: texture_2d<f32>;
-@group(1) @binding(1) var gbuffer_normal_roughness_sampler: sampler;
-@group(1) @binding(2) var gbuffer_depth: texture_depth_2d;
-@group(1) @binding(3) var gi_source_hbgi_reproject_texture: texture_2d<f32>;
-@group(1) @binding(4) var gi_source_hbgi_reproject_sampler: sampler;
+@group(1) @binding(0) var hbgi_pyramid_texture: texture_2d<f32>;
+@group(1) @binding(1) var hbgi_pyramid_sampler: sampler;
+@group(1) @binding(2) var hbgi_depth_pyramid_texture: texture_2d<f32>;
+@group(1) @binding(3) var hbgi_normal_pyramid_texture: texture_2d<f32>;
+@group(1) @binding(4) var hbgi_normal_pyramid_sampler: sampler;
 
 struct HbgiSettingsUniform {
     params0: vec4<f32>,
@@ -88,22 +88,40 @@ fn hash13(p: vec3f) -> f32 {
     return fract(sin(h) * 43758.5453123);
 }
 
-fn sample_hbgi_reproject(uv: vec2f, lod: f32) -> vec3f {
+fn sample_hbgi_pyramid(uv: vec2f, lod: f32) -> vec3f {
     return sanitize_rgb(textureSampleLevel(
-        gi_source_hbgi_reproject_texture,
-        gi_source_hbgi_reproject_sampler,
+        hbgi_pyramid_texture,
+        hbgi_pyramid_sampler,
         uv,
         lod
     ).rgb);
 }
 
-fn sample_hbgi_reproject_ao(uv: vec2f, lod: f32) -> f32 {
+fn sample_hbgi_pyramid_ao(uv: vec2f, lod: f32) -> f32 {
     return textureSampleLevel(
-        gi_source_hbgi_reproject_texture,
-        gi_source_hbgi_reproject_sampler,
+        hbgi_pyramid_texture,
+        hbgi_pyramid_sampler,
         uv,
         lod
     ).a;
+}
+
+fn sample_hbgi_depth(uv: vec2f, lod: f32) -> f32 {
+    let mip_level = i32(lod);
+    let dims = vec2f(textureDimensions(hbgi_depth_pyramid_texture, mip_level));
+    let max_uv = vec2f(1.0) - 1.0 / dims;
+    let clamped_uv = clamp(uv, vec2f(0.0), max_uv);
+    let coord = vec2i(clamped_uv * dims);
+    return textureLoad(hbgi_depth_pyramid_texture, coord, mip_level).x;
+}
+
+fn sample_hbgi_normal(uv: vec2f, lod: f32) -> vec3f {
+    return textureSampleLevel(
+        hbgi_normal_pyramid_texture,
+        hbgi_normal_pyramid_sampler,
+        uv,
+        lod
+    ).xyz;
 }
 
 fn reconstruct_world_position_from_depth(uv: vec2f, depth: f32) -> vec3f {
@@ -120,12 +138,11 @@ fn reconstruct_world_position_from_depth(uv: vec2f, depth: f32) -> vec3f {
     return vec3f(0.0);
 }
 
-fn sample_world_position_from_depth(uv: vec2f) -> vec4f {
-    let dims = textureDimensions(gbuffer_depth);
-    let max_uv = vec2f(1.0) - 1.0 / vec2f(dims);
+fn sample_world_position_from_depth(uv: vec2f, lod: f32) -> vec4f {
+    let dims = vec2f(textureDimensions(hbgi_depth_pyramid_texture, i32(lod)));
+    let max_uv = vec2f(1.0) - 1.0 / dims;
     let clamped_uv = clamp(uv, vec2f(0.0), max_uv);
-    let depth_coord = vec2i(clamped_uv * vec2f(dims));
-    let depth = textureLoad(gbuffer_depth, depth_coord, 0);
+    let depth = sample_hbgi_depth(clamped_uv, lod);
 
     if (depth >= 1.0) {
         return vec4f(0.0);
@@ -145,21 +162,17 @@ fn hbgi(in: VertexOutput) -> FragmentOutput {
     let frame_index = hbgi_settings.params1.x;
     let uv = in.tex_coords;
 
-    let P_sample = sample_world_position_from_depth(uv);
+    let P_sample = sample_world_position_from_depth(uv, 0.0);
     if (P_sample.w < 0.5) {
         // invalid sample
         return FragmentOutput(vec4<f32>(0.0, 0.0, 0.0, 1.0), vec4<f32>(0.0));
     }
     let P_w = P_sample.xyz;
 
-    let normal_sample = textureSample(
-        gbuffer_normal_roughness,
-        gbuffer_normal_roughness_sampler,
-        uv
-    ).xyz;
+    let normal_sample = sample_hbgi_normal(uv, 0.0);
 
-    let dims = vec2<f32>(textureDimensions(gbuffer_depth));
-    let max_hbgi_reproject_lod = f32(textureNumLevels(gi_source_hbgi_reproject_texture) - 1u);
+    let dims = vec2<f32>(textureDimensions(hbgi_depth_pyramid_texture, 0));
+    let max_hbgi_pyramid_lod = f32(textureNumLevels(hbgi_pyramid_texture) - 1u);
 
     // https://github.com/cdrinmatane/SSRT3/blob/main/HDRP/Shaders/Resources/SSRTCS.compute
     let pixel = floor(uv * dims);
@@ -233,7 +246,7 @@ fn hbgi(in: VertexOutput) -> FragmentOutput {
             let sample_distance_pixels = max(length(current_step_cs * dims), 1.0);
             // similar simple heuristic: https://github.com/cdrinmatane/SSRT3/blob/main/HDRP/Shaders/Resources/SSRTCS.compute
             // TODO play around with this heuristic for best results relative to step count
-            let hbgi_reproject_lod = f32(min((step_idx + 1) / 2, 4));
+            let hbgi_pyramid_lod = f32(min((step_idx + 1) / 2, 4));
 
             // FRONT ----------------------------
 
@@ -241,7 +254,7 @@ fn hbgi(in: VertexOutput) -> FragmentOutput {
             // Can be skipped, because we are reconstructing real world space coordinates from depth
             // ---
             let sample_uv_front = uv + current_step_cs;
-            let x_1_sample = sample_world_position_from_depth(sample_uv_front);
+            let x_1_sample = sample_world_position_from_depth(sample_uv_front, hbgi_pyramid_lod);
 
             if (x_1_sample.w > 0.5) {
                 let x_1_w = x_1_sample.xyz;
@@ -261,7 +274,7 @@ fn hbgi(in: VertexOutput) -> FragmentOutput {
                     let theta = atan2(sample_dir_ss.x, sample_dir_ss.y);
 
                     if (theta > 0.0 && theta < theta_front) {
-                        let L_d = sample_hbgi_reproject(sample_uv_front, hbgi_reproject_lod);
+                        let L_d = sample_hbgi_pyramid(sample_uv_front, hbgi_pyramid_lod);
 
                         // equation 18
                         let theta_0 = theta;
@@ -281,11 +294,7 @@ fn hbgi(in: VertexOutput) -> FragmentOutput {
                         let right = n_ss.y * 0.5 * (cos2_theta_0 - cos2_theta_1);
 
                         // 3.4.
-                        let x_1_normal_w = textureSample(
-                            gbuffer_normal_roughness,
-                            gbuffer_normal_roughness_sampler,
-                            sample_uv_front
-                        ).xyz;
+                        let x_1_normal_w = sample_hbgi_normal(sample_uv_front, hbgi_pyramid_lod);
                         let t = smoothstep(0.0, 1.0, dot(sample_dir_w, -x_1_normal_w));
                         let L_new = mix(fallback_radiance_front, L_d, t);
 
@@ -302,7 +311,7 @@ fn hbgi(in: VertexOutput) -> FragmentOutput {
 
             // BACK ------------------------------
             let sample_uv_back = uv - current_step_cs;
-            let x_1_back_sample = sample_world_position_from_depth(sample_uv_back);
+            let x_1_back_sample = sample_world_position_from_depth(sample_uv_back, hbgi_pyramid_lod);
 
             if (x_1_back_sample.w > 0.5) {
                 let x_1_back_w = x_1_back_sample.xyz;
@@ -319,7 +328,7 @@ fn hbgi(in: VertexOutput) -> FragmentOutput {
                     let theta = atan2(sample_dir_ss.x, sample_dir_ss.y);
 
                     if (theta < 0.0 && theta > theta_back) {
-                        let L_d = sample_hbgi_reproject(sample_uv_back, hbgi_reproject_lod);
+                        let L_d = sample_hbgi_pyramid(sample_uv_back, hbgi_pyramid_lod);
 
                         let theta_0 = theta_back;
                         let theta_1 = theta;
@@ -337,11 +346,7 @@ fn hbgi(in: VertexOutput) -> FragmentOutput {
                         );
                         let right = n_ss.y * 0.5 * (cos2_theta_0 - cos2_theta_1);
 
-                        let x_1_normal_w = textureSample(
-                            gbuffer_normal_roughness,
-                            gbuffer_normal_roughness_sampler,
-                            sample_uv_back
-                        ).xyz;
+                        let x_1_normal_w = sample_hbgi_normal(sample_uv_back, hbgi_pyramid_lod);
                         let t = smoothstep(0.0, 1.0, dot(sample_dir_w, -x_1_normal_w));
                         let L_new = mix(fallback_radiance_back, L_d, t);
 
@@ -393,7 +398,7 @@ fn hbgi(in: VertexOutput) -> FragmentOutput {
     // 2.2.2. equation 11
     var ao = (1.0 / S) * visibility_acc;
 
-    let prev_ao = sample_hbgi_reproject_ao(uv, 3.0);
+    let prev_ao = sample_hbgi_pyramid_ao(uv, 3.0);
     // TODO experiment with weight for best results
     // TODO, technically we are mixing twice here (once in the hbgi_reproject pass...), kinda pointless?
     ao = mix(prev_ao, ao, 0.9);
@@ -402,7 +407,7 @@ fn hbgi(in: VertexOutput) -> FragmentOutput {
 
     let E_near = sanitize_rgb(irradiance_acc * (PI / S));
 
-    debug /= S * f32(STEPS_PER_DIRECTION) * max_hbgi_reproject_lod;
+    debug /= S * f32(STEPS_PER_DIRECTION) * max_hbgi_pyramid_lod;
 
     return FragmentOutput(vec4f(bent_n_w, ao), vec4f(E_near, debug));
 }

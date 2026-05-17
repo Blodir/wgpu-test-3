@@ -2,10 +2,7 @@ use wgpu::util::DeviceExt;
 
 use crate::global_paths::SHADER_HBGI_WGSL;
 use crate::host::renderer::HbgiOptions;
-use crate::host::world::attachments::{
-    color::HdrColorTexture,
-    deferred::{GBufferTargets, HbgiTexture},
-};
+use crate::host::world::attachments::{deferred::HbgiTexture, hbgi_pyramid::HbgiPyramidTextures};
 use crate::host::world::bindgroups::hbgi_settings::{HbgiSettings, HbgiSettingsBinding};
 use crate::host::{shader_cache::ShaderCache, wgpu_context::WgpuContext};
 
@@ -25,9 +22,7 @@ impl HbgiPipeline {
         wgpu_context: &WgpuContext,
         shader_cache: &mut ShaderCache,
         camera_bind_group_layout: &wgpu::BindGroupLayout,
-        gbuffer_targets: &GBufferTargets,
-        depth_texture_view: &wgpu::TextureView,
-        gi_source_texture: &HdrColorTexture,
+        hbgi_pyramids: &HbgiPyramidTextures,
         hbgi_options: &HbgiOptions,
         frame_index: u32,
     ) -> Self {
@@ -56,7 +51,7 @@ impl HbgiPipeline {
                             binding: 2,
                             visibility: wgpu::ShaderStages::FRAGMENT,
                             ty: wgpu::BindingType::Texture {
-                                sample_type: wgpu::TextureSampleType::Depth,
+                                sample_type: wgpu::TextureSampleType::Float { filterable: false },
                                 view_dimension: wgpu::TextureViewDimension::D2,
                                 multisampled: false,
                             },
@@ -84,9 +79,7 @@ impl HbgiPipeline {
         let inputs_bind_group = Self::create_inputs_bind_group(
             &wgpu_context.device,
             &inputs_bind_group_layout,
-            gbuffer_targets,
-            depth_texture_view,
-            gi_source_texture,
+            hbgi_pyramids,
         );
         let settings_bind_group_layout = wgpu_context
             .device
@@ -173,36 +166,32 @@ impl HbgiPipeline {
     fn create_inputs_bind_group(
         device: &wgpu::Device,
         bind_group_layout: &wgpu::BindGroupLayout,
-        gbuffer_targets: &GBufferTargets,
-        depth_texture_view: &wgpu::TextureView,
-        gi_source_texture: &HdrColorTexture,
+        hbgi_pyramids: &HbgiPyramidTextures,
     ) -> wgpu::BindGroup {
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::TextureView(
-                        &gbuffer_targets.normal_roughness.view,
-                    ),
+                    resource: wgpu::BindingResource::TextureView(&hbgi_pyramids.hbgi.sampled_view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::Sampler(
-                        &gbuffer_targets.normal_roughness.sampler,
-                    ),
+                    resource: wgpu::BindingResource::Sampler(&hbgi_pyramids.hbgi.sampler),
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: wgpu::BindingResource::TextureView(depth_texture_view),
+                    resource: wgpu::BindingResource::TextureView(&hbgi_pyramids.depth.view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 3,
-                    resource: wgpu::BindingResource::TextureView(&gi_source_texture.sampled_view),
+                    resource: wgpu::BindingResource::TextureView(
+                        &hbgi_pyramids.normal.sampled_view,
+                    ),
                 },
                 wgpu::BindGroupEntry {
                     binding: 4,
-                    resource: wgpu::BindingResource::Sampler(&gi_source_texture.sampler),
+                    resource: wgpu::BindingResource::Sampler(&hbgi_pyramids.normal.sampler),
                 },
             ],
             label: Some("HBGI Inputs Bind Group"),
@@ -212,19 +201,12 @@ impl HbgiPipeline {
     pub fn update_input_bindgroups(
         &mut self,
         device: &wgpu::Device,
-        gbuffer_targets: &GBufferTargets,
-        depth_texture_view: &wgpu::TextureView,
-        gi_source_texture: &HdrColorTexture,
+        hbgi_pyramids: &HbgiPyramidTextures,
         hbgi_options: &HbgiOptions,
         frame_index: u32,
     ) {
-        self.inputs_bind_group = Self::create_inputs_bind_group(
-            device,
-            &self.inputs_bind_group_layout,
-            gbuffer_targets,
-            depth_texture_view,
-            gi_source_texture,
-        );
+        self.inputs_bind_group =
+            Self::create_inputs_bind_group(device, &self.inputs_bind_group_layout, hbgi_pyramids);
         self.settings_bind_group = HbgiSettings::upload(
             device,
             &self.settings_bind_group_layout,
