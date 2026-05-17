@@ -5,8 +5,8 @@
 @group(1) @binding(0) var gbuffer_normal_roughness: texture_2d<f32>;
 @group(1) @binding(1) var gbuffer_normal_roughness_sampler: sampler;
 @group(1) @binding(2) var gbuffer_depth: texture_depth_2d;
-@group(1) @binding(3) var gi_source_history_texture: texture_2d<f32>;
-@group(1) @binding(4) var gi_source_history_sampler: sampler;
+@group(1) @binding(3) var gi_source_hbgi_reproject_texture: texture_2d<f32>;
+@group(1) @binding(4) var gi_source_hbgi_reproject_sampler: sampler;
 
 struct HbgiSettingsUniform {
     params0: vec4<f32>,
@@ -88,19 +88,19 @@ fn hash13(p: vec3f) -> f32 {
     return fract(sin(h) * 43758.5453123);
 }
 
-fn sample_history(uv: vec2f, lod: f32) -> vec3f {
+fn sample_hbgi_reproject(uv: vec2f, lod: f32) -> vec3f {
     return sanitize_rgb(textureSampleLevel(
-        gi_source_history_texture,
-        gi_source_history_sampler,
+        gi_source_hbgi_reproject_texture,
+        gi_source_hbgi_reproject_sampler,
         uv,
         lod
     ).rgb);
 }
 
-fn sample_history_ao(uv: vec2f, lod: f32) -> f32 {
+fn sample_hbgi_reproject_ao(uv: vec2f, lod: f32) -> f32 {
     return textureSampleLevel(
-        gi_source_history_texture,
-        gi_source_history_sampler,
+        gi_source_hbgi_reproject_texture,
+        gi_source_hbgi_reproject_sampler,
         uv,
         lod
     ).a;
@@ -159,7 +159,7 @@ fn hbgi(in: VertexOutput) -> FragmentOutput {
     ).xyz;
 
     let dims = vec2<f32>(textureDimensions(gbuffer_depth));
-    let max_history_lod = f32(textureNumLevels(gi_source_history_texture) - 1u);
+    let max_hbgi_reproject_lod = f32(textureNumLevels(gi_source_hbgi_reproject_texture) - 1u);
 
     // https://github.com/cdrinmatane/SSRT3/blob/main/HDRP/Shaders/Resources/SSRTCS.compute
     let pixel = floor(uv * dims);
@@ -233,7 +233,7 @@ fn hbgi(in: VertexOutput) -> FragmentOutput {
             let sample_distance_pixels = max(length(current_step_cs * dims), 1.0);
             // similar simple heuristic: https://github.com/cdrinmatane/SSRT3/blob/main/HDRP/Shaders/Resources/SSRTCS.compute
             // TODO play around with this heuristic for best results relative to step count
-            let history_lod = f32(min((step_idx + 1) / 2, 4));
+            let hbgi_reproject_lod = f32(min((step_idx + 1) / 2, 4));
 
             // FRONT ----------------------------
 
@@ -261,7 +261,7 @@ fn hbgi(in: VertexOutput) -> FragmentOutput {
                     let theta = atan2(sample_dir_ss.x, sample_dir_ss.y);
 
                     if (theta > 0.0 && theta < theta_front) {
-                        let L_d = sample_history(sample_uv_front, history_lod);
+                        let L_d = sample_hbgi_reproject(sample_uv_front, hbgi_reproject_lod);
 
                         // equation 18
                         let theta_0 = theta;
@@ -319,7 +319,7 @@ fn hbgi(in: VertexOutput) -> FragmentOutput {
                     let theta = atan2(sample_dir_ss.x, sample_dir_ss.y);
 
                     if (theta < 0.0 && theta > theta_back) {
-                        let L_d = sample_history(sample_uv_back, history_lod);
+                        let L_d = sample_hbgi_reproject(sample_uv_back, hbgi_reproject_lod);
 
                         let theta_0 = theta_back;
                         let theta_1 = theta;
@@ -393,16 +393,16 @@ fn hbgi(in: VertexOutput) -> FragmentOutput {
     // 2.2.2. equation 11
     var ao = (1.0 / S) * visibility_acc;
 
-    let prev_ao = sample_history_ao(uv, 3.0);
+    let prev_ao = sample_hbgi_reproject_ao(uv, 3.0);
     // TODO experiment with weight for best results
-    // TODO, technically we are mixing twice here (once in the history pass...), kinda pointless?
+    // TODO, technically we are mixing twice here (once in the hbgi_reproject pass...), kinda pointless?
     ao = mix(prev_ao, ao, 0.9);
 
     let bent_n_w = safe_normalize3(bent_acc_w);
 
     let E_near = sanitize_rgb(irradiance_acc * (PI / S));
 
-    debug /= S * f32(STEPS_PER_DIRECTION) * max_history_lod;
+    debug /= S * f32(STEPS_PER_DIRECTION) * max_hbgi_reproject_lod;
 
     return FragmentOutput(vec4f(bent_n_w, ao), vec4f(E_near, debug));
 }

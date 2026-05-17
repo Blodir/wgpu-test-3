@@ -2,7 +2,7 @@ pub mod deferred_lighting;
 pub mod g_buffer;
 pub mod gi_blur;
 pub mod hbgi;
-pub mod history;
+pub mod hbgi_reproject;
 pub mod mipmap;
 pub mod motion_vectors;
 pub mod post_processing;

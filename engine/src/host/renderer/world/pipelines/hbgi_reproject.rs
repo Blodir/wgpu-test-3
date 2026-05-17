@@ -1,6 +1,6 @@
 use wgpu::util::DeviceExt;
 
-use crate::global_paths::SHADER_HISTORY_WGSL;
+use crate::global_paths::SHADER_HBGI_REPROJECT_WGSL;
 use crate::host::{
     shader_cache::ShaderCache,
     wgpu_context::WgpuContext,
@@ -9,20 +9,20 @@ use crate::host::{
 
 const INDICES: &[u16] = &[0, 2, 1, 3, 2, 0];
 
-pub struct HistoryPipeline {
+pub struct HbgiReprojectPipeline {
     render_pipeline: wgpu::RenderPipeline,
     index_buffer: wgpu::Buffer,
     inputs_bind_group_layout: wgpu::BindGroupLayout,
     inputs_bind_group: wgpu::BindGroup,
 }
 
-impl HistoryPipeline {
+impl HbgiReprojectPipeline {
     pub fn new(
         wgpu_context: &WgpuContext,
         shader_cache: &mut ShaderCache,
         motion_vectors: &MotionVectorsTexture,
         prev_gi_source: &HdrColorTexture,
-        prev_history: &HdrColorTexture,
+        prev_hbgi_reproject: &HdrColorTexture,
     ) -> Self {
         let inputs_bind_group_layout =
             wgpu_context
@@ -60,29 +60,29 @@ impl HistoryPipeline {
                             count: None,
                         },
                     ],
-                    label: Some("History Inputs Bind Group Layout"),
+                    label: Some("HBGI Reproject Inputs Bind Group Layout"),
                 });
         let inputs_bind_group = Self::create_inputs_bind_group(
             &wgpu_context.device,
             &inputs_bind_group_layout,
             motion_vectors,
             prev_gi_source,
-            prev_history,
+            prev_hbgi_reproject,
         );
         let render_pipeline_layout =
             wgpu_context
                 .device
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                    label: Some("History Pipeline Layout"),
+                    label: Some("HBGI Reproject Pipeline Layout"),
                     bind_group_layouts: &[&inputs_bind_group_layout],
                     push_constant_ranges: &[],
                 });
-        let shader_module = shader_cache.get(SHADER_HISTORY_WGSL.to_string(), wgpu_context);
+        let shader_module = shader_cache.get(SHADER_HBGI_REPROJECT_WGSL.to_string(), wgpu_context);
         let render_pipeline =
             wgpu_context
                 .device
                 .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                    label: Some("History Pipeline"),
+                    label: Some("HBGI Reproject Pipeline"),
                     layout: Some(&render_pipeline_layout),
                     vertex: wgpu::VertexState {
                         module: &shader_module,
@@ -116,7 +116,7 @@ impl HistoryPipeline {
             wgpu_context
                 .device
                 .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("History Index Buffer"),
+                    label: Some("HBGI Reproject Index Buffer"),
                     contents: bytemuck::cast_slice(INDICES),
                     usage: wgpu::BufferUsages::INDEX,
                 });
@@ -134,7 +134,7 @@ impl HistoryPipeline {
         bind_group_layout: &wgpu::BindGroupLayout,
         motion_vectors: &MotionVectorsTexture,
         prev_gi_source: &HdrColorTexture,
-        prev_history: &HdrColorTexture,
+        prev_hbgi_reproject: &HdrColorTexture,
     ) -> wgpu::BindGroup {
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: bind_group_layout,
@@ -149,10 +149,10 @@ impl HistoryPipeline {
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: wgpu::BindingResource::TextureView(&prev_history.view),
+                    resource: wgpu::BindingResource::TextureView(&prev_hbgi_reproject.view),
                 },
             ],
-            label: Some("History Inputs Bind Group"),
+            label: Some("HBGI Reproject Inputs Bind Group"),
         })
     }
 
@@ -161,22 +161,26 @@ impl HistoryPipeline {
         device: &wgpu::Device,
         motion_vectors: &MotionVectorsTexture,
         prev_gi_source: &HdrColorTexture,
-        prev_history: &HdrColorTexture,
+        prev_hbgi_reproject: &HdrColorTexture,
     ) {
         self.inputs_bind_group = Self::create_inputs_bind_group(
             device,
             &self.inputs_bind_group_layout,
             motion_vectors,
             prev_gi_source,
-            prev_history,
+            prev_hbgi_reproject,
         );
     }
 
-    pub fn render(&self, encoder: &mut wgpu::CommandEncoder, history_view: &wgpu::TextureView) {
+    pub fn render(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        hbgi_reproject_view: &wgpu::TextureView,
+    ) {
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("History Pass"),
+            label: Some("HBGI Reproject Pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: history_view,
+                view: hbgi_reproject_view,
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),

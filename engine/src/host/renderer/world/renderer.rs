@@ -22,7 +22,7 @@ use super::pipelines::deferred_lighting::DeferredLightingPipeline;
 use super::pipelines::g_buffer::GBufferPipeline;
 use super::pipelines::gi_blur::GiBlurPipeline;
 use super::pipelines::hbgi::HbgiPipeline;
-use super::pipelines::history::HistoryPipeline;
+use super::pipelines::hbgi_reproject::HbgiReprojectPipeline;
 use super::pipelines::mipmap::MipmapPipeline;
 use super::pipelines::motion_vectors::MotionVectorsPipeline;
 use super::pipelines::post_processing::PostProcessingPipeline;
@@ -235,16 +235,16 @@ struct DeferredOpaqueRenderer {
     motion_vectors: MotionVectorsTexture,
     gi_source_write: HdrColorTexture,
     gi_source_prev: HdrColorTexture,
-    history_write: HdrColorTexture,
-    history_prev: HdrColorTexture,
+    hbgi_reproject_write: HdrColorTexture,
+    hbgi_reproject_prev: HdrColorTexture,
     g_buffer_pipeline: GBufferPipeline,
     hbgi_pipeline: HbgiPipeline,
     gi_blur_pipeline: GiBlurPipeline,
     deferred_lighting_pipeline: DeferredLightingPipeline,
-    history_pipeline: HistoryPipeline,
-    history_mipmap_pipeline: MipmapPipeline,
+    hbgi_reproject_pipeline: HbgiReprojectPipeline,
+    hbgi_reproject_mipmap_pipeline: MipmapPipeline,
     motion_vectors_pipeline: MotionVectorsPipeline,
-    history_valid: bool,
+    hbgi_reproject_valid: bool,
 }
 impl DeferredOpaqueRenderer {
     fn new(
@@ -263,15 +263,15 @@ impl DeferredOpaqueRenderer {
             HdrColorTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
         let gi_source_prev =
             HdrColorTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
-        let history_write = HdrColorTexture::new_mipmapped(
+        let hbgi_reproject_write = HdrColorTexture::new_mipmapped(
             &wgpu_context.device,
             &wgpu_context.surface_config,
-            "History Write Texture",
+            "HBGI Reproject Write Texture",
         );
-        let history_prev = HdrColorTexture::new_mipmapped(
+        let hbgi_reproject_prev = HdrColorTexture::new_mipmapped(
             &wgpu_context.device,
             &wgpu_context.surface_config,
-            "History Previous Texture",
+            "HBGI Reproject Previous Texture",
         );
         let hbgi_pipeline = HbgiPipeline::new(
             wgpu_context,
@@ -279,7 +279,7 @@ impl DeferredOpaqueRenderer {
             &layouts.camera,
             &g_buffer_targets,
             depth_texture_view,
-            &history_write,
+            &hbgi_reproject_write,
             &hbgi_options.unwrap_or_default(),
             0,
         );
@@ -299,14 +299,14 @@ impl DeferredOpaqueRenderer {
             &layouts.motion_camera,
             &layouts.motion_bones,
         );
-        let history_pipeline = HistoryPipeline::new(
+        let hbgi_reproject_pipeline = HbgiReprojectPipeline::new(
             wgpu_context,
             shader_cache,
             &motion_vectors,
             &gi_source_prev,
-            &history_prev,
+            &hbgi_reproject_prev,
         );
-        let history_mipmap_pipeline = MipmapPipeline::new(wgpu_context, shader_cache);
+        let hbgi_reproject_mipmap_pipeline = MipmapPipeline::new(wgpu_context, shader_cache);
         let deferred_lighting_pipeline = DeferredLightingPipeline::new(
             wgpu_context,
             shader_cache,
@@ -322,16 +322,16 @@ impl DeferredOpaqueRenderer {
             motion_vectors,
             gi_source_write,
             gi_source_prev,
-            history_write,
-            history_prev,
+            hbgi_reproject_write,
+            hbgi_reproject_prev,
             g_buffer_pipeline,
             hbgi_pipeline,
             gi_blur_pipeline,
             deferred_lighting_pipeline,
-            history_pipeline,
-            history_mipmap_pipeline,
+            hbgi_reproject_pipeline,
+            hbgi_reproject_mipmap_pipeline,
             motion_vectors_pipeline,
-            history_valid: false,
+            hbgi_reproject_valid: false,
         }
     }
 
@@ -340,17 +340,17 @@ impl DeferredOpaqueRenderer {
         device: &wgpu::Device,
         depth_texture_view: &wgpu::TextureView,
     ) {
-        self.history_pipeline.update_input_bindgroup(
+        self.hbgi_reproject_pipeline.update_input_bindgroup(
             device,
             &self.motion_vectors,
             &self.gi_source_prev,
-            &self.history_prev,
+            &self.hbgi_reproject_prev,
         );
         self.hbgi_pipeline.update_input_bindgroups(
             device,
             &self.g_buffer_targets,
             depth_texture_view,
-            &self.history_write,
+            &self.hbgi_reproject_write,
             &self.hbgi_options.unwrap_or_default(),
             0,
         );
@@ -359,7 +359,10 @@ impl DeferredOpaqueRenderer {
     fn clear_temporal_inputs(&self, encoder: &mut wgpu::CommandEncoder) {
         for (label, view) in [
             ("Previous GI Source Clear Pass", &self.gi_source_prev.view),
-            ("Previous History Clear Pass", &self.history_prev.view),
+            (
+                "Previous HBGI Reproject Clear Pass",
+                &self.hbgi_reproject_prev.view,
+            ),
         ] {
             let _clear_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some(label),
@@ -384,7 +387,10 @@ impl DeferredOpaqueRenderer {
         depth_texture_view: &wgpu::TextureView,
     ) {
         std::mem::swap(&mut self.gi_source_write, &mut self.gi_source_prev);
-        std::mem::swap(&mut self.history_write, &mut self.history_prev);
+        std::mem::swap(
+            &mut self.hbgi_reproject_write,
+            &mut self.hbgi_reproject_prev,
+        );
         self.refresh_temporal_bind_groups(device, depth_texture_view);
     }
 
@@ -446,19 +452,19 @@ impl DeferredOpaqueRenderer {
             motion_camera_bind_group,
             render_resources,
         );
-        if !self.history_valid {
+        if !self.hbgi_reproject_valid {
             self.clear_temporal_inputs(encoder);
         }
-        self.history_pipeline
-            .render(encoder, &self.history_write.view);
-        self.history_mipmap_pipeline
-            .generate(device, encoder, &self.history_write);
+        self.hbgi_reproject_pipeline
+            .render(encoder, &self.hbgi_reproject_write.view);
+        self.hbgi_reproject_mipmap_pipeline
+            .generate(device, encoder, &self.hbgi_reproject_write);
         if self.hbgi_options.is_some() {
             self.hbgi_pipeline.update_input_bindgroups(
                 device,
                 &self.g_buffer_targets,
                 depth_texture_view,
-                &self.history_write,
+                &self.hbgi_reproject_write,
                 &self.hbgi_options.unwrap_or_default(),
                 frame_idx,
             );
@@ -524,7 +530,7 @@ impl DeferredOpaqueRenderer {
             camera_bind_group,
             lights_bind_group,
         );
-        self.history_valid = true;
+        self.hbgi_reproject_valid = true;
         self.rotate_temporal_buffers(device, depth_texture_view);
     }
 
@@ -538,21 +544,21 @@ impl DeferredOpaqueRenderer {
             HdrColorTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
         self.gi_source_prev =
             HdrColorTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
-        self.history_write = HdrColorTexture::new_mipmapped(
+        self.hbgi_reproject_write = HdrColorTexture::new_mipmapped(
             &wgpu_context.device,
             &wgpu_context.surface_config,
-            "History Write Texture",
+            "HBGI Reproject Write Texture",
         );
-        self.history_prev = HdrColorTexture::new_mipmapped(
+        self.hbgi_reproject_prev = HdrColorTexture::new_mipmapped(
             &wgpu_context.device,
             &wgpu_context.surface_config,
-            "History Previous Texture",
+            "HBGI Reproject Previous Texture",
         );
         self.hbgi_pipeline.update_input_bindgroups(
             &wgpu_context.device,
             &self.g_buffer_targets,
             depth_texture_view,
-            &self.history_write,
+            &self.hbgi_reproject_write,
             &self.hbgi_options.unwrap_or_default(),
             0,
         );
@@ -566,13 +572,13 @@ impl DeferredOpaqueRenderer {
             &self.g_buffer_targets,
             &self.hbgi_texture,
         );
-        self.history_pipeline.update_input_bindgroup(
+        self.hbgi_reproject_pipeline.update_input_bindgroup(
             &wgpu_context.device,
             &self.motion_vectors,
             &self.gi_source_prev,
-            &self.history_prev,
+            &self.hbgi_reproject_prev,
         );
-        self.history_valid = false;
+        self.hbgi_reproject_valid = false;
     }
 }
 
