@@ -115,13 +115,12 @@ fn sample_hbgi_pyramid(uv: vec2f, lod: f32) -> vec3f {
     ).rgb);
 }
 
-fn sample_hbgi_pyramid_ao(uv: vec2f, lod: f32) -> f32 {
-    return textureSampleLevel(
-        hbgi_pyramid_texture,
-        hbgi_pyramid_sampler,
-        uv,
-        lod
-    ).a;
+fn load_hbgi_history(uv: vec2f, mip_level: i32) -> vec4f {
+    let dims = vec2f(textureDimensions(hbgi_pyramid_texture, mip_level));
+    let max_uv = vec2f(1.0) - 1.0 / dims;
+    let clamped_uv = clamp(uv, vec2f(0.0), max_uv);
+    let coord = vec2i(clamped_uv * dims);
+    return textureLoad(hbgi_pyramid_texture, coord, mip_level);
 }
 
 fn sample_hbgi_depth(uv: vec2f, lod: f32) -> f32 {
@@ -268,7 +267,7 @@ fn hbgi(in: VertexOutput) -> FragmentOutput {
             let sample_distance_pixels = max(length(current_step_cs * dims), 1.0);
             // similar simple heuristic: https://github.com/cdrinmatane/SSRT3/blob/main/HDRP/Shaders/Resources/SSRTCS.compute
             // TODO play around with this heuristic for best results relative to step count
-            let hbgi_pyramid_lod = f32(min((step_idx + 1) / 2, 4));
+            let hbgi_pyramid_lod = f32(min((step_idx + 2) / 2, 6));
 
             // FRONT ----------------------------
 
@@ -420,10 +419,10 @@ fn hbgi(in: VertexOutput) -> FragmentOutput {
     // 2.2.2. equation 11
     var ao = (1.0 / S) * visibility_acc;
 
-    let prev_ao = sample_hbgi_pyramid_ao(uv, 3.0);
-    // TODO experiment with weight for best results
-    // TODO, technically we are mixing twice here (once in the hbgi_reproject pass...), kinda pointless?
-    ao = mix(prev_ao, ao, 0.9);
+    let prev_history = load_hbgi_history(uv, 0);
+    if (prev_history.a >= 0.0) {
+        ao = mix(prev_history.a, ao, 0.4);
+    }
 
     let bent_n_w = safe_normalize3(bent_acc_w);
 

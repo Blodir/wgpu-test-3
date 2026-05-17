@@ -4,7 +4,10 @@ use crate::global_paths::SHADER_HBGI_REPROJECT_WGSL;
 use crate::host::{
     shader_cache::ShaderCache,
     wgpu_context::WgpuContext,
-    world::attachments::{color::HdrColorTexture, motion_vectors::MotionVectorsTexture},
+    world::attachments::{
+        color::HdrColorTexture, deferred::GBufferTexture, hbgi_pyramid::FloatPyramidTexture,
+        motion_vectors::MotionVectorsTexture,
+    },
 };
 
 const INDICES: &[u16] = &[0, 2, 1, 3, 2, 0];
@@ -23,6 +26,10 @@ impl HbgiReprojectPipeline {
         motion_vectors: &MotionVectorsTexture,
         prev_gi_source: &HdrColorTexture,
         prev_hbgi_reproject: &HdrColorTexture,
+        depth_texture_view: &wgpu::TextureView,
+        current_normal: &GBufferTexture,
+        prev_depth_history: &FloatPyramidTexture,
+        prev_normal_history: &HdrColorTexture,
     ) -> Self {
         let inputs_bind_group_layout =
             wgpu_context
@@ -59,6 +66,46 @@ impl HbgiReprojectPipeline {
                             },
                             count: None,
                         },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 3,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Texture {
+                                sample_type: wgpu::TextureSampleType::Depth,
+                                view_dimension: wgpu::TextureViewDimension::D2,
+                                multisampled: false,
+                            },
+                            count: None,
+                        },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 4,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Texture {
+                                sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                                view_dimension: wgpu::TextureViewDimension::D2,
+                                multisampled: false,
+                            },
+                            count: None,
+                        },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 5,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Texture {
+                                sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                                view_dimension: wgpu::TextureViewDimension::D2,
+                                multisampled: false,
+                            },
+                            count: None,
+                        },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 6,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Texture {
+                                sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                                view_dimension: wgpu::TextureViewDimension::D2,
+                                multisampled: false,
+                            },
+                            count: None,
+                        },
                     ],
                     label: Some("HBGI Reproject Inputs Bind Group Layout"),
                 });
@@ -68,6 +115,10 @@ impl HbgiReprojectPipeline {
             motion_vectors,
             prev_gi_source,
             prev_hbgi_reproject,
+            depth_texture_view,
+            current_normal,
+            prev_depth_history,
+            prev_normal_history,
         );
         let render_pipeline_layout =
             wgpu_context
@@ -93,11 +144,23 @@ impl HbgiReprojectPipeline {
                     fragment: Some(wgpu::FragmentState {
                         module: &shader_module,
                         entry_point: Some("fs_main"),
-                        targets: &[Some(wgpu::ColorTargetState {
-                            format: wgpu::TextureFormat::Rgba16Float,
-                            blend: Some(wgpu::BlendState::REPLACE),
-                            write_mask: wgpu::ColorWrites::ALL,
-                        })],
+                        targets: &[
+                            Some(wgpu::ColorTargetState {
+                                format: wgpu::TextureFormat::Rgba16Float,
+                                blend: Some(wgpu::BlendState::REPLACE),
+                                write_mask: wgpu::ColorWrites::ALL,
+                            }),
+                            Some(wgpu::ColorTargetState {
+                                format: wgpu::TextureFormat::R32Float,
+                                blend: None,
+                                write_mask: wgpu::ColorWrites::ALL,
+                            }),
+                            Some(wgpu::ColorTargetState {
+                                format: wgpu::TextureFormat::Rgba16Float,
+                                blend: None,
+                                write_mask: wgpu::ColorWrites::ALL,
+                            }),
+                        ],
                         compilation_options: wgpu::PipelineCompilationOptions::default(),
                     }),
                     primitive: wgpu::PrimitiveState {
@@ -135,6 +198,10 @@ impl HbgiReprojectPipeline {
         motion_vectors: &MotionVectorsTexture,
         prev_gi_source: &HdrColorTexture,
         prev_hbgi_reproject: &HdrColorTexture,
+        depth_texture_view: &wgpu::TextureView,
+        current_normal: &GBufferTexture,
+        prev_depth_history: &FloatPyramidTexture,
+        prev_normal_history: &HdrColorTexture,
     ) -> wgpu::BindGroup {
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: bind_group_layout,
@@ -151,6 +218,22 @@ impl HbgiReprojectPipeline {
                     binding: 2,
                     resource: wgpu::BindingResource::TextureView(&prev_hbgi_reproject.view),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::TextureView(depth_texture_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: wgpu::BindingResource::TextureView(&current_normal.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: wgpu::BindingResource::TextureView(&prev_depth_history.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 6,
+                    resource: wgpu::BindingResource::TextureView(&prev_normal_history.view),
+                },
             ],
             label: Some("HBGI Reproject Inputs Bind Group"),
         })
@@ -162,6 +245,10 @@ impl HbgiReprojectPipeline {
         motion_vectors: &MotionVectorsTexture,
         prev_gi_source: &HdrColorTexture,
         prev_hbgi_reproject: &HdrColorTexture,
+        depth_texture_view: &wgpu::TextureView,
+        current_normal: &GBufferTexture,
+        prev_depth_history: &FloatPyramidTexture,
+        prev_normal_history: &HdrColorTexture,
     ) {
         self.inputs_bind_group = Self::create_inputs_bind_group(
             device,
@@ -169,6 +256,10 @@ impl HbgiReprojectPipeline {
             motion_vectors,
             prev_gi_source,
             prev_hbgi_reproject,
+            depth_texture_view,
+            current_normal,
+            prev_depth_history,
+            prev_normal_history,
         );
     }
 
@@ -176,17 +267,47 @@ impl HbgiReprojectPipeline {
         &self,
         encoder: &mut wgpu::CommandEncoder,
         hbgi_reproject_view: &wgpu::TextureView,
+        hbgi_reproject_depth_view: &wgpu::TextureView,
+        hbgi_reproject_normal_view: &wgpu::TextureView,
     ) {
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("HBGI Reproject Pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: hbgi_reproject_view,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
+            color_attachments: &[
+                Some(wgpu::RenderPassColorAttachment {
+                    view: hbgi_reproject_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color {
+                            r: 0.0,
+                            g: 0.0,
+                            b: 0.0,
+                            a: -1.0,
+                        }),
+                        store: wgpu::StoreOp::Store,
+                    },
+                }),
+                Some(wgpu::RenderPassColorAttachment {
+                    view: hbgi_reproject_depth_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color {
+                            r: 1.0,
+                            g: 0.0,
+                            b: 0.0,
+                            a: 1.0,
+                        }),
+                        store: wgpu::StoreOp::Store,
+                    },
+                }),
+                Some(wgpu::RenderPassColorAttachment {
+                    view: hbgi_reproject_normal_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                        store: wgpu::StoreOp::Store,
+                    },
+                }),
+            ],
             depth_stencil_attachment: None,
             occlusion_query_set: None,
             timestamp_writes: None,

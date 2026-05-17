@@ -7,14 +7,35 @@ pub struct FloatPyramidTexture {
 }
 
 impl FloatPyramidTexture {
+    pub fn new(
+        device: &wgpu::Device,
+        surface_config: &wgpu::SurfaceConfiguration,
+        label: &'static str,
+    ) -> Self {
+        Self::create(device, surface_config, label, false)
+    }
+
     pub fn new_mipmapped(
         device: &wgpu::Device,
         surface_config: &wgpu::SurfaceConfiguration,
         label: &'static str,
     ) -> Self {
+        Self::create(device, surface_config, label, true)
+    }
+
+    fn create(
+        device: &wgpu::Device,
+        surface_config: &wgpu::SurfaceConfiguration,
+        label: &'static str,
+        mipmapped: bool,
+    ) -> Self {
         let width = surface_config.width.max(1);
         let height = surface_config.height.max(1);
-        let mip_level_count = width.max(height).ilog2() + 1;
+        let mip_level_count = if mipmapped {
+            width.max(height).ilog2() + 1
+        } else {
+            1
+        };
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some(label),
             size: wgpu::Extent3d {
