@@ -97,6 +97,15 @@ fn rand(co: vec2f) -> f32 {
     return fract(sin(sn) * c);
 }
 
+fn fast_acos(x: f32) -> f32 {
+    var out_val = -0.156583 * abs(x) + (PI * 0.5);
+    out_val *= sqrt(1.0 - abs(x));
+    if (x >= 0.0) {
+        return out_val;
+    }
+    return PI - out_val;
+}
+
 fn sample_hbgi_pyramid(uv: vec2f, lod: f32) -> vec3f {
     return sanitize_rgb(textureSampleLevel(
         hbgi_pyramid_texture,
@@ -247,7 +256,7 @@ fn hbgi(in: VertexOutput) -> FragmentOutput {
         // based on my own horizon initialization drawing...
         let k_ss = safe_normalize2(vec2f(n_ss.y, -n_ss.x));
 
-        var theta_front = acos(clamp(dot(omega_o_ss, k_ss), -1.0, 1.0));
+        var theta_front = fast_acos(clamp(dot(omega_o_ss, k_ss), -1.0, 1.0));
         var theta_back = -PI + theta_front;
 
         var fallback_radiance_front = vec3f(0.0);
