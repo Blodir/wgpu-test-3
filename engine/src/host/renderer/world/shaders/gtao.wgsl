@@ -26,7 +26,7 @@ struct FragmentOutput {
 }
 
 const PI: f32 = 3.14159265358979323846;
-const DIRECTIONS: u32 = 4u;
+const DIRECTIONS: u32 = 2u;
 const STEPS_PER_DIRECTION: u32 = 8u;
 
 @vertex
@@ -81,11 +81,6 @@ fn sanitize_rgb(v: vec3f) -> vec3f {
 // Interleaved gradient function from Jimenez 2014 http://goo.gl/eomGso
 fn gradient_noise(position: vec2f) -> f32 {
     return fract(52.9829189 * fract(dot(position, vec2f(0.06711056, 0.00583715))));
-}
-
-fn hash12(p: vec2f) -> f32 {
-    let h = dot(p, vec2f(127.1, 311.7));
-    return fract(sin(h) * 43758.5453123);
 }
 
 fn hash13(p: vec3f) -> f32 {

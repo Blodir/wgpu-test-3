@@ -20,6 +20,7 @@ use super::bindgroups::sun_shadow_matrix::SunShadowMatrixBindGroup;
 use super::buffers::skinned_instance::SkinnedInstances;
 use super::pipelines::deferred_lighting::DeferredLightingPipeline;
 use super::pipelines::g_buffer::GBufferPipeline;
+use super::pipelines::gi_blur::GiBlurPipeline;
 use super::pipelines::gtao::GtaoPipeline;
 use super::pipelines::history::HistoryPipeline;
 use super::pipelines::mipmap::MipmapPipeline;
@@ -236,8 +237,9 @@ struct DeferredOpaqueRenderer {
     gi_source_prev: HdrColorTexture,
     history_write: HdrColorTexture,
     history_prev: HdrColorTexture,
-    gtao_pipeline: GtaoPipeline,
     g_buffer_pipeline: GBufferPipeline,
+    gtao_pipeline: GtaoPipeline,
+    gi_blur_pipeline: GiBlurPipeline,
     deferred_lighting_pipeline: DeferredLightingPipeline,
     history_pipeline: HistoryPipeline,
     history_mipmap_pipeline: MipmapPipeline,
@@ -279,6 +281,8 @@ impl DeferredOpaqueRenderer {
             &gtao_options.unwrap_or_default(),
             0,
         );
+        let gi_blur_pipeline =
+            GiBlurPipeline::new(wgpu_context, shader_cache, &g_buffer_targets, &gtao_texture);
         let g_buffer_pipeline = GBufferPipeline::new(
             wgpu_context,
             shader_cache,
@@ -318,8 +322,9 @@ impl DeferredOpaqueRenderer {
             gi_source_prev,
             history_write,
             history_prev,
-            gtao_pipeline,
             g_buffer_pipeline,
+            gtao_pipeline,
+            gi_blur_pipeline,
             deferred_lighting_pipeline,
             history_pipeline,
             history_mipmap_pipeline,
@@ -446,6 +451,7 @@ impl DeferredOpaqueRenderer {
             );
             self.gtao_pipeline
                 .render(encoder, &self.gtao_texture, camera_bind_group);
+            self.gi_blur_pipeline.render(encoder, &self.gtao_texture);
         } else {
             let _clear_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("GTAO Disabled Clear Pass"),
@@ -465,6 +471,27 @@ impl DeferredOpaqueRenderer {
                     }),
                     Some(wgpu::RenderPassColorAttachment {
                         view: &self.gtao_texture.hbil_diffuse_view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                            store: wgpu::StoreOp::Store,
+                        },
+                    }),
+                    Some(wgpu::RenderPassColorAttachment {
+                        view: &self.gtao_texture.blurred_view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color {
+                                r: 0.0,
+                                g: 0.0,
+                                b: 1.0,
+                                a: 1.0,
+                            }),
+                            store: wgpu::StoreOp::Store,
+                        },
+                    }),
+                    Some(wgpu::RenderPassColorAttachment {
+                        view: &self.gtao_texture.blurred_hbil_diffuse_view,
                         resolve_target: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
@@ -514,6 +541,11 @@ impl DeferredOpaqueRenderer {
             &self.history_write,
             &self.gtao_options.unwrap_or_default(),
             0,
+        );
+        self.gi_blur_pipeline.update_input_bindgroup(
+            &wgpu_context.device,
+            &self.g_buffer_targets,
+            &self.gtao_texture,
         );
         self.deferred_lighting_pipeline.update_input_bindgroup(
             &wgpu_context.device,

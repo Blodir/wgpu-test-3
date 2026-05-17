@@ -68,6 +68,12 @@ pub struct GtaoTexture {
     _hbil_diffuse_texture: wgpu::Texture,
     pub hbil_diffuse_view: wgpu::TextureView,
     pub hbil_diffuse_sampler: wgpu::Sampler,
+    _blurred_ao_texture: wgpu::Texture,
+    pub blurred_view: wgpu::TextureView,
+    pub blurred_sampler: wgpu::Sampler,
+    _blurred_hbil_diffuse_texture: wgpu::Texture,
+    pub blurred_hbil_diffuse_view: wgpu::TextureView,
+    pub blurred_hbil_diffuse_sampler: wgpu::Sampler,
 }
 
 impl GtaoTexture {
@@ -122,6 +128,47 @@ impl GtaoTexture {
             min_filter: wgpu::FilterMode::Linear,
             ..Default::default()
         });
+        let blurred_ao_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Half Resolution GTAO Blur Texture"),
+            size: wgpu::Extent3d {
+                width: (surface_config.width / scale_divisor).max(1),
+                height: (surface_config.height / scale_divisor).max(1),
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba16Float,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let blurred_view = blurred_ao_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let blurred_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            ..Default::default()
+        });
+        let blurred_hbil_diffuse_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Half Resolution HBIL Diffuse Irradiance Blur Texture"),
+            size: wgpu::Extent3d {
+                width: (surface_config.width / scale_divisor).max(1),
+                height: (surface_config.height / scale_divisor).max(1),
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba16Float,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let blurred_hbil_diffuse_view =
+            blurred_hbil_diffuse_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let blurred_hbil_diffuse_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            ..Default::default()
+        });
 
         Self {
             _ao_texture: ao_texture,
@@ -130,6 +177,12 @@ impl GtaoTexture {
             _hbil_diffuse_texture: hbil_diffuse_texture,
             hbil_diffuse_view,
             hbil_diffuse_sampler,
+            _blurred_ao_texture: blurred_ao_texture,
+            blurred_view,
+            blurred_sampler,
+            _blurred_hbil_diffuse_texture: blurred_hbil_diffuse_texture,
+            blurred_hbil_diffuse_view,
+            blurred_hbil_diffuse_sampler,
         }
     }
 }

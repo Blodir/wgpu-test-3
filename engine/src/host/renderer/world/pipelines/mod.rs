@@ -1,5 +1,6 @@
 pub mod deferred_lighting;
 pub mod g_buffer;
+pub mod gi_blur;
 pub mod gtao;
 pub mod history;
 pub mod mipmap;

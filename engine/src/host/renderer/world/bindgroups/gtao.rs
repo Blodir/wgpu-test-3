@@ -56,19 +56,23 @@ impl GtaoInputs {
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&gtao_texture.view),
+                    resource: wgpu::BindingResource::TextureView(&gtao_texture.blurred_view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&gtao_texture.sampler),
+                    resource: wgpu::BindingResource::Sampler(&gtao_texture.blurred_sampler),
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: wgpu::BindingResource::TextureView(&gtao_texture.hbil_diffuse_view),
+                    resource: wgpu::BindingResource::TextureView(
+                        &gtao_texture.blurred_hbil_diffuse_view,
+                    ),
                 },
                 wgpu::BindGroupEntry {
                     binding: 3,
-                    resource: wgpu::BindingResource::Sampler(&gtao_texture.hbil_diffuse_sampler),
+                    resource: wgpu::BindingResource::Sampler(
+                        &gtao_texture.blurred_hbil_diffuse_sampler,
+                    ),
                 },
             ],
             label: Some("GTAO Inputs Bind Group"),
