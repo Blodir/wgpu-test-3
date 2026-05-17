@@ -10,7 +10,7 @@
 
 struct HbgiSettingsUniform {
     params0: vec4<f32>,
-    params1: vec4<u32>,
+    params1: vec4<f32>,
 }
 
 @group(2) @binding(0) var<uniform> hbgi_settings: HbgiSettingsUniform;
@@ -28,6 +28,7 @@ struct FragmentOutput {
 const PI: f32 = 3.14159265358979323846;
 const DIRECTIONS: u32 = 2u;
 const STEPS_PER_DIRECTION: u32 = 8u;
+const JITTER_SAMPLES: f32 = 1.0;
 
 @vertex
 fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
@@ -83,9 +84,17 @@ fn gradient_noise(position: vec2f) -> f32 {
     return fract(52.9829189 * fract(dot(position, vec2f(0.06711056, 0.00583715))));
 }
 
-fn hash13(p: vec3f) -> f32 {
-    let h = dot(p, vec3f(127.1, 311.7, 191.999));
-    return fract(sin(h) * 43758.5453123);
+fn spatial_offsets(position: vec2i) -> f32 {
+    return 0.25 * f32((position.y - position.x) & 3);
+}
+
+fn rand(co: vec2f) -> f32 {
+    let a = 12.9898;
+    let b = 78.233;
+    let c = 43758.5453;
+    let dt = dot(co, vec2f(a, b));
+    let sn = dt % 3.14;
+    return fract(sin(sn) * c);
 }
 
 fn sample_hbgi_pyramid(uv: vec2f, lod: f32) -> vec3f {
@@ -159,7 +168,8 @@ fn hbgi(in: VertexOutput) -> FragmentOutput {
     let radius_world = hbgi_settings.params0.y;
     let step_size_exponent = hbgi_settings.params0.z;
     let gi_intensity = hbgi_settings.params0.w;
-    let frame_index = hbgi_settings.params1.x;
+    let temporal_direction_jitter = hbgi_settings.params1.x;
+    let temporal_offset_jitter = hbgi_settings.params1.y;
     let uv = in.tex_coords;
 
     let P_sample = sample_world_position_from_depth(uv, 0.0);
@@ -176,9 +186,11 @@ fn hbgi(in: VertexOutput) -> FragmentOutput {
 
     // https://github.com/cdrinmatane/SSRT3/blob/main/HDRP/Shaders/Resources/SSRTCS.compute
     let pixel = floor(uv * dims);
-    let spatial_noise = gradient_noise(pixel);
-    let angular_jitter = hash13(vec3f(pixel, f32(frame_index)));
-    let radial_jitter = hash13(vec3f(pixel.yx, f32(frame_index) + 37.0));
+    let pixel_coord = vec2i(pixel);
+    let noise_offset = spatial_offsets(pixel_coord);
+    let noise_direction = gradient_noise(pixel);
+    let random_jitter = (rand(uv) * 2.0 - 1.0) * JITTER_SAMPLES;
+    let initial_ray_step = fract(noise_offset + temporal_offset_jitter) + random_jitter;
 
     let max_step_dist = radius_pixels / dims;
 
@@ -202,7 +214,8 @@ fn hbgi(in: VertexOutput) -> FragmentOutput {
 
     for (var dir_idx: u32 = 0u; dir_idx < DIRECTIONS; dir_idx += 1u) {
         // rotate around half of the hemisphere (since we sample both front/back)
-        let phi = (f32(dir_idx) + spatial_noise + angular_jitter) * (PI / f32(DIRECTIONS));
+        let phi =
+            (f32(dir_idx) + noise_direction + temporal_direction_jitter) * (PI / f32(DIRECTIONS));
 
         // 1.2. Slice Space ---
         let D_w = cos(phi) * omega_x_w + sin(phi) * omega_y_w;
@@ -241,7 +254,7 @@ fn hbgi(in: VertexOutput) -> FragmentOutput {
         var fallback_radiance_back = vec3f(0.0);
 
         for (var step_idx: u32 = 1u; step_idx <= STEPS_PER_DIRECTION; step_idx += 1u) {
-            let step_t = (f32(step_idx - 1u) + radial_jitter) / f32(STEPS_PER_DIRECTION);
+            let step_t = (f32(step_idx - 1u) + initial_ray_step) / f32(STEPS_PER_DIRECTION);
             let current_step_cs = pow(step_t, step_size_exponent) * max_step_cs;
             let sample_distance_pixels = max(length(current_step_cs * dims), 1.0);
             // similar simple heuristic: https://github.com/cdrinmatane/SSRT3/blob/main/HDRP/Shaders/Resources/SSRTCS.compute

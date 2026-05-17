@@ -6,8 +6,11 @@ use crate::host::renderer::HbgiOptions;
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct HbgiSettingsUniform {
     params0: [f32; 4],
-    params1: [u32; 4],
+    params1: [f32; 4],
 }
+
+const TEMPORAL_ROTATIONS: [f32; 6] = [60.0, 300.0, 180.0, 240.0, 120.0, 0.0];
+const SPATIAL_OFFSETS: [f32; 4] = [0.0, 0.5, 0.25, 0.75];
 
 pub struct HbgiSettings {}
 pub struct HbgiSettingsBinding {
@@ -38,6 +41,10 @@ impl HbgiSettings {
         hbgi_options: &HbgiOptions,
         frame_index: u32,
     ) -> HbgiSettingsBinding {
+        let temporal_direction =
+            TEMPORAL_ROTATIONS[(frame_index % TEMPORAL_ROTATIONS.len() as u32) as usize] / 360.0;
+        let temporal_offset = SPATIAL_OFFSETS[((frame_index / TEMPORAL_ROTATIONS.len() as u32)
+            % SPATIAL_OFFSETS.len() as u32) as usize];
         let settings_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("HBGI Settings Buffer"),
             contents: bytemuck::bytes_of(&HbgiSettingsUniform {
@@ -47,7 +54,7 @@ impl HbgiSettings {
                     hbgi_options.step_size_exponent,
                     hbgi_options.gi_intensity,
                 ],
-                params1: [frame_index, 0, 0, 0],
+                params1: [temporal_direction, temporal_offset, 0.0, 0.0],
             }),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
