@@ -350,7 +350,7 @@ impl DeferredOpaqueRenderer {
             device,
             &self.g_buffer_targets,
             depth_texture_view,
-            &self.hbgi_reproject_write,
+            &self.hbgi_reproject_prev,
             &self.hbgi_options.unwrap_or_default(),
             0,
         );
@@ -452,19 +452,12 @@ impl DeferredOpaqueRenderer {
             motion_camera_bind_group,
             render_resources,
         );
-        if !self.hbgi_reproject_valid {
-            self.clear_temporal_inputs(encoder);
-        }
-        self.hbgi_reproject_pipeline
-            .render(encoder, &self.hbgi_reproject_write.view);
-        self.hbgi_reproject_mipmap_pipeline
-            .generate(device, encoder, &self.hbgi_reproject_write);
         if self.hbgi_options.is_some() {
             self.hbgi_pipeline.update_input_bindgroups(
                 device,
                 &self.g_buffer_targets,
                 depth_texture_view,
-                &self.hbgi_reproject_write,
+                &self.hbgi_reproject_prev,
                 &self.hbgi_options.unwrap_or_default(),
                 frame_idx,
             );
@@ -530,6 +523,13 @@ impl DeferredOpaqueRenderer {
             camera_bind_group,
             lights_bind_group,
         );
+        if !self.hbgi_reproject_valid {
+            self.clear_temporal_inputs(encoder);
+        }
+        self.hbgi_reproject_pipeline
+            .render(encoder, &self.hbgi_reproject_write.view);
+        self.hbgi_reproject_mipmap_pipeline
+            .generate(device, encoder, &self.hbgi_reproject_write);
         self.hbgi_reproject_valid = true;
         self.rotate_temporal_buffers(device, depth_texture_view);
     }
@@ -558,7 +558,7 @@ impl DeferredOpaqueRenderer {
             &wgpu_context.device,
             &self.g_buffer_targets,
             depth_texture_view,
-            &self.hbgi_reproject_write,
+            &self.hbgi_reproject_prev,
             &self.hbgi_options.unwrap_or_default(),
             0,
         );
