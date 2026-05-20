@@ -34,8 +34,8 @@ struct SunShadowUniform {
 
 @group(3) @binding(0) var hbgi_texture: texture_2d<f32>;
 @group(3) @binding(1) var hbgi_texture_sampler: sampler;
-@group(3) @binding(2) var hbil_diffuse_irradiance_texture: texture_2d<f32>;
-@group(3) @binding(3) var hbil_diffuse_irradiance_sampler: sampler;
+@group(3) @binding(2) var hbgi_irradiance_texture: texture_2d<f32>;
+@group(3) @binding(3) var hbgi_irradiance_sampler: sampler;
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
@@ -160,7 +160,7 @@ fn sample_sun_shadow(world_position: vec3f, N: vec3f, L: vec3f) -> f32 {
     return visibility / 9.0;
 }
 
-fn hbil_F0_compensation(ao: f32) -> f32 {
+fn hbgi_F0_compensation(ao: f32) -> f32 {
     let alpha = acos(clamp(1.0 - ao, -1.0, 1.0));
 
     // Normalize aperture: 0 = closed cone, 1 = full hemisphere aperture PI/2
@@ -219,9 +219,9 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
         hbgi_texture_sampler,
         uv
     );
-    let hbil_sample = textureSample(
-        hbil_diffuse_irradiance_texture,
-        hbil_diffuse_irradiance_sampler,
+    let hbgi_irradiance = textureSample(
+        hbgi_irradiance_texture,
+        hbgi_irradiance_sampler,
         uv
     ).rgba;
     if (world_position.w < 0.5) {
@@ -305,12 +305,12 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
     let far_field_sample = textureSample(
         diffuse_irradiance_texture,
         diffuse_irradiance_texture_sampler,
-        bent_n_w // Use bent normal from HBIL
+        bent_n_w // Use bent normal from HBGI
     );
 
-    // TODO: this is a temp function to scale back the (brutal) effect of large radius HBIL AO
+    // TODO: this is a temp function to scale back the (brutal) effect of large radius HBGI AO
     let diffuse_ao = pow(
-        clamp(0.0, 1.0, hbil_F0_compensation(hbgi.w) * hbgi.w - 0.1) + 0.1,
+        clamp(0.0, 1.0, hbgi_F0_compensation(hbgi.w) * hbgi.w - 0.1) + 0.1,
         0.4
     ) * ao;
 
@@ -324,7 +324,7 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
 
     // Horizon-Based Indirect Lighting (HBIL) - Benoit Mayaux - Section 2.2.3, 2.3.
     let E_far = far_field_sample.rgb * diffuse_ao * environment_map_intensity;
-    let E_near = hbil_sample.rgb * (1 - F0);
+    let E_near = hbgi_irradiance.rgb * (1 - F0);
     let far_diffuse  = E_far * k_d2 * surface_color / PI;
     let near_diffuse = E_near * surface_color / PI;
 
@@ -342,7 +342,7 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
         hbgi.w
     );
     //return FragmentOutput(vec4f(E_near, 1.0), gi_source);
-    //return FragmentOutput(vec4f(vec3f(hbil_sample.w), 1.0), gi_source);
+    //return FragmentOutput(vec4f(vec3f(hbgi_irradiance.w), 1.0), gi_source);
     return FragmentOutput(final_color, gi_source);
     //return FragmentOutput(vec4f(vec3f(hbgi.w), 1.0), gi_source);
     //return FragmentOutput(vec4f(hbgi.xyz, 1.0), gi_source);

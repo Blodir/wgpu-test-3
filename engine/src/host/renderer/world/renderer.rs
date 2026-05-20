@@ -238,6 +238,8 @@ struct DeferredOpaqueRenderer {
     gi_source_prev: HdrColorTexture,
     hbgi_reproject_write: HdrColorTexture,
     hbgi_reproject_prev: HdrColorTexture,
+    hbgi_irradiance_reproject_write: HdrColorTexture,
+    hbgi_irradiance_reproject_prev: HdrColorTexture,
     hbgi_reproject_depth_write: FloatPyramidTexture,
     hbgi_reproject_depth_prev: FloatPyramidTexture,
     hbgi_reproject_normal_write: HdrColorTexture,
@@ -270,23 +272,27 @@ impl DeferredOpaqueRenderer {
         let gi_source_prev =
             HdrColorTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
         let hbgi_reproject_write =
-            HdrColorTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
+            HdrColorTexture::new_half_res(&wgpu_context.device, &wgpu_context.surface_config);
         let hbgi_reproject_prev =
-            HdrColorTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
-        let hbgi_reproject_depth_write = FloatPyramidTexture::new(
+            HdrColorTexture::new_half_res(&wgpu_context.device, &wgpu_context.surface_config);
+        let hbgi_irradiance_reproject_write =
+            HdrColorTexture::new_half_res(&wgpu_context.device, &wgpu_context.surface_config);
+        let hbgi_irradiance_reproject_prev =
+            HdrColorTexture::new_half_res(&wgpu_context.device, &wgpu_context.surface_config);
+        let hbgi_reproject_depth_write = FloatPyramidTexture::new_half_res(
             &wgpu_context.device,
             &wgpu_context.surface_config,
             "HBGI Reproject Depth Write",
         );
-        let hbgi_reproject_depth_prev = FloatPyramidTexture::new(
+        let hbgi_reproject_depth_prev = FloatPyramidTexture::new_half_res(
             &wgpu_context.device,
             &wgpu_context.surface_config,
             "HBGI Reproject Depth Previous",
         );
         let hbgi_reproject_normal_write =
-            HdrColorTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
+            HdrColorTexture::new_half_res(&wgpu_context.device, &wgpu_context.surface_config);
         let hbgi_reproject_normal_prev =
-            HdrColorTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
+            HdrColorTexture::new_half_res(&wgpu_context.device, &wgpu_context.surface_config);
         let hbgi_pyramids =
             HbgiPyramidTextures::new(&wgpu_context.device, &wgpu_context.surface_config);
         let hbgi_pipeline = HbgiPipeline::new(
@@ -298,8 +304,14 @@ impl DeferredOpaqueRenderer {
             0,
         );
         let hbgi_pyramid_pipeline = HbgiPyramidPipeline::new(wgpu_context, shader_cache);
-        let gi_blur_pipeline =
-            GiBlurPipeline::new(wgpu_context, shader_cache, &g_buffer_targets, &hbgi_texture);
+        let gi_blur_pipeline = GiBlurPipeline::new(
+            wgpu_context,
+            shader_cache,
+            &g_buffer_targets,
+            &hbgi_reproject_write,
+            &hbgi_irradiance_reproject_write,
+            &hbgi_texture,
+        );
         let g_buffer_pipeline = GBufferPipeline::new(
             wgpu_context,
             shader_cache,
@@ -317,9 +329,12 @@ impl DeferredOpaqueRenderer {
         let hbgi_reproject_pipeline = HbgiReprojectPipeline::new(
             wgpu_context,
             shader_cache,
+            &layouts.camera,
             &motion_vectors,
-            &gi_source_prev,
+            &hbgi_texture.view,
+            &hbgi_texture.irradiance_view,
             &hbgi_reproject_prev,
+            &hbgi_irradiance_reproject_prev,
             depth_texture_view,
             &g_buffer_targets.normal_roughness,
             &hbgi_reproject_depth_prev,
@@ -342,6 +357,8 @@ impl DeferredOpaqueRenderer {
             gi_source_prev,
             hbgi_reproject_write,
             hbgi_reproject_prev,
+            hbgi_irradiance_reproject_write,
+            hbgi_irradiance_reproject_prev,
             hbgi_reproject_depth_write,
             hbgi_reproject_depth_prev,
             hbgi_reproject_normal_write,
@@ -366,12 +383,21 @@ impl DeferredOpaqueRenderer {
         self.hbgi_reproject_pipeline.update_input_bindgroup(
             device,
             &self.motion_vectors,
-            &self.gi_source_prev,
+            &self.hbgi_texture.view,
+            &self.hbgi_texture.irradiance_view,
             &self.hbgi_reproject_prev,
+            &self.hbgi_irradiance_reproject_prev,
             depth_texture_view,
             &self.g_buffer_targets.normal_roughness,
             &self.hbgi_reproject_depth_prev,
             &self.hbgi_reproject_normal_prev,
+        );
+        self.gi_blur_pipeline.update_input_bindgroup(
+            device,
+            &self.g_buffer_targets,
+            &self.hbgi_reproject_write,
+            &self.hbgi_irradiance_reproject_write,
+            &self.hbgi_texture,
         );
         self.hbgi_pipeline.update_input_bindgroups(
             device,
@@ -391,12 +417,12 @@ impl DeferredOpaqueRenderer {
             (
                 "Previous HBGI Reproject Clear Pass",
                 &self.hbgi_reproject_prev.view,
-                wgpu::Color {
-                    r: 0.0,
-                    g: 0.0,
-                    b: 0.0,
-                    a: -1.0,
-                },
+                wgpu::Color::TRANSPARENT,
+            ),
+            (
+                "Previous HBGI Irradiance Reproject Clear Pass",
+                &self.hbgi_irradiance_reproject_prev.view,
+                wgpu::Color::TRANSPARENT,
             ),
             (
                 "Previous HBGI Reproject Depth Clear Pass",
@@ -442,6 +468,10 @@ impl DeferredOpaqueRenderer {
             &mut self.hbgi_reproject_prev,
         );
         std::mem::swap(
+            &mut self.hbgi_irradiance_reproject_write,
+            &mut self.hbgi_irradiance_reproject_prev,
+        );
+        std::mem::swap(
             &mut self.hbgi_reproject_depth_write,
             &mut self.hbgi_reproject_depth_prev,
         );
@@ -468,6 +498,8 @@ impl DeferredOpaqueRenderer {
         motion_bones_bind_group: &wgpu::BindGroup,
         render_resources: &'a RenderAssetStore,
         device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        prev_inverse_view_proj: &Mat4,
         frame_idx: u32,
     ) {
         self.g_buffer_pipeline.render_skinned_opaque(
@@ -517,7 +549,7 @@ impl DeferredOpaqueRenderer {
             self.hbgi_pyramid_pipeline.generate(
                 device,
                 encoder,
-                &self.hbgi_reproject_prev,
+                &self.gi_source_prev,
                 depth_texture_view,
                 &self.g_buffer_targets,
                 &self.hbgi_pyramids,
@@ -530,7 +562,18 @@ impl DeferredOpaqueRenderer {
             );
             self.hbgi_pipeline
                 .render(encoder, &self.hbgi_texture, camera_bind_group);
+            self.hbgi_reproject_pipeline
+                .update_temporal_state(queue, prev_inverse_view_proj);
+            self.hbgi_reproject_pipeline.render(
+                encoder,
+                camera_bind_group,
+                &self.hbgi_reproject_write.view,
+                &self.hbgi_reproject_depth_write.view,
+                &self.hbgi_reproject_normal_write.view,
+                &self.hbgi_irradiance_reproject_write.view,
+            );
             self.gi_blur_pipeline.render(encoder, &self.hbgi_texture);
+            self.hbgi_reproject_valid = true;
         } else {
             let _clear_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("HBGI Disabled Clear Pass"),
@@ -549,7 +592,7 @@ impl DeferredOpaqueRenderer {
                         },
                     }),
                     Some(wgpu::RenderPassColorAttachment {
-                        view: &self.hbgi_texture.hbil_diffuse_view,
+                        view: &self.hbgi_texture.irradiance_view,
                         resolve_target: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
@@ -570,7 +613,7 @@ impl DeferredOpaqueRenderer {
                         },
                     }),
                     Some(wgpu::RenderPassColorAttachment {
-                        view: &self.hbgi_texture.blurred_hbil_diffuse_view,
+                        view: &self.hbgi_texture.blurred_irradiance_view,
                         resolve_target: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
@@ -582,6 +625,7 @@ impl DeferredOpaqueRenderer {
                 occlusion_query_set: None,
                 timestamp_writes: None,
             });
+            self.hbgi_reproject_valid = false;
         }
         self.deferred_lighting_pipeline.render(
             encoder,
@@ -590,13 +634,6 @@ impl DeferredOpaqueRenderer {
             camera_bind_group,
             lights_bind_group,
         );
-        self.hbgi_reproject_pipeline.render(
-            encoder,
-            &self.hbgi_reproject_write.view,
-            &self.hbgi_reproject_depth_write.view,
-            &self.hbgi_reproject_normal_write.view,
-        );
-        self.hbgi_reproject_valid = true;
         self.rotate_temporal_buffers(device, depth_texture_view);
     }
 
@@ -611,23 +648,27 @@ impl DeferredOpaqueRenderer {
         self.gi_source_prev =
             HdrColorTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
         self.hbgi_reproject_write =
-            HdrColorTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
+            HdrColorTexture::new_half_res(&wgpu_context.device, &wgpu_context.surface_config);
         self.hbgi_reproject_prev =
-            HdrColorTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
-        self.hbgi_reproject_depth_write = FloatPyramidTexture::new(
+            HdrColorTexture::new_half_res(&wgpu_context.device, &wgpu_context.surface_config);
+        self.hbgi_irradiance_reproject_write =
+            HdrColorTexture::new_half_res(&wgpu_context.device, &wgpu_context.surface_config);
+        self.hbgi_irradiance_reproject_prev =
+            HdrColorTexture::new_half_res(&wgpu_context.device, &wgpu_context.surface_config);
+        self.hbgi_reproject_depth_write = FloatPyramidTexture::new_half_res(
             &wgpu_context.device,
             &wgpu_context.surface_config,
             "HBGI Reproject Depth Write",
         );
-        self.hbgi_reproject_depth_prev = FloatPyramidTexture::new(
+        self.hbgi_reproject_depth_prev = FloatPyramidTexture::new_half_res(
             &wgpu_context.device,
             &wgpu_context.surface_config,
             "HBGI Reproject Depth Previous",
         );
         self.hbgi_reproject_normal_write =
-            HdrColorTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
+            HdrColorTexture::new_half_res(&wgpu_context.device, &wgpu_context.surface_config);
         self.hbgi_reproject_normal_prev =
-            HdrColorTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
+            HdrColorTexture::new_half_res(&wgpu_context.device, &wgpu_context.surface_config);
         self.hbgi_pyramids =
             HbgiPyramidTextures::new(&wgpu_context.device, &wgpu_context.surface_config);
         self.hbgi_pipeline.update_input_bindgroups(
@@ -639,6 +680,8 @@ impl DeferredOpaqueRenderer {
         self.gi_blur_pipeline.update_input_bindgroup(
             &wgpu_context.device,
             &self.g_buffer_targets,
+            &self.hbgi_reproject_write,
+            &self.hbgi_irradiance_reproject_write,
             &self.hbgi_texture,
         );
         self.deferred_lighting_pipeline.update_input_bindgroup(
@@ -649,8 +692,10 @@ impl DeferredOpaqueRenderer {
         self.hbgi_reproject_pipeline.update_input_bindgroup(
             &wgpu_context.device,
             &self.motion_vectors,
-            &self.gi_source_prev,
+            &self.hbgi_texture.view,
+            &self.hbgi_texture.irradiance_view,
             &self.hbgi_reproject_prev,
+            &self.hbgi_irradiance_reproject_prev,
             _depth_texture_view,
             &self.g_buffer_targets.normal_roughness,
             &self.hbgi_reproject_depth_prev,
@@ -838,6 +883,7 @@ impl WorldRenderer {
         let prev_motion_view_proj = self
             .prev_motion_view_proj
             .unwrap_or(prepared_camera.view_proj);
+        let prev_inverse_view_proj = prev_motion_view_proj.inverse();
         self.bind_groups.motion_camera.update(
             &prepared_camera.view_proj,
             &prev_motion_view_proj,
@@ -952,6 +998,8 @@ impl WorldRenderer {
                 &self.bind_groups.bones.motion_bind_group,
                 render_resources,
                 &wgpu_context.device,
+                &wgpu_context.queue,
+                &prev_inverse_view_proj,
                 frame_idx,
             ),
             OpaqueRenderer::CompactDeferred(renderer) => renderer.render(

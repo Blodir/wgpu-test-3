@@ -65,13 +65,13 @@ impl HbgiInputs {
                 wgpu::BindGroupEntry {
                     binding: 2,
                     resource: wgpu::BindingResource::TextureView(
-                        &hbgi_texture.blurred_hbil_diffuse_view,
+                        &hbgi_texture.blurred_irradiance_view,
                     ),
                 },
                 wgpu::BindGroupEntry {
                     binding: 3,
                     resource: wgpu::BindingResource::Sampler(
-                        &hbgi_texture.blurred_hbil_diffuse_sampler,
+                        &hbgi_texture.blurred_irradiance_sampler,
                     ),
                 },
             ],

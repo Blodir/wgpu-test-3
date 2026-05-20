@@ -22,7 +22,7 @@ struct VertexOutput {
 
 struct FragmentOutput {
     @location(0) hbgi: vec4<f32>,
-    @location(1) hbil_diffuse_irradiance: vec4<f32>,
+    @location(1) hbgi_irradiance: vec4<f32>,
 }
 
 const PI: f32 = 3.14159265358979323846;
@@ -113,14 +113,6 @@ fn sample_hbgi_pyramid(uv: vec2f, lod: f32) -> vec3f {
         uv,
         lod
     ).rgb);
-}
-
-fn load_hbgi_history(uv: vec2f, mip_level: i32) -> vec4f {
-    let dims = vec2f(textureDimensions(hbgi_pyramid_texture, mip_level));
-    let max_uv = vec2f(1.0) - 1.0 / dims;
-    let clamped_uv = clamp(uv, vec2f(0.0), max_uv);
-    let coord = vec2i(clamped_uv * dims);
-    return textureLoad(hbgi_pyramid_texture, coord, mip_level);
 }
 
 fn sample_hbgi_depth(uv: vec2f, lod: f32) -> f32 {
@@ -417,12 +409,7 @@ fn hbgi(in: VertexOutput) -> FragmentOutput {
 
     let S = f32(DIRECTIONS);
     // 2.2.2. equation 11
-    var ao = (1.0 / S) * visibility_acc;
-
-    let prev_history = load_hbgi_history(uv, 0);
-    if (prev_history.a >= 0.0) {
-        ao = mix(prev_history.a, ao, 0.4);
-    }
+    let ao = (1.0 / S) * visibility_acc;
 
     let bent_n_w = safe_normalize3(bent_acc_w);
 

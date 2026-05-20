@@ -12,7 +12,15 @@ impl FloatPyramidTexture {
         surface_config: &wgpu::SurfaceConfiguration,
         label: &'static str,
     ) -> Self {
-        Self::create(device, surface_config, label, false)
+        Self::create(device, surface_config, label, false, 1)
+    }
+
+    pub fn new_half_res(
+        device: &wgpu::Device,
+        surface_config: &wgpu::SurfaceConfiguration,
+        label: &'static str,
+    ) -> Self {
+        Self::create(device, surface_config, label, false, 2)
     }
 
     pub fn new_mipmapped(
@@ -20,7 +28,7 @@ impl FloatPyramidTexture {
         surface_config: &wgpu::SurfaceConfiguration,
         label: &'static str,
     ) -> Self {
-        Self::create(device, surface_config, label, true)
+        Self::create(device, surface_config, label, true, 1)
     }
 
     fn create(
@@ -28,9 +36,10 @@ impl FloatPyramidTexture {
         surface_config: &wgpu::SurfaceConfiguration,
         label: &'static str,
         mipmapped: bool,
+        scale_divisor: u32,
     ) -> Self {
-        let width = surface_config.width.max(1);
-        let height = surface_config.height.max(1);
+        let width = (surface_config.width / scale_divisor).max(1);
+        let height = (surface_config.height / scale_divisor).max(1);
         let mip_level_count = if mipmapped {
             width.max(height).ilog2() + 1
         } else {

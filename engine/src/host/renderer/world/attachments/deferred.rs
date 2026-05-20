@@ -65,15 +65,15 @@ pub struct HbgiTexture {
     _ao_texture: wgpu::Texture,
     pub view: wgpu::TextureView,
     pub sampler: wgpu::Sampler,
-    _hbil_diffuse_texture: wgpu::Texture,
-    pub hbil_diffuse_view: wgpu::TextureView,
-    pub hbil_diffuse_sampler: wgpu::Sampler,
+    _irradiance_texture: wgpu::Texture,
+    pub irradiance_view: wgpu::TextureView,
+    pub irradiance_sampler: wgpu::Sampler,
     _blurred_ao_texture: wgpu::Texture,
     pub blurred_view: wgpu::TextureView,
     pub blurred_sampler: wgpu::Sampler,
-    _blurred_hbil_diffuse_texture: wgpu::Texture,
-    pub blurred_hbil_diffuse_view: wgpu::TextureView,
-    pub blurred_hbil_diffuse_sampler: wgpu::Sampler,
+    _blurred_irradiance_texture: wgpu::Texture,
+    pub blurred_irradiance_view: wgpu::TextureView,
+    pub blurred_irradiance_sampler: wgpu::Sampler,
 }
 
 impl HbgiTexture {
@@ -107,8 +107,8 @@ impl HbgiTexture {
             min_filter: wgpu::FilterMode::Linear,
             ..Default::default()
         });
-        let hbil_diffuse_texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("Half Resolution HBIL Diffuse Irradiance Texture"),
+        let irradiance_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Half Resolution HBGI Irradiance Texture"),
             size: wgpu::Extent3d {
                 width: (surface_config.width / scale_divisor).max(1),
                 height: (surface_config.height / scale_divisor).max(1),
@@ -121,9 +121,9 @@ impl HbgiTexture {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         });
-        let hbil_diffuse_view =
-            hbil_diffuse_texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let hbil_diffuse_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+        let irradiance_view =
+            irradiance_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let irradiance_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
             ..Default::default()
@@ -148,8 +148,8 @@ impl HbgiTexture {
             min_filter: wgpu::FilterMode::Linear,
             ..Default::default()
         });
-        let blurred_hbil_diffuse_texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("Half Resolution HBIL Diffuse Irradiance Blur Texture"),
+        let blurred_irradiance_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Half Resolution HBGI Irradiance Blur Texture"),
             size: wgpu::Extent3d {
                 width: (surface_config.width / scale_divisor).max(1),
                 height: (surface_config.height / scale_divisor).max(1),
@@ -162,9 +162,9 @@ impl HbgiTexture {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         });
-        let blurred_hbil_diffuse_view =
-            blurred_hbil_diffuse_texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let blurred_hbil_diffuse_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+        let blurred_irradiance_view =
+            blurred_irradiance_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let blurred_irradiance_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
             ..Default::default()
@@ -174,15 +174,15 @@ impl HbgiTexture {
             _ao_texture: ao_texture,
             view,
             sampler,
-            _hbil_diffuse_texture: hbil_diffuse_texture,
-            hbil_diffuse_view,
-            hbil_diffuse_sampler,
+            _irradiance_texture: irradiance_texture,
+            irradiance_view,
+            irradiance_sampler,
             _blurred_ao_texture: blurred_ao_texture,
             blurred_view,
             blurred_sampler,
-            _blurred_hbil_diffuse_texture: blurred_hbil_diffuse_texture,
-            blurred_hbil_diffuse_view,
-            blurred_hbil_diffuse_sampler,
+            _blurred_irradiance_texture: blurred_irradiance_texture,
+            blurred_irradiance_view,
+            blurred_irradiance_sampler,
         }
     }
 }

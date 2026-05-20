@@ -1,7 +1,7 @@
 @group(0) @binding(0) var raw_hbgi_texture: texture_2d<f32>;
 @group(0) @binding(1) var raw_hbgi_sampler: sampler;
-@group(0) @binding(2) var raw_hbil_texture: texture_2d<f32>;
-@group(0) @binding(3) var raw_hbil_sampler: sampler;
+@group(0) @binding(2) var raw_hbgi_irradiance_texture: texture_2d<f32>;
+@group(0) @binding(3) var raw_hbgi_irradiance_sampler: sampler;
 @group(0) @binding(4) var gbuffer_normal_roughness: texture_2d<f32>;
 @group(0) @binding(5) var gbuffer_normal_roughness_sampler: sampler;
 @group(0) @binding(6) var gbuffer_world_position: texture_2d<f32>;
@@ -14,11 +14,11 @@ struct VertexOutput {
 
 struct FragmentOutput {
     @location(0) hbgi: vec4<f32>,
-    @location(1) hbil_diffuse_irradiance: vec4<f32>,
+    @location(1) hbgi_irradiance: vec4<f32>,
 }
 
-const KERNEL_RADIUS: i32 = 4;
-const SPATIAL_SIGMA: f32 = 4.0;
+const KERNEL_RADIUS: i32 = 2;
+const SPATIAL_SIGMA: f32 = 1.5;
 const NORMAL_SIGMA: f32 = 24.0;
 const POSITION_SIGMA: f32 = 3.0;
 
@@ -94,7 +94,7 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
     let center_position = center_world.xyz;
 
     var hbgi_acc = vec4f(0.0);
-    var hbil_acc = vec4f(0.0);
+    var hbgi_irradiance_acc = vec4f(0.0);
     var weight_acc = 0.0;
 
     for (var y: i32 = -KERNEL_RADIUS; y <= KERNEL_RADIUS; y += 1) {
@@ -127,21 +127,34 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
             );
 
             hbgi_acc += textureSampleLevel(raw_hbgi_texture, raw_hbgi_sampler, sample_uv, 0.0) * weight;
-            hbil_acc += textureSampleLevel(raw_hbil_texture, raw_hbil_sampler, sample_uv, 0.0) * weight;
+            hbgi_irradiance_acc += textureSampleLevel(
+                raw_hbgi_irradiance_texture,
+                raw_hbgi_irradiance_sampler,
+                sample_uv,
+                0.0
+            ) * weight;
             weight_acc += weight;
         }
     }
 
     if (weight_acc <= 1e-6) {
         let raw_hbgi = textureSampleLevel(raw_hbgi_texture, raw_hbgi_sampler, uv, 0.0);
-        let raw_hbil = textureSampleLevel(raw_hbil_texture, raw_hbil_sampler, uv, 0.0);
-        return FragmentOutput(vec4f(safe_normalize3(raw_hbgi.xyz), raw_hbgi.w), raw_hbil);
+        let raw_hbgi_irradiance = textureSampleLevel(
+            raw_hbgi_irradiance_texture,
+            raw_hbgi_irradiance_sampler,
+            uv,
+            0.0
+        );
+        return FragmentOutput(
+            vec4f(safe_normalize3(raw_hbgi.xyz), raw_hbgi.w),
+            raw_hbgi_irradiance
+        );
     }
 
     let blurred_hbgi = hbgi_acc / weight_acc;
-    let blurred_hbil = hbil_acc / weight_acc;
+    let blurred_hbgi_irradiance = hbgi_irradiance_acc / weight_acc;
     return FragmentOutput(
         vec4f(safe_normalize3(blurred_hbgi.xyz), blurred_hbgi.w),
-        blurred_hbil
+        blurred_hbgi_irradiance
     );
 }

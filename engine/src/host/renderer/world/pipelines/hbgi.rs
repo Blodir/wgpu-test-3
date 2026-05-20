@@ -238,7 +238,7 @@ impl HbgiPipeline {
                     },
                 }),
                 Some(wgpu::RenderPassColorAttachment {
-                    view: &hbgi_texture.hbil_diffuse_view,
+                    view: &hbgi_texture.irradiance_view,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
