@@ -168,8 +168,9 @@ fn hbgi(in: VertexOutput) -> FragmentOutput {
     let radius_world = hbgi_settings.params0.y;
     let step_size_exponent = hbgi_settings.params0.z;
     let gi_intensity = hbgi_settings.params0.w;
-    let temporal_direction_jitter = hbgi_settings.params1.x;
-    let temporal_offset_jitter = hbgi_settings.params1.y;
+    let temporal_rotation = hbgi_settings.params1.x;
+    let temporal_offset = hbgi_settings.params1.y;
+
     let uv = in.tex_coords;
 
     let P_sample = sample_world_position_from_depth(uv, 0.0);
@@ -184,13 +185,11 @@ fn hbgi(in: VertexOutput) -> FragmentOutput {
     let dims = vec2<f32>(textureDimensions(hbgi_depth_pyramid_texture, 0));
     let max_hbgi_pyramid_lod = f32(textureNumLevels(hbgi_pyramid_texture) - 1u);
 
-    // https://github.com/cdrinmatane/SSRT3/blob/main/HDRP/Shaders/Resources/SSRTCS.compute
-    let pixel = floor(uv * dims);
-    let pixel_coord = vec2i(pixel);
-    let noise_offset = spatial_offsets(pixel_coord);
-    let noise_direction = gradient_noise(pixel);
-    let random_jitter = (rand(uv) * 2.0 - 1.0) * JITTER_SAMPLES;
-    let initial_ray_step = fract(noise_offset + temporal_offset_jitter) + random_jitter;
+    let spatial_noise = gradient_noise(uv * dims);
+    let spatial_rotation = spatial_noise;
+    let spatial_offset = spatial_noise;
+    let rotation_jitter = fract(temporal_rotation + spatial_rotation);
+    let offset_jitter = fract(temporal_offset + spatial_offset);
 
     let max_step_dist = radius_pixels / dims;
 
@@ -215,7 +214,7 @@ fn hbgi(in: VertexOutput) -> FragmentOutput {
     for (var dir_idx: u32 = 0u; dir_idx < DIRECTIONS; dir_idx += 1u) {
         // rotate around half of the hemisphere (since we sample both front/back)
         let phi =
-            (f32(dir_idx) + noise_direction + temporal_direction_jitter) * (PI / f32(DIRECTIONS));
+            (f32(dir_idx) + rotation_jitter) * (PI / f32(DIRECTIONS));
 
         // 1.2. Slice Space ---
         let D_w = cos(phi) * omega_x_w + sin(phi) * omega_y_w;
@@ -254,7 +253,7 @@ fn hbgi(in: VertexOutput) -> FragmentOutput {
         var fallback_radiance_back = vec3f(0.0);
 
         for (var step_idx: u32 = 1u; step_idx <= STEPS_PER_DIRECTION; step_idx += 1u) {
-            let step_t = (f32(step_idx - 1u) + initial_ray_step) / f32(STEPS_PER_DIRECTION);
+            let step_t = (f32(step_idx) + offset_jitter) / f32(STEPS_PER_DIRECTION);
             let current_step_cs = pow(step_t, step_size_exponent) * max_step_cs;
             let sample_distance_pixels = max(length(current_step_cs * dims), 1.0);
             // similar simple heuristic: https://github.com/cdrinmatane/SSRT3/blob/main/HDRP/Shaders/Resources/SSRTCS.compute

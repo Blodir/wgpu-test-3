@@ -12,6 +12,17 @@ struct HbgiSettingsUniform {
 const TEMPORAL_ROTATIONS: [f32; 6] = [60.0, 300.0, 180.0, 240.0, 120.0, 0.0];
 const SPATIAL_OFFSETS: [f32; 4] = [0.0, 0.5, 0.25, 0.75];
 
+// https://extremelearning.com.au/unreasonable-effectiveness-of-quasirandom-sequences
+fn r2_quasirandom_sequence(n: u32) -> (f32, f32) {
+    let g = 1.6180339887498948482;
+    let a1 = 1.0 / g;
+    let a2 = 1.0 / (g * g);
+    (
+        (0.5 + a1 * n as f32) % 1.0,
+        (0.5 + a2 * n as f32) % 1.0,
+    )
+}
+
 pub struct HbgiSettings {}
 pub struct HbgiSettingsBinding {
     pub bind_group: wgpu::BindGroup,
@@ -41,10 +52,8 @@ impl HbgiSettings {
         hbgi_options: &HbgiOptions,
         frame_index: u32,
     ) -> HbgiSettingsBinding {
-        let temporal_direction =
-            TEMPORAL_ROTATIONS[(frame_index % TEMPORAL_ROTATIONS.len() as u32) as usize] / 360.0;
-        let temporal_offset = SPATIAL_OFFSETS[((frame_index / TEMPORAL_ROTATIONS.len() as u32)
-            % SPATIAL_OFFSETS.len() as u32) as usize];
+        // https://extremelearning.com.au/unreasonable-effectiveness-of-quasirandom-sequences
+        let (temporal_rotation, temporal_offset) = r2_quasirandom_sequence(frame_index);
         let settings_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("HBGI Settings Buffer"),
             contents: bytemuck::bytes_of(&HbgiSettingsUniform {
@@ -54,7 +63,7 @@ impl HbgiSettings {
                     hbgi_options.step_size_exponent,
                     hbgi_options.gi_intensity,
                 ],
-                params1: [temporal_direction, temporal_offset, 0.0, 0.0],
+                params1: [temporal_rotation, temporal_offset, 0.0, 0.0],
             }),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
