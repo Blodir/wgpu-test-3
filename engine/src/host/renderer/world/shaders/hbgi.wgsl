@@ -80,21 +80,9 @@ fn sanitize_rgb(v: vec3f) -> vec3f {
 }
 
 // Interleaved gradient function from Jimenez 2014 http://goo.gl/eomGso
+// https://blog.demofox.org/2022/01/01/interleaved-gradient-noise-a-different-kind-of-low-discrepancy-sequence
 fn gradient_noise(position: vec2f) -> f32 {
     return fract(52.9829189 * fract(dot(position, vec2f(0.06711056, 0.00583715))));
-}
-
-fn spatial_offsets(position: vec2i) -> f32 {
-    return 0.25 * f32((position.y - position.x) & 3);
-}
-
-fn rand(co: vec2f) -> f32 {
-    let a = 12.9898;
-    let b = 78.233;
-    let c = 43758.5453;
-    let dt = dot(co, vec2f(a, b));
-    let sn = dt % 3.14;
-    return fract(sin(sn) * c);
 }
 
 fn fast_acos(x: f32) -> f32 {
@@ -209,7 +197,7 @@ fn hbgi(in: VertexOutput) -> FragmentOutput {
     var visibility_acc = 0.0;
     var bent_acc_w = vec3f(0.0);
     var irradiance_acc = vec3f(0.0);
-    var debug = 0.0;
+    var debug = 1.0;
 
     for (var dir_idx: u32 = 0u; dir_idx < DIRECTIONS; dir_idx += 1u) {
         // rotate around half of the hemisphere (since we sample both front/back)
@@ -311,7 +299,8 @@ fn hbgi(in: VertexOutput) -> FragmentOutput {
                         let L_new = mix(fallback_radiance_front, L_d, t);
 
                         // equation 19
-                        irradiance_acc += pow(L_new * (left + right), 1.0 / vec3f(gi_intensity));
+                        let integral = abs(left + right);
+                        irradiance_acc += pow(L_new * integral, 1.0 / vec3f(gi_intensity));
                         theta_front = theta;
 
                         if (t > 0.0) {
@@ -362,7 +351,8 @@ fn hbgi(in: VertexOutput) -> FragmentOutput {
                         let t = smoothstep(0.0, 1.0, dot(sample_dir_w, -x_1_normal_w));
                         let L_new = mix(fallback_radiance_back, L_d, t);
 
-                        irradiance_acc += pow(L_new * (left + right), 1.0 / vec3f(gi_intensity));
+                        let integral = abs(left + right);
+                        irradiance_acc += pow(L_new * integral, 1.0 / vec3f(gi_intensity));
                         theta_back = theta;
 
                         if (t > 0.0) {
@@ -414,7 +404,7 @@ fn hbgi(in: VertexOutput) -> FragmentOutput {
 
     let E_near = sanitize_rgb(irradiance_acc * (PI / S));
 
-    debug /= S * f32(STEPS_PER_DIRECTION) * max_hbgi_pyramid_lod;
+    //debug /= S * f32(STEPS_PER_DIRECTION) * max_hbgi_pyramid_lod;
 
     return FragmentOutput(vec4f(bent_n_w, ao), vec4f(E_near, debug));
 }
