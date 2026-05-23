@@ -29,7 +29,7 @@ impl Default for HbgiOptions {
             radius_pixels: 2000.0,
             radius_world: 1000.0,
             step_size_exponent: 2.0,
-            gi_intensity: 2.0,
+            gi_intensity: 1.0,
         }
     }
 }

@@ -28,7 +28,7 @@ struct FragmentOutput {
     @location(3) hbgi_irradiance_reproject: vec4<f32>,
 }
 
-const TEMPORAL_RESPONSE: f32 = 0.001;
+const TEMPORAL_RESPONSE: f32 = 0.1;
 const HISTORY_CLAMP_WEIGHT: f32 = 0.25;
 
 fn safe_normalize3(v: vec3f) -> vec3f {
