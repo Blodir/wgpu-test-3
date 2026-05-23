@@ -35,7 +35,6 @@ struct GBufferOutput {
     @location(0) albedo_ao: vec4<f32>,
     @location(1) normal_roughness: vec4<f32>,
     @location(2) emissive_metallic: vec4<f32>,
-    @location(3) world_position: vec4<f32>,
 }
 
 @fragment
@@ -86,6 +85,5 @@ fn fs_main(in: VertexOutput) -> GBufferOutput {
     out.albedo_ao = vec4f(surface_color.rgb, ao.r);
     out.normal_roughness = vec4f(normalize(N), surface_roughness);
     out.emissive_metallic = vec4f(surface_emissive, surface_metallic);
-    out.world_position = vec4f(in.world_position.xyz, 1.0);
     return out;
 }

@@ -31,6 +31,7 @@ impl DeferredLightingPipeline {
         camera_bind_group_layout: &wgpu::BindGroupLayout,
         lights_bind_group_layout: &wgpu::BindGroupLayout,
         gbuffer_targets: &GBufferTargets,
+        depth_texture_view: &wgpu::TextureView,
         hbgi_texture: &HbgiTexture,
     ) -> Self {
         let gbuffer_inputs_bind_group_layout = wgpu_context
@@ -40,6 +41,7 @@ impl DeferredLightingPipeline {
             &wgpu_context.device,
             &gbuffer_inputs_bind_group_layout,
             gbuffer_targets,
+            depth_texture_view,
         );
         let hbgi_inputs_bind_group_layout = wgpu_context
             .device
@@ -130,12 +132,14 @@ impl DeferredLightingPipeline {
         &mut self,
         device: &wgpu::Device,
         gbuffer_targets: &GBufferTargets,
+        depth_texture_view: &wgpu::TextureView,
         hbgi_texture: &HbgiTexture,
     ) {
         self.gbuffer_inputs_bind_group = GBufferInputs::upload(
             device,
             &self.gbuffer_inputs_bind_group_layout,
             gbuffer_targets,
+            depth_texture_view,
         );
         self.hbgi_inputs_bind_group =
             HbgiInputs::upload(device, &self.hbgi_inputs_bind_group_layout, hbgi_texture);

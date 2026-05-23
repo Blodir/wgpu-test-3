@@ -23,7 +23,9 @@ impl GiBlurPipeline {
     pub fn new(
         wgpu_context: &WgpuContext,
         shader_cache: &mut ShaderCache,
+        camera_bind_group_layout: &wgpu::BindGroupLayout,
         gbuffer_targets: &GBufferTargets,
+        depth_texture_view: &wgpu::TextureView,
         raw_hbgi_texture: &HdrColorTexture,
         raw_hbgi_irradiance_texture: &HdrColorTexture,
         hbgi_texture: &HbgiTexture,
@@ -85,16 +87,10 @@ impl GiBlurPipeline {
                             binding: 6,
                             visibility: wgpu::ShaderStages::FRAGMENT,
                             ty: wgpu::BindingType::Texture {
-                                sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                                sample_type: wgpu::TextureSampleType::Depth,
                                 view_dimension: wgpu::TextureViewDimension::D2,
                                 multisampled: false,
                             },
-                            count: None,
-                        },
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 7,
-                            visibility: wgpu::ShaderStages::FRAGMENT,
-                            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                             count: None,
                         },
                     ],
@@ -104,6 +100,7 @@ impl GiBlurPipeline {
             &wgpu_context.device,
             &bind_group_layout,
             gbuffer_targets,
+            depth_texture_view,
             raw_hbgi_texture,
             raw_hbgi_irradiance_texture,
             hbgi_texture,
@@ -113,7 +110,7 @@ impl GiBlurPipeline {
                 .device
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                     label: Some("GI Blur Pipeline Layout"),
-                    bind_group_layouts: &[&bind_group_layout],
+                    bind_group_layouts: &[&bind_group_layout, camera_bind_group_layout],
                     push_constant_ranges: &[],
                 });
         let shader_module = shader_cache.get(SHADER_GI_BLUR_WGSL.to_string(), wgpu_context);
@@ -179,6 +176,7 @@ impl GiBlurPipeline {
         device: &wgpu::Device,
         bind_group_layout: &wgpu::BindGroupLayout,
         gbuffer_targets: &GBufferTargets,
+        depth_texture_view: &wgpu::TextureView,
         raw_hbgi_texture: &HdrColorTexture,
         raw_hbgi_irradiance_texture: &HdrColorTexture,
         _hbgi_texture: &HbgiTexture,
@@ -216,15 +214,7 @@ impl GiBlurPipeline {
                 },
                 wgpu::BindGroupEntry {
                     binding: 6,
-                    resource: wgpu::BindingResource::TextureView(
-                        &gbuffer_targets.world_position.view,
-                    ),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 7,
-                    resource: wgpu::BindingResource::Sampler(
-                        &gbuffer_targets.world_position.sampler,
-                    ),
+                    resource: wgpu::BindingResource::TextureView(depth_texture_view),
                 },
             ],
             label: Some("GI Blur Bind Group"),
@@ -235,6 +225,7 @@ impl GiBlurPipeline {
         &mut self,
         device: &wgpu::Device,
         gbuffer_targets: &GBufferTargets,
+        depth_texture_view: &wgpu::TextureView,
         raw_hbgi_texture: &HdrColorTexture,
         raw_hbgi_irradiance_texture: &HdrColorTexture,
         hbgi_texture: &HbgiTexture,
@@ -243,13 +234,19 @@ impl GiBlurPipeline {
             device,
             &self.bind_group_layout,
             gbuffer_targets,
+            depth_texture_view,
             raw_hbgi_texture,
             raw_hbgi_irradiance_texture,
             hbgi_texture,
         );
     }
 
-    pub fn render(&self, encoder: &mut wgpu::CommandEncoder, hbgi_texture: &HbgiTexture) {
+    pub fn render(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        hbgi_texture: &HbgiTexture,
+        camera_bind_group: &wgpu::BindGroup,
+    ) {
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("GI Blur Pass"),
             color_attachments: &[
@@ -282,6 +279,7 @@ impl GiBlurPipeline {
 
         render_pass.set_pipeline(&self.render_pipeline);
         render_pass.set_bind_group(0, &self.bind_group, &[]);
+        render_pass.set_bind_group(1, camera_bind_group, &[]);
         render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
         render_pass.draw_indexed(0..INDICES.len() as u32, 0, 0..1);
     }

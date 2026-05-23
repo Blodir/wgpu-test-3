@@ -90,11 +90,6 @@ impl GBufferPipeline {
                 blend: None,
                 write_mask: wgpu::ColorWrites::ALL,
             }),
-            Some(wgpu::ColorTargetState {
-                format: wgpu::TextureFormat::Rgba16Float,
-                blend: None,
-                write_mask: wgpu::ColorWrites::ALL,
-            }),
         ];
 
         wgpu_context
@@ -167,11 +162,6 @@ impl GBufferPipeline {
         let fragment_shader_module =
             shader_cache.get(SHADER_G_BUFFER_FRAG_WGSL.to_string(), wgpu_context);
         let targets = &[
-            Some(wgpu::ColorTargetState {
-                format: wgpu::TextureFormat::Rgba16Float,
-                blend: None,
-                write_mask: wgpu::ColorWrites::ALL,
-            }),
             Some(wgpu::ColorTargetState {
                 format: wgpu::TextureFormat::Rgba16Float,
                 blend: None,
@@ -346,14 +336,6 @@ impl GBufferPipeline {
                         store: wgpu::StoreOp::Store,
                     },
                 }),
-                Some(wgpu::RenderPassColorAttachment {
-                    view: &gbuffer.world_position.view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
-                        store: wgpu::StoreOp::Store,
-                    },
-                }),
             ],
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                 view: depth_texture_view,
@@ -406,14 +388,6 @@ impl GBufferPipeline {
                 }),
                 Some(wgpu::RenderPassColorAttachment {
                     view: &gbuffer.emissive_metallic.view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    },
-                }),
-                Some(wgpu::RenderPassColorAttachment {
-                    view: &gbuffer.world_position.view,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Load,

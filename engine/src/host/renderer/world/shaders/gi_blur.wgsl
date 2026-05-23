@@ -4,8 +4,8 @@
 @group(0) @binding(3) var raw_hbgi_irradiance_sampler: sampler;
 @group(0) @binding(4) var gbuffer_normal_roughness: texture_2d<f32>;
 @group(0) @binding(5) var gbuffer_normal_roughness_sampler: sampler;
-@group(0) @binding(6) var gbuffer_world_position: texture_2d<f32>;
-@group(0) @binding(7) var gbuffer_world_position_sampler: sampler;
+@group(0) @binding(6) var depth_texture: texture_depth_2d;
+@group(1) @binding(2) var<uniform> inverse_view_proj: mat4x4<f32>;
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
@@ -54,6 +54,31 @@ fn sample_half_res_uv(pixel_coord: vec2i, dims: vec2i) -> vec2f {
     return (vec2f(pixel_coord) + vec2f(0.5)) / vec2f(dims);
 }
 
+fn reconstruct_world_position_from_depth(uv: vec2f, depth: f32) -> vec3f {
+    let clip = vec4f(
+        uv.x * 2.0 - 1.0,
+        1.0 - uv.y * 2.0,
+        depth,
+        1.0
+    );
+    let world = inverse_view_proj * clip;
+    if (abs(world.w) > 1e-8) {
+        return world.xyz / world.w;
+    }
+    return vec3f(0.0);
+}
+
+fn sample_world_position_from_depth(uv: vec2f) -> vec4f {
+    let full_dims = vec2i(textureDimensions(depth_texture));
+    let pixel = clamp(vec2i(uv * vec2f(full_dims)), vec2i(0), full_dims - vec2i(1));
+    let depth = textureLoad(depth_texture, pixel, 0);
+    if (depth >= 1.0) {
+        return vec4f(0.0);
+    }
+    let pixel_uv = (vec2f(pixel) + vec2f(0.5)) / vec2f(full_dims);
+    return vec4f(reconstruct_world_position_from_depth(pixel_uv, depth), 1.0);
+}
+
 fn bilateral_weight(
     center_normal: vec3f,
     center_position: vec3f,
@@ -75,12 +100,7 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
     let pixel = clamp(vec2i(pixel_f), vec2i(0), half_dims - vec2i(1));
     let uv = sample_half_res_uv(pixel, half_dims);
 
-    let center_world = textureSampleLevel(
-        gbuffer_world_position,
-        gbuffer_world_position_sampler,
-        uv,
-        0.0
-    );
+    let center_world = sample_world_position_from_depth(uv);
     if (center_world.w < 0.5) {
         return FragmentOutput(vec4f(0.0, 0.0, 1.0, 1.0), vec4f(0.0));
     }
@@ -101,12 +121,7 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
         for (var x: i32 = -KERNEL_RADIUS; x <= KERNEL_RADIUS; x += 1) {
             let sample_pixel = clamp(pixel + vec2i(x, y), vec2i(0), half_dims - vec2i(1));
             let sample_uv = sample_half_res_uv(sample_pixel, half_dims);
-            let sample_world = textureSampleLevel(
-                gbuffer_world_position,
-                gbuffer_world_position_sampler,
-                sample_uv,
-                0.0
-            );
+            let sample_world = sample_world_position_from_depth(sample_uv);
             if (sample_world.w < 0.5) {
                 continue;
             }

@@ -1,4 +1,5 @@
 @group(0) @binding(1) var<uniform> camera_position: vec3<f32>;
+@group(0) @binding(2) var<uniform> inverse_view_proj: mat4x4<f32>;
 @group(0) @binding(3) var<uniform> camera_forward: vec3<f32>;
 
 struct SunShadowUniform {
@@ -29,8 +30,7 @@ struct SunShadowUniform {
 @group(2) @binding(3) var gbuffer_normal_roughness_sampler: sampler;
 @group(2) @binding(4) var gbuffer_emissive_metallic: texture_2d<f32>;
 @group(2) @binding(5) var gbuffer_emissive_metallic_sampler: sampler;
-@group(2) @binding(6) var gbuffer_world_position: texture_2d<f32>;
-@group(2) @binding(7) var gbuffer_world_position_sampler: sampler;
+@group(2) @binding(6) var depth_texture: texture_depth_2d;
 
 @group(3) @binding(0) var hbgi_texture: texture_2d<f32>;
 @group(3) @binding(1) var hbgi_texture_sampler: sampler;
@@ -50,6 +50,20 @@ struct FragmentOutput {
 const PI: f32 = 3.1415927;
 const MAX_REFLECTION_LOD: f32 = 4.0;
 const MAX_POINT_LIGHTS: u32 = 64u;
+
+fn reconstruct_world_position_from_depth(uv: vec2f, depth: f32) -> vec3f {
+    let clip = vec4f(
+        uv.x * 2.0 - 1.0,
+        1.0 - uv.y * 2.0,
+        depth,
+        1.0
+    );
+    let world = inverse_view_proj * clip;
+    if (abs(world.w) > 1e-8) {
+        return world.xyz / world.w;
+    }
+    return vec3f(0.0);
+}
 
 fn distribution_ggx(N: vec3f, H: vec3f, a: f32) -> f32 {
     let a2 = a * a;
@@ -209,11 +223,9 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
         gbuffer_emissive_metallic_sampler,
         uv
     );
-    let world_position = textureSample(
-        gbuffer_world_position,
-        gbuffer_world_position_sampler,
-        uv
-    );
+    let depth_dims = vec2i(textureDimensions(depth_texture));
+    let depth_pixel = clamp(vec2i(uv * vec2f(depth_dims)), vec2i(0), depth_dims - vec2i(1));
+    let depth = textureLoad(depth_texture, depth_pixel, 0);
     let hbgi = textureSample(
         hbgi_texture,
         hbgi_texture_sampler,
@@ -224,9 +236,10 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
         hbgi_irradiance_sampler,
         uv
     ).rgba;
-    if (world_position.w < 0.5) {
+    if (depth >= 1.0) {
         return FragmentOutput(vec4f(0.0, 0.0, 0.0, 0.0), vec4f(0.0, 0.0, 0.0, 0.0));
     }
+    let world_position = reconstruct_world_position_from_depth(uv, depth);
 
     let N = normalize(normal_roughness.xyz);
     let surface_roughness = normal_roughness.w;
@@ -235,7 +248,7 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
     let surface_emissive = emissive_metallic.rgb;
     let surface_metallic = emissive_metallic.a;
 
-    let V = normalize(camera_position - world_position.xyz);
+    let V = normalize(camera_position - world_position);
     let R = reflect(-V, N);
     let prefiltered_color = textureSampleLevel(environment_texture, environment_texture_sampler, R, surface_roughness * MAX_REFLECTION_LOD).rgb;
     let F0 = mix(vec3f(0.04), surface_color, surface_metallic);
@@ -244,7 +257,7 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
     var direct_specular = vec3f(0.0);
     {
         let L = normalize(-light_dir);
-        let sun_shadow = sample_sun_shadow(world_position.xyz, N, L);
+        let sun_shadow = sample_sun_shadow(world_position, N, L);
         let H = normalize(V + L);
         let radiance = light_col;
 
@@ -268,7 +281,7 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
     for (var light_idx: u32 = 0u; light_idx < clamped_point_light_count; light_idx += 1u) {
         let point_light_position_range = point_light_positions_ranges[light_idx];
         let point_light_color_intensity = point_light_colors_intensities[light_idx];
-        let to_light = point_light_position_range.xyz - world_position.xyz;
+        let to_light = point_light_position_range.xyz - world_position;
         let light_distance = length(to_light);
         let light_range = max(point_light_position_range.w, 0.001);
         if (light_distance >= light_range) {

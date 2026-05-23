@@ -61,16 +61,10 @@ impl GBufferInputs {
                     binding: 6,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        sample_type: wgpu::TextureSampleType::Depth,
                         view_dimension: wgpu::TextureViewDimension::D2,
                         multisampled: false,
                     },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 7,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
             ],
@@ -82,6 +76,7 @@ impl GBufferInputs {
         device: &wgpu::Device,
         bind_group_layout: &wgpu::BindGroupLayout,
         gbuffer_targets: &GBufferTargets,
+        depth_texture_view: &wgpu::TextureView,
     ) -> GBufferInputsBinding {
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: bind_group_layout,
@@ -120,15 +115,7 @@ impl GBufferInputs {
                 },
                 wgpu::BindGroupEntry {
                     binding: 6,
-                    resource: wgpu::BindingResource::TextureView(
-                        &gbuffer_targets.world_position.view,
-                    ),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 7,
-                    resource: wgpu::BindingResource::Sampler(
-                        &gbuffer_targets.world_position.sampler,
-                    ),
+                    resource: wgpu::BindingResource::TextureView(depth_texture_view),
                 },
             ],
             label: Some("GBuffer Inputs Bind Group"),

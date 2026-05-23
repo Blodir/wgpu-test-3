@@ -39,7 +39,6 @@ pub struct GBufferTargets {
     pub albedo_ao: GBufferTexture,
     pub normal_roughness: GBufferTexture,
     pub emissive_metallic: GBufferTexture,
-    pub world_position: GBufferTexture,
 }
 
 impl GBufferTargets {
@@ -56,7 +55,6 @@ impl GBufferTargets {
                 surface_config,
                 "GBuffer EmissiveMetallic",
             ),
-            world_position: GBufferTexture::new(device, surface_config, "GBuffer WorldPosition"),
         }
     }
 }

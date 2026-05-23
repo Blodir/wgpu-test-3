@@ -322,7 +322,9 @@ impl DeferredOpaqueRenderer {
         let gi_blur_pipeline = GiBlurPipeline::new(
             wgpu_context,
             shader_cache,
+            &layouts.camera,
             &g_buffer_targets,
+            depth_texture_view,
             &hbgi_reproject_write,
             &hbgi_irradiance_reproject_write,
             &hbgi_texture,
@@ -363,6 +365,7 @@ impl DeferredOpaqueRenderer {
             &layouts.camera,
             &layouts.lights,
             &g_buffer_targets,
+            depth_texture_view,
             &hbgi_texture,
         );
         Self {
@@ -412,6 +415,7 @@ impl DeferredOpaqueRenderer {
         self.gi_blur_pipeline.update_input_bindgroup(
             device,
             &self.g_buffer_targets,
+            depth_texture_view,
             &self.hbgi_reproject_write,
             &self.hbgi_irradiance_reproject_write,
             &self.hbgi_texture,
@@ -585,7 +589,8 @@ impl DeferredOpaqueRenderer {
                 &self.hbgi_reproject_normal_write.view,
                 &self.hbgi_irradiance_reproject_write.view,
             );
-            self.gi_blur_pipeline.render(encoder, &self.hbgi_texture);
+            self.gi_blur_pipeline
+                .render(encoder, &self.hbgi_texture, camera_bind_group);
             self.hbgi_reproject_valid = true;
         } else {
             let _clear_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -693,6 +698,7 @@ impl DeferredOpaqueRenderer {
         self.gi_blur_pipeline.update_input_bindgroup(
             &wgpu_context.device,
             &self.g_buffer_targets,
+            _depth_texture_view,
             &self.hbgi_reproject_write,
             &self.hbgi_irradiance_reproject_write,
             &self.hbgi_texture,
@@ -700,6 +706,7 @@ impl DeferredOpaqueRenderer {
         self.deferred_lighting_pipeline.update_input_bindgroup(
             &wgpu_context.device,
             &self.g_buffer_targets,
+            _depth_texture_view,
             &self.hbgi_texture,
         );
         self.hbgi_reproject_pipeline.update_input_bindgroup(
