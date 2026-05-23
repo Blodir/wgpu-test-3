@@ -9,174 +9,52 @@ use crate::host::{
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct SkinnedInstance {
     pub m4: [[f32; 4]; 4],
-    pub itr: [[f32; 3]; 3],
-    pub palette_offset: u32,
-    pub prev_m4: [[f32; 4]; 4],
-    pub prev_palette_offset: u32,
+    pub itr: [[f32; 4]; 3],
+    pub offsets: [u32; 4],
+}
+
+fn pad_mat3(mat: Mat3) -> [[f32; 4]; 3] {
+    let cols = mat.to_cols_array_2d();
+    [
+        [cols[0][0], cols[0][1], cols[0][2], 0.0],
+        [cols[1][0], cols[1][1], cols[1][2], 0.0],
+        [cols[2][0], cols[2][1], cols[2][2], 0.0],
+    ]
 }
 
 impl Default for SkinnedInstance {
     fn default() -> Self {
         Self {
             m4: Mat4::IDENTITY.to_cols_array_2d(),
-            itr: Mat3::IDENTITY.to_cols_array_2d(),
-            palette_offset: 0,
-            prev_m4: Mat4::IDENTITY.to_cols_array_2d(),
-            prev_palette_offset: u32::MAX,
+            itr: pad_mat3(Mat3::IDENTITY),
+            offsets: [0, u32::MAX, 0, 0],
         }
     }
 }
 impl SkinnedInstance {
     pub fn new(transform: Mat4, palette_offset: u32) -> Self {
         let m4 = transform.to_cols_array_2d();
-        let itr = Mat3::from_mat4(transform)
-            .inverse()
-            .transpose()
-            .to_cols_array_2d();
+        let itr = Mat3::from_mat4(transform).inverse().transpose();
 
         SkinnedInstance {
             m4,
-            itr,
-            palette_offset,
-            prev_m4: m4,
-            prev_palette_offset: u32::MAX,
-        }
-    }
-}
-
-impl SkinnedInstance {
-    const BASE_SHADER_LOCATION: u32 = 0;
-    const OFFSET_PALETTE_OFFSET: wgpu::BufferAddress =
-        size_of::<[f32; 25]>() as wgpu::BufferAddress;
-    const OFFSET_PREV_M4: wgpu::BufferAddress = size_of::<[f32; 26]>() as wgpu::BufferAddress;
-    const OFFSET_PREV_PALETTE_OFFSET: wgpu::BufferAddress =
-        size_of::<[f32; 42]>() as wgpu::BufferAddress;
-    const ATTRIBUTES: [wgpu::VertexAttribute; 8] = [
-        wgpu::VertexAttribute {
-            offset: 0,
-            shader_location: Self::BASE_SHADER_LOCATION + 0,
-            format: wgpu::VertexFormat::Float32x4,
-        },
-        wgpu::VertexAttribute {
-            offset: size_of::<[f32; 4]>() as wgpu::BufferAddress,
-            shader_location: Self::BASE_SHADER_LOCATION + 1,
-            format: wgpu::VertexFormat::Float32x4,
-        },
-        wgpu::VertexAttribute {
-            offset: size_of::<[f32; 8]>() as wgpu::BufferAddress,
-            shader_location: Self::BASE_SHADER_LOCATION + 2,
-            format: wgpu::VertexFormat::Float32x4,
-        },
-        wgpu::VertexAttribute {
-            offset: size_of::<[f32; 12]>() as wgpu::BufferAddress,
-            shader_location: Self::BASE_SHADER_LOCATION + 3,
-            format: wgpu::VertexFormat::Float32x4,
-        },
-        wgpu::VertexAttribute {
-            offset: size_of::<[f32; 16]>() as wgpu::BufferAddress,
-            shader_location: Self::BASE_SHADER_LOCATION + 4,
-            format: wgpu::VertexFormat::Float32x3,
-        },
-        wgpu::VertexAttribute {
-            offset: size_of::<[f32; 19]>() as wgpu::BufferAddress,
-            shader_location: Self::BASE_SHADER_LOCATION + 5,
-            format: wgpu::VertexFormat::Float32x3,
-        },
-        wgpu::VertexAttribute {
-            offset: size_of::<[f32; 22]>() as wgpu::BufferAddress,
-            shader_location: Self::BASE_SHADER_LOCATION + 6,
-            format: wgpu::VertexFormat::Float32x3,
-        },
-        wgpu::VertexAttribute {
-            offset: size_of::<[f32; 25]>() as wgpu::BufferAddress,
-            shader_location: Self::BASE_SHADER_LOCATION + 7,
-            format: wgpu::VertexFormat::Uint32,
-        },
-    ];
-
-    pub fn desc() -> wgpu::VertexBufferLayout<'static> {
-        wgpu::VertexBufferLayout {
-            array_stride: size_of::<SkinnedInstance>() as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Instance,
-            attributes: &Self::ATTRIBUTES,
-        }
-    }
-
-    const VELOCITY_ATTRIBUTES: [wgpu::VertexAttribute; 10] = [
-        wgpu::VertexAttribute {
-            offset: 0,
-            shader_location: 0,
-            format: wgpu::VertexFormat::Float32x4,
-        },
-        wgpu::VertexAttribute {
-            offset: size_of::<[f32; 4]>() as wgpu::BufferAddress,
-            shader_location: 1,
-            format: wgpu::VertexFormat::Float32x4,
-        },
-        wgpu::VertexAttribute {
-            offset: size_of::<[f32; 8]>() as wgpu::BufferAddress,
-            shader_location: 2,
-            format: wgpu::VertexFormat::Float32x4,
-        },
-        wgpu::VertexAttribute {
-            offset: size_of::<[f32; 12]>() as wgpu::BufferAddress,
-            shader_location: 3,
-            format: wgpu::VertexFormat::Float32x4,
-        },
-        wgpu::VertexAttribute {
-            offset: Self::OFFSET_PALETTE_OFFSET,
-            shader_location: 4,
-            format: wgpu::VertexFormat::Uint32,
-        },
-        wgpu::VertexAttribute {
-            offset: Self::OFFSET_PREV_M4,
-            shader_location: 5,
-            format: wgpu::VertexFormat::Float32x4,
-        },
-        wgpu::VertexAttribute {
-            offset: Self::OFFSET_PREV_M4 + size_of::<[f32; 4]>() as wgpu::BufferAddress,
-            shader_location: 6,
-            format: wgpu::VertexFormat::Float32x4,
-        },
-        wgpu::VertexAttribute {
-            offset: Self::OFFSET_PREV_M4 + size_of::<[f32; 8]>() as wgpu::BufferAddress,
-            shader_location: 7,
-            format: wgpu::VertexFormat::Float32x4,
-        },
-        wgpu::VertexAttribute {
-            offset: Self::OFFSET_PREV_M4 + size_of::<[f32; 12]>() as wgpu::BufferAddress,
-            shader_location: 8,
-            format: wgpu::VertexFormat::Float32x4,
-        },
-        wgpu::VertexAttribute {
-            offset: Self::OFFSET_PREV_PALETTE_OFFSET,
-            shader_location: 9,
-            format: wgpu::VertexFormat::Uint32,
-        },
-    ];
-
-    pub fn velocity_desc() -> wgpu::VertexBufferLayout<'static> {
-        wgpu::VertexBufferLayout {
-            array_stride: size_of::<SkinnedInstance>() as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Instance,
-            attributes: &Self::VELOCITY_ATTRIBUTES,
+            itr: pad_mat3(itr),
+            offsets: [palette_offset, u32::MAX, 0, 0],
         }
     }
 
     pub fn from(mat4: Mat4, itr: Mat3, palette_offset: u32) -> Self {
         Self {
             m4: mat4.to_cols_array_2d(),
-            itr: itr.to_cols_array_2d(),
-            palette_offset,
-            prev_m4: mat4.to_cols_array_2d(),
-            prev_palette_offset: u32::MAX,
+            itr: pad_mat3(itr),
+            offsets: [palette_offset, u32::MAX, 0, 0],
         }
     }
 }
 
 pub struct SkinnedInstances {
     pub buffer: wgpu::Buffer,
-    pub data: Vec<SkinnedInstance>,
+    pub prev_buffer: wgpu::Buffer,
     pub links: SnapshotInstanceLinks,
 }
 impl SkinnedInstances {
@@ -187,11 +65,19 @@ impl SkinnedInstances {
                 .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                     label: Some("Instance buffer"),
                     contents: bytemuck::cast_slice(&[SkinnedInstance::default()]),
-                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                    usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+                });
+        let prev_buffer =
+            wgpu_context
+                .device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("Previous instance buffer"),
+                    contents: bytemuck::cast_slice(&[SkinnedInstance::default()]),
+                    usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
                 });
         Self {
             buffer: instance_buffer,
-            data: vec![],
+            prev_buffer,
             links: SnapshotInstanceLinks::default(),
         }
     }
@@ -203,6 +89,7 @@ impl SkinnedInstances {
         queue: &wgpu::Queue,
         device: &wgpu::Device,
     ) {
+        std::mem::swap(&mut self.buffer, &mut self.prev_buffer);
         let instance_bytes: &[u8] = bytemuck::cast_slice(&data);
         if self.buffer.size() >= instance_bytes.len() as u64 {
             queue.write_buffer(&self.buffer, 0, instance_bytes);
@@ -210,10 +97,9 @@ impl SkinnedInstances {
             self.buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("Skinned instance buffer"),
                 contents: instance_bytes,
-                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             });
         }
-        self.data = data;
         self.links = links;
     }
 }

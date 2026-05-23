@@ -8,13 +8,18 @@ struct BoneMat34 {
 
 @group(1) @binding(0) var<storage, read> bones: array<BoneMat34>;
 
-struct InstanceInput {
-    @location(0) m_1: vec4<f32>,
-    @location(1) m_2: vec4<f32>,
-    @location(2) m_3: vec4<f32>,
-    @location(3) m_4: vec4<f32>,
-    @location(7) palette_offset: u32,
+struct InstanceData {
+    m_1: vec4<f32>,
+    m_2: vec4<f32>,
+    m_3: vec4<f32>,
+    m_4: vec4<f32>,
+    itr_1: vec4<f32>,
+    itr_2: vec4<f32>,
+    itr_3: vec4<f32>,
+    offsets: vec4<u32>,
 }
+
+@group(1) @binding(1) var<storage, read> instances: array<InstanceData>;
 
 struct VertexInput {
     @location(9) weights: vec4<f32>,
@@ -55,7 +60,11 @@ fn skin_position(
 }
 
 @vertex
-fn vs_main(instance: InstanceInput, model: VertexInput) -> @builtin(position) vec4<f32> {
+fn vs_main(
+    @builtin(instance_index) instance_index: u32,
+    model: VertexInput,
+) -> @builtin(position) vec4<f32> {
+    let instance = instances[instance_index];
     let transform = mat4x4<f32>(
         instance.m_1,
         instance.m_2,
@@ -63,7 +72,7 @@ fn vs_main(instance: InstanceInput, model: VertexInput) -> @builtin(position) ve
         instance.m_4,
     );
     let skinned_position = skin_position(
-        instance.palette_offset,
+        instance.offsets.x,
         model.joints,
         model.weights,
         model.position,

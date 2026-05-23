@@ -3,6 +3,7 @@ pub mod camera;
 pub mod g_buffer;
 pub mod hbgi;
 pub mod hbgi_settings;
+pub mod instance_storage;
 pub mod lights;
 pub mod material;
 pub mod motion_camera;

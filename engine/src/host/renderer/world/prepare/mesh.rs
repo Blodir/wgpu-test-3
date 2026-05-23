@@ -99,7 +99,6 @@ fn resolve_skinned_pass(
     instance_data: &mut Vec<SkinnedInstance>,
     links: &mut SnapshotInstanceLinksBuilder,
     prev_cursor: &mut SnapshotInstanceCursor,
-    prev_instances: &[SkinnedInstance],
     prev_links: &SnapshotInstanceLinks,
     node_world_cache: &mut Vec<PoseNodesCacheEntry>,
     node_to_palette_offset: &mut Vec<Option<u32>>,
@@ -189,12 +188,7 @@ fn resolve_skinned_pass(
                             if let Some(prev_instance_idx) =
                                 prev_cursor.take_next(prev_snapshot_idx, prev_links)
                             {
-                                if let Some(prev_instance) =
-                                    prev_instances.get(prev_instance_idx as usize)
-                                {
-                                    instance.prev_m4 = prev_instance.m4;
-                                    instance.prev_palette_offset = prev_instance.palette_offset;
-                                }
+                                instance.offsets[1] = prev_instance_idx;
                             }
                         }
                         let write_idx = links.push(instance_idx);
@@ -283,17 +277,10 @@ fn resolve_static_pass(
                             .get(*instance_node_idx as usize)
                             .copied()
                             .unwrap_or(Mat4::IDENTITY);
-                        let mut instance = StaticInstance::new(model_transform * node_mat);
+                        let instance = StaticInstance::new(model_transform * node_mat);
                         if let Some(prev_snapshot_idx) = curr_node_inst.prev_index {
-                            if let Some(prev_instance_idx) =
-                                prev_cursor.take_next(prev_snapshot_idx, prev_links)
-                            {
-                                if let Some(prev_instance) =
-                                    prev_instances.get(prev_instance_idx as usize)
-                                {
-                                    instance.prev_m4 = prev_instance.m4;
-                                }
-                            }
+                            let _ = prev_cursor.take_next(prev_snapshot_idx, prev_links);
+                            let _ = prev_instances;
                         }
                         let write_idx = links.push(instance_idx);
                         debug_assert_eq!(write_idx as usize, instance_data.len());
@@ -330,7 +317,6 @@ pub fn resolve_skinned_draw<'a>(
     node_world_cache.resize_with(skinned_instance_count, || PoseNodesCacheEntry::Pending);
     let mut node_to_palette_offset = vec![None; skinned_instance_count];
     let (opaque_instance_ranges, transparent_instance_ranges) = {
-        let prev_instances = instances.data.as_slice();
         let prev_links = &instances.links;
         let mut prev_cursor = prev_links.cursor();
         let opaque_instance_ranges = resolve_skinned_pass(
@@ -343,7 +329,6 @@ pub fn resolve_skinned_draw<'a>(
             &mut instance_data,
             &mut links,
             &mut prev_cursor,
-            prev_instances,
             prev_links,
             &mut node_world_cache,
             &mut node_to_palette_offset,
@@ -359,7 +344,6 @@ pub fn resolve_skinned_draw<'a>(
             &mut instance_data,
             &mut links,
             &mut prev_cursor,
-            prev_instances,
             prev_links,
             &mut node_world_cache,
             &mut node_to_palette_offset,
@@ -368,14 +352,16 @@ pub fn resolve_skinned_draw<'a>(
         (opaque_instance_ranges, transparent_instance_ranges)
     };
 
+    instances.update(instance_data, links.finish(), queue, device);
     bones.update(
         joint_palette,
         bones_layout,
         motion_bones_layout,
         device,
         queue,
+        &instances.buffer,
+        &instances.prev_buffer,
     );
-    instances.update(instance_data, links.finish(), queue, device);
 
     (
         PassDrawContext {

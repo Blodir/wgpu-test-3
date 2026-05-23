@@ -14,6 +14,7 @@ use super::attachments::skybox::SkyboxOutputTexture;
 use super::attachments::sun_shadow::SunShadowTexture;
 use super::bindgroups::bones::BonesBinding;
 use super::bindgroups::camera::CameraBinding;
+use super::bindgroups::instance_storage::InstanceStorageBinding;
 use super::bindgroups::lights::LightsBinding;
 use super::bindgroups::material::MaterialBinding;
 use super::bindgroups::motion_camera::MotionCameraBinding;
@@ -53,6 +54,7 @@ pub struct Layouts {
     pub material: wgpu::BindGroupLayout,
     pub bones: wgpu::BindGroupLayout,
     pub motion_bones: wgpu::BindGroupLayout,
+    pub instance_storage: wgpu::BindGroupLayout,
     pub pbr_material: wgpu::BindGroupLayout,
 }
 impl Layouts {
@@ -78,6 +80,9 @@ impl Layouts {
         let motion_bones = wgpu_context
             .device
             .create_bind_group_layout(&BonesBinding::motion_desc());
+        let instance_storage = wgpu_context
+            .device
+            .create_bind_group_layout(&InstanceStorageBinding::desc());
         let pbr_material = wgpu_context
             .device
             .create_bind_group_layout(&MaterialBinding::desc());
@@ -90,6 +95,7 @@ impl Layouts {
             material,
             bones,
             motion_bones,
+            instance_storage,
             pbr_material,
         }
     }
@@ -137,6 +143,7 @@ struct WorldBindGroups {
     camera: CameraBinding,
     motion_camera: MotionCameraBinding,
     lights: LightsBinding,
+    static_instances: InstanceStorageBinding,
     sun_shadow_matrices: [SunShadowMatrixBindGroup; SUN_SHADOW_MAX_CASCADE_COUNT],
 }
 impl WorldBindGroups {
@@ -147,6 +154,9 @@ impl WorldBindGroups {
         sampler_cache: &mut SamplerCache,
         render_resources: &RenderAssetStore,
         sun_shadow_view: &wgpu::TextureView,
+        skinned_instance_buffer: &wgpu::Buffer,
+        prev_skinned_instance_buffer: &wgpu::Buffer,
+        static_instance_buffer: &wgpu::Buffer,
     ) -> Self {
         let layouts = Layouts::new(wgpu_context);
         let lights = LightsBinding::new(
@@ -163,13 +173,25 @@ impl WorldBindGroups {
         });
         let camera = CameraBinding::new(&wgpu_context.device, &layouts.camera);
         let motion_camera = MotionCameraBinding::new(&wgpu_context.device, &layouts.motion_camera);
-        let bones = BonesBinding::new(&layouts.bones, &layouts.motion_bones, &wgpu_context.device);
+        let bones = BonesBinding::new(
+            &layouts.bones,
+            &layouts.motion_bones,
+            skinned_instance_buffer,
+            prev_skinned_instance_buffer,
+            &wgpu_context.device,
+        );
+        let static_instances = InstanceStorageBinding::new(
+            static_instance_buffer,
+            &layouts.instance_storage,
+            &wgpu_context.device,
+        );
         Self {
             layouts,
             bones,
             camera,
             motion_camera,
             lights,
+            static_instances,
             sun_shadow_matrices,
         }
     }
@@ -196,6 +218,7 @@ impl WorldPipelines {
             shader_cache,
             &layouts.sun_shadow_matrix,
             &layouts.bones,
+            &layouts.instance_storage,
         );
         let skinned_pbr = SkinnedPbrPipeline::new(
             wgpu_context,
@@ -211,6 +234,7 @@ impl WorldPipelines {
             &layouts.pbr_material,
             &layouts.camera,
             &layouts.lights,
+            &layouts.instance_storage,
         );
         let post = PostProcessingPipeline::new(
             wgpu_context,
@@ -319,12 +343,14 @@ impl DeferredOpaqueRenderer {
             &layouts.camera,
             &layouts.lights,
             &layouts.bones,
+            &layouts.instance_storage,
         );
         let motion_vectors_pipeline = MotionVectorsPipeline::new(
             wgpu_context,
             shader_cache,
             &layouts.motion_camera,
             &layouts.motion_bones,
+            &layouts.instance_storage,
         );
         let hbgi_reproject_pipeline = HbgiReprojectPipeline::new(
             wgpu_context,
@@ -486,8 +512,6 @@ impl DeferredOpaqueRenderer {
         &mut self,
         skinned_opaque_pass: &'a PassDrawContext<'a>,
         static_opaque_pass: &'a PassDrawContext<'a>,
-        skinned_instance_buffer: &wgpu::Buffer,
-        static_instance_buffer: &wgpu::Buffer,
         encoder: &mut wgpu::CommandEncoder,
         depth_texture_view: &wgpu::TextureView,
         hdr_color_view: &wgpu::TextureView,
@@ -496,6 +520,7 @@ impl DeferredOpaqueRenderer {
         lights_bind_group: &wgpu::BindGroup,
         bones_bind_group: &wgpu::BindGroup,
         motion_bones_bind_group: &wgpu::BindGroup,
+        static_instance_bind_group: &wgpu::BindGroup,
         render_resources: &'a RenderAssetStore,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
@@ -504,7 +529,6 @@ impl DeferredOpaqueRenderer {
     ) {
         self.g_buffer_pipeline.render_skinned_opaque(
             skinned_opaque_pass,
-            skinned_instance_buffer,
             encoder,
             &self.g_buffer_targets,
             depth_texture_view,
@@ -515,17 +539,16 @@ impl DeferredOpaqueRenderer {
         );
         self.g_buffer_pipeline.render_static_opaque(
             static_opaque_pass,
-            static_instance_buffer,
             encoder,
             &self.g_buffer_targets,
             depth_texture_view,
             camera_bind_group,
             lights_bind_group,
+            static_instance_bind_group,
             render_resources,
         );
         self.motion_vectors_pipeline.render_skinned_opaque(
             skinned_opaque_pass,
-            skinned_instance_buffer,
             encoder,
             &self.motion_vectors.view,
             depth_texture_view,
@@ -535,11 +558,11 @@ impl DeferredOpaqueRenderer {
         );
         self.motion_vectors_pipeline.render_static_opaque(
             static_opaque_pass,
-            static_instance_buffer,
             encoder,
             &self.motion_vectors.view,
             depth_texture_view,
             motion_camera_bind_group,
+            static_instance_bind_group,
             render_resources,
         );
         if !self.hbgi_reproject_valid {
@@ -719,8 +742,6 @@ impl CompactDeferredOpaqueRenderer {
         &mut self,
         _skinned_opaque_pass: &'a PassDrawContext<'a>,
         _static_opaque_pass: &'a PassDrawContext<'a>,
-        _skinned_instance_buffer: &wgpu::Buffer,
-        _static_instance_buffer: &wgpu::Buffer,
         _encoder: &mut wgpu::CommandEncoder,
         _depth_texture_view: &wgpu::TextureView,
         _hdr_color_view: &wgpu::TextureView,
@@ -729,6 +750,7 @@ impl CompactDeferredOpaqueRenderer {
         _lights_bind_group: &wgpu::BindGroup,
         _bones_bind_group: &wgpu::BindGroup,
         _motion_bones_bind_group: &wgpu::BindGroup,
+        _static_instance_bind_group: &wgpu::BindGroup,
         _render_resources: &'a RenderAssetStore,
         _device: &wgpu::Device,
         _frame_idx: u32,
@@ -791,6 +813,8 @@ impl WorldRenderer {
         options: RendererOptions,
     ) -> Self {
         let attachments = WorldAttachments::new(wgpu_context);
+        let skinned_instances = SkinnedInstances::new(wgpu_context);
+        let static_instances = StaticInstances::new(wgpu_context);
         let bind_groups = WorldBindGroups::new(
             wgpu_context,
             &placeholders,
@@ -798,9 +822,10 @@ impl WorldRenderer {
             sampler_cache,
             render_resources,
             &attachments.sun_shadow.array_view,
+            &skinned_instances.buffer,
+            &skinned_instances.prev_buffer,
+            &static_instances.buffer,
         );
-        let skinned_instances = SkinnedInstances::new(wgpu_context);
-        let static_instances = StaticInstances::new(wgpu_context);
         let pose_storage = AnimPoseStore::new();
         let pipelines = WorldPipelines::new(
             wgpu_context,
@@ -883,9 +908,11 @@ impl WorldRenderer {
         let prev_motion_view_proj = self
             .prev_motion_view_proj
             .unwrap_or(prepared_camera.view_proj);
+        let curr_inverse_view_proj = prepared_camera.view_proj.inverse();
         let prev_inverse_view_proj = prev_motion_view_proj.inverse();
         self.bind_groups.motion_camera.update(
             &prepared_camera.view_proj,
+            &curr_inverse_view_proj,
             &prev_motion_view_proj,
             &wgpu_context.queue,
         );
@@ -936,6 +963,11 @@ impl WorldRenderer {
             &mut self.pose_storage,
             frame_idx,
         );
+        self.bind_groups.static_instances.update(
+            &self.static_instances.buffer,
+            &self.bind_groups.layouts.instance_storage,
+            &wgpu_context.device,
+        );
 
         for ((cascade, cascade_view), cascade_bind_group) in prepared_sun_shadow
             .cascades
@@ -948,12 +980,11 @@ impl WorldRenderer {
             self.pipelines.sun_shadow.render(
                 &skinned_opaque_pass,
                 &static_opaque_pass,
-                &self.skinned_instances.buffer,
-                &self.static_instances.buffer,
                 encoder,
                 cascade_view,
                 &cascade_bind_group.bind_group,
                 &self.bind_groups.bones.bind_group,
+                &self.bind_groups.static_instances.bind_group,
                 render_resources,
             );
         }
@@ -962,7 +993,6 @@ impl WorldRenderer {
             OpaqueRenderer::Forward => {
                 self.pipelines.skinned_pbr.render_opaque(
                     &skinned_opaque_pass,
-                    &self.skinned_instances.buffer,
                     encoder,
                     &self.attachments.hdr_color.view,
                     &self.attachments.depth_texture.view,
@@ -974,20 +1004,18 @@ impl WorldRenderer {
 
                 self.pipelines.static_pbr.render_opaque(
                     &static_opaque_pass,
-                    &self.static_instances.buffer,
                     encoder,
                     &self.attachments.hdr_color.view,
                     &self.attachments.depth_texture.view,
                     &self.bind_groups.camera.bind_group,
                     &self.bind_groups.lights.bind_group,
+                    &self.bind_groups.static_instances.bind_group,
                     render_resources,
                 );
             }
             OpaqueRenderer::Deferred(renderer) => renderer.render(
                 &skinned_opaque_pass,
                 &static_opaque_pass,
-                &self.skinned_instances.buffer,
-                &self.static_instances.buffer,
                 encoder,
                 &self.attachments.depth_texture.view,
                 &self.attachments.hdr_color.view,
@@ -996,6 +1024,7 @@ impl WorldRenderer {
                 &self.bind_groups.lights.bind_group,
                 &self.bind_groups.bones.bind_group,
                 &self.bind_groups.bones.motion_bind_group,
+                &self.bind_groups.static_instances.bind_group,
                 render_resources,
                 &wgpu_context.device,
                 &wgpu_context.queue,
@@ -1005,8 +1034,6 @@ impl WorldRenderer {
             OpaqueRenderer::CompactDeferred(renderer) => renderer.render(
                 &skinned_opaque_pass,
                 &static_opaque_pass,
-                &self.skinned_instances.buffer,
-                &self.static_instances.buffer,
                 encoder,
                 &self.attachments.depth_texture.view,
                 &self.attachments.hdr_color.view,
@@ -1015,6 +1042,7 @@ impl WorldRenderer {
                 &self.bind_groups.lights.bind_group,
                 &self.bind_groups.bones.bind_group,
                 &self.bind_groups.bones.motion_bind_group,
+                &self.bind_groups.static_instances.bind_group,
                 render_resources,
                 &wgpu_context.device,
                 frame_idx,
@@ -1023,7 +1051,6 @@ impl WorldRenderer {
 
         self.pipelines.skinned_pbr.render_transparent(
             &skinned_transparent_pass,
-            &self.skinned_instances.buffer,
             encoder,
             &self.attachments.hdr_color.view,
             &self.attachments.depth_texture.view,
@@ -1035,12 +1062,12 @@ impl WorldRenderer {
 
         self.pipelines.static_pbr.render_transparent(
             &static_transparent_pass,
-            &self.static_instances.buffer,
             encoder,
             &self.attachments.hdr_color.view,
             &self.attachments.depth_texture.view,
             &self.bind_groups.camera.bind_group,
             &self.bind_groups.lights.bind_group,
+            &self.bind_groups.static_instances.bind_group,
             render_resources,
         );
 

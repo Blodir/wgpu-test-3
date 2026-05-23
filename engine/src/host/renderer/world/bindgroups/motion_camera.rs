@@ -5,6 +5,7 @@ use wgpu::util::DeviceExt as _;
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 struct MotionCameraUniform {
     curr_view_proj: [[f32; 4]; 4],
+    curr_inverse_view_proj: [[f32; 4]; 4],
     prev_view_proj: [[f32; 4]; 4],
 }
 
@@ -33,6 +34,7 @@ impl MotionCameraBinding {
     pub fn new(device: &wgpu::Device, bind_group_layout: &wgpu::BindGroupLayout) -> Self {
         let uniform = MotionCameraUniform {
             curr_view_proj: Mat4::IDENTITY.to_cols_array_2d(),
+            curr_inverse_view_proj: Mat4::IDENTITY.to_cols_array_2d(),
             prev_view_proj: Mat4::IDENTITY.to_cols_array_2d(),
         };
         let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -51,9 +53,16 @@ impl MotionCameraBinding {
         Self { buffer, bind_group }
     }
 
-    pub fn update(&self, curr_view_proj: &Mat4, prev_view_proj: &Mat4, queue: &wgpu::Queue) {
+    pub fn update(
+        &self,
+        curr_view_proj: &Mat4,
+        curr_inverse_view_proj: &Mat4,
+        prev_view_proj: &Mat4,
+        queue: &wgpu::Queue,
+    ) {
         let uniform = MotionCameraUniform {
             curr_view_proj: curr_view_proj.to_cols_array_2d(),
+            curr_inverse_view_proj: curr_inverse_view_proj.to_cols_array_2d(),
             prev_view_proj: prev_view_proj.to_cols_array_2d(),
         };
         queue.write_buffer(&self.buffer, 0, bytemuck::bytes_of(&uniform));

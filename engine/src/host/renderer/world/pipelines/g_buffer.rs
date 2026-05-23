@@ -5,10 +5,7 @@ use crate::host::assets::store::RenderAssetStore;
 use crate::host::world::{
     attachments::deferred::GBufferTargets,
     attachments::depth::DepthTexture,
-    buffers::{
-        skinned_instance::SkinnedInstance, skinned_vertex::SkinnedVertex,
-        static_instance::StaticInstance, static_vertex::StaticVertex,
-    },
+    buffers::{skinned_vertex::SkinnedVertex, static_vertex::StaticVertex},
     prepare::mesh::PassDrawContext,
 };
 use crate::host::{shader_cache::ShaderCache, wgpu_context::WgpuContext};
@@ -26,6 +23,7 @@ impl GBufferPipeline {
         camera_bind_group_layout: &wgpu::BindGroupLayout,
         lights_bind_group_layout: &wgpu::BindGroupLayout,
         bones_bind_group_layout: &wgpu::BindGroupLayout,
+        instance_bind_group_layout: &wgpu::BindGroupLayout,
     ) -> Self {
         let skinned_pipeline = Self::build_skinned_pipeline(
             wgpu_context,
@@ -41,6 +39,7 @@ impl GBufferPipeline {
             camera_bind_group_layout,
             lights_bind_group_layout,
             material_bind_group_layout,
+            instance_bind_group_layout,
         );
 
         Self {
@@ -106,7 +105,7 @@ impl GBufferPipeline {
                 vertex: wgpu::VertexState {
                     module: &vertex_shader_module,
                     entry_point: Some("vs_main"),
-                    buffers: &[SkinnedInstance::desc(), SkinnedVertex::desc()],
+                    buffers: &[SkinnedVertex::desc()],
                     compilation_options: wgpu::PipelineCompilationOptions::default(),
                 },
                 fragment: Some(wgpu::FragmentState {
@@ -147,11 +146,13 @@ impl GBufferPipeline {
         camera_bind_group_layout: &wgpu::BindGroupLayout,
         lights_bind_group_layout: &wgpu::BindGroupLayout,
         material_bind_group_layout: &wgpu::BindGroupLayout,
+        instance_bind_group_layout: &wgpu::BindGroupLayout,
     ) -> wgpu::RenderPipeline {
         let bind_group_layouts = &[
             camera_bind_group_layout,
             lights_bind_group_layout,
             material_bind_group_layout,
+            instance_bind_group_layout,
         ];
         let render_pipeline_layout =
             wgpu_context
@@ -196,7 +197,7 @@ impl GBufferPipeline {
                 vertex: wgpu::VertexState {
                     module: &vertex_shader_module,
                     entry_point: Some("vs_main"),
-                    buffers: &[StaticInstance::desc(), StaticVertex::desc()],
+                    buffers: &[StaticVertex::desc()],
                     compilation_options: wgpu::PipelineCompilationOptions::default(),
                 },
                 fragment: Some(wgpu::FragmentState {
@@ -234,7 +235,6 @@ impl GBufferPipeline {
     fn draw_skinned<'a>(
         pass_draw: &PassDrawContext<'a>,
         render_pass: &mut wgpu::RenderPass<'a>,
-        instance_buffer: &wgpu::Buffer,
         render_resources: &'a RenderAssetStore,
     ) {
         let models = &render_resources.models;
@@ -253,9 +253,8 @@ impl GBufferPipeline {
                         .slice(0..model.vertex_buffer_start_offset as u64),
                     wgpu::IndexFormat::Uint32,
                 );
-                render_pass.set_vertex_buffer(0, instance_buffer.slice(..));
                 render_pass.set_vertex_buffer(
-                    1u32,
+                    0u32,
                     mesh.buffer.slice(model.vertex_buffer_start_offset as u64..),
                 );
                 for draw_idx in mesh_batch.submesh_range.clone() {
@@ -274,7 +273,6 @@ impl GBufferPipeline {
     fn draw_static<'a>(
         pass_draw: &PassDrawContext<'a>,
         render_pass: &mut wgpu::RenderPass<'a>,
-        instance_buffer: &wgpu::Buffer,
         render_resources: &'a RenderAssetStore,
     ) {
         let models = &render_resources.models;
@@ -293,9 +291,8 @@ impl GBufferPipeline {
                         .slice(0..model.vertex_buffer_start_offset as u64),
                     wgpu::IndexFormat::Uint32,
                 );
-                render_pass.set_vertex_buffer(0, instance_buffer.slice(..));
                 render_pass.set_vertex_buffer(
-                    1u32,
+                    0u32,
                     mesh.buffer.slice(model.vertex_buffer_start_offset as u64..),
                 );
                 for draw_idx in mesh_batch.submesh_range.clone() {
@@ -314,7 +311,6 @@ impl GBufferPipeline {
     pub fn render_skinned_opaque<'a>(
         &self,
         pass_draw: &'a PassDrawContext<'a>,
-        instance_buffer: &wgpu::Buffer,
         encoder: &mut wgpu::CommandEncoder,
         gbuffer: &'a GBufferTargets,
         depth_texture_view: &wgpu::TextureView,
@@ -375,23 +371,18 @@ impl GBufferPipeline {
         render_pass.set_bind_group(0u32, camera_bind_group, &[]);
         render_pass.set_bind_group(1u32, lights_bind_group, &[]);
         render_pass.set_bind_group(3u32, bones_bind_group, &[]);
-        Self::draw_skinned(
-            pass_draw,
-            &mut render_pass,
-            instance_buffer,
-            render_resources,
-        );
+        Self::draw_skinned(pass_draw, &mut render_pass, render_resources);
     }
 
     pub fn render_static_opaque<'a>(
         &self,
         pass_draw: &'a PassDrawContext<'a>,
-        instance_buffer: &wgpu::Buffer,
         encoder: &mut wgpu::CommandEncoder,
         gbuffer: &'a GBufferTargets,
         depth_texture_view: &wgpu::TextureView,
         camera_bind_group: &wgpu::BindGroup,
         lights_bind_group: &wgpu::BindGroup,
+        instance_bind_group: &wgpu::BindGroup,
         render_resources: &'a RenderAssetStore,
     ) {
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -445,11 +436,7 @@ impl GBufferPipeline {
         render_pass.set_pipeline(&self.static_pipeline);
         render_pass.set_bind_group(0u32, camera_bind_group, &[]);
         render_pass.set_bind_group(1u32, lights_bind_group, &[]);
-        Self::draw_static(
-            pass_draw,
-            &mut render_pass,
-            instance_buffer,
-            render_resources,
-        );
+        render_pass.set_bind_group(3u32, instance_bind_group, &[]);
+        Self::draw_static(pass_draw, &mut render_pass, render_resources);
     }
 }

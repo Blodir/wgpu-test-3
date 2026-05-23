@@ -4,10 +4,7 @@ use crate::global_paths::{
 use crate::host::assets::store::RenderAssetStore;
 use crate::host::world::{
     attachments::depth::DepthTexture,
-    buffers::{
-        skinned_instance::SkinnedInstance, skinned_vertex::SkinnedVertex,
-        static_instance::StaticInstance, static_vertex::StaticVertex,
-    },
+    buffers::{skinned_vertex::SkinnedVertex, static_vertex::StaticVertex},
     prepare::mesh::PassDrawContext,
 };
 use crate::host::{shader_cache::ShaderCache, wgpu_context::WgpuContext};
@@ -23,6 +20,7 @@ impl SunShadowPipeline {
         shader_cache: &mut ShaderCache,
         sun_shadow_matrix_bind_group_layout: &wgpu::BindGroupLayout,
         bones_bind_group_layout: &wgpu::BindGroupLayout,
+        instance_bind_group_layout: &wgpu::BindGroupLayout,
     ) -> Self {
         let skinned_pipeline = Self::build_skinned_pipeline(
             wgpu_context,
@@ -34,6 +32,7 @@ impl SunShadowPipeline {
             wgpu_context,
             shader_cache,
             sun_shadow_matrix_bind_group_layout,
+            instance_bind_group_layout,
         );
         Self {
             skinned_pipeline,
@@ -68,7 +67,7 @@ impl SunShadowPipeline {
                 vertex: wgpu::VertexState {
                     module: &vertex_shader,
                     entry_point: Some("vs_main"),
-                    buffers: &[SkinnedInstance::desc(), SkinnedVertex::desc()],
+                    buffers: &[SkinnedVertex::desc()],
                     compilation_options: wgpu::PipelineCompilationOptions::default(),
                 },
                 fragment: None,
@@ -102,8 +101,12 @@ impl SunShadowPipeline {
         wgpu_context: &WgpuContext,
         shader_cache: &mut ShaderCache,
         sun_shadow_matrix_bind_group_layout: &wgpu::BindGroupLayout,
+        instance_bind_group_layout: &wgpu::BindGroupLayout,
     ) -> wgpu::RenderPipeline {
-        let bind_group_layouts = &[sun_shadow_matrix_bind_group_layout];
+        let bind_group_layouts = &[
+            sun_shadow_matrix_bind_group_layout,
+            instance_bind_group_layout,
+        ];
         let pipeline_layout =
             wgpu_context
                 .device
@@ -122,7 +125,7 @@ impl SunShadowPipeline {
                 vertex: wgpu::VertexState {
                     module: &vertex_shader,
                     entry_point: Some("vs_main"),
-                    buffers: &[StaticInstance::desc(), StaticVertex::desc()],
+                    buffers: &[StaticVertex::desc()],
                     compilation_options: wgpu::PipelineCompilationOptions::default(),
                 },
                 fragment: None,
@@ -155,7 +158,6 @@ impl SunShadowPipeline {
     fn draw_skinned<'a>(
         pass_draw: &PassDrawContext<'a>,
         render_pass: &mut wgpu::RenderPass<'a>,
-        instance_buffer: &wgpu::Buffer,
         render_resources: &'a RenderAssetStore,
     ) {
         let models = &render_resources.models;
@@ -171,9 +173,8 @@ impl SunShadowPipeline {
                         .slice(0..model.vertex_buffer_start_offset as u64),
                     wgpu::IndexFormat::Uint32,
                 );
-                render_pass.set_vertex_buffer(0, instance_buffer.slice(..));
                 render_pass.set_vertex_buffer(
-                    1,
+                    0,
                     mesh.buffer.slice(model.vertex_buffer_start_offset as u64..),
                 );
                 for draw_idx in mesh_batch.submesh_range.clone() {
@@ -192,7 +193,6 @@ impl SunShadowPipeline {
     fn draw_static<'a>(
         pass_draw: &PassDrawContext<'a>,
         render_pass: &mut wgpu::RenderPass<'a>,
-        instance_buffer: &wgpu::Buffer,
         render_resources: &'a RenderAssetStore,
     ) {
         let models = &render_resources.models;
@@ -208,9 +208,8 @@ impl SunShadowPipeline {
                         .slice(0..model.vertex_buffer_start_offset as u64),
                     wgpu::IndexFormat::Uint32,
                 );
-                render_pass.set_vertex_buffer(0, instance_buffer.slice(..));
                 render_pass.set_vertex_buffer(
-                    1,
+                    0,
                     mesh.buffer.slice(model.vertex_buffer_start_offset as u64..),
                 );
                 for draw_idx in mesh_batch.submesh_range.clone() {
@@ -230,12 +229,11 @@ impl SunShadowPipeline {
         &self,
         skinned_opaque_pass: &'a PassDrawContext<'a>,
         static_opaque_pass: &'a PassDrawContext<'a>,
-        skinned_instance_buffer: &wgpu::Buffer,
-        static_instance_buffer: &wgpu::Buffer,
         encoder: &mut wgpu::CommandEncoder,
         shadow_depth_view: &wgpu::TextureView,
         sun_shadow_matrix_bind_group: &wgpu::BindGroup,
         bones_bind_group: &wgpu::BindGroup,
+        static_instance_bind_group: &wgpu::BindGroup,
         render_resources: &'a RenderAssetStore,
     ) {
         {
@@ -256,12 +254,7 @@ impl SunShadowPipeline {
             skinned_pass.set_pipeline(&self.skinned_pipeline);
             skinned_pass.set_bind_group(0, sun_shadow_matrix_bind_group, &[]);
             skinned_pass.set_bind_group(1, bones_bind_group, &[]);
-            Self::draw_skinned(
-                skinned_opaque_pass,
-                &mut skinned_pass,
-                skinned_instance_buffer,
-                render_resources,
-            );
+            Self::draw_skinned(skinned_opaque_pass, &mut skinned_pass, render_resources);
         }
 
         let mut static_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -280,11 +273,7 @@ impl SunShadowPipeline {
         });
         static_pass.set_pipeline(&self.static_pipeline);
         static_pass.set_bind_group(0, sun_shadow_matrix_bind_group, &[]);
-        Self::draw_static(
-            static_opaque_pass,
-            &mut static_pass,
-            static_instance_buffer,
-            render_resources,
-        );
+        static_pass.set_bind_group(1, static_instance_bind_group, &[]);
+        Self::draw_static(static_opaque_pass, &mut static_pass, render_resources);
     }
 }

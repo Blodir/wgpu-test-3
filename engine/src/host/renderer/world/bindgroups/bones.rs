@@ -27,16 +27,28 @@ pub struct BonesBinding {
 impl BonesBinding {
     pub fn desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
         wgpu::BindGroupLayoutDescriptor {
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Storage { read_only: true },
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
                 },
-                count: None,
-            }],
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ],
             label: Some("Bones Bind Group Layout"),
         }
     }
@@ -63,27 +75,56 @@ impl BonesBinding {
                     },
                     count: None,
                 },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
             ],
             label: Some("Motion Bones Bind Group Layout"),
         }
     }
     fn create_bind_group(
         buffer: &wgpu::Buffer,
+        instance_buffer: &wgpu::Buffer,
         layout: &wgpu::BindGroupLayout,
         device: &wgpu::Device,
     ) -> wgpu::BindGroup {
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Bones Bind Group"),
             layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: buffer.as_entire_binding(),
-            }],
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: instance_buffer.as_entire_binding(),
+                },
+            ],
         })
     }
     fn create_motion_bind_group(
         curr_buffer: &wgpu::Buffer,
         prev_buffer: &wgpu::Buffer,
+        curr_instance_buffer: &wgpu::Buffer,
+        prev_instance_buffer: &wgpu::Buffer,
         layout: &wgpu::BindGroupLayout,
         device: &wgpu::Device,
     ) -> wgpu::BindGroup {
@@ -99,12 +140,22 @@ impl BonesBinding {
                     binding: 1,
                     resource: prev_buffer.as_entire_binding(),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: curr_instance_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: prev_instance_buffer.as_entire_binding(),
+                },
             ],
         })
     }
     pub fn new(
         layout: &wgpu::BindGroupLayout,
         motion_layout: &wgpu::BindGroupLayout,
+        curr_instance_buffer: &wgpu::Buffer,
+        prev_instance_buffer: &wgpu::Buffer,
         device: &wgpu::Device,
     ) -> Self {
         let data: Vec<BoneMat34> = vec![BoneMat34::default(); 2048];
@@ -120,10 +171,17 @@ impl BonesBinding {
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         });
         Self {
-            bind_group: Self::create_bind_group(&storage_buffer, layout, device),
+            bind_group: Self::create_bind_group(
+                &storage_buffer,
+                curr_instance_buffer,
+                layout,
+                device,
+            ),
             motion_bind_group: Self::create_motion_bind_group(
                 &storage_buffer,
                 &prev_buffer,
+                curr_instance_buffer,
+                prev_instance_buffer,
                 motion_layout,
                 device,
             ),
@@ -139,6 +197,8 @@ impl BonesBinding {
         motion_layout: &wgpu::BindGroupLayout,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
+        curr_instance_buffer: &wgpu::Buffer,
+        prev_instance_buffer: &wgpu::Buffer,
     ) {
         let prev_bytes: &[u8] = bytemuck::cast_slice(&self.data);
         let bytes: &[u8] = bytemuck::cast_slice(&data);
@@ -159,10 +219,17 @@ impl BonesBinding {
                 contents: bytes,
                 usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             });
-            self.bind_group = Self::create_bind_group(&self.buffer, layout, device);
         }
-        self.motion_bind_group =
-            Self::create_motion_bind_group(&self.buffer, &self.prev_buffer, motion_layout, device);
+        self.bind_group =
+            Self::create_bind_group(&self.buffer, curr_instance_buffer, layout, device);
+        self.motion_bind_group = Self::create_motion_bind_group(
+            &self.buffer,
+            &self.prev_buffer,
+            curr_instance_buffer,
+            prev_instance_buffer,
+            motion_layout,
+            device,
+        );
         self.data = data;
     }
 }

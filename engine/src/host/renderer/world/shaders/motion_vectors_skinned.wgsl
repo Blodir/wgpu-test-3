@@ -13,18 +13,19 @@ struct BoneMat34 {
 @group(1) @binding(0) var<storage, read> curr_bones: array<BoneMat34>;
 @group(1) @binding(1) var<storage, read> prev_bones: array<BoneMat34>;
 
-struct InstanceInput {
-    @location(0) curr_m0: vec4<f32>,
-    @location(1) curr_m1: vec4<f32>,
-    @location(2) curr_m2: vec4<f32>,
-    @location(3) curr_m3: vec4<f32>,
-    @location(4) curr_palette_offset: u32,
-    @location(5) prev_m0: vec4<f32>,
-    @location(6) prev_m1: vec4<f32>,
-    @location(7) prev_m2: vec4<f32>,
-    @location(8) prev_m3: vec4<f32>,
-    @location(9) prev_palette_offset: u32,
+struct InstanceData {
+    m0: vec4<f32>,
+    m1: vec4<f32>,
+    m2: vec4<f32>,
+    m3: vec4<f32>,
+    itr_0: vec4<f32>,
+    itr_1: vec4<f32>,
+    itr_2: vec4<f32>,
+    offsets: vec4<u32>,
 }
+
+@group(1) @binding(2) var<storage, read> curr_instances: array<InstanceData>;
+@group(1) @binding(3) var<storage, read> prev_instances: array<InstanceData>;
 
 struct VertexInput {
     @location(10) weights: vec4<f32>,
@@ -77,30 +78,36 @@ fn skin_position_prev(
 }
 
 @vertex
-fn vs_main(instance: InstanceInput, model: VertexInput) -> VertexOutput {
+fn vs_main(
+    @builtin(instance_index) instance_index: u32,
+    model: VertexInput,
+) -> VertexOutput {
+    let instance = curr_instances[instance_index];
     let curr_transform = mat4x4<f32>(
-        instance.curr_m0,
-        instance.curr_m1,
-        instance.curr_m2,
-        instance.curr_m3,
-    );
-    let prev_transform = mat4x4<f32>(
-        instance.prev_m0,
-        instance.prev_m1,
-        instance.prev_m2,
-        instance.prev_m3,
+        instance.m0,
+        instance.m1,
+        instance.m2,
+        instance.m3,
     );
     let curr_pos = skin_position_curr(
-        instance.curr_palette_offset,
+        instance.offsets.x,
         model.joints,
         model.weights,
         model.position,
     );
-    let has_prev_pose = instance.prev_palette_offset != 0xffffffffu;
+    let has_prev_pose = instance.offsets.y != 0xffffffffu;
     var prev_pos = curr_pos;
+    var prev_transform = curr_transform;
     if (has_prev_pose) {
+        let prev_instance = prev_instances[instance.offsets.y];
+        prev_transform = mat4x4<f32>(
+            prev_instance.m0,
+            prev_instance.m1,
+            prev_instance.m2,
+            prev_instance.m3,
+        );
         prev_pos = skin_position_prev(
-            instance.prev_palette_offset,
+            prev_instance.offsets.x,
             model.joints,
             model.weights,
             model.position,

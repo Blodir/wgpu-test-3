@@ -17,10 +17,7 @@ fn r2_quasirandom_sequence(n: u32) -> (f32, f32) {
     let g = 1.6180339887498948482;
     let a1 = 1.0 / g;
     let a2 = 1.0 / (g * g);
-    (
-        (0.5 + a1 * n as f32) % 1.0,
-        (0.5 + a2 * n as f32) % 1.0,
-    )
+    ((0.5 + a1 * n as f32) % 1.0, (0.5 + a2 * n as f32) % 1.0)
 }
 
 pub struct HbgiSettings {}

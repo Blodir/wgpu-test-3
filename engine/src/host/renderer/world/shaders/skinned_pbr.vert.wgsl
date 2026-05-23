@@ -8,16 +8,18 @@ struct BoneMat34 {
 
 @group(3) @binding(0) var<storage, read> bones: array<BoneMat34>;
 
-struct InstanceInput {
-    @location(0) m_1: vec4<f32>,
-    @location(1) m_2: vec4<f32>,
-    @location(2) m_3: vec4<f32>,
-    @location(3) m_4: vec4<f32>,
-    @location(4) itr_1: vec3<f32>,
-    @location(5) itr_2: vec3<f32>,
-    @location(6) itr_3: vec3<f32>,
-    @location(7) palette_offset: u32,
+struct InstanceData {
+    m_1: vec4<f32>,
+    m_2: vec4<f32>,
+    m_3: vec4<f32>,
+    m_4: vec4<f32>,
+    itr_1: vec4<f32>,
+    itr_2: vec4<f32>,
+    itr_3: vec4<f32>,
+    offsets: vec4<u32>,
 }
+
+@group(3) @binding(1) var<storage, read> instances: array<InstanceData>;
 
 struct VertexInput {
     @location(8) tangent: vec4<f32>,
@@ -99,9 +101,10 @@ fn skin_direction(palette_offset: u32, joints: vec4<u32>, weights: vec4<f32>, di
 
 @vertex
 fn vs_main(
-    instance: InstanceInput,
+    @builtin(instance_index) instance_index: u32,
     model: VertexInput,
 ) -> VertexOutput {
+    let instance = instances[instance_index];
     let transform = mat4x4<f32>(
         instance.m_1,
         instance.m_2,
@@ -110,14 +113,15 @@ fn vs_main(
     );
 
     let inverse_transpose_rot = mat3x3<f32>(
-        instance.itr_1,
-        instance.itr_2,
-        instance.itr_3,
+        instance.itr_1.xyz,
+        instance.itr_2.xyz,
+        instance.itr_3.xyz,
     );
 
-    let skinned_position = skin_position(instance.palette_offset, model.joints, model.weights, model.position);
-    let skinned_normal = normalize(skin_direction(instance.palette_offset, model.joints, model.weights, model.normal));
-    let skinned_tangent = normalize(skin_direction(instance.palette_offset, model.joints, model.weights, model.tangent.xyz));
+    let palette_offset = instance.offsets.x;
+    let skinned_position = skin_position(palette_offset, model.joints, model.weights, model.position);
+    let skinned_normal = normalize(skin_direction(palette_offset, model.joints, model.weights, model.normal));
+    let skinned_tangent = normalize(skin_direction(palette_offset, model.joints, model.weights, model.tangent.xyz));
 
     var out: VertexOutput;
     out.clip_position = view_proj * transform * vec4<f32>(skinned_position, 1.0);

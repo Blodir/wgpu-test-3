@@ -1,14 +1,16 @@
 @group(0) @binding(0) var<uniform> view_proj: mat4x4<f32>;
 
-struct InstanceInput {
-    @location(0) m_1: vec4<f32>,
-    @location(1) m_2: vec4<f32>,
-    @location(2) m_3: vec4<f32>,
-    @location(3) m_4: vec4<f32>,
-    @location(4) itr_1: vec3<f32>,
-    @location(5) itr_2: vec3<f32>,
-    @location(6) itr_3: vec3<f32>,
+struct InstanceData {
+    m_1: vec4<f32>,
+    m_2: vec4<f32>,
+    m_3: vec4<f32>,
+    m_4: vec4<f32>,
+    itr_1: vec4<f32>,
+    itr_2: vec4<f32>,
+    itr_3: vec4<f32>,
 }
+
+@group(3) @binding(0) var<storage, read> instances: array<InstanceData>;
 
 struct VertexInput {
     @location(7) tangent: vec4<f32>,
@@ -35,9 +37,10 @@ struct VertexOutput {
 
 @vertex
 fn vs_main(
-    instance: InstanceInput,
+    @builtin(instance_index) instance_index: u32,
     model: VertexInput,
 ) -> VertexOutput {
+    let instance = instances[instance_index];
     let transform = mat4x4<f32>(
         instance.m_1,
         instance.m_2,
@@ -46,9 +49,9 @@ fn vs_main(
     );
 
     let inverse_transpose_rot = mat3x3<f32>(
-        instance.itr_1,
-        instance.itr_2,
-        instance.itr_3,
+        instance.itr_1.xyz,
+        instance.itr_2.xyz,
+        instance.itr_3.xyz,
     );
 
     let position = model.position;

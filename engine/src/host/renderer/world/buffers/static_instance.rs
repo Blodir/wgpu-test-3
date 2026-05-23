@@ -9,140 +9,41 @@ use crate::host::{
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct StaticInstance {
     pub m4: [[f32; 4]; 4],
-    pub itr: [[f32; 3]; 3],
-    pub prev_m4: [[f32; 4]; 4],
+    pub itr: [[f32; 4]; 3],
+}
+
+fn pad_mat3(mat: Mat3) -> [[f32; 4]; 3] {
+    let cols = mat.to_cols_array_2d();
+    [
+        [cols[0][0], cols[0][1], cols[0][2], 0.0],
+        [cols[1][0], cols[1][1], cols[1][2], 0.0],
+        [cols[2][0], cols[2][1], cols[2][2], 0.0],
+    ]
 }
 
 impl Default for StaticInstance {
     fn default() -> Self {
         Self {
             m4: Mat4::IDENTITY.to_cols_array_2d(),
-            itr: Mat3::IDENTITY.to_cols_array_2d(),
-            prev_m4: Mat4::IDENTITY.to_cols_array_2d(),
+            itr: pad_mat3(Mat3::IDENTITY),
         }
     }
 }
 impl StaticInstance {
     pub fn new(transform: Mat4) -> Self {
         let m4 = transform.to_cols_array_2d();
-        let itr = Mat3::from_mat4(transform)
-            .inverse()
-            .transpose()
-            .to_cols_array_2d();
+        let itr = Mat3::from_mat4(transform).inverse().transpose();
 
         StaticInstance {
             m4,
-            itr,
-            prev_m4: m4,
-        }
-    }
-}
-
-impl StaticInstance {
-    const BASE_SHADER_LOCATION: u32 = 0;
-    const OFFSET_PREV_M4: wgpu::BufferAddress = size_of::<[f32; 25]>() as wgpu::BufferAddress;
-    const ATTRIBUTES: [wgpu::VertexAttribute; 7] = [
-        wgpu::VertexAttribute {
-            offset: 0,
-            shader_location: Self::BASE_SHADER_LOCATION + 0,
-            format: wgpu::VertexFormat::Float32x4,
-        },
-        wgpu::VertexAttribute {
-            offset: size_of::<[f32; 4]>() as wgpu::BufferAddress,
-            shader_location: Self::BASE_SHADER_LOCATION + 1,
-            format: wgpu::VertexFormat::Float32x4,
-        },
-        wgpu::VertexAttribute {
-            offset: size_of::<[f32; 8]>() as wgpu::BufferAddress,
-            shader_location: Self::BASE_SHADER_LOCATION + 2,
-            format: wgpu::VertexFormat::Float32x4,
-        },
-        wgpu::VertexAttribute {
-            offset: size_of::<[f32; 12]>() as wgpu::BufferAddress,
-            shader_location: Self::BASE_SHADER_LOCATION + 3,
-            format: wgpu::VertexFormat::Float32x4,
-        },
-        wgpu::VertexAttribute {
-            offset: size_of::<[f32; 16]>() as wgpu::BufferAddress,
-            shader_location: Self::BASE_SHADER_LOCATION + 4,
-            format: wgpu::VertexFormat::Float32x3,
-        },
-        wgpu::VertexAttribute {
-            offset: size_of::<[f32; 19]>() as wgpu::BufferAddress,
-            shader_location: Self::BASE_SHADER_LOCATION + 5,
-            format: wgpu::VertexFormat::Float32x3,
-        },
-        wgpu::VertexAttribute {
-            offset: size_of::<[f32; 22]>() as wgpu::BufferAddress,
-            shader_location: Self::BASE_SHADER_LOCATION + 6,
-            format: wgpu::VertexFormat::Float32x3,
-        },
-    ];
-
-    pub fn desc() -> wgpu::VertexBufferLayout<'static> {
-        wgpu::VertexBufferLayout {
-            array_stride: size_of::<StaticInstance>() as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Instance,
-            attributes: &Self::ATTRIBUTES,
-        }
-    }
-
-    const VELOCITY_ATTRIBUTES: [wgpu::VertexAttribute; 8] = [
-        wgpu::VertexAttribute {
-            offset: 0,
-            shader_location: 0,
-            format: wgpu::VertexFormat::Float32x4,
-        },
-        wgpu::VertexAttribute {
-            offset: size_of::<[f32; 4]>() as wgpu::BufferAddress,
-            shader_location: 1,
-            format: wgpu::VertexFormat::Float32x4,
-        },
-        wgpu::VertexAttribute {
-            offset: size_of::<[f32; 8]>() as wgpu::BufferAddress,
-            shader_location: 2,
-            format: wgpu::VertexFormat::Float32x4,
-        },
-        wgpu::VertexAttribute {
-            offset: size_of::<[f32; 12]>() as wgpu::BufferAddress,
-            shader_location: 3,
-            format: wgpu::VertexFormat::Float32x4,
-        },
-        wgpu::VertexAttribute {
-            offset: Self::OFFSET_PREV_M4,
-            shader_location: 4,
-            format: wgpu::VertexFormat::Float32x4,
-        },
-        wgpu::VertexAttribute {
-            offset: Self::OFFSET_PREV_M4 + size_of::<[f32; 4]>() as wgpu::BufferAddress,
-            shader_location: 5,
-            format: wgpu::VertexFormat::Float32x4,
-        },
-        wgpu::VertexAttribute {
-            offset: Self::OFFSET_PREV_M4 + size_of::<[f32; 8]>() as wgpu::BufferAddress,
-            shader_location: 6,
-            format: wgpu::VertexFormat::Float32x4,
-        },
-        wgpu::VertexAttribute {
-            offset: Self::OFFSET_PREV_M4 + size_of::<[f32; 12]>() as wgpu::BufferAddress,
-            shader_location: 7,
-            format: wgpu::VertexFormat::Float32x4,
-        },
-    ];
-
-    pub fn velocity_desc() -> wgpu::VertexBufferLayout<'static> {
-        wgpu::VertexBufferLayout {
-            array_stride: size_of::<StaticInstance>() as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Instance,
-            attributes: &Self::VELOCITY_ATTRIBUTES,
+            itr: pad_mat3(itr),
         }
     }
 
     pub fn from(mat4: Mat4, itr: Mat3) -> Self {
         Self {
             m4: mat4.to_cols_array_2d(),
-            itr: itr.to_cols_array_2d(),
-            prev_m4: mat4.to_cols_array_2d(),
+            itr: pad_mat3(itr),
         }
     }
 }
@@ -160,7 +61,7 @@ impl StaticInstances {
                 .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                     label: Some("Instance buffer"),
                     contents: bytemuck::cast_slice(&[StaticInstance::default()]),
-                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                    usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
                 });
         Self {
             buffer: instance_buffer,
@@ -183,7 +84,7 @@ impl StaticInstances {
             self.buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("Static instance buffer"),
                 contents: instance_bytes,
-                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             });
         }
         self.data = data;
