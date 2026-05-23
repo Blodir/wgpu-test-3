@@ -25,7 +25,7 @@ use super::pipelines::hbgi::HbgiPipeline;
 use super::pipelines::hbgi_pyramid::HbgiPyramidPipeline;
 use super::pipelines::hbgi_reproject::HbgiReprojectPipeline;
 use super::pipelines::post_processing::PostProcessingPipeline;
-use super::pipelines::skinned_pbr::SkinnedPbrPipeline;
+use super::pipelines::skinned_transparent::SkinnedTransparentPipeline;
 use super::pipelines::skybox::SkyboxPipeline;
 use super::pipelines::sun_shadow::SunShadowPipeline;
 use super::prepare::camera::prepare_camera;
@@ -38,7 +38,7 @@ use crate::host::assets::store::{PlaceholderTextureIds, RenderAssetStore, Textur
 use crate::host::renderer::{HbgiOptions, RendererOptions};
 use crate::host::wgpu_context::WgpuContext;
 use crate::host::world::buffers::static_instance::StaticInstances;
-use crate::host::world::pipelines::static_pbr::StaticPbrPipeline;
+use crate::host::world::pipelines::static_transparent::StaticTransparentPipeline;
 use crate::host::world::prepare::mesh::resolve_static_draw;
 use crate::host::world::sun_shadow::SUN_SHADOW_MAX_CASCADE_COUNT;
 use crate::{fixed_snapshot::FixedSnapshotGuard, var_snapshot::CameraSnapshotPair};
@@ -189,8 +189,8 @@ impl WorldBindGroups {
 struct WorldPipelines {
     skybox: SkyboxPipeline,
     sun_shadow: SunShadowPipeline,
-    skinned_pbr: SkinnedPbrPipeline,
-    static_pbr: StaticPbrPipeline,
+    skinned_transparent: SkinnedTransparentPipeline,
+    static_transparent: StaticTransparentPipeline,
     post: PostProcessingPipeline,
 }
 impl WorldPipelines {
@@ -209,7 +209,7 @@ impl WorldPipelines {
             &layouts.bones,
             &layouts.instance_storage,
         );
-        let skinned_pbr = SkinnedPbrPipeline::new(
+        let skinned_transparent = SkinnedTransparentPipeline::new(
             wgpu_context,
             shader_cache,
             &layouts.pbr_material,
@@ -217,7 +217,7 @@ impl WorldPipelines {
             &layouts.lights,
             &layouts.motion_bones,
         );
-        let static_pbr = StaticPbrPipeline::new(
+        let static_transparent = StaticTransparentPipeline::new(
             wgpu_context,
             shader_cache,
             &layouts.pbr_material,
@@ -235,8 +235,8 @@ impl WorldPipelines {
         Self {
             skybox,
             sun_shadow,
-            skinned_pbr,
-            static_pbr,
+            skinned_transparent,
+            static_transparent,
             post,
         }
     }
@@ -915,7 +915,7 @@ impl WorldRenderer {
             frame_idx,
         );
 
-        self.pipelines.skinned_pbr.render_transparent(
+        self.pipelines.skinned_transparent.render(
             &skinned_transparent_pass,
             encoder,
             &self.attachments.hdr_color.view,
@@ -926,7 +926,7 @@ impl WorldRenderer {
             render_resources,
         );
 
-        self.pipelines.static_pbr.render_transparent(
+        self.pipelines.static_transparent.render(
             &static_transparent_pass,
             encoder,
             &self.attachments.hdr_color.view,

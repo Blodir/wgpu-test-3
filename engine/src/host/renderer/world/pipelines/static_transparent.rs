@@ -1,15 +1,14 @@
-use crate::global_paths::{SHADER_PBR_FRAG_WGSL, SHADER_STATIC_PBR_VERT_WGSL};
+use crate::global_paths::{SHADER_PBR_FRAG_WGSL, SHADER_STATIC_TRANSPARENT_VERT_WGSL};
 use crate::host::assets::store::RenderAssetStore;
 use crate::host::world::attachments::depth::DepthTexture;
 use crate::host::world::{buffers::static_vertex::StaticVertex, prepare::mesh::PassDrawContext};
 use crate::host::{shader_cache::ShaderCache, wgpu_context::WgpuContext};
 
-pub struct StaticPbrPipeline {
-    pub opaque_pipeline: wgpu::RenderPipeline,
-    pub transparent_pipeline: wgpu::RenderPipeline,
+pub struct StaticTransparentPipeline {
+    pub pipeline: wgpu::RenderPipeline,
 }
 
-impl StaticPbrPipeline {
+impl StaticTransparentPipeline {
     pub fn new(
         wgpu_context: &WgpuContext,
         shader_cache: &mut ShaderCache,
@@ -18,29 +17,16 @@ impl StaticPbrPipeline {
         lights_bind_group_layout: &wgpu::BindGroupLayout,
         instance_bind_group_layout: &wgpu::BindGroupLayout,
     ) -> Self {
-        let opaque_pipeline = Self::build_pipeline(
+        let pipeline = Self::build_pipeline(
             wgpu_context,
             shader_cache,
             camera_bind_group_layout,
             lights_bind_group_layout,
-            &material_bind_group_layout,
+            material_bind_group_layout,
             instance_bind_group_layout,
-            false,
-        );
-        let transparent_pipeline = Self::build_pipeline(
-            wgpu_context,
-            shader_cache,
-            camera_bind_group_layout,
-            lights_bind_group_layout,
-            &material_bind_group_layout,
-            instance_bind_group_layout,
-            true,
         );
 
-        Self {
-            opaque_pipeline,
-            transparent_pipeline,
-        }
+        Self { pipeline }
     }
 
     pub fn build_pipeline(
@@ -50,7 +36,6 @@ impl StaticPbrPipeline {
         lights_bind_group_layout: &wgpu::BindGroupLayout,
         material_bind_group_layout: &wgpu::BindGroupLayout,
         instance_bind_group_layout: &wgpu::BindGroupLayout,
-        transparent: bool,
     ) -> wgpu::RenderPipeline {
         let vertex_buffer_layouts = &[StaticVertex::desc()];
         let bind_group_layouts = &[
@@ -63,18 +48,20 @@ impl StaticPbrPipeline {
             wgpu_context
                 .device
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                    label: Some("Static PBR Pipeline Layout"),
+                    label: Some("Static Transparent Pipeline Layout"),
                     bind_group_layouts,
                     push_constant_ranges: &[],
                 });
-        let vertex_shader_module =
-            shader_cache.get(SHADER_STATIC_PBR_VERT_WGSL.to_string(), wgpu_context);
+        let vertex_shader_module = shader_cache.get(
+            SHADER_STATIC_TRANSPARENT_VERT_WGSL.to_string(),
+            wgpu_context,
+        );
         let fragment_shader_module =
             shader_cache.get(SHADER_PBR_FRAG_WGSL.to_string(), wgpu_context);
         wgpu_context
             .device
             .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("Static PBR Pipeline"),
+                label: Some("Static Transparent Pipeline"),
                 layout: Some(&render_pipeline_layout),
                 vertex: wgpu::VertexState {
                     module: &vertex_shader_module,
@@ -87,11 +74,7 @@ impl StaticPbrPipeline {
                     entry_point: Some("fs_main"),
                     targets: &[Some(wgpu::ColorTargetState {
                         format: wgpu::TextureFormat::Rgba16Float,
-                        blend: Some(if transparent {
-                            wgpu::BlendState::ALPHA_BLENDING
-                        } else {
-                            wgpu::BlendState::REPLACE
-                        }),
+                        blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                         write_mask: wgpu::ColorWrites::ALL,
                     })],
                     compilation_options: wgpu::PipelineCompilationOptions::default(),
@@ -107,12 +90,8 @@ impl StaticPbrPipeline {
                 },
                 depth_stencil: Some(wgpu::DepthStencilState {
                     format: DepthTexture::DEPTH_FORMAT,
-                    depth_write_enabled: !transparent,
-                    depth_compare: if transparent {
-                        wgpu::CompareFunction::LessEqual
-                    } else {
-                        wgpu::CompareFunction::Less
-                    },
+                    depth_write_enabled: false,
+                    depth_compare: wgpu::CompareFunction::LessEqual,
                     stencil: wgpu::StencilState::default(),
                     bias: wgpu::DepthBiasState::default(),
                 }),
@@ -164,7 +143,7 @@ impl StaticPbrPipeline {
         }
     }
 
-    pub fn render_opaque<'a>(
+    pub fn render<'a>(
         &self,
         pass_draw: &'a PassDrawContext<'a>,
         encoder: &mut wgpu::CommandEncoder,
@@ -176,9 +155,9 @@ impl StaticPbrPipeline {
         render_resources: &'a RenderAssetStore,
     ) {
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("Static PBR Opaque Render Pass"),
+            label: Some("Static Transparent Render Pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &hdr_color_view,
+                view: hdr_color_view,
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Load,
@@ -197,47 +176,7 @@ impl StaticPbrPipeline {
             timestamp_writes: None,
         });
 
-        render_pass.set_pipeline(&self.opaque_pipeline);
-        render_pass.set_bind_group(0u32, camera_bind_group, &[]);
-        render_pass.set_bind_group(1, lights_bind_group, &[]);
-        render_pass.set_bind_group(3, instance_bind_group, &[]);
-        Self::draw_pass(pass_draw, &mut render_pass, render_resources);
-    }
-
-    pub fn render_transparent<'a>(
-        &self,
-        pass_draw: &'a PassDrawContext<'a>,
-        encoder: &mut wgpu::CommandEncoder,
-        hdr_color_view: &wgpu::TextureView,
-        depth_texture_view: &wgpu::TextureView,
-        camera_bind_group: &wgpu::BindGroup,
-        lights_bind_group: &wgpu::BindGroup,
-        instance_bind_group: &wgpu::BindGroup,
-        render_resources: &'a RenderAssetStore,
-    ) {
-        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("Static PBR Transparent Render Pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &hdr_color_view,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Load,
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
-            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                view: depth_texture_view,
-                depth_ops: Some(wgpu::Operations {
-                    load: wgpu::LoadOp::Load,
-                    store: wgpu::StoreOp::Store,
-                }),
-                stencil_ops: None,
-            }),
-            occlusion_query_set: None,
-            timestamp_writes: None,
-        });
-
-        render_pass.set_pipeline(&self.transparent_pipeline);
+        render_pass.set_pipeline(&self.pipeline);
         render_pass.set_bind_group(0u32, camera_bind_group, &[]);
         render_pass.set_bind_group(1, lights_bind_group, &[]);
         render_pass.set_bind_group(3, instance_bind_group, &[]);

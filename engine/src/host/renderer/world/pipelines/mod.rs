@@ -6,9 +6,9 @@ pub mod hbgi_pyramid;
 pub mod hbgi_reproject;
 pub mod mipmap;
 pub mod post_processing;
-pub mod skinned_pbr;
+pub mod skinned_transparent;
 pub mod skybox;
-pub mod static_pbr;
+pub mod static_transparent;
 pub mod sun_shadow;
 
 #[derive(Hash, Eq, PartialEq, Clone, Copy, Debug)]

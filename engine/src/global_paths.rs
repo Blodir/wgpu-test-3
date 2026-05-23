@@ -1,10 +1,10 @@
 pub const SHADER_FALLBACK_WGSL: &str = "engine/src/host/renderer/world/shaders/fallback.wgsl";
 pub const SHADER_POST_PROCESSING_WGSL: &str =
     "engine/src/host/renderer/world/shaders/post_processing.wgsl";
-pub const SHADER_SKINNED_PBR_VERT_WGSL: &str =
-    "engine/src/host/renderer/world/shaders/skinned_pbr.vert.wgsl";
-pub const SHADER_STATIC_PBR_VERT_WGSL: &str =
-    "engine/src/host/renderer/world/shaders/static_pbr.vert.wgsl";
+pub const SHADER_SKINNED_TRANSPARENT_VERT_WGSL: &str =
+    "engine/src/host/renderer/world/shaders/skinned_transparent.vert.wgsl";
+pub const SHADER_STATIC_TRANSPARENT_VERT_WGSL: &str =
+    "engine/src/host/renderer/world/shaders/static_transparent.vert.wgsl";
 pub const SHADER_G_BUFFER_STATIC_VERT_WGSL: &str =
     "engine/src/host/renderer/world/shaders/g_buffer_static.vert.wgsl";
 pub const SHADER_G_BUFFER_SKINNED_VERT_WGSL: &str =
