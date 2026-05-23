@@ -34,41 +34,20 @@ impl Default for HbgiOptions {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
-pub enum OpaqueRenderPath {
-    Deferred {
-        hbgi: Option<HbgiOptions>,
-    },
-    CompactDeferred,
-    #[default]
-    Forward,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RendererOptions {
-    pub opaque_render_path: OpaqueRenderPath,
+    pub hbgi: Option<HbgiOptions>,
 }
 impl Default for RendererOptions {
     fn default() -> Self {
         Self {
-            opaque_render_path: OpaqueRenderPath::Forward,
+            hbgi: Some(HbgiOptions::default()),
         }
     }
 }
 impl RendererOptions {
-    pub fn from_limits(limits: &wgpu::Limits) -> Self {
-        // Conservative heuristic based on MRT availability for deferred paths.
-        let opaque_render_path = if limits.max_color_attachments >= 6 {
-            OpaqueRenderPath::Deferred {
-                hbgi: Some(HbgiOptions::default()),
-            }
-        } else if limits.max_color_attachments >= 4 {
-            OpaqueRenderPath::CompactDeferred
-        } else {
-            OpaqueRenderPath::Forward
-        };
-
-        Self { opaque_render_path }
+    pub fn from_limits(_limits: &wgpu::Limits) -> Self {
+        Self::default()
     }
 }
 

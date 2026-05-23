@@ -12,7 +12,7 @@ use engine::{
         },
         sim::InputEvent,
     },
-    host::renderer::{HbgiOptions, OpaqueRenderPath, RenderCommand, RendererOptions, UiFrameInfo},
+    host::renderer::{RenderCommand, RendererOptions, UiFrameInfo},
     host::world::sun_shadow::SUN_SHADOW_MAX_CASCADE_COUNT,
     run,
 };
@@ -868,8 +868,12 @@ impl UiTrait for Game {
             ui_frame_info.diagnostics.sim.frame_time_ms
         );
         let line5 = format!(
-            "opaque path: {:?}",
-            ui_frame_info.settings.renderer_options.opaque_render_path
+            "hbgi: {}",
+            if ui_frame_info.settings.renderer_options.hbgi.is_some() {
+                "enabled"
+            } else {
+                "disabled"
+            }
         );
         let text_color = egui::Color32::WHITE;
         let font = egui::FontId::proportional(22.0);
@@ -1112,79 +1116,49 @@ impl UiTrait for Game {
             .default_pos(egui::pos2(UI_WINDOW_RENDERER_X, ui_windows_y))
             .resizable(false)
             .show(ctx, |ui| {
-                let mut opaque_path_kind = match renderer_options.opaque_render_path {
-                    OpaqueRenderPath::Forward => 0u32,
-                    OpaqueRenderPath::CompactDeferred => 1u32,
-                    OpaqueRenderPath::Deferred { .. } => 2u32,
-                };
-                ui.label("Opaque Path");
-                render_settings_changed |= ui
-                    .radio_value(&mut opaque_path_kind, 0, "Forward")
-                    .changed();
-                render_settings_changed |= ui
-                    .radio_value(&mut opaque_path_kind, 1, "Compact Deferred")
-                    .changed();
-                render_settings_changed |= ui
-                    .radio_value(&mut opaque_path_kind, 2, "Deferred")
-                    .changed();
+                ui.label("Opaque Path: Deferred");
 
-                let mut deferred_hbgi = match renderer_options.opaque_render_path {
-                    OpaqueRenderPath::Deferred { hbgi } => hbgi,
-                    _ => Some(HbgiOptions::default()),
-                };
-                if opaque_path_kind == 2 {
-                    let mut deferred_hbgi_enabled = deferred_hbgi.is_some();
+                let mut hbgi = renderer_options.hbgi;
+                let mut hbgi_enabled = hbgi.is_some();
+                render_settings_changed |= ui.checkbox(&mut hbgi_enabled, "Enable HBGI").changed();
+                if hbgi_enabled {
+                    let mut hbgi_options = hbgi.unwrap_or_default();
                     render_settings_changed |= ui
-                        .checkbox(&mut deferred_hbgi_enabled, "Enable HBGI")
+                        .add(
+                            egui::Slider::new(&mut hbgi_options.radius_pixels, 1.0..=2000.0)
+                                .text("HBGI Radius Pixels")
+                                .clamping(egui::SliderClamping::Always),
+                        )
                         .changed();
-                    if deferred_hbgi_enabled {
-                        let mut hbgi_options = deferred_hbgi.unwrap_or_default();
-                        render_settings_changed |= ui
-                            .add(
-                                egui::Slider::new(&mut hbgi_options.radius_pixels, 1.0..=2000.0)
-                                    .text("HBGI Radius Pixels")
-                                    .clamping(egui::SliderClamping::Always),
-                            )
-                            .changed();
-                        render_settings_changed |= ui
-                            .add(
-                                egui::Slider::new(&mut hbgi_options.radius_world, 0.05..=1000.0)
-                                    .text("HBGI World Radius")
-                                    .logarithmic(true)
-                                    .clamping(egui::SliderClamping::Always),
-                            )
-                            .changed();
-                        render_settings_changed |= ui
-                            .add(
-                                egui::Slider::new(&mut hbgi_options.step_size_exponent, 0.1..=8.0)
-                                    .text("HBGI Step Size Exponent")
-                                    .clamping(egui::SliderClamping::Always),
-                            )
-                            .changed();
-                        render_settings_changed |= ui
-                            .add(
-                                egui::Slider::new(&mut hbgi_options.gi_intensity, 0.05..=16.0)
-                                    .text("HBGI GI Intensity")
-                                    .logarithmic(true)
-                                    .clamping(egui::SliderClamping::Always),
-                            )
-                            .changed();
-                        deferred_hbgi = Some(hbgi_options);
-                    } else {
-                        deferred_hbgi = None;
-                    }
+                    render_settings_changed |= ui
+                        .add(
+                            egui::Slider::new(&mut hbgi_options.radius_world, 0.05..=1000.0)
+                                .text("HBGI World Radius")
+                                .logarithmic(true)
+                                .clamping(egui::SliderClamping::Always),
+                        )
+                        .changed();
+                    render_settings_changed |= ui
+                        .add(
+                            egui::Slider::new(&mut hbgi_options.step_size_exponent, 0.1..=8.0)
+                                .text("HBGI Step Size Exponent")
+                                .clamping(egui::SliderClamping::Always),
+                        )
+                        .changed();
+                    render_settings_changed |= ui
+                        .add(
+                            egui::Slider::new(&mut hbgi_options.gi_intensity, 0.05..=16.0)
+                                .text("HBGI GI Intensity")
+                                .logarithmic(true)
+                                .clamping(egui::SliderClamping::Always),
+                        )
+                        .changed();
+                    hbgi = Some(hbgi_options);
+                } else {
+                    hbgi = None;
                 }
 
-                renderer_options = RendererOptions {
-                    opaque_render_path: match opaque_path_kind {
-                        0 => OpaqueRenderPath::Forward,
-                        1 => OpaqueRenderPath::CompactDeferred,
-                        2 => OpaqueRenderPath::Deferred {
-                            hbgi: deferred_hbgi,
-                        },
-                        _ => OpaqueRenderPath::Forward,
-                    },
-                };
+                renderer_options = RendererOptions { hbgi };
             });
         if render_settings_changed {
             emit(EngineUiCommand::Render(RenderCommand::SetRendererOptions(
