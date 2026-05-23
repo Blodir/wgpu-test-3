@@ -9,7 +9,6 @@ use super::attachments::color::HdrColorTexture;
 use super::attachments::deferred::{GBufferTargets, HbgiTexture};
 use super::attachments::depth::DepthTexture;
 use super::attachments::hbgi_pyramid::{FloatPyramidTexture, HbgiPyramidTextures};
-use super::attachments::motion_vectors::MotionVectorsTexture;
 use super::attachments::skybox::SkyboxOutputTexture;
 use super::attachments::sun_shadow::SunShadowTexture;
 use super::bindgroups::bones::BonesBinding;
@@ -25,7 +24,6 @@ use super::pipelines::gi_blur::GiBlurPipeline;
 use super::pipelines::hbgi::HbgiPipeline;
 use super::pipelines::hbgi_pyramid::HbgiPyramidPipeline;
 use super::pipelines::hbgi_reproject::HbgiReprojectPipeline;
-use super::pipelines::motion_vectors::MotionVectorsPipeline;
 use super::pipelines::post_processing::PostProcessingPipeline;
 use super::pipelines::skinned_pbr::SkinnedPbrPipeline;
 use super::pipelines::skybox::SkyboxPipeline;
@@ -217,7 +215,7 @@ impl WorldPipelines {
             &layouts.pbr_material,
             &layouts.camera,
             &layouts.lights,
-            &layouts.bones,
+            &layouts.motion_bones,
         );
         let static_pbr = StaticPbrPipeline::new(
             wgpu_context,
@@ -248,7 +246,6 @@ struct DeferredOpaqueRenderer {
     hbgi_options: Option<HbgiOptions>,
     g_buffer_targets: GBufferTargets,
     hbgi_texture: HbgiTexture,
-    motion_vectors: MotionVectorsTexture,
     gi_source_write: HdrColorTexture,
     gi_source_prev: HdrColorTexture,
     hbgi_reproject_write: HdrColorTexture,
@@ -266,7 +263,6 @@ struct DeferredOpaqueRenderer {
     gi_blur_pipeline: GiBlurPipeline,
     deferred_lighting_pipeline: DeferredLightingPipeline,
     hbgi_reproject_pipeline: HbgiReprojectPipeline,
-    motion_vectors_pipeline: MotionVectorsPipeline,
     hbgi_reproject_valid: bool,
 }
 impl DeferredOpaqueRenderer {
@@ -280,8 +276,6 @@ impl DeferredOpaqueRenderer {
         let g_buffer_targets =
             GBufferTargets::new(&wgpu_context.device, &wgpu_context.surface_config);
         let hbgi_texture = HbgiTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
-        let motion_vectors =
-            MotionVectorsTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
         let gi_source_write =
             HdrColorTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
         let gi_source_prev =
@@ -335,13 +329,6 @@ impl DeferredOpaqueRenderer {
             &layouts.material,
             &layouts.camera,
             &layouts.lights,
-            &layouts.bones,
-            &layouts.instance_storage,
-        );
-        let motion_vectors_pipeline = MotionVectorsPipeline::new(
-            wgpu_context,
-            shader_cache,
-            &layouts.camera,
             &layouts.motion_bones,
             &layouts.instance_storage,
         );
@@ -349,7 +336,7 @@ impl DeferredOpaqueRenderer {
             wgpu_context,
             shader_cache,
             &layouts.camera,
-            &motion_vectors,
+            &g_buffer_targets.motion_vectors,
             &hbgi_texture.view,
             &hbgi_texture.irradiance_view,
             &hbgi_reproject_prev,
@@ -372,7 +359,6 @@ impl DeferredOpaqueRenderer {
             hbgi_options,
             g_buffer_targets,
             hbgi_texture,
-            motion_vectors,
             gi_source_write,
             gi_source_prev,
             hbgi_reproject_write,
@@ -390,7 +376,6 @@ impl DeferredOpaqueRenderer {
             gi_blur_pipeline,
             deferred_lighting_pipeline,
             hbgi_reproject_pipeline,
-            motion_vectors_pipeline,
             hbgi_reproject_valid: false,
         }
     }
@@ -402,7 +387,7 @@ impl DeferredOpaqueRenderer {
     ) {
         self.hbgi_reproject_pipeline.update_input_bindgroup(
             device,
-            &self.motion_vectors,
+            &self.g_buffer_targets.motion_vectors,
             &self.hbgi_texture.view,
             &self.hbgi_texture.irradiance_view,
             &self.hbgi_reproject_prev,
@@ -512,7 +497,6 @@ impl DeferredOpaqueRenderer {
         hdr_color_view: &wgpu::TextureView,
         camera_bind_group: &wgpu::BindGroup,
         lights_bind_group: &wgpu::BindGroup,
-        bones_bind_group: &wgpu::BindGroup,
         motion_bones_bind_group: &wgpu::BindGroup,
         static_instance_bind_group: &wgpu::BindGroup,
         render_resources: &'a RenderAssetStore,
@@ -528,7 +512,7 @@ impl DeferredOpaqueRenderer {
             depth_texture_view,
             camera_bind_group,
             lights_bind_group,
-            bones_bind_group,
+            motion_bones_bind_group,
             render_resources,
         );
         self.g_buffer_pipeline.render_static_opaque(
@@ -538,24 +522,6 @@ impl DeferredOpaqueRenderer {
             depth_texture_view,
             camera_bind_group,
             lights_bind_group,
-            static_instance_bind_group,
-            render_resources,
-        );
-        self.motion_vectors_pipeline.render_skinned_opaque(
-            skinned_opaque_pass,
-            encoder,
-            &self.motion_vectors.view,
-            depth_texture_view,
-            camera_bind_group,
-            motion_bones_bind_group,
-            render_resources,
-        );
-        self.motion_vectors_pipeline.render_static_opaque(
-            static_opaque_pass,
-            encoder,
-            &self.motion_vectors.view,
-            depth_texture_view,
-            camera_bind_group,
             static_instance_bind_group,
             render_resources,
         );
@@ -659,8 +625,6 @@ impl DeferredOpaqueRenderer {
         self.g_buffer_targets =
             GBufferTargets::new(&wgpu_context.device, &wgpu_context.surface_config);
         self.hbgi_texture = HbgiTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
-        self.motion_vectors =
-            MotionVectorsTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
         self.gi_source_write =
             HdrColorTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
         self.gi_source_prev =
@@ -711,7 +675,7 @@ impl DeferredOpaqueRenderer {
         );
         self.hbgi_reproject_pipeline.update_input_bindgroup(
             &wgpu_context.device,
-            &self.motion_vectors,
+            &self.g_buffer_targets.motion_vectors,
             &self.hbgi_texture.view,
             &self.hbgi_texture.irradiance_view,
             &self.hbgi_reproject_prev,
@@ -988,7 +952,7 @@ impl WorldRenderer {
                     &self.attachments.depth_texture.view,
                     &self.bind_groups.camera.bind_group,
                     &self.bind_groups.lights.bind_group,
-                    &self.bind_groups.bones.bind_group,
+                    &self.bind_groups.bones.motion_bind_group,
                     render_resources,
                 );
 
@@ -1011,7 +975,6 @@ impl WorldRenderer {
                 &self.attachments.hdr_color.view,
                 &self.bind_groups.camera.bind_group,
                 &self.bind_groups.lights.bind_group,
-                &self.bind_groups.bones.bind_group,
                 &self.bind_groups.bones.motion_bind_group,
                 &self.bind_groups.static_instances.bind_group,
                 render_resources,
@@ -1044,7 +1007,7 @@ impl WorldRenderer {
             &self.attachments.depth_texture.view,
             &self.bind_groups.camera.bind_group,
             &self.bind_groups.lights.bind_group,
-            &self.bind_groups.bones.bind_group,
+            &self.bind_groups.bones.motion_bind_group,
             render_resources,
         );
 

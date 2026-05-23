@@ -5,7 +5,6 @@ pub mod hbgi;
 pub mod hbgi_pyramid;
 pub mod hbgi_reproject;
 pub mod mipmap;
-pub mod motion_vectors;
 pub mod post_processing;
 pub mod skinned_pbr;
 pub mod skybox;

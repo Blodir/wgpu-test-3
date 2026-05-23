@@ -1,5 +1,5 @@
 use crate::global_paths::{
-    SHADER_G_BUFFER_FRAG_WGSL, SHADER_SKINNED_PBR_VERT_WGSL, SHADER_STATIC_PBR_VERT_WGSL,
+    SHADER_G_BUFFER_FRAG_WGSL, SHADER_G_BUFFER_SKINNED_VERT_WGSL, SHADER_G_BUFFER_STATIC_VERT_WGSL,
 };
 use crate::host::assets::store::RenderAssetStore;
 use crate::host::world::{
@@ -22,7 +22,7 @@ impl GBufferPipeline {
         material_bind_group_layout: &wgpu::BindGroupLayout,
         camera_bind_group_layout: &wgpu::BindGroupLayout,
         lights_bind_group_layout: &wgpu::BindGroupLayout,
-        bones_bind_group_layout: &wgpu::BindGroupLayout,
+        motion_bones_bind_group_layout: &wgpu::BindGroupLayout,
         instance_bind_group_layout: &wgpu::BindGroupLayout,
     ) -> Self {
         let skinned_pipeline = Self::build_skinned_pipeline(
@@ -31,7 +31,7 @@ impl GBufferPipeline {
             camera_bind_group_layout,
             lights_bind_group_layout,
             material_bind_group_layout,
-            bones_bind_group_layout,
+            motion_bones_bind_group_layout,
         );
         let static_pipeline = Self::build_static_pipeline(
             wgpu_context,
@@ -54,13 +54,13 @@ impl GBufferPipeline {
         camera_bind_group_layout: &wgpu::BindGroupLayout,
         lights_bind_group_layout: &wgpu::BindGroupLayout,
         material_bind_group_layout: &wgpu::BindGroupLayout,
-        bones_bind_group_layout: &wgpu::BindGroupLayout,
+        motion_bones_bind_group_layout: &wgpu::BindGroupLayout,
     ) -> wgpu::RenderPipeline {
         let bind_group_layouts = &[
             camera_bind_group_layout,
             lights_bind_group_layout,
             material_bind_group_layout,
-            bones_bind_group_layout,
+            motion_bones_bind_group_layout,
         ];
         let render_pipeline_layout =
             wgpu_context
@@ -71,10 +71,15 @@ impl GBufferPipeline {
                     push_constant_ranges: &[],
                 });
         let vertex_shader_module =
-            shader_cache.get(SHADER_SKINNED_PBR_VERT_WGSL.to_string(), wgpu_context);
+            shader_cache.get(SHADER_G_BUFFER_SKINNED_VERT_WGSL.to_string(), wgpu_context);
         let fragment_shader_module =
             shader_cache.get(SHADER_G_BUFFER_FRAG_WGSL.to_string(), wgpu_context);
         let targets = &[
+            Some(wgpu::ColorTargetState {
+                format: wgpu::TextureFormat::Rgba16Float,
+                blend: None,
+                write_mask: wgpu::ColorWrites::ALL,
+            }),
             Some(wgpu::ColorTargetState {
                 format: wgpu::TextureFormat::Rgba16Float,
                 blend: None,
@@ -158,10 +163,15 @@ impl GBufferPipeline {
                     push_constant_ranges: &[],
                 });
         let vertex_shader_module =
-            shader_cache.get(SHADER_STATIC_PBR_VERT_WGSL.to_string(), wgpu_context);
+            shader_cache.get(SHADER_G_BUFFER_STATIC_VERT_WGSL.to_string(), wgpu_context);
         let fragment_shader_module =
             shader_cache.get(SHADER_G_BUFFER_FRAG_WGSL.to_string(), wgpu_context);
         let targets = &[
+            Some(wgpu::ColorTargetState {
+                format: wgpu::TextureFormat::Rgba16Float,
+                blend: None,
+                write_mask: wgpu::ColorWrites::ALL,
+            }),
             Some(wgpu::ColorTargetState {
                 format: wgpu::TextureFormat::Rgba16Float,
                 blend: None,
@@ -306,7 +316,7 @@ impl GBufferPipeline {
         depth_texture_view: &wgpu::TextureView,
         camera_bind_group: &wgpu::BindGroup,
         lights_bind_group: &wgpu::BindGroup,
-        bones_bind_group: &wgpu::BindGroup,
+        motion_bones_bind_group: &wgpu::BindGroup,
         render_resources: &'a RenderAssetStore,
     ) {
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -336,6 +346,14 @@ impl GBufferPipeline {
                         store: wgpu::StoreOp::Store,
                     },
                 }),
+                Some(wgpu::RenderPassColorAttachment {
+                    view: &gbuffer.motion_vectors.view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                        store: wgpu::StoreOp::Store,
+                    },
+                }),
             ],
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                 view: depth_texture_view,
@@ -352,7 +370,7 @@ impl GBufferPipeline {
         render_pass.set_pipeline(&self.skinned_pipeline);
         render_pass.set_bind_group(0u32, camera_bind_group, &[]);
         render_pass.set_bind_group(1u32, lights_bind_group, &[]);
-        render_pass.set_bind_group(3u32, bones_bind_group, &[]);
+        render_pass.set_bind_group(3u32, motion_bones_bind_group, &[]);
         Self::draw_skinned(pass_draw, &mut render_pass, render_resources);
     }
 
@@ -388,6 +406,14 @@ impl GBufferPipeline {
                 }),
                 Some(wgpu::RenderPassColorAttachment {
                     view: &gbuffer.emissive_metallic.view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                }),
+                Some(wgpu::RenderPassColorAttachment {
+                    view: &gbuffer.motion_vectors.view,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Load,

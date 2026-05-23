@@ -5,6 +5,10 @@ pub const SHADER_SKINNED_PBR_VERT_WGSL: &str =
     "engine/src/host/renderer/world/shaders/skinned_pbr.vert.wgsl";
 pub const SHADER_STATIC_PBR_VERT_WGSL: &str =
     "engine/src/host/renderer/world/shaders/static_pbr.vert.wgsl";
+pub const SHADER_G_BUFFER_STATIC_VERT_WGSL: &str =
+    "engine/src/host/renderer/world/shaders/g_buffer_static.vert.wgsl";
+pub const SHADER_G_BUFFER_SKINNED_VERT_WGSL: &str =
+    "engine/src/host/renderer/world/shaders/g_buffer_skinned.vert.wgsl";
 pub const SHADER_SUN_SHADOW_SKINNED_VERT_WGSL: &str =
     "engine/src/host/renderer/world/shaders/sun_shadow_skinned.vert.wgsl";
 pub const SHADER_SUN_SHADOW_STATIC_VERT_WGSL: &str =
@@ -20,10 +24,6 @@ pub const SHADER_DEFERRED_LIGHTING_WGSL: &str =
     "engine/src/host/renderer/world/shaders/deferred_lighting.wgsl";
 pub const SHADER_SKYBOX_WGSL: &str = "engine/src/host/renderer/world/shaders/skybox.wgsl";
 pub const SHADER_MIPMAP_WGSL: &str = "engine/src/host/renderer/world/shaders/mipmap.wgsl";
-pub const SHADER_MOTION_VECTORS_STATIC_WGSL: &str =
-    "engine/src/host/renderer/world/shaders/motion_vectors_static.wgsl";
-pub const SHADER_MOTION_VECTORS_SKINNED_WGSL: &str =
-    "engine/src/host/renderer/world/shaders/motion_vectors_skinned.wgsl";
 pub const SHADER_HBGI_REPROJECT_WGSL: &str =
     "engine/src/host/renderer/world/shaders/hbgi_reproject.wgsl";
 

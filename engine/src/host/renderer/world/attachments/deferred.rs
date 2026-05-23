@@ -10,6 +10,20 @@ impl GBufferTexture {
         surface_config: &wgpu::SurfaceConfiguration,
         label: &str,
     ) -> Self {
+        Self::new_with_format(
+            device,
+            surface_config,
+            label,
+            wgpu::TextureFormat::Rgba16Float,
+        )
+    }
+
+    fn new_with_format(
+        device: &wgpu::Device,
+        surface_config: &wgpu::SurfaceConfiguration,
+        label: &str,
+        format: wgpu::TextureFormat,
+    ) -> Self {
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some(label),
             size: wgpu::Extent3d {
@@ -20,7 +34,7 @@ impl GBufferTexture {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba16Float,
+            format,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         });
@@ -39,6 +53,7 @@ pub struct GBufferTargets {
     pub albedo_ao: GBufferTexture,
     pub normal_roughness: GBufferTexture,
     pub emissive_metallic: GBufferTexture,
+    pub motion_vectors: GBufferTexture,
 }
 
 impl GBufferTargets {
@@ -54,6 +69,12 @@ impl GBufferTargets {
                 device,
                 surface_config,
                 "GBuffer EmissiveMetallic",
+            ),
+            motion_vectors: GBufferTexture::new_with_format(
+                device,
+                surface_config,
+                "GBuffer MotionVectors",
+                wgpu::TextureFormat::Rgba16Float,
             ),
         }
     }

@@ -7,7 +7,6 @@ use crate::host::{
     wgpu_context::WgpuContext,
     world::attachments::{
         color::HdrColorTexture, deferred::GBufferTexture, hbgi_pyramid::FloatPyramidTexture,
-        motion_vectors::MotionVectorsTexture,
     },
 };
 
@@ -33,7 +32,7 @@ impl HbgiReprojectPipeline {
         wgpu_context: &WgpuContext,
         shader_cache: &mut ShaderCache,
         camera_bind_group_layout: &wgpu::BindGroupLayout,
-        motion_vectors: &MotionVectorsTexture,
+        motion_vectors: &GBufferTexture,
         current_hbgi_view: &wgpu::TextureView,
         current_hbgi_irradiance_view: &wgpu::TextureView,
         prev_hbgi_reproject: &HdrColorTexture,
@@ -278,7 +277,7 @@ impl HbgiReprojectPipeline {
     fn create_inputs_bind_group(
         device: &wgpu::Device,
         bind_group_layout: &wgpu::BindGroupLayout,
-        motion_vectors: &MotionVectorsTexture,
+        motion_vectors: &GBufferTexture,
         current_hbgi_view: &wgpu::TextureView,
         current_hbgi_irradiance_view: &wgpu::TextureView,
         prev_hbgi_reproject: &HdrColorTexture,
@@ -337,7 +336,7 @@ impl HbgiReprojectPipeline {
     pub fn update_input_bindgroup(
         &mut self,
         device: &wgpu::Device,
-        motion_vectors: &MotionVectorsTexture,
+        motion_vectors: &GBufferTexture,
         current_hbgi_view: &wgpu::TextureView,
         current_hbgi_irradiance_view: &wgpu::TextureView,
         prev_hbgi_reproject: &HdrColorTexture,

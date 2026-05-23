@@ -29,12 +29,15 @@ struct VertexOutput {
     @location(6) emissive_tex_coords: vec2<f32>,
     @location(7) base_color_tex_coords: vec2<f32>,
     @location(8) metallic_roughness_tex_coords: vec2<f32>,
+    @location(9) curr_clip: vec4<f32>,
+    @location(10) prev_clip: vec4<f32>,
 }
 
 struct GBufferOutput {
     @location(0) albedo_ao: vec4<f32>,
     @location(1) normal_roughness: vec4<f32>,
     @location(2) emissive_metallic: vec4<f32>,
+    @location(3) motion_vectors: vec4<f32>,
 }
 
 @fragment
@@ -80,10 +83,17 @@ fn fs_main(in: VertexOutput) -> GBufferOutput {
         );
     let surface_emissive = surface_emissive_sample.rgb * emissive_factor;
     let ao = textureSample(occlusion_texture, occlusion_texture_sampler, in.occlusion_tex_coords);
+    var motion = vec2f(0.0);
+    if (abs(in.curr_clip.w) >= 1e-6 && abs(in.prev_clip.w) >= 1e-6) {
+        let curr_ndc = in.curr_clip.xy / in.curr_clip.w;
+        let prev_ndc = in.prev_clip.xy / in.prev_clip.w;
+        motion = (curr_ndc - prev_ndc) * vec2<f32>(0.5, -0.5);
+    }
 
     var out: GBufferOutput;
     out.albedo_ao = vec4f(surface_color.rgb, ao.r);
     out.normal_roughness = vec4f(normalize(N), surface_roughness);
     out.emissive_metallic = vec4f(surface_emissive, surface_metallic);
+    out.motion_vectors = vec4f(motion, 0.0, 0.0);
     return out;
 }
