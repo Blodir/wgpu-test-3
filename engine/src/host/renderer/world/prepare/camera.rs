@@ -105,6 +105,7 @@ pub fn prepare_camera(
     camera: &mut CameraBinding,
     camera_pair: &CameraSnapshotPair,
     now: Instant,
+    prev_view_proj: Option<&Mat4>,
     queue: &wgpu::Queue,
     surface_config: &wgpu::SurfaceConfiguration,
 ) -> PreparedCamera {
@@ -123,6 +124,7 @@ pub fn prepare_camera(
         [forward.x, forward.y, forward.z, 0.0],
     ];
     let inverse_view_proj = view_proj.inverse();
+    let prev_view_proj = prev_view_proj.unwrap_or(&view_proj);
 
     camera.update(
         &view_proj.to_cols_array(),
@@ -130,6 +132,7 @@ pub fn prepare_camera(
         &inverse_view_proj.to_cols_array(),
         &forward.to_array(),
         &view_rotation,
+        &prev_view_proj.to_cols_array(),
         queue,
     );
 

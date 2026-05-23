@@ -7,6 +7,7 @@ pub struct CameraMatrices {
     pub inverse_view_proj: [[f32; 4]; 4],
     pub forward: [f32; 3],
     pub view_rotation: [[f32; 4]; 3],
+    pub prev_view_proj: [[f32; 4]; 4],
 }
 
 pub struct CameraBinding {
@@ -15,6 +16,7 @@ pub struct CameraBinding {
     inverse_view_proj_buffer: wgpu::Buffer,
     forward_buffer: wgpu::Buffer,
     view_rotation_buffer: wgpu::Buffer,
+    prev_view_proj_buffer: wgpu::Buffer,
     pub bind_group: wgpu::BindGroup,
 }
 impl CameraBinding {
@@ -53,6 +55,11 @@ impl CameraBinding {
             contents: bytemuck::cast_slice(&Self::padded_view_rotation(Vec3::X, Vec3::Y, -Vec3::Z)),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
+        let prev_view_proj_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Previous View Projection Buffer"),
+            contents: bytemuck::cast_slice(&Mat4::IDENTITY.to_cols_array()),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: bind_group_layout,
             entries: &[
@@ -76,6 +83,10 @@ impl CameraBinding {
                     binding: 4,
                     resource: view_rotation_buffer.as_entire_binding(),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: prev_view_proj_buffer.as_entire_binding(),
+                },
             ],
             label: Some("Camera Bind Group"),
         });
@@ -87,6 +98,7 @@ impl CameraBinding {
             inverse_view_proj_buffer,
             forward_buffer,
             view_rotation_buffer,
+            prev_view_proj_buffer,
         }
     }
 
@@ -143,6 +155,16 @@ impl CameraBinding {
                     },
                     count: None,
                 },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 5,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
             ],
             label: Some("Camera Bind Group Layout"),
         }
@@ -155,6 +177,7 @@ impl CameraBinding {
         inverse_view_proj: &[f32; 16],
         forward: &[f32; 3],
         view_rotation: &[[f32; 4]; 3],
+        prev_view_proj: &[f32; 16],
         queue: &wgpu::Queue,
     ) {
         queue.write_buffer(&self.view_proj_buffer, 0, bytemuck::cast_slice(view_proj));
@@ -169,6 +192,11 @@ impl CameraBinding {
             &self.view_rotation_buffer,
             0,
             bytemuck::cast_slice(view_rotation),
+        );
+        queue.write_buffer(
+            &self.prev_view_proj_buffer,
+            0,
+            bytemuck::cast_slice(prev_view_proj),
         );
     }
 }

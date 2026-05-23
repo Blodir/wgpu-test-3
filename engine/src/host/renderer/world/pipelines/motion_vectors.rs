@@ -16,20 +16,20 @@ impl MotionVectorsPipeline {
     pub fn new(
         wgpu_context: &WgpuContext,
         shader_cache: &mut ShaderCache,
-        motion_camera_bind_group_layout: &wgpu::BindGroupLayout,
+        camera_bind_group_layout: &wgpu::BindGroupLayout,
         motion_bones_bind_group_layout: &wgpu::BindGroupLayout,
         instance_bind_group_layout: &wgpu::BindGroupLayout,
     ) -> Self {
         let skinned_pipeline = Self::build_skinned_pipeline(
             wgpu_context,
             shader_cache,
-            motion_camera_bind_group_layout,
+            camera_bind_group_layout,
             motion_bones_bind_group_layout,
         );
         let static_pipeline = Self::build_static_pipeline(
             wgpu_context,
             shader_cache,
-            motion_camera_bind_group_layout,
+            camera_bind_group_layout,
             instance_bind_group_layout,
         );
         Self {
@@ -41,13 +41,10 @@ impl MotionVectorsPipeline {
     fn build_skinned_pipeline(
         wgpu_context: &WgpuContext,
         shader_cache: &mut ShaderCache,
-        motion_camera_bind_group_layout: &wgpu::BindGroupLayout,
+        camera_bind_group_layout: &wgpu::BindGroupLayout,
         motion_bones_bind_group_layout: &wgpu::BindGroupLayout,
     ) -> wgpu::RenderPipeline {
-        let bind_group_layouts = &[
-            motion_camera_bind_group_layout,
-            motion_bones_bind_group_layout,
-        ];
+        let bind_group_layouts = &[camera_bind_group_layout, motion_bones_bind_group_layout];
         let render_pipeline_layout =
             wgpu_context
                 .device
@@ -104,10 +101,10 @@ impl MotionVectorsPipeline {
     fn build_static_pipeline(
         wgpu_context: &WgpuContext,
         shader_cache: &mut ShaderCache,
-        motion_camera_bind_group_layout: &wgpu::BindGroupLayout,
+        camera_bind_group_layout: &wgpu::BindGroupLayout,
         instance_bind_group_layout: &wgpu::BindGroupLayout,
     ) -> wgpu::RenderPipeline {
-        let bind_group_layouts = &[motion_camera_bind_group_layout, instance_bind_group_layout];
+        let bind_group_layouts = &[camera_bind_group_layout, instance_bind_group_layout];
         let render_pipeline_layout =
             wgpu_context
                 .device
@@ -237,7 +234,7 @@ impl MotionVectorsPipeline {
         encoder: &mut wgpu::CommandEncoder,
         motion_vectors_view: &wgpu::TextureView,
         depth_texture_view: &wgpu::TextureView,
-        motion_camera_bind_group: &wgpu::BindGroup,
+        camera_bind_group: &wgpu::BindGroup,
         motion_bones_bind_group: &wgpu::BindGroup,
         render_resources: &'a RenderAssetStore,
     ) {
@@ -263,7 +260,7 @@ impl MotionVectorsPipeline {
             timestamp_writes: None,
         });
         render_pass.set_pipeline(&self.skinned_pipeline);
-        render_pass.set_bind_group(0, motion_camera_bind_group, &[]);
+        render_pass.set_bind_group(0, camera_bind_group, &[]);
         render_pass.set_bind_group(1, motion_bones_bind_group, &[]);
         Self::draw_skinned(pass_draw, &mut render_pass, render_resources);
     }
@@ -274,7 +271,7 @@ impl MotionVectorsPipeline {
         encoder: &mut wgpu::CommandEncoder,
         motion_vectors_view: &wgpu::TextureView,
         depth_texture_view: &wgpu::TextureView,
-        motion_camera_bind_group: &wgpu::BindGroup,
+        camera_bind_group: &wgpu::BindGroup,
         instance_bind_group: &wgpu::BindGroup,
         render_resources: &'a RenderAssetStore,
     ) {
@@ -300,7 +297,7 @@ impl MotionVectorsPipeline {
             timestamp_writes: None,
         });
         render_pass.set_pipeline(&self.static_pipeline);
-        render_pass.set_bind_group(0, motion_camera_bind_group, &[]);
+        render_pass.set_bind_group(0, camera_bind_group, &[]);
         render_pass.set_bind_group(1, instance_bind_group, &[]);
         Self::draw_static(pass_draw, &mut render_pass, render_resources);
     }

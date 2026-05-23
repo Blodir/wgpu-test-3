@@ -1,10 +1,6 @@
-struct MotionCameraUniform {
-    curr_view_proj: mat4x4<f32>,
-    curr_inverse_view_proj: mat4x4<f32>,
-    prev_view_proj: mat4x4<f32>,
-}
-
-@group(0) @binding(0) var<uniform> camera: MotionCameraUniform;
+@group(0) @binding(0) var<uniform> view_proj: mat4x4<f32>;
+@group(0) @binding(2) var<uniform> inverse_view_proj: mat4x4<f32>;
+@group(0) @binding(5) var<uniform> prev_view_proj: mat4x4<f32>;
 
 struct InstanceData {
     curr_m0: vec4<f32>,
@@ -40,9 +36,9 @@ fn vs_main(
         instance.curr_m2,
         instance.curr_m3,
     );
-    let curr_clip = camera.curr_view_proj * curr_transform * vec4<f32>(model.position, 1.0);
-    let world_position = camera.curr_inverse_view_proj * curr_clip;
-    let prev_clip = camera.prev_view_proj * (world_position / max(world_position.w, 1e-8));
+    let curr_clip = view_proj * curr_transform * vec4<f32>(model.position, 1.0);
+    let world_position = inverse_view_proj * curr_clip;
+    let prev_clip = prev_view_proj * (world_position / max(world_position.w, 1e-8));
 
     var out: VertexOutput;
     out.clip_position = curr_clip;

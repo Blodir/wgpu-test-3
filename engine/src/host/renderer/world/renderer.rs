@@ -17,7 +17,6 @@ use super::bindgroups::camera::CameraBinding;
 use super::bindgroups::instance_storage::InstanceStorageBinding;
 use super::bindgroups::lights::LightsBinding;
 use super::bindgroups::material::MaterialBinding;
-use super::bindgroups::motion_camera::MotionCameraBinding;
 use super::bindgroups::sun_shadow_matrix::SunShadowMatrixBindGroup;
 use super::buffers::skinned_instance::SkinnedInstances;
 use super::pipelines::deferred_lighting::DeferredLightingPipeline;
@@ -48,7 +47,6 @@ use crate::{fixed_snapshot::FixedSnapshotGuard, var_snapshot::CameraSnapshotPair
 
 pub struct Layouts {
     pub camera: wgpu::BindGroupLayout,
-    pub motion_camera: wgpu::BindGroupLayout,
     pub lights: wgpu::BindGroupLayout,
     pub sun_shadow_matrix: wgpu::BindGroupLayout,
     pub material: wgpu::BindGroupLayout,
@@ -62,9 +60,6 @@ impl Layouts {
         let camera = wgpu_context
             .device
             .create_bind_group_layout(&CameraBinding::desc());
-        let motion_camera = wgpu_context
-            .device
-            .create_bind_group_layout(&MotionCameraBinding::desc());
         let lights = wgpu_context
             .device
             .create_bind_group_layout(&LightsBinding::desc());
@@ -89,7 +84,6 @@ impl Layouts {
 
         Self {
             camera,
-            motion_camera,
             lights,
             sun_shadow_matrix,
             material,
@@ -141,7 +135,6 @@ struct WorldBindGroups {
     layouts: Layouts,
     bones: BonesBinding,
     camera: CameraBinding,
-    motion_camera: MotionCameraBinding,
     lights: LightsBinding,
     static_instances: InstanceStorageBinding,
     sun_shadow_matrices: [SunShadowMatrixBindGroup; SUN_SHADOW_MAX_CASCADE_COUNT],
@@ -172,7 +165,6 @@ impl WorldBindGroups {
             SunShadowMatrixBindGroup::new(&wgpu_context.device, &layouts.sun_shadow_matrix)
         });
         let camera = CameraBinding::new(&wgpu_context.device, &layouts.camera);
-        let motion_camera = MotionCameraBinding::new(&wgpu_context.device, &layouts.motion_camera);
         let bones = BonesBinding::new(
             &layouts.bones,
             &layouts.motion_bones,
@@ -189,7 +181,6 @@ impl WorldBindGroups {
             layouts,
             bones,
             camera,
-            motion_camera,
             lights,
             static_instances,
             sun_shadow_matrices,
@@ -348,7 +339,7 @@ impl DeferredOpaqueRenderer {
         let motion_vectors_pipeline = MotionVectorsPipeline::new(
             wgpu_context,
             shader_cache,
-            &layouts.motion_camera,
+            &layouts.camera,
             &layouts.motion_bones,
             &layouts.instance_storage,
         );
@@ -516,7 +507,6 @@ impl DeferredOpaqueRenderer {
         depth_texture_view: &wgpu::TextureView,
         hdr_color_view: &wgpu::TextureView,
         camera_bind_group: &wgpu::BindGroup,
-        motion_camera_bind_group: &wgpu::BindGroup,
         lights_bind_group: &wgpu::BindGroup,
         bones_bind_group: &wgpu::BindGroup,
         motion_bones_bind_group: &wgpu::BindGroup,
@@ -552,7 +542,7 @@ impl DeferredOpaqueRenderer {
             encoder,
             &self.motion_vectors.view,
             depth_texture_view,
-            motion_camera_bind_group,
+            camera_bind_group,
             motion_bones_bind_group,
             render_resources,
         );
@@ -561,7 +551,7 @@ impl DeferredOpaqueRenderer {
             encoder,
             &self.motion_vectors.view,
             depth_texture_view,
-            motion_camera_bind_group,
+            camera_bind_group,
             static_instance_bind_group,
             render_resources,
         );
@@ -746,7 +736,6 @@ impl CompactDeferredOpaqueRenderer {
         _depth_texture_view: &wgpu::TextureView,
         _hdr_color_view: &wgpu::TextureView,
         _camera_bind_group: &wgpu::BindGroup,
-        _motion_camera_bind_group: &wgpu::BindGroup,
         _lights_bind_group: &wgpu::BindGroup,
         _bones_bind_group: &wgpu::BindGroup,
         _motion_bones_bind_group: &wgpu::BindGroup,
@@ -902,20 +891,14 @@ impl WorldRenderer {
             &mut self.bind_groups.camera,
             camera_pair,
             now,
+            self.prev_motion_view_proj.as_ref(),
             &wgpu_context.queue,
             &wgpu_context.surface_config,
         );
         let prev_motion_view_proj = self
             .prev_motion_view_proj
             .unwrap_or(prepared_camera.view_proj);
-        let curr_inverse_view_proj = prepared_camera.view_proj.inverse();
         let prev_inverse_view_proj = prev_motion_view_proj.inverse();
-        self.bind_groups.motion_camera.update(
-            &prepared_camera.view_proj,
-            &curr_inverse_view_proj,
-            &prev_motion_view_proj,
-            &wgpu_context.queue,
-        );
         prepare_lights(
             &snaps,
             &mut self.bind_groups.lights,
@@ -1020,7 +1003,6 @@ impl WorldRenderer {
                 &self.attachments.depth_texture.view,
                 &self.attachments.hdr_color.view,
                 &self.bind_groups.camera.bind_group,
-                &self.bind_groups.motion_camera.bind_group,
                 &self.bind_groups.lights.bind_group,
                 &self.bind_groups.bones.bind_group,
                 &self.bind_groups.bones.motion_bind_group,
@@ -1038,7 +1020,6 @@ impl WorldRenderer {
                 &self.attachments.depth_texture.view,
                 &self.attachments.hdr_color.view,
                 &self.bind_groups.camera.bind_group,
-                &self.bind_groups.motion_camera.bind_group,
                 &self.bind_groups.lights.bind_group,
                 &self.bind_groups.bones.bind_group,
                 &self.bind_groups.bones.motion_bind_group,

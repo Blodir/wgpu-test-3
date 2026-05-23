@@ -6,6 +6,5 @@ pub mod hbgi_settings;
 pub mod instance_storage;
 pub mod lights;
 pub mod material;
-pub mod motion_camera;
 pub mod post_processing;
 pub mod sun_shadow_matrix;
