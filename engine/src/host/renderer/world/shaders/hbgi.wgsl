@@ -150,6 +150,8 @@ fn sample_world_position_from_depth(uv: vec2f, lod: f32) -> vec4f {
 
 /**
     Based on Horizon-Based Global Illumination (HBGI) / Horizon-Based Indirect Lighting (HBIL) - Benoit Mayaux
+    https://github.com/Patapom/GodComplex/blob/master/Tests/TestHBIL/Shaders/HBIL/HBIL.hlsl
+    also SSRT3 https://github.com/cdrinmatane/SSRT3/blob/main/HDRP/Shaders/Resources/SSRTCS.compute
 */
 fn hbgi(in: VertexOutput) -> FragmentOutput {
     let radius_pixels = hbgi_settings.params0.x;

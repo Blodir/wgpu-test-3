@@ -33,6 +33,10 @@ struct VertexOutput {
     @location(10) prev_clip: vec4<f32>,
 }
 
+// storing motion vectors in xy of MRT 4
+// similar: https://www.guerrilla-games.com/media/News/Files/Develop07_Valient_DeferredRenderingInKillzone2.pdf
+// this removes the need for a separate motion vector pass
+// world positions are reconstructed from the depth buffer
 struct GBufferOutput {
     @location(0) albedo_ao: vec4<f32>,
     @location(1) normal_roughness: vec4<f32>,

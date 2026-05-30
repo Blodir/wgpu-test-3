@@ -1,3 +1,5 @@
+// https://www.elopezr.com/temporal-aa-and-the-quest-for-the-holy-trail/
+
 @group(0) @binding(2) var<uniform> inverse_view_proj: mat4x4<f32>;
 
 @group(1) @binding(0) var motion_vectors_texture: texture_2d<f32>;
