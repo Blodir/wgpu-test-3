@@ -6,4 +6,5 @@ pub mod pipelines;
 pub mod prepare;
 pub mod renderer;
 pub mod sun_shadow;
+pub mod world_context;
 pub use renderer::*;
