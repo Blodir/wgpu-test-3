@@ -4,9 +4,28 @@ use crate::host::renderer::HbgiOptions;
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-struct HbgiSettingsUniform {
-    params0: [f32; 4],
-    params1: [f32; 4],
+pub struct HbgiSettingsUniform {
+    pub params0: [f32; 4],
+    pub params1: [f32; 4],
+}
+impl Default for HbgiSettingsUniform {
+    fn default() -> Self {
+        Self::from_options(&HbgiOptions::default(), 0)
+    }
+}
+impl HbgiSettingsUniform {
+    pub fn from_options(hbgi_options: &HbgiOptions, frame_index: u32) -> Self {
+        let (temporal_rotation, temporal_offset) = r2_quasirandom_sequence(frame_index);
+        Self {
+            params0: [
+                hbgi_options.radius_pixels,
+                hbgi_options.radius_world,
+                hbgi_options.step_size_exponent,
+                hbgi_options.gi_intensity,
+            ],
+            params1: [temporal_rotation, temporal_offset, 0.0, 0.0],
+        }
+    }
 }
 
 const TEMPORAL_ROTATIONS: [f32; 6] = [60.0, 300.0, 180.0, 240.0, 120.0, 0.0];
@@ -50,18 +69,12 @@ impl HbgiSettings {
         frame_index: u32,
     ) -> HbgiSettingsBinding {
         // https://extremelearning.com.au/unreasonable-effectiveness-of-quasirandom-sequences
-        let (temporal_rotation, temporal_offset) = r2_quasirandom_sequence(frame_index);
         let settings_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("HBGI Settings Buffer"),
-            contents: bytemuck::bytes_of(&HbgiSettingsUniform {
-                params0: [
-                    hbgi_options.radius_pixels,
-                    hbgi_options.radius_world,
-                    hbgi_options.step_size_exponent,
-                    hbgi_options.gi_intensity,
-                ],
-                params1: [temporal_rotation, temporal_offset, 0.0, 0.0],
-            }),
+            contents: bytemuck::bytes_of(&HbgiSettingsUniform::from_options(
+                hbgi_options,
+                frame_index,
+            )),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {

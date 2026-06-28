@@ -1,8 +1,8 @@
 use crate::host::{renderer::adaptive_buffer::{AdaptiveBuffer, AdaptiveBufferOptions}, wgpu_context::WgpuContext};
 
 pub struct RWBufferOptions {
-    label: Option<String>,
-    usage: wgpu::BufferUsages,
+    pub label: Option<String>,
+    pub usage: wgpu::BufferUsages,
 }
 
 pub struct RWBuffer {
