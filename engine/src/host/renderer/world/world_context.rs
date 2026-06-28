@@ -97,15 +97,15 @@ impl GBufferTextureViews {
             label: Some("GBuffer: Albedo + AO Texture View"),
             ..wgpu::TextureViewDescriptor::default()
         });
-        let normal_roughness = textures.albedo_ao.create_view(&wgpu::TextureViewDescriptor {
+        let normal_roughness = textures.normal_roughness.create_view(&wgpu::TextureViewDescriptor {
             label: Some("GBuffer: Normal + Roughness Texture View"),
             ..wgpu::TextureViewDescriptor::default()
         });
-        let emissive_metallic = textures.albedo_ao.create_view(&wgpu::TextureViewDescriptor {
+        let emissive_metallic = textures.emissive_metallic.create_view(&wgpu::TextureViewDescriptor {
             label: Some("GBuffer: Emissive + Metallic Texture View"),
             ..wgpu::TextureViewDescriptor::default()
         });
-        let motion_vectors = textures.albedo_ao.create_view(&wgpu::TextureViewDescriptor {
+        let motion_vectors = textures.motion_vectors.create_view(&wgpu::TextureViewDescriptor {
             label: Some("GBuffer: Motion Vectors Texture View"),
             ..wgpu::TextureViewDescriptor::default()
         });
@@ -491,7 +491,7 @@ impl ReprojectTextureViews {
             );
         let bent_ao =
             RWTextureView::new(
-                &textures.near_field_irradiance,
+                &textures.bent_ao,
                 &wgpu::TextureViewDescriptor {
                     label: Some("Reproject: Bent Normals + AO Texture View"),
                     ..wgpu::TextureViewDescriptor::default()
@@ -547,7 +547,7 @@ impl LightingTextureViews {
             label: Some("Lighting: Lit HDR Texture View"),
             ..Default::default()
         });
-        let diffuse_radiance_ao = textures.lit_hdr.create_view(&wgpu::TextureViewDescriptor {
+        let diffuse_radiance_ao = textures.diffuse_radiance_ao.create_view(&wgpu::TextureViewDescriptor {
             label: Some("Lighting: Diffuse Radiance + AO Texture View"),
             ..Default::default()
         });
