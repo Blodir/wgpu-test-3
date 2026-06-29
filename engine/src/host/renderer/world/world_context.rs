@@ -4,6 +4,10 @@ use wgpu::util::DeviceExt as _;
 use crate::{
     fixed_snapshot::PointLightSnapshot,
     game::scene_tree::Sun,
+    global_paths::{
+        SHADER_G_BUFFER_FRAG_WGSL, SHADER_G_BUFFER_SKINNED_VERT_WGSL,
+        SHADER_G_BUFFER_STATIC_VERT_WGSL, SHADER_HBGI_WGSL,
+    },
     host::{
         renderer::{
             rw_buffer::{RWBuffer, RWBufferOptions},
@@ -12,16 +16,26 @@ use crate::{
                 bindgroups::{
                     bones::BoneMat34, hbgi_settings::HbgiSettingsUniform, lights::MAX_POINT_LIGHTS,
                 },
-                buffers::{skinned_instance::SkinnedInstance, static_instance::StaticInstance},
+                buffers::{
+                    skinned_instance::SkinnedInstance, skinned_vertex::SkinnedVertex,
+                    static_instance::StaticInstance, static_vertex::StaticVertex,
+                },
             },
         },
         sampler_cache::SamplerCache,
+        shader_cache::ShaderCache,
         wgpu_context::WgpuContext,
         world::{
+            attachments::{
+                color::HdrColorTexture,
+                deferred::{GBufferTargets, HbgiTexture},
+                hbgi_pyramid::FloatPyramidTexture,
+                skybox::SkyboxOutputTexture,
+            },
             pipelines::{
-                deferred_lighting::DeferredLightingPipeline, g_buffer::GBufferPipeline,
-                gi_blur::GiBlurPipeline, hbgi::HbgiPipeline, hbgi_pyramid::HbgiPyramidPipeline,
-                hbgi_reproject::HbgiReprojectPipeline, post_processing::PostProcessingPipeline,
+                deferred_lighting::DeferredLightingPipeline, gi_blur::GiBlurPipeline,
+                hbgi_pyramid::HbgiPyramidPipeline, hbgi_reproject::HbgiReprojectPipeline,
+                post_processing::PostProcessingPipeline,
                 skinned_transparent::SkinnedTransparentPipeline, skybox::SkyboxPipeline,
                 static_transparent::StaticTransparentPipeline, sun_shadow::SunShadowPipeline,
             },
@@ -1080,10 +1094,13 @@ impl LightsBuffers {
     }
 }
 
+const FULLSCREEN_QUAD_INDICES: &[u16] = &[0, 2, 1, 3, 2, 0];
+
 struct Buffers {
     pub bones: RWBuffer,
     pub camera: CameraBuffers,
     pub hbgi_settings: wgpu::Buffer,
+    pub fullscreen_quad_indices: wgpu::Buffer,
     pub skinned_instances: RWBuffer,
     pub static_instances: wgpu::Buffer,
     pub lights: LightsBuffers,
@@ -1116,6 +1133,12 @@ impl Buffers {
             ),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
+        let fullscreen_quad_indices =
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Fullscreen Quad Index Buffer"),
+                contents: bytemuck::cast_slice(FULLSCREEN_QUAD_INDICES),
+                usage: wgpu::BufferUsages::INDEX,
+            });
 
         let mut skinned_instances = RWBuffer::new(
             RWBufferOptions {
@@ -1141,6 +1164,7 @@ impl Buffers {
             bones,
             camera,
             hbgi_settings,
+            fullscreen_quad_indices,
             skinned_instances,
             static_instances,
             lights,
@@ -1646,6 +1670,183 @@ impl HbgiSettingsBindGroup {
         Self {
             bind_group: Self::create_bind_group(buffer, layout, device),
         }
+    }
+}
+
+struct HbgiInputsBindGroup {
+    pub bind_group: wgpu::BindGroup,
+}
+impl HbgiInputsBindGroup {
+    pub fn desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
+        wgpu::BindGroupLayoutDescriptor {
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+            label: Some("HBGI Inputs Bind Group Layout"),
+        }
+    }
+
+    fn create_bind_group(
+        texture_views: &MipPyramidTextureViews,
+        hbgi_sampler: &wgpu::Sampler,
+        normal_sampler: &wgpu::Sampler,
+        layout: &wgpu::BindGroupLayout,
+        device: &wgpu::Device,
+    ) -> wgpu::BindGroup {
+        device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(
+                        &texture_views.diffuse_radiance_ao_pyramid,
+                    ),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(hbgi_sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(&texture_views.depth_pyramid),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::TextureView(&texture_views.normal_pyramid),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: wgpu::BindingResource::Sampler(normal_sampler),
+                },
+            ],
+            label: Some("HBGI Inputs Bind Group"),
+        })
+    }
+
+    pub fn new(
+        texture_views: &MipPyramidTextureViews,
+        hbgi_sampler: &wgpu::Sampler,
+        normal_sampler: &wgpu::Sampler,
+        layout: &wgpu::BindGroupLayout,
+        device: &wgpu::Device,
+    ) -> Self {
+        Self {
+            bind_group: Self::create_bind_group(
+                texture_views,
+                hbgi_sampler,
+                normal_sampler,
+                layout,
+                device,
+            ),
+        }
+    }
+
+    pub fn update(
+        &mut self,
+        texture_views: &MipPyramidTextureViews,
+        hbgi_sampler: &wgpu::Sampler,
+        normal_sampler: &wgpu::Sampler,
+        layout: &wgpu::BindGroupLayout,
+        device: &wgpu::Device,
+    ) {
+        self.bind_group =
+            Self::create_bind_group(texture_views, hbgi_sampler, normal_sampler, layout, device);
+    }
+}
+
+struct HbgiBindGroups {
+    pub settings: HbgiSettingsBindGroup,
+    pub inputs: HbgiInputsBindGroup,
+}
+impl HbgiBindGroups {
+    pub fn new(
+        hbgi_settings_buffer: &wgpu::Buffer,
+        hbgi_settings_layout: &wgpu::BindGroupLayout,
+        mip_texture_views: &MipPyramidTextureViews,
+        hbgi_sampler: &wgpu::Sampler,
+        normal_sampler: &wgpu::Sampler,
+        hbgi_inputs_layout: &wgpu::BindGroupLayout,
+        device: &wgpu::Device,
+    ) -> Self {
+        let settings =
+            HbgiSettingsBindGroup::new(hbgi_settings_buffer, hbgi_settings_layout, device);
+        let inputs = HbgiInputsBindGroup::new(
+            mip_texture_views,
+            hbgi_sampler,
+            normal_sampler,
+            hbgi_inputs_layout,
+            device,
+        );
+
+        Self { settings, inputs }
+    }
+
+    pub fn update_inputs(
+        &mut self,
+        mip_texture_views: &MipPyramidTextureViews,
+        hbgi_sampler: &wgpu::Sampler,
+        normal_sampler: &wgpu::Sampler,
+        hbgi_inputs_layout: &wgpu::BindGroupLayout,
+        device: &wgpu::Device,
+    ) {
+        self.inputs.update(
+            mip_texture_views,
+            hbgi_sampler,
+            normal_sampler,
+            hbgi_inputs_layout,
+            device,
+        );
+    }
+
+    pub fn update_settings(
+        &mut self,
+        hbgi_settings_buffer: &wgpu::Buffer,
+        hbgi_settings_layout: &wgpu::BindGroupLayout,
+        device: &wgpu::Device,
+    ) {
+        self.settings =
+            HbgiSettingsBindGroup::new(hbgi_settings_buffer, hbgi_settings_layout, device);
     }
 }
 
@@ -2166,7 +2367,7 @@ struct BindGroups {
     bones: BonesBindGroups,
     camera: CameraBindGroup,
     g_buffer: GBufferBindGroup,
-    hbgi_settings: HbgiSettingsBindGroup,
+    hbgi: HbgiBindGroups,
     lights: LightsBindGroup,
     post_processing: PostProcessingBindGroup,
     sun_shadow_matrix: SunShadowMatrixBindGroup,
@@ -2177,6 +2378,289 @@ struct Descriptors {
     bind_groups: BindGroups,
     bind_group_layouts: Layouts,
     texture_views: TextureViews,
+}
+
+struct GBufferPipeline {
+    skinned_pipeline: wgpu::RenderPipeline,
+    static_pipeline: wgpu::RenderPipeline,
+}
+impl GBufferPipeline {
+    fn new(wgpu_context: &WgpuContext, shader_cache: &mut ShaderCache, layouts: &Layouts) -> Self {
+        let skinned_pipeline = Self::build_skinned_pipeline(
+            wgpu_context,
+            shader_cache,
+            &layouts.camera,
+            &layouts.lights,
+            &layouts.material,
+            &layouts.motion_bones,
+        );
+        let static_pipeline = Self::build_static_pipeline(
+            wgpu_context,
+            shader_cache,
+            &layouts.camera,
+            &layouts.lights,
+            &layouts.material,
+            &layouts.instance_storage,
+        );
+
+        Self {
+            skinned_pipeline,
+            static_pipeline,
+        }
+    }
+
+    fn build_skinned_pipeline(
+        wgpu_context: &WgpuContext,
+        shader_cache: &mut ShaderCache,
+        camera_bind_group_layout: &wgpu::BindGroupLayout,
+        lights_bind_group_layout: &wgpu::BindGroupLayout,
+        material_bind_group_layout: &wgpu::BindGroupLayout,
+        motion_bones_bind_group_layout: &wgpu::BindGroupLayout,
+    ) -> wgpu::RenderPipeline {
+        let bind_group_layouts = &[
+            camera_bind_group_layout,
+            lights_bind_group_layout,
+            material_bind_group_layout,
+            motion_bones_bind_group_layout,
+        ];
+        let render_pipeline_layout =
+            wgpu_context
+                .device
+                .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some("Skinned G-Buffer Pipeline Layout"),
+                    bind_group_layouts,
+                    push_constant_ranges: &[],
+                });
+        let vertex_shader_module =
+            shader_cache.get(SHADER_G_BUFFER_SKINNED_VERT_WGSL.to_string(), wgpu_context);
+        let fragment_shader_module =
+            shader_cache.get(SHADER_G_BUFFER_FRAG_WGSL.to_string(), wgpu_context);
+        let targets = &[
+            Some(wgpu::ColorTargetState {
+                format: wgpu::TextureFormat::Rgba16Float,
+                blend: None,
+                write_mask: wgpu::ColorWrites::ALL,
+            }),
+            Some(wgpu::ColorTargetState {
+                format: wgpu::TextureFormat::Rgba16Float,
+                blend: None,
+                write_mask: wgpu::ColorWrites::ALL,
+            }),
+            Some(wgpu::ColorTargetState {
+                format: wgpu::TextureFormat::Rgba16Float,
+                blend: None,
+                write_mask: wgpu::ColorWrites::ALL,
+            }),
+            Some(wgpu::ColorTargetState {
+                format: wgpu::TextureFormat::Rgba16Float,
+                blend: None,
+                write_mask: wgpu::ColorWrites::ALL,
+            }),
+        ];
+
+        wgpu_context
+            .device
+            .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("Skinned G-Buffer Pipeline"),
+                layout: Some(&render_pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &vertex_shader_module,
+                    entry_point: Some("vs_main"),
+                    buffers: &[SkinnedVertex::desc()],
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &fragment_shader_module,
+                    entry_point: Some("fs_main"),
+                    targets,
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleList,
+                    strip_index_format: None,
+                    front_face: wgpu::FrontFace::Ccw,
+                    cull_mode: Some(wgpu::Face::Back),
+                    polygon_mode: wgpu::PolygonMode::Fill,
+                    unclipped_depth: false,
+                    conservative: false,
+                },
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: GBufferTextures::DEPTH_FORMAT,
+                    depth_write_enabled: true,
+                    depth_compare: wgpu::CompareFunction::Less,
+                    stencil: wgpu::StencilState::default(),
+                    bias: wgpu::DepthBiasState::default(),
+                }),
+                multisample: wgpu::MultisampleState {
+                    count: 1,
+                    mask: !0,
+                    alpha_to_coverage_enabled: false,
+                },
+                multiview: None,
+                cache: None,
+            })
+    }
+
+    fn build_static_pipeline(
+        wgpu_context: &WgpuContext,
+        shader_cache: &mut ShaderCache,
+        camera_bind_group_layout: &wgpu::BindGroupLayout,
+        lights_bind_group_layout: &wgpu::BindGroupLayout,
+        material_bind_group_layout: &wgpu::BindGroupLayout,
+        instance_bind_group_layout: &wgpu::BindGroupLayout,
+    ) -> wgpu::RenderPipeline {
+        let bind_group_layouts = &[
+            camera_bind_group_layout,
+            lights_bind_group_layout,
+            material_bind_group_layout,
+            instance_bind_group_layout,
+        ];
+        let render_pipeline_layout =
+            wgpu_context
+                .device
+                .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some("Static G-Buffer Pipeline Layout"),
+                    bind_group_layouts,
+                    push_constant_ranges: &[],
+                });
+        let vertex_shader_module =
+            shader_cache.get(SHADER_G_BUFFER_STATIC_VERT_WGSL.to_string(), wgpu_context);
+        let fragment_shader_module =
+            shader_cache.get(SHADER_G_BUFFER_FRAG_WGSL.to_string(), wgpu_context);
+        let targets = &[
+            Some(wgpu::ColorTargetState {
+                format: wgpu::TextureFormat::Rgba16Float,
+                blend: None,
+                write_mask: wgpu::ColorWrites::ALL,
+            }),
+            Some(wgpu::ColorTargetState {
+                format: wgpu::TextureFormat::Rgba16Float,
+                blend: None,
+                write_mask: wgpu::ColorWrites::ALL,
+            }),
+            Some(wgpu::ColorTargetState {
+                format: wgpu::TextureFormat::Rgba16Float,
+                blend: None,
+                write_mask: wgpu::ColorWrites::ALL,
+            }),
+            Some(wgpu::ColorTargetState {
+                format: wgpu::TextureFormat::Rgba16Float,
+                blend: None,
+                write_mask: wgpu::ColorWrites::ALL,
+            }),
+        ];
+
+        wgpu_context
+            .device
+            .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("Static G-Buffer Pipeline"),
+                layout: Some(&render_pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &vertex_shader_module,
+                    entry_point: Some("vs_main"),
+                    buffers: &[StaticVertex::desc()],
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &fragment_shader_module,
+                    entry_point: Some("fs_main"),
+                    targets,
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleList,
+                    strip_index_format: None,
+                    front_face: wgpu::FrontFace::Ccw,
+                    cull_mode: Some(wgpu::Face::Back),
+                    polygon_mode: wgpu::PolygonMode::Fill,
+                    unclipped_depth: false,
+                    conservative: false,
+                },
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: GBufferTextures::DEPTH_FORMAT,
+                    depth_write_enabled: true,
+                    depth_compare: wgpu::CompareFunction::Less,
+                    stencil: wgpu::StencilState::default(),
+                    bias: wgpu::DepthBiasState::default(),
+                }),
+                multisample: wgpu::MultisampleState {
+                    count: 1,
+                    mask: !0,
+                    alpha_to_coverage_enabled: false,
+                },
+                multiview: None,
+                cache: None,
+            })
+    }
+}
+
+struct HbgiPipeline {
+    render_pipeline: wgpu::RenderPipeline,
+}
+impl HbgiPipeline {
+    fn new(wgpu_context: &WgpuContext, shader_cache: &mut ShaderCache, layouts: &Layouts) -> Self {
+        let hbgi_inputs_bind_group_layout = wgpu_context
+            .device
+            .create_bind_group_layout(&HbgiInputsBindGroup::desc());
+        let hbgi_settings_bind_group_layout = wgpu_context
+            .device
+            .create_bind_group_layout(&HbgiSettingsBindGroup::desc());
+        let render_pipeline_layout =
+            wgpu_context
+                .device
+                .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some("HBGI Pipeline Layout"),
+                    bind_group_layouts: &[
+                        &layouts.camera,
+                        &hbgi_inputs_bind_group_layout,
+                        &hbgi_settings_bind_group_layout,
+                    ],
+                    push_constant_ranges: &[],
+                });
+        let shader_module = shader_cache.get(SHADER_HBGI_WGSL.to_string(), wgpu_context);
+        let render_pipeline =
+            wgpu_context
+                .device
+                .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                    label: Some("HBGI Pipeline"),
+                    layout: Some(&render_pipeline_layout),
+                    vertex: wgpu::VertexState {
+                        module: &shader_module,
+                        entry_point: Some("vs_main"),
+                        buffers: &[],
+                        compilation_options: wgpu::PipelineCompilationOptions::default(),
+                    },
+                    fragment: Some(wgpu::FragmentState {
+                        module: &shader_module,
+                        entry_point: Some("fs_main"),
+                        targets: &[
+                            Some(wgpu::ColorTargetState {
+                                format: wgpu::TextureFormat::Rgba16Float,
+                                blend: None,
+                                write_mask: wgpu::ColorWrites::ALL,
+                            }),
+                            Some(wgpu::ColorTargetState {
+                                format: wgpu::TextureFormat::Rgba16Float,
+                                blend: None,
+                                write_mask: wgpu::ColorWrites::ALL,
+                            }),
+                        ],
+                        compilation_options: wgpu::PipelineCompilationOptions::default(),
+                    }),
+                    primitive: wgpu::PrimitiveState {
+                        topology: wgpu::PrimitiveTopology::TriangleList,
+                        strip_index_format: None,
+                        front_face: wgpu::FrontFace::Ccw,
+                        cull_mode: Some(wgpu::Face::Back),
+                        ..Default::default()
+                    },
+                    depth_stencil: None,
+                    multisample: wgpu::MultisampleState::default(),
+                    multiview: None,
+                    cache: None,
+                });
+        Self { render_pipeline }
+    }
 }
 
 struct WorldPipelines {
@@ -2193,8 +2677,100 @@ struct WorldPipelines {
     post: PostProcessingPipeline,
 }
 impl WorldPipelines {
-    fn new() -> Self {
-        todo!()
+    fn new(
+        wgpu_context: &WgpuContext,
+        shader_cache: &mut ShaderCache,
+        layouts: &Layouts,
+        _resources: &GpuResources,
+        g_buffer_targets: &GBufferTargets,
+        depth_texture_view: &wgpu::TextureView,
+        hbgi_texture: &HbgiTexture,
+        hbgi_reproject_prev: &HdrColorTexture,
+        hbgi_irradiance_reproject_prev: &HdrColorTexture,
+        hbgi_reproject_depth_prev: &FloatPyramidTexture,
+        hbgi_reproject_normal_prev: &HdrColorTexture,
+        hbgi_reproject_write: &HdrColorTexture,
+        hbgi_irradiance_reproject_write: &HdrColorTexture,
+        skybox_output: &SkyboxOutputTexture,
+        hdr_color: &HdrColorTexture,
+    ) -> Self {
+        let g_buffer = GBufferPipeline::new(wgpu_context, shader_cache, layouts);
+        let hbgi = HbgiPipeline::new(wgpu_context, shader_cache, layouts);
+        let hbgi_pyramid = HbgiPyramidPipeline::new(wgpu_context, shader_cache);
+        let gi_blur = GiBlurPipeline::new(
+            wgpu_context,
+            shader_cache,
+            &layouts.camera,
+            g_buffer_targets,
+            depth_texture_view,
+            hbgi_reproject_write,
+            hbgi_irradiance_reproject_write,
+            hbgi_texture,
+        );
+        let deferred_lighting = DeferredLightingPipeline::new(
+            wgpu_context,
+            shader_cache,
+            &layouts.camera,
+            &layouts.lights,
+            g_buffer_targets,
+            depth_texture_view,
+            hbgi_texture,
+        );
+        let hbgi_reproject = HbgiReprojectPipeline::new(
+            wgpu_context,
+            shader_cache,
+            &layouts.camera,
+            &g_buffer_targets.motion_vectors,
+            &hbgi_texture.view,
+            &hbgi_texture.irradiance_view,
+            hbgi_reproject_prev,
+            hbgi_irradiance_reproject_prev,
+            depth_texture_view,
+            &g_buffer_targets.normal_roughness,
+            hbgi_reproject_depth_prev,
+            hbgi_reproject_normal_prev,
+        );
+        let skybox =
+            SkyboxPipeline::new(wgpu_context, shader_cache, &layouts.camera, &layouts.lights);
+        let sun_shadow = SunShadowPipeline::new(
+            wgpu_context,
+            shader_cache,
+            &layouts.sun_shadow_matrix,
+            &layouts.bones,
+            &layouts.instance_storage,
+        );
+        let skinned_transparent = SkinnedTransparentPipeline::new(
+            wgpu_context,
+            shader_cache,
+            &layouts.pbr_material,
+            &layouts.camera,
+            &layouts.lights,
+            &layouts.motion_bones,
+        );
+        let static_transparent = StaticTransparentPipeline::new(
+            wgpu_context,
+            shader_cache,
+            &layouts.pbr_material,
+            &layouts.camera,
+            &layouts.lights,
+            &layouts.instance_storage,
+        );
+        let post =
+            PostProcessingPipeline::new(wgpu_context, shader_cache, skybox_output, hdr_color);
+
+        Self {
+            g_buffer,
+            hbgi,
+            hbgi_pyramid,
+            gi_blur,
+            deferred_lighting,
+            hbgi_reproject,
+            skybox,
+            sun_shadow,
+            skinned_transparent,
+            static_transparent,
+            post,
+        }
     }
 }
 
