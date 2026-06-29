@@ -1,9 +1,36 @@
 use glam::{Mat4, Vec3};
 use wgpu::util::DeviceExt as _;
 
-use crate::{fixed_snapshot::PointLightSnapshot, game::scene_tree::Sun, host::{renderer::{rw_buffer::{RWBuffer, RWBufferOptions}, rw_texture::{RWTexture, RWTextureView}, world::{bindgroups::{bones::BoneMat34, hbgi_settings::HbgiSettingsUniform, lights::MAX_POINT_LIGHTS}, buffers::{skinned_instance::SkinnedInstance, static_instance::StaticInstance}}}, sampler_cache::SamplerCache, wgpu_context::WgpuContext, world::{Layouts, pipelines::{post_processing::PostProcessingPipeline, skinned_transparent::SkinnedTransparentPipeline, skybox::SkyboxPipeline, static_transparent::StaticTransparentPipeline, sun_shadow::SunShadowPipeline}, sun_shadow::SunShadowUniform}}};
+use crate::{
+    fixed_snapshot::PointLightSnapshot,
+    game::scene_tree::Sun,
+    host::{
+        renderer::{
+            rw_buffer::{RWBuffer, RWBufferOptions},
+            rw_texture::{RWTexture, RWTextureView},
+            world::{
+                bindgroups::{
+                    bones::BoneMat34, hbgi_settings::HbgiSettingsUniform, lights::MAX_POINT_LIGHTS,
+                },
+                buffers::{skinned_instance::SkinnedInstance, static_instance::StaticInstance},
+            },
+        },
+        sampler_cache::SamplerCache,
+        wgpu_context::WgpuContext,
+        world::{
+            pipelines::{
+                deferred_lighting::DeferredLightingPipeline, g_buffer::GBufferPipeline,
+                gi_blur::GiBlurPipeline, hbgi::HbgiPipeline, hbgi_pyramid::HbgiPyramidPipeline,
+                hbgi_reproject::HbgiReprojectPipeline, post_processing::PostProcessingPipeline,
+                skinned_transparent::SkinnedTransparentPipeline, skybox::SkyboxPipeline,
+                static_transparent::StaticTransparentPipeline, sun_shadow::SunShadowPipeline,
+            },
+            sun_shadow::SunShadowUniform,
+            Layouts,
+        },
+    },
+};
 
-// TODO move all resources here: ------------
 pub struct GBufferTextures {
     pub albedo_ao: wgpu::Texture,
     pub normal_roughness: wgpu::Texture,
@@ -14,65 +41,77 @@ pub struct GBufferTextures {
 impl GBufferTextures {
     pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
-    pub fn new(
-        wgpu_context: &WgpuContext,
-        surface_config: &wgpu::SurfaceConfiguration,
-    ) -> Self {
+    pub fn new(wgpu_context: &WgpuContext, surface_config: &wgpu::SurfaceConfiguration) -> Self {
         let size = wgpu::Extent3d {
             width: surface_config.width,
             height: surface_config.height,
             depth_or_array_layers: 1,
         };
-        let albedo_ao = wgpu_context.device.create_texture(&wgpu::wgt::TextureDescriptor {
-            label: Some("GBuffer: Albedo + AO Texture"),
-            size,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba16Float,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
-        });
-        let normal_roughness = wgpu_context.device.create_texture(&wgpu::wgt::TextureDescriptor {
-            label: Some("GBuffer: Normal + Roughness Texture"),
-            size,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba16Float,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
-        });
-        let emissive_metallic = wgpu_context.device.create_texture(&wgpu::wgt::TextureDescriptor {
-            label: Some("GBuffer: Emissive + Metallic Texture"),
-            size,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba16Float,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
-        });
-        let motion_vectors = wgpu_context.device.create_texture(&wgpu::wgt::TextureDescriptor {
-            label: Some("GBuffer: Motion Vectors Texture"),
-            size,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba16Float,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
-        });
-        let depth = wgpu_context.device.create_texture(&wgpu::wgt::TextureDescriptor {
-            label: Some("GBuffer: Depth Texture"),
-            size,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: Self::DEPTH_FORMAT,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
-        });
+        let albedo_ao = wgpu_context
+            .device
+            .create_texture(&wgpu::wgt::TextureDescriptor {
+                label: Some("GBuffer: Albedo + AO Texture"),
+                size,
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba16Float,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            });
+        let normal_roughness = wgpu_context
+            .device
+            .create_texture(&wgpu::wgt::TextureDescriptor {
+                label: Some("GBuffer: Normal + Roughness Texture"),
+                size,
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba16Float,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            });
+        let emissive_metallic = wgpu_context
+            .device
+            .create_texture(&wgpu::wgt::TextureDescriptor {
+                label: Some("GBuffer: Emissive + Metallic Texture"),
+                size,
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba16Float,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            });
+        let motion_vectors = wgpu_context
+            .device
+            .create_texture(&wgpu::wgt::TextureDescriptor {
+                label: Some("GBuffer: Motion Vectors Texture"),
+                size,
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba16Float,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            });
+        let depth = wgpu_context
+            .device
+            .create_texture(&wgpu::wgt::TextureDescriptor {
+                label: Some("GBuffer: Depth Texture"),
+                size,
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: Self::DEPTH_FORMAT,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            });
 
         Self {
             albedo_ao,
@@ -93,25 +132,43 @@ pub struct GBufferTextureViews {
 }
 impl GBufferTextureViews {
     pub fn new(textures: &GBufferTextures) -> Self {
-        let albedo_ao = textures.albedo_ao.create_view(&wgpu::TextureViewDescriptor {
-            label: Some("GBuffer: Albedo + AO Texture View"),
-            ..wgpu::TextureViewDescriptor::default()
-        });
-        let normal_roughness = textures.normal_roughness.create_view(&wgpu::TextureViewDescriptor {
-            label: Some("GBuffer: Normal + Roughness Texture View"),
-            ..wgpu::TextureViewDescriptor::default()
-        });
-        let emissive_metallic = textures.emissive_metallic.create_view(&wgpu::TextureViewDescriptor {
-            label: Some("GBuffer: Emissive + Metallic Texture View"),
-            ..wgpu::TextureViewDescriptor::default()
-        });
-        let motion_vectors = textures.motion_vectors.create_view(&wgpu::TextureViewDescriptor {
-            label: Some("GBuffer: Motion Vectors Texture View"),
-            ..wgpu::TextureViewDescriptor::default()
-        });
-        let depth = textures.depth.create_view(&wgpu::TextureViewDescriptor::default());
+        let albedo_ao = textures
+            .albedo_ao
+            .create_view(&wgpu::TextureViewDescriptor {
+                label: Some("GBuffer: Albedo + AO Texture View"),
+                ..wgpu::TextureViewDescriptor::default()
+            });
+        let normal_roughness =
+            textures
+                .normal_roughness
+                .create_view(&wgpu::TextureViewDescriptor {
+                    label: Some("GBuffer: Normal + Roughness Texture View"),
+                    ..wgpu::TextureViewDescriptor::default()
+                });
+        let emissive_metallic =
+            textures
+                .emissive_metallic
+                .create_view(&wgpu::TextureViewDescriptor {
+                    label: Some("GBuffer: Emissive + Metallic Texture View"),
+                    ..wgpu::TextureViewDescriptor::default()
+                });
+        let motion_vectors = textures
+            .motion_vectors
+            .create_view(&wgpu::TextureViewDescriptor {
+                label: Some("GBuffer: Motion Vectors Texture View"),
+                ..wgpu::TextureViewDescriptor::default()
+            });
+        let depth = textures
+            .depth
+            .create_view(&wgpu::TextureViewDescriptor::default());
 
-        Self { albedo_ao, normal_roughness, emissive_metallic, motion_vectors, depth }
+        Self {
+            albedo_ao,
+            normal_roughness,
+            emissive_metallic,
+            motion_vectors,
+            depth,
+        }
     }
 }
 
@@ -122,48 +179,60 @@ pub struct MipPyramidTextures {
     pub mip_level_count: u32,
 }
 impl MipPyramidTextures {
-    pub fn new(
-        wgpu_context: &WgpuContext,
-        surface_config: &wgpu::SurfaceConfiguration,
-    ) -> Self {
+    pub fn new(wgpu_context: &WgpuContext, surface_config: &wgpu::SurfaceConfiguration) -> Self {
         let size = wgpu::Extent3d {
             width: surface_config.width,
             height: surface_config.height,
             depth_or_array_layers: 1,
         };
         let mip_level_count = surface_config.width.max(surface_config.height).ilog2() + 1;
-        let diffuse_radiance_ao_pyramid = wgpu_context.device.create_texture(&wgpu::wgt::TextureDescriptor {
-            label: Some("Diffuse Radiance + AO Pyramid Texture"),
-            size,
-            mip_level_count,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba16Float,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
-        });
-        let depth_pyramid = wgpu_context.device.create_texture(&wgpu::wgt::TextureDescriptor {
-            label: Some("Depth Pyramid Texture"),
-            size,
-            mip_level_count,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::R32Float,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
-        });
-        let normal_pyramid = wgpu_context.device.create_texture(&wgpu::wgt::TextureDescriptor {
-            label: Some("Normal Pyramid Texture"),
-            size,
-            mip_level_count,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba16Float,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
-        });
+        let diffuse_radiance_ao_pyramid =
+            wgpu_context
+                .device
+                .create_texture(&wgpu::wgt::TextureDescriptor {
+                    label: Some("Diffuse Radiance + AO Pyramid Texture"),
+                    size,
+                    mip_level_count,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format: wgpu::TextureFormat::Rgba16Float,
+                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                        | wgpu::TextureUsages::TEXTURE_BINDING,
+                    view_formats: &[],
+                });
+        let depth_pyramid = wgpu_context
+            .device
+            .create_texture(&wgpu::wgt::TextureDescriptor {
+                label: Some("Depth Pyramid Texture"),
+                size,
+                mip_level_count,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::R32Float,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            });
+        let normal_pyramid = wgpu_context
+            .device
+            .create_texture(&wgpu::wgt::TextureDescriptor {
+                label: Some("Normal Pyramid Texture"),
+                size,
+                mip_level_count,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba16Float,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            });
 
-        Self { diffuse_radiance_ao_pyramid, depth_pyramid, normal_pyramid, mip_level_count }
+        Self {
+            diffuse_radiance_ao_pyramid,
+            depth_pyramid,
+            normal_pyramid,
+            mip_level_count,
+        }
     }
 }
 
@@ -178,76 +247,98 @@ pub struct MipPyramidTextureViews {
 impl MipPyramidTextureViews {
     pub fn new(textures: &MipPyramidTextures) -> Self {
         let mip_level_count = textures.mip_level_count;
-        let diffuse_radiance_ao_pyramid = textures.diffuse_radiance_ao_pyramid.create_view(&wgpu::TextureViewDescriptor {
-            label: Some("Diffuse Radiance + AO Pyramid Texture View"),
-            ..wgpu::TextureViewDescriptor::default()
-        });
+        let diffuse_radiance_ao_pyramid =
+            textures
+                .diffuse_radiance_ao_pyramid
+                .create_view(&wgpu::TextureViewDescriptor {
+                    label: Some("Diffuse Radiance + AO Pyramid Texture View"),
+                    ..wgpu::TextureViewDescriptor::default()
+                });
         let diffuse_radiance_ao_mips = (0..mip_level_count)
             .map(|mip_level| {
-                textures.diffuse_radiance_ao_pyramid.create_view(&wgpu::TextureViewDescriptor {
-                    label: Some(&format!("Diffuse Radiance + AO Pyramid Mip {mip_level} Texture View")),
-                    format: None,
-                    dimension: Some(wgpu::TextureViewDimension::D2),
-                    usage: Some(
-                        wgpu::TextureUsages::RENDER_ATTACHMENT
-                            | wgpu::TextureUsages::TEXTURE_BINDING,
-                    ),
-                    aspect: wgpu::TextureAspect::All,
-                    base_mip_level: mip_level,
-                    mip_level_count: Some(1),
-                    base_array_layer: 0,
-                    array_layer_count: Some(1),
-                })
+                textures
+                    .diffuse_radiance_ao_pyramid
+                    .create_view(&wgpu::TextureViewDescriptor {
+                        label: Some(&format!(
+                            "Diffuse Radiance + AO Pyramid Mip {mip_level} Texture View"
+                        )),
+                        format: None,
+                        dimension: Some(wgpu::TextureViewDimension::D2),
+                        usage: Some(
+                            wgpu::TextureUsages::RENDER_ATTACHMENT
+                                | wgpu::TextureUsages::TEXTURE_BINDING,
+                        ),
+                        aspect: wgpu::TextureAspect::All,
+                        base_mip_level: mip_level,
+                        mip_level_count: Some(1),
+                        base_array_layer: 0,
+                        array_layer_count: Some(1),
+                    })
             })
             .collect();
 
-        let depth_pyramid = textures.depth_pyramid.create_view(&wgpu::TextureViewDescriptor {
-            label: Some("Depth Pyramid Texture View"),
-            ..wgpu::TextureViewDescriptor::default()
-        });
+        let depth_pyramid = textures
+            .depth_pyramid
+            .create_view(&wgpu::TextureViewDescriptor {
+                label: Some("Depth Pyramid Texture View"),
+                ..wgpu::TextureViewDescriptor::default()
+            });
         let depth_mips = (0..mip_level_count)
             .map(|mip_level| {
-                textures.depth_pyramid.create_view(&wgpu::TextureViewDescriptor {
-                    label: Some(&format!("Depth Pyramid Mip {mip_level} Texture View")),
-                    format: None,
-                    dimension: Some(wgpu::TextureViewDimension::D2),
-                    usage: Some(
-                        wgpu::TextureUsages::RENDER_ATTACHMENT
-                            | wgpu::TextureUsages::TEXTURE_BINDING,
-                    ),
-                    aspect: wgpu::TextureAspect::All,
-                    base_mip_level: mip_level,
-                    mip_level_count: Some(1),
-                    base_array_layer: 0,
-                    array_layer_count: Some(1),
-                })
+                textures
+                    .depth_pyramid
+                    .create_view(&wgpu::TextureViewDescriptor {
+                        label: Some(&format!("Depth Pyramid Mip {mip_level} Texture View")),
+                        format: None,
+                        dimension: Some(wgpu::TextureViewDimension::D2),
+                        usage: Some(
+                            wgpu::TextureUsages::RENDER_ATTACHMENT
+                                | wgpu::TextureUsages::TEXTURE_BINDING,
+                        ),
+                        aspect: wgpu::TextureAspect::All,
+                        base_mip_level: mip_level,
+                        mip_level_count: Some(1),
+                        base_array_layer: 0,
+                        array_layer_count: Some(1),
+                    })
             })
             .collect();
 
-        let normal_pyramid = textures.normal_pyramid.create_view(&wgpu::TextureViewDescriptor {
-            label: Some("Normal Pyramid Texture View"),
-            ..wgpu::TextureViewDescriptor::default()
-        });
+        let normal_pyramid = textures
+            .normal_pyramid
+            .create_view(&wgpu::TextureViewDescriptor {
+                label: Some("Normal Pyramid Texture View"),
+                ..wgpu::TextureViewDescriptor::default()
+            });
         let normal_mips = (0..mip_level_count)
             .map(|mip_level| {
-                textures.normal_pyramid.create_view(&wgpu::TextureViewDescriptor {
-                    label: Some(&format!("Normal Pyramid Mip {mip_level} Texture View")),
-                    format: None,
-                    dimension: Some(wgpu::TextureViewDimension::D2),
-                    usage: Some(
-                        wgpu::TextureUsages::RENDER_ATTACHMENT
-                            | wgpu::TextureUsages::TEXTURE_BINDING,
-                    ),
-                    aspect: wgpu::TextureAspect::All,
-                    base_mip_level: mip_level,
-                    mip_level_count: Some(1),
-                    base_array_layer: 0,
-                    array_layer_count: Some(1),
-                })
+                textures
+                    .normal_pyramid
+                    .create_view(&wgpu::TextureViewDescriptor {
+                        label: Some(&format!("Normal Pyramid Mip {mip_level} Texture View")),
+                        format: None,
+                        dimension: Some(wgpu::TextureViewDimension::D2),
+                        usage: Some(
+                            wgpu::TextureUsages::RENDER_ATTACHMENT
+                                | wgpu::TextureUsages::TEXTURE_BINDING,
+                        ),
+                        aspect: wgpu::TextureAspect::All,
+                        base_mip_level: mip_level,
+                        mip_level_count: Some(1),
+                        base_array_layer: 0,
+                        array_layer_count: Some(1),
+                    })
             })
             .collect();
 
-        Self { diffuse_radiance_ao_pyramid, depth_pyramid, normal_pyramid, diffuse_radiance_ao_mips, depth_mips, normal_mips }
+        Self {
+            diffuse_radiance_ao_pyramid,
+            depth_pyramid,
+            normal_pyramid,
+            diffuse_radiance_ao_mips,
+            depth_mips,
+            normal_mips,
+        }
     }
 }
 
@@ -257,10 +348,7 @@ pub struct HbgiTextures {
 }
 impl HbgiTextures {
     pub const SCALE_DIVISOR: u32 = 2;
-    pub fn new(
-        wgpu_context: &WgpuContext,
-        surface_config: &wgpu::SurfaceConfiguration,
-    ) -> Self {
+    pub fn new(wgpu_context: &WgpuContext, surface_config: &wgpu::SurfaceConfiguration) -> Self {
         let width = (surface_config.width / Self::SCALE_DIVISOR).max(1);
         let height = (surface_config.height / Self::SCALE_DIVISOR).max(1);
         let size = wgpu::Extent3d {
@@ -268,28 +356,38 @@ impl HbgiTextures {
             height,
             depth_or_array_layers: 1,
         };
-        let bent_ao = wgpu_context.device.create_texture(&wgpu::wgt::TextureDescriptor {
-            label: Some("HBGI: Bent Normal + AO Texture"),
-            size,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba16Float,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
-        });
-        let near_field_irradiance = wgpu_context.device.create_texture(&wgpu::wgt::TextureDescriptor {
-            label: Some("HBGI: Near Field Irradiance Texture"),
-            size,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba16Float,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
-        });
+        let bent_ao = wgpu_context
+            .device
+            .create_texture(&wgpu::wgt::TextureDescriptor {
+                label: Some("HBGI: Bent Normal + AO Texture"),
+                size,
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba16Float,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            });
+        let near_field_irradiance =
+            wgpu_context
+                .device
+                .create_texture(&wgpu::wgt::TextureDescriptor {
+                    label: Some("HBGI: Near Field Irradiance Texture"),
+                    size,
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format: wgpu::TextureFormat::Rgba16Float,
+                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                        | wgpu::TextureUsages::TEXTURE_BINDING,
+                    view_formats: &[],
+                });
 
-        Self { bent_ao, near_field_irradiance }
+        Self {
+            bent_ao,
+            near_field_irradiance,
+        }
     }
 }
 
@@ -303,12 +401,18 @@ impl HbgiTextureViews {
             label: Some("HBGI: Bent Normals + AO Texture View"),
             ..wgpu::TextureViewDescriptor::default()
         });
-        let near_field_irradiance = textures.near_field_irradiance.create_view(&wgpu::TextureViewDescriptor {
-            label: Some("HBGI: Near Field Irradiance Texture View"),
-            ..wgpu::TextureViewDescriptor::default()
-        });
+        let near_field_irradiance =
+            textures
+                .near_field_irradiance
+                .create_view(&wgpu::TextureViewDescriptor {
+                    label: Some("HBGI: Near Field Irradiance Texture View"),
+                    ..wgpu::TextureViewDescriptor::default()
+                });
 
-        Self { bent_ao, near_field_irradiance }
+        Self {
+            bent_ao,
+            near_field_irradiance,
+        }
     }
 }
 
@@ -317,10 +421,7 @@ pub struct GiBlurTextures {
     pub near_field_irradiance: wgpu::Texture,
 }
 impl GiBlurTextures {
-    pub fn new(
-        wgpu_context: &WgpuContext,
-        surface_config: &wgpu::SurfaceConfiguration,
-    ) -> Self {
+    pub fn new(wgpu_context: &WgpuContext, surface_config: &wgpu::SurfaceConfiguration) -> Self {
         let width = (surface_config.width / HbgiTextures::SCALE_DIVISOR).max(1);
         let height = (surface_config.height / HbgiTextures::SCALE_DIVISOR).max(1);
         let size = wgpu::Extent3d {
@@ -328,28 +429,38 @@ impl GiBlurTextures {
             height,
             depth_or_array_layers: 1,
         };
-        let bent_ao = wgpu_context.device.create_texture(&wgpu::wgt::TextureDescriptor {
-            label: Some("GI Blur: Bent Normal + AO Texture"),
-            size,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba16Float,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
-        });
-        let near_field_irradiance = wgpu_context.device.create_texture(&wgpu::wgt::TextureDescriptor {
-            label: Some("GI Blur: Near Field Irradiance Texture"),
-            size,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba16Float,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
-        });
+        let bent_ao = wgpu_context
+            .device
+            .create_texture(&wgpu::wgt::TextureDescriptor {
+                label: Some("GI Blur: Bent Normal + AO Texture"),
+                size,
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba16Float,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            });
+        let near_field_irradiance =
+            wgpu_context
+                .device
+                .create_texture(&wgpu::wgt::TextureDescriptor {
+                    label: Some("GI Blur: Near Field Irradiance Texture"),
+                    size,
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format: wgpu::TextureFormat::Rgba16Float,
+                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                        | wgpu::TextureUsages::TEXTURE_BINDING,
+                    view_formats: &[],
+                });
 
-        Self { bent_ao, near_field_irradiance }
+        Self {
+            bent_ao,
+            near_field_irradiance,
+        }
     }
 }
 
@@ -363,12 +474,18 @@ impl GiBlurTextureViews {
             label: Some("GI Blur: Bent Normals + AO Texture View"),
             ..wgpu::TextureViewDescriptor::default()
         });
-        let near_field_irradiance = textures.near_field_irradiance.create_view(&wgpu::TextureViewDescriptor {
-            label: Some("GI Blur: Near Field Irradiance Texture View"),
-            ..wgpu::TextureViewDescriptor::default()
-        });
+        let near_field_irradiance =
+            textures
+                .near_field_irradiance
+                .create_view(&wgpu::TextureViewDescriptor {
+                    label: Some("GI Blur: Near Field Irradiance Texture View"),
+                    ..wgpu::TextureViewDescriptor::default()
+                });
 
-        Self { bent_ao, near_field_irradiance }
+        Self {
+            bent_ao,
+            near_field_irradiance,
+        }
     }
 }
 
@@ -380,20 +497,23 @@ impl SunShadowTexture2 {
     pub const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
     pub fn new(wgpu_context: &WgpuContext) -> Self {
-        let tex = wgpu_context.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("Sun Shadow Texture"),
-            size: wgpu::Extent3d {
-                width: Self::SHADOW_MAP_SIZE,
-                height: Self::SHADOW_MAP_SIZE,
-                depth_or_array_layers: Self::CASCADE_COUNT,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: Self::FORMAT,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
-        });
+        let tex = wgpu_context
+            .device
+            .create_texture(&wgpu::TextureDescriptor {
+                label: Some("Sun Shadow Texture"),
+                size: wgpu::Extent3d {
+                    width: Self::SHADOW_MAP_SIZE,
+                    height: Self::SHADOW_MAP_SIZE,
+                    depth_or_array_layers: Self::CASCADE_COUNT,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: Self::FORMAT,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            });
 
         Self(tex)
     }
@@ -410,19 +530,21 @@ impl SunShadowTextureViews {
             ..wgpu::TextureViewDescriptor::default()
         });
 
-        let cascades = (0..SunShadowTexture2::CASCADE_COUNT).map(|idx| {
-            texture.create_view(&wgpu::TextureViewDescriptor {
-                label: Some(&format!("Sun Shadow Cascade {idx} Texture View")),
-                format: None,
-                dimension: Some(wgpu::TextureViewDimension::D2),
-                usage: Some(wgpu::TextureUsages::RENDER_ATTACHMENT),
-                aspect: wgpu::TextureAspect::DepthOnly,
-                base_mip_level: 0,
-                mip_level_count: Some(1),
-                base_array_layer: idx,
-                array_layer_count: Some(1),
+        let cascades = (0..SunShadowTexture2::CASCADE_COUNT)
+            .map(|idx| {
+                texture.create_view(&wgpu::TextureViewDescriptor {
+                    label: Some(&format!("Sun Shadow Cascade {idx} Texture View")),
+                    format: None,
+                    dimension: Some(wgpu::TextureViewDimension::D2),
+                    usage: Some(wgpu::TextureUsages::RENDER_ATTACHMENT),
+                    aspect: wgpu::TextureAspect::DepthOnly,
+                    base_mip_level: 0,
+                    mip_level_count: Some(1),
+                    base_array_layer: idx,
+                    array_layer_count: Some(1),
+                })
             })
-        }).collect();
+            .collect();
 
         Self { array, cascades }
     }
@@ -431,12 +553,11 @@ impl SunShadowTextureViews {
 pub struct ReprojectTextures {
     pub near_field_irradiance: RWTexture,
     pub bent_ao: RWTexture,
+    pub depth_history: RWTexture,
+    pub normal_history: RWTexture,
 }
 impl ReprojectTextures {
-    pub fn new(
-        wgpu_context: &WgpuContext,
-        surface_config: &wgpu::SurfaceConfiguration,
-    ) -> Self {
+    pub fn new(wgpu_context: &WgpuContext, surface_config: &wgpu::SurfaceConfiguration) -> Self {
         let width = (surface_config.width / HbgiTextures::SCALE_DIVISOR).max(1);
         let height = (surface_config.height / HbgiTextures::SCALE_DIVISOR).max(1);
         let size = wgpu::Extent3d {
@@ -452,10 +573,11 @@ impl ReprojectTextures {
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
                 format: wgpu::TextureFormat::Rgba16Float,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING,
                 view_formats: &[],
             },
-            wgpu_context
+            wgpu_context,
         );
         let bent_ao = RWTexture::new(
             wgpu::TextureDescriptor {
@@ -465,39 +587,92 @@ impl ReprojectTextures {
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
                 format: wgpu::TextureFormat::Rgba16Float,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING,
                 view_formats: &[],
             },
-            wgpu_context
+            wgpu_context,
+        );
+        let depth_history = RWTexture::new(
+            wgpu::TextureDescriptor {
+                label: Some("Reproject: Depth History Texture"),
+                size,
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::R32Float,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            },
+            wgpu_context,
+        );
+        let normal_history = RWTexture::new(
+            wgpu::TextureDescriptor {
+                label: Some("Reproject: Normal History Texture"),
+                size,
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba16Float,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            },
+            wgpu_context,
         );
 
-        Self { near_field_irradiance, bent_ao }
+        Self {
+            near_field_irradiance,
+            bent_ao,
+            depth_history,
+            normal_history,
+        }
     }
 }
 
 pub struct ReprojectTextureViews {
     pub near_field_irradiance: RWTextureView,
     pub bent_ao: RWTextureView,
+    pub depth_history: RWTextureView,
+    pub normal_history: RWTextureView,
 }
 impl ReprojectTextureViews {
     pub fn new(textures: ReprojectTextures) -> Self {
-        let near_field_irradiance =
-            RWTextureView::new(
-                &textures.near_field_irradiance,
-                &wgpu::TextureViewDescriptor {
-                    label: Some("Reproject: Near Field Irradiance Texture View"),
-                    ..wgpu::TextureViewDescriptor::default()
-                }
-            );
-        let bent_ao =
-            RWTextureView::new(
-                &textures.bent_ao,
-                &wgpu::TextureViewDescriptor {
-                    label: Some("Reproject: Bent Normals + AO Texture View"),
-                    ..wgpu::TextureViewDescriptor::default()
-                }
-            );
-        Self { near_field_irradiance, bent_ao }
+        let near_field_irradiance = RWTextureView::new(
+            &textures.near_field_irradiance,
+            &wgpu::TextureViewDescriptor {
+                label: Some("Reproject: Near Field Irradiance Texture View"),
+                ..wgpu::TextureViewDescriptor::default()
+            },
+        );
+        let bent_ao = RWTextureView::new(
+            &textures.bent_ao,
+            &wgpu::TextureViewDescriptor {
+                label: Some("Reproject: Bent Normals + AO Texture View"),
+                ..wgpu::TextureViewDescriptor::default()
+            },
+        );
+        let depth_history = RWTextureView::new(
+            &textures.depth_history,
+            &wgpu::TextureViewDescriptor {
+                label: Some("Reproject: Depth History Texture View"),
+                ..wgpu::TextureViewDescriptor::default()
+            },
+        );
+        let normal_history = RWTextureView::new(
+            &textures.normal_history,
+            &wgpu::TextureViewDescriptor {
+                label: Some("Reproject: Normal History Texture View"),
+                ..wgpu::TextureViewDescriptor::default()
+            },
+        );
+        Self {
+            near_field_irradiance,
+            bent_ao,
+            depth_history,
+            normal_history,
+        }
     }
 }
 
@@ -512,28 +687,37 @@ impl LightingTextures {
             height: surface_config.height,
             depth_or_array_layers: 1,
         };
-        let lit_hdr = wgpu_context.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("Lighting: Lit HDR Texture"),
-            size,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba16Float,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
-        });
-        let diffuse_radiance_ao = wgpu_context.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("Lighting: Diffuse Radiance + AO Texture"),
-            size,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba16Float,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
-        });
+        let lit_hdr = wgpu_context
+            .device
+            .create_texture(&wgpu::TextureDescriptor {
+                label: Some("Lighting: Lit HDR Texture"),
+                size,
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba16Float,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            });
+        let diffuse_radiance_ao = wgpu_context
+            .device
+            .create_texture(&wgpu::TextureDescriptor {
+                label: Some("Lighting: Diffuse Radiance + AO Texture"),
+                size,
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba16Float,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            });
 
-        Self { lit_hdr, diffuse_radiance_ao }
+        Self {
+            lit_hdr,
+            diffuse_radiance_ao,
+        }
     }
 }
 
@@ -547,12 +731,18 @@ impl LightingTextureViews {
             label: Some("Lighting: Lit HDR Texture View"),
             ..Default::default()
         });
-        let diffuse_radiance_ao = textures.diffuse_radiance_ao.create_view(&wgpu::TextureViewDescriptor {
-            label: Some("Lighting: Diffuse Radiance + AO Texture View"),
-            ..Default::default()
-        });
+        let diffuse_radiance_ao =
+            textures
+                .diffuse_radiance_ao
+                .create_view(&wgpu::TextureViewDescriptor {
+                    label: Some("Lighting: Diffuse Radiance + AO Texture View"),
+                    ..Default::default()
+                });
 
-        Self { lit_hdr, diffuse_radiance_ao }
+        Self {
+            lit_hdr,
+            diffuse_radiance_ao,
+        }
     }
 }
 
@@ -560,6 +750,7 @@ struct Textures {
     gbuffer: GBufferTextures,
     hbgi: HbgiTextures,
     gi_blur: GiBlurTextures,
+    reproject: ReprojectTextures,
     pyramids: MipPyramidTextures,
     sky: wgpu::Texture,
     sun_shadow: SunShadowTexture2,
@@ -571,6 +762,7 @@ impl Textures {
         let gbuffer = GBufferTextures::new(wgpu_context, surface_config);
         let hbgi = HbgiTextures::new(wgpu_context, surface_config);
         let gi_blur = GiBlurTextures::new(wgpu_context, surface_config);
+        let reproject = ReprojectTextures::new(wgpu_context, surface_config);
         let pyramids = MipPyramidTextures::new(wgpu_context, surface_config);
         let sun_shadow = SunShadowTexture2::new(wgpu_context);
         let lighting_target = LightingTextures::new(wgpu_context, surface_config);
@@ -580,28 +772,44 @@ impl Textures {
             height: surface_config.height,
             depth_or_array_layers: 1,
         };
-        let sky = wgpu_context.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("Sky Target Texture"),
-            size,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba16Float,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
-        });
-        let post_process_target = wgpu_context.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("Post Process Target Texture"),
-            size,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba16Float,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
-        });
+        let sky = wgpu_context
+            .device
+            .create_texture(&wgpu::TextureDescriptor {
+                label: Some("Sky Target Texture"),
+                size,
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba16Float,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            });
+        let post_process_target = wgpu_context
+            .device
+            .create_texture(&wgpu::TextureDescriptor {
+                label: Some("Post Process Target Texture"),
+                size,
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba16Float,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            });
 
-        Self { gbuffer, hbgi, gi_blur, pyramids, sky, sun_shadow, post_process_target, lighting_target }
+        Self {
+            gbuffer,
+            hbgi,
+            gi_blur,
+            reproject,
+            pyramids,
+            sky,
+            sun_shadow,
+            post_process_target,
+            lighting_target,
+        }
     }
 }
 
@@ -609,6 +817,7 @@ struct TextureViews {
     gbuffer: GBufferTextureViews,
     hbgi: HbgiTextureViews,
     gi_blur: GiBlurTextureViews,
+    reproject: ReprojectTextureViews,
     pyramids: MipPyramidTextureViews,
     sky: wgpu::TextureView,
     sun_shadow: SunShadowTextureViews,
@@ -620,6 +829,7 @@ impl TextureViews {
         let gbuffer = GBufferTextureViews::new(&textures.gbuffer);
         let hbgi = HbgiTextureViews::new(&textures.hbgi);
         let gi_blur = GiBlurTextureViews::new(&textures.gi_blur);
+        let reproject = ReprojectTextureViews::new(textures.reproject);
         let pyramids = MipPyramidTextureViews::new(&textures.pyramids);
         let sun_shadow = SunShadowTextureViews::new(&textures.sun_shadow.0);
         let lighting_target = LightingTextureViews::new(&textures.lighting_target);
@@ -628,12 +838,25 @@ impl TextureViews {
             label: Some("Sky Target Texture View"),
             ..Default::default()
         });
-        let post_process_target = textures.post_process_target.create_view(&wgpu::TextureViewDescriptor {
-            label: Some("Post Process Target Texture View"),
-            ..Default::default()
-        });
+        let post_process_target =
+            textures
+                .post_process_target
+                .create_view(&wgpu::TextureViewDescriptor {
+                    label: Some("Post Process Target Texture View"),
+                    ..Default::default()
+                });
 
-        Self { gbuffer, hbgi, gi_blur, pyramids, sky, sun_shadow, lighting_target, post_process_target }
+        Self {
+            gbuffer,
+            hbgi,
+            gi_blur,
+            reproject,
+            pyramids,
+            sky,
+            sun_shadow,
+            lighting_target,
+            post_process_target,
+        }
     }
 }
 
@@ -665,12 +888,11 @@ impl CameraBuffers {
             contents: bytemuck::cast_slice(&Vec3::ZERO.to_array()),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
-        let inverse_view_proj =
-            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Inverse View Projection Buffer"),
-                contents: bytemuck::cast_slice(&Mat4::IDENTITY.to_cols_array()),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            });
+        let inverse_view_proj = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Inverse View Projection Buffer"),
+            contents: bytemuck::cast_slice(&Mat4::IDENTITY.to_cols_array()),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
         let forward = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Camera Forward Buffer"),
             contents: bytemuck::cast_slice(&[0.0, 0.0, -1.0]),
@@ -708,10 +930,18 @@ impl CameraBuffers {
     ) {
         queue.write_buffer(&self.view_proj, 0, bytemuck::cast_slice(view_proj));
         queue.write_buffer(&self.position, 0, bytemuck::cast_slice(position));
-        queue.write_buffer(&self.inverse_view_proj, 0, bytemuck::cast_slice(inverse_view_proj));
+        queue.write_buffer(
+            &self.inverse_view_proj,
+            0,
+            bytemuck::cast_slice(inverse_view_proj),
+        );
         queue.write_buffer(&self.forward, 0, bytemuck::cast_slice(forward));
         queue.write_buffer(&self.view_rotation, 0, bytemuck::cast_slice(view_rotation));
-        queue.write_buffer(&self.prev_view_proj, 0, bytemuck::cast_slice(prev_view_proj));
+        queue.write_buffer(
+            &self.prev_view_proj,
+            0,
+            bytemuck::cast_slice(prev_view_proj),
+        );
     }
 }
 
@@ -739,7 +969,11 @@ impl SunBuffers {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
-        Self { direction, color, shadow }
+        Self {
+            direction,
+            color,
+            shadow,
+        }
     }
     pub fn update_direction(&self, direction: &[f32; 3], queue: &wgpu::Queue) {
         queue.write_buffer(&self.direction, 0, bytemuck::cast_slice(direction));
@@ -855,10 +1089,7 @@ struct Buffers {
     pub lights: LightsBuffers,
 }
 impl Buffers {
-    pub fn new(
-        wgpu_context: &WgpuContext,
-        hbgi_settings: Option<&HbgiSettingsUniform>,
-    ) -> Self {
+    pub fn new(wgpu_context: &WgpuContext, hbgi_settings: Option<&HbgiSettingsUniform>) -> Self {
         let device = &wgpu_context.device;
         let storage_usage = wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST;
 
@@ -879,7 +1110,9 @@ impl Buffers {
         let hbgi_settings = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("HBGI Settings Buffer"),
             contents: bytemuck::bytes_of(
-                &hbgi_settings.copied().unwrap_or_else(HbgiSettingsUniform::default),
+                &hbgi_settings
+                    .copied()
+                    .unwrap_or_else(HbgiSettingsUniform::default),
             ),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
@@ -914,11 +1147,7 @@ impl Buffers {
         }
     }
 
-    pub fn update_hbgi_settings(
-        &self,
-        hbgi_settings: &HbgiSettingsUniform,
-        queue: &wgpu::Queue,
-    ) {
+    pub fn update_hbgi_settings(&self, hbgi_settings: &HbgiSettingsUniform, queue: &wgpu::Queue) {
         queue.write_buffer(&self.hbgi_settings, 0, bytemuck::bytes_of(hbgi_settings));
     }
 }
@@ -1070,7 +1299,12 @@ impl BonesBindGroups {
         device: &wgpu::Device,
     ) -> Self {
         Self {
-            bones_bind_group: Self::create_bones_bind_group(bones, skinned_instances, layout, device),
+            bones_bind_group: Self::create_bones_bind_group(
+                bones,
+                skinned_instances,
+                layout,
+                device,
+            ),
             motion_bind_group: Self::create_motion_bind_group(
                 bones,
                 skinned_instances,
@@ -1088,7 +1322,8 @@ impl BonesBindGroups {
         motion_layout: &wgpu::BindGroupLayout,
         device: &wgpu::Device,
     ) {
-        self.bones_bind_group = Self::create_bones_bind_group(bones, skinned_instances, layout, device);
+        self.bones_bind_group =
+            Self::create_bones_bind_group(bones, skinned_instances, layout, device);
         self.motion_bind_group =
             Self::create_motion_bind_group(bones, skinned_instances, motion_layout, device);
     }
@@ -1945,6 +2180,12 @@ struct Descriptors {
 }
 
 struct WorldPipelines {
+    g_buffer: GBufferPipeline,
+    hbgi: HbgiPipeline,
+    hbgi_pyramid: HbgiPyramidPipeline,
+    gi_blur: GiBlurPipeline,
+    deferred_lighting: DeferredLightingPipeline,
+    hbgi_reproject: HbgiReprojectPipeline,
     skybox: SkyboxPipeline,
     sun_shadow: SunShadowPipeline,
     skinned_transparent: SkinnedTransparentPipeline,
@@ -1952,8 +2193,7 @@ struct WorldPipelines {
     post: PostProcessingPipeline,
 }
 impl WorldPipelines {
-    fn new(
-    ) -> Self {
+    fn new() -> Self {
         todo!()
     }
 }
@@ -1963,5 +2203,3 @@ struct WorldContext {
     descriptors: Descriptors,
     pipelines: WorldPipelines,
 }
-
-// -------------------------------------------

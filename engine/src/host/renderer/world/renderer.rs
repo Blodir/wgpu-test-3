@@ -1,8 +1,8 @@
 use std::{array, time::Instant};
 
 use glam::{Mat4, Vec3};
-use wgpu::BindGroup;
 use wgpu::util::DeviceExt as _;
+use wgpu::BindGroup;
 
 use super::super::sampler_cache::SamplerCache;
 use super::super::shader_cache::ShaderCache;

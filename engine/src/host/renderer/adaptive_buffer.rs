@@ -1,13 +1,13 @@
 use wgpu::util::DeviceExt as _;
 
-use crate::host::wgpu_context::{WgpuContext};
+use crate::host::wgpu_context::WgpuContext;
 
 pub struct AdaptiveBufferOptions {
     pub label: Option<String>,
     pub usage: wgpu::BufferUsages,
 }
 
-pub struct AdaptiveBuffer<> {
+pub struct AdaptiveBuffer {
     pub buf: wgpu::Buffer,
     options: AdaptiveBufferOptions,
 }
@@ -21,10 +21,7 @@ impl AdaptiveBuffer {
         };
         let buf = wgpu_context.device.create_buffer(&descriptor);
 
-        Self {
-            buf,
-            options,
-        }
+        Self { buf, options }
     }
 
     /// Allocates a new buffer if out of space
@@ -33,11 +30,14 @@ impl AdaptiveBuffer {
         if bytes_len <= self.buf.size() {
             wgpu_context.queue.write_buffer(&self.buf, 0, bytes);
         } else {
-            let new_buf = wgpu_context.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: self.options.label.as_deref(),
-                contents: bytes,
-                usage: self.options.usage,
-            });
+            let new_buf =
+                wgpu_context
+                    .device
+                    .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                        label: self.options.label.as_deref(),
+                        contents: bytes,
+                        usage: self.options.usage,
+                    });
             self.buf = new_buf;
         }
     }

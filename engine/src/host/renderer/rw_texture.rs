@@ -1,6 +1,6 @@
 use wgpu::Origin3d;
 
-use crate::host::wgpu_context::{WgpuContext};
+use crate::host::wgpu_context::WgpuContext;
 
 pub struct RWTextureWriteParams {
     data_layout: wgpu::TexelCopyBufferLayout,
@@ -17,8 +17,8 @@ pub struct RWTexture {
 }
 impl RWTexture {
     pub fn new(descriptor: wgpu::TextureDescriptor, wgpu_context: &WgpuContext) -> Self {
-        let label_0 = descriptor.label.clone().map(|s| { s.to_string() + " tex_0" });
-        let label_1 = descriptor.label.clone().map(|s| { s.to_string() + " tex_1" });
+        let label_0 = descriptor.label.clone().map(|s| s.to_string() + " tex_0");
+        let label_1 = descriptor.label.clone().map(|s| s.to_string() + " tex_1");
 
         let desc_0 = wgpu::TextureDescriptor {
             label: label_0.as_deref(),
@@ -42,7 +42,7 @@ impl RWTexture {
         &mut self,
         bytes: &[u8],
         params: RWTextureWriteParams,
-        wgpu_context: &WgpuContext
+        wgpu_context: &WgpuContext,
     ) {
         let write_tex = if self.head == 0 {
             &self.tex_0
@@ -55,7 +55,9 @@ impl RWTexture {
             origin: params.origin,
             aspect: params.aspect,
         };
-        wgpu_context.queue.write_texture(copy_tex, bytes, params.data_layout, params.size);
+        wgpu_context
+            .queue
+            .write_texture(copy_tex, bytes, params.data_layout, params.size);
     }
 
     pub fn swap(&mut self) {

@@ -1,4 +1,7 @@
-use crate::host::{renderer::adaptive_buffer::{AdaptiveBuffer, AdaptiveBufferOptions}, wgpu_context::WgpuContext};
+use crate::host::{
+    renderer::adaptive_buffer::{AdaptiveBuffer, AdaptiveBufferOptions},
+    wgpu_context::WgpuContext,
+};
 
 pub struct RWBufferOptions {
     pub label: Option<String>,
@@ -12,12 +15,12 @@ pub struct RWBuffer {
 }
 impl RWBuffer {
     pub fn new(options: RWBufferOptions, wgpu_context: &WgpuContext) -> Self {
-        let label_0 = options.label.clone().map(|s| { s.to_string() + " buf_0" });
+        let label_0 = options.label.clone().map(|s| s.to_string() + " buf_0");
         let opt_0 = AdaptiveBufferOptions {
             label: label_0,
             usage: options.usage,
         };
-        let label_1 = options.label.clone().map(|s| { s.to_string() + " buf_1" });
+        let label_1 = options.label.clone().map(|s| s.to_string() + " buf_1");
         let opt_1 = AdaptiveBufferOptions {
             label: label_1,
             usage: options.usage,
