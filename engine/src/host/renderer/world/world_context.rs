@@ -7,8 +7,10 @@ use crate::{
     global_paths::{
         SHADER_DEFERRED_LIGHTING_WGSL, SHADER_GI_BLUR_WGSL, SHADER_G_BUFFER_FRAG_WGSL,
         SHADER_G_BUFFER_SKINNED_VERT_WGSL, SHADER_G_BUFFER_STATIC_VERT_WGSL,
-        SHADER_HBGI_PYRAMID_WGSL, SHADER_HBGI_REPROJECT_WGSL, SHADER_HBGI_WGSL, SHADER_SKYBOX_WGSL,
-        SHADER_SUN_SHADOW_SKINNED_VERT_WGSL, SHADER_SUN_SHADOW_STATIC_VERT_WGSL,
+        SHADER_HBGI_PYRAMID_WGSL, SHADER_HBGI_REPROJECT_WGSL, SHADER_HBGI_WGSL,
+        SHADER_PBR_FRAG_WGSL, SHADER_SKINNED_TRANSPARENT_VERT_WGSL, SHADER_SKYBOX_WGSL,
+        SHADER_STATIC_TRANSPARENT_VERT_WGSL, SHADER_SUN_SHADOW_SKINNED_VERT_WGSL,
+        SHADER_SUN_SHADOW_STATIC_VERT_WGSL,
     },
     host::{
         renderer::{
@@ -35,11 +37,7 @@ use crate::{
                 hbgi_pyramid::FloatPyramidTexture,
                 skybox::SkyboxOutputTexture,
             },
-            pipelines::{
-                post_processing::PostProcessingPipeline,
-                skinned_transparent::SkinnedTransparentPipeline,
-                static_transparent::StaticTransparentPipeline,
-            },
+            pipelines::post_processing::PostProcessingPipeline,
             sun_shadow::SunShadowUniform,
             Layouts,
         },
@@ -4325,6 +4323,174 @@ impl SunShadowPipeline {
     }
 }
 
+struct SkinnedTransparentPipeline {
+    pub pipeline: wgpu::RenderPipeline,
+}
+impl SkinnedTransparentPipeline {
+    fn new(wgpu_context: &WgpuContext, shader_cache: &mut ShaderCache, layouts: &Layouts) -> Self {
+        let pipeline = Self::build_pipeline(wgpu_context, shader_cache, layouts);
+        Self { pipeline }
+    }
+
+    fn build_pipeline(
+        wgpu_context: &WgpuContext,
+        shader_cache: &mut ShaderCache,
+        layouts: &Layouts,
+    ) -> wgpu::RenderPipeline {
+        let vertex_buffer_layouts = &[SkinnedVertex::desc()];
+        let bind_group_layouts = &[
+            &layouts.camera,
+            &layouts.lights,
+            &layouts.pbr_material,
+            &layouts.motion_bones,
+        ];
+        let render_pipeline_layout =
+            wgpu_context
+                .device
+                .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some("Skinned Transparent Pipeline Layout"),
+                    bind_group_layouts,
+                    push_constant_ranges: &[],
+                });
+        let vertex_shader_module = shader_cache.get(
+            SHADER_SKINNED_TRANSPARENT_VERT_WGSL.to_string(),
+            wgpu_context,
+        );
+        let fragment_shader_module =
+            shader_cache.get(SHADER_PBR_FRAG_WGSL.to_string(), wgpu_context);
+
+        wgpu_context
+            .device
+            .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("Skinned Transparent Pipeline"),
+                layout: Some(&render_pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &vertex_shader_module,
+                    entry_point: Some("vs_main"),
+                    buffers: vertex_buffer_layouts,
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &fragment_shader_module,
+                    entry_point: Some("fs_main"),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: wgpu::TextureFormat::Rgba16Float,
+                        blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleList,
+                    strip_index_format: None,
+                    front_face: wgpu::FrontFace::Ccw,
+                    cull_mode: Some(wgpu::Face::Back),
+                    polygon_mode: wgpu::PolygonMode::Fill,
+                    unclipped_depth: false,
+                    conservative: false,
+                },
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: DepthTexture::DEPTH_FORMAT,
+                    depth_write_enabled: false,
+                    depth_compare: wgpu::CompareFunction::LessEqual,
+                    stencil: wgpu::StencilState::default(),
+                    bias: wgpu::DepthBiasState::default(),
+                }),
+                multisample: wgpu::MultisampleState {
+                    count: 1,
+                    mask: !0,
+                    alpha_to_coverage_enabled: false,
+                },
+                multiview: None,
+                cache: None,
+            })
+    }
+}
+
+struct StaticTransparentPipeline {
+    pub pipeline: wgpu::RenderPipeline,
+}
+impl StaticTransparentPipeline {
+    fn new(wgpu_context: &WgpuContext, shader_cache: &mut ShaderCache, layouts: &Layouts) -> Self {
+        let pipeline = Self::build_pipeline(wgpu_context, shader_cache, layouts);
+        Self { pipeline }
+    }
+
+    fn build_pipeline(
+        wgpu_context: &WgpuContext,
+        shader_cache: &mut ShaderCache,
+        layouts: &Layouts,
+    ) -> wgpu::RenderPipeline {
+        let vertex_buffer_layouts = &[StaticVertex::desc()];
+        let bind_group_layouts = &[
+            &layouts.camera,
+            &layouts.lights,
+            &layouts.pbr_material,
+            &layouts.instance_storage,
+        ];
+        let render_pipeline_layout =
+            wgpu_context
+                .device
+                .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some("Static Transparent Pipeline Layout"),
+                    bind_group_layouts,
+                    push_constant_ranges: &[],
+                });
+        let vertex_shader_module = shader_cache.get(
+            SHADER_STATIC_TRANSPARENT_VERT_WGSL.to_string(),
+            wgpu_context,
+        );
+        let fragment_shader_module =
+            shader_cache.get(SHADER_PBR_FRAG_WGSL.to_string(), wgpu_context);
+
+        wgpu_context
+            .device
+            .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("Static Transparent Pipeline"),
+                layout: Some(&render_pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &vertex_shader_module,
+                    entry_point: Some("vs_main"),
+                    buffers: vertex_buffer_layouts,
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &fragment_shader_module,
+                    entry_point: Some("fs_main"),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: wgpu::TextureFormat::Rgba16Float,
+                        blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleList,
+                    strip_index_format: None,
+                    front_face: wgpu::FrontFace::Ccw,
+                    cull_mode: Some(wgpu::Face::Back),
+                    polygon_mode: wgpu::PolygonMode::Fill,
+                    unclipped_depth: false,
+                    conservative: false,
+                },
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: DepthTexture::DEPTH_FORMAT,
+                    depth_write_enabled: false,
+                    depth_compare: wgpu::CompareFunction::LessEqual,
+                    stencil: wgpu::StencilState::default(),
+                    bias: wgpu::DepthBiasState::default(),
+                }),
+                multisample: wgpu::MultisampleState {
+                    count: 1,
+                    mask: !0,
+                    alpha_to_coverage_enabled: false,
+                },
+                multiview: None,
+                cache: None,
+            })
+    }
+}
+
 struct WorldPipelines {
     g_buffer: GBufferPipeline,
     hbgi: HbgiPipeline,
@@ -4364,22 +4530,10 @@ impl WorldPipelines {
         let hbgi_reproject = HbgiReprojectPipeline::new(wgpu_context, shader_cache, layouts);
         let skybox = SkyboxPipeline::new(wgpu_context, shader_cache, layouts);
         let sun_shadow = SunShadowPipeline::new(wgpu_context, shader_cache, layouts);
-        let skinned_transparent = SkinnedTransparentPipeline::new(
-            wgpu_context,
-            shader_cache,
-            &layouts.pbr_material,
-            &layouts.camera,
-            &layouts.lights,
-            &layouts.motion_bones,
-        );
-        let static_transparent = StaticTransparentPipeline::new(
-            wgpu_context,
-            shader_cache,
-            &layouts.pbr_material,
-            &layouts.camera,
-            &layouts.lights,
-            &layouts.instance_storage,
-        );
+        let skinned_transparent =
+            SkinnedTransparentPipeline::new(wgpu_context, shader_cache, layouts);
+        let static_transparent =
+            StaticTransparentPipeline::new(wgpu_context, shader_cache, layouts);
         let post =
             PostProcessingPipeline::new(wgpu_context, shader_cache, skybox_output, hdr_color);
 
