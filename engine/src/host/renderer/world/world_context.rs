@@ -7,7 +7,7 @@ use crate::{
     global_paths::{
         SHADER_DEFERRED_LIGHTING_WGSL, SHADER_GI_BLUR_WGSL, SHADER_G_BUFFER_FRAG_WGSL,
         SHADER_G_BUFFER_SKINNED_VERT_WGSL, SHADER_G_BUFFER_STATIC_VERT_WGSL,
-        SHADER_HBGI_PYRAMID_WGSL, SHADER_HBGI_WGSL,
+        SHADER_HBGI_PYRAMID_WGSL, SHADER_HBGI_REPROJECT_WGSL, SHADER_HBGI_WGSL,
     },
     host::{
         renderer::{
@@ -34,7 +34,7 @@ use crate::{
                 skybox::SkyboxOutputTexture,
             },
             pipelines::{
-                hbgi_reproject::HbgiReprojectPipeline, post_processing::PostProcessingPipeline,
+                post_processing::PostProcessingPipeline,
                 skinned_transparent::SkinnedTransparentPipeline, skybox::SkyboxPipeline,
                 static_transparent::StaticTransparentPipeline, sun_shadow::SunShadowPipeline,
             },
@@ -1095,10 +1095,17 @@ impl LightsBuffers {
 
 const FULLSCREEN_QUAD_INDICES: &[u16] = &[0, 2, 1, 3, 2, 0];
 
+#[repr(C)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+struct HbgiReprojectUniform {
+    prev_inverse_view_proj: [[f32; 4]; 4],
+}
+
 struct Buffers {
     pub bones: RWBuffer,
     pub camera: CameraBuffers,
     pub hbgi_settings: wgpu::Buffer,
+    pub hbgi_reproject_settings: wgpu::Buffer,
     pub fullscreen_quad_indices: wgpu::Buffer,
     pub skinned_instances: RWBuffer,
     pub static_instances: wgpu::Buffer,
@@ -1132,6 +1139,14 @@ impl Buffers {
             ),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
+        let hbgi_reproject_settings =
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("HBGI Reproject Settings Buffer"),
+                contents: bytemuck::bytes_of(&HbgiReprojectUniform {
+                    prev_inverse_view_proj: Mat4::IDENTITY.to_cols_array_2d(),
+                }),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            });
         let fullscreen_quad_indices =
             device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("Fullscreen Quad Index Buffer"),
@@ -1163,6 +1178,7 @@ impl Buffers {
             bones,
             camera,
             hbgi_settings,
+            hbgi_reproject_settings,
             fullscreen_quad_indices,
             skinned_instances,
             static_instances,
@@ -1172,6 +1188,21 @@ impl Buffers {
 
     pub fn update_hbgi_settings(&self, hbgi_settings: &HbgiSettingsUniform, queue: &wgpu::Queue) {
         queue.write_buffer(&self.hbgi_settings, 0, bytemuck::bytes_of(hbgi_settings));
+    }
+
+    pub fn update_hbgi_reproject_settings(
+        &self,
+        prev_inverse_view_proj: &Mat4,
+        queue: &wgpu::Queue,
+    ) {
+        let uniform = HbgiReprojectUniform {
+            prev_inverse_view_proj: prev_inverse_view_proj.to_cols_array_2d(),
+        };
+        queue.write_buffer(
+            &self.hbgi_reproject_settings,
+            0,
+            bytemuck::bytes_of(&uniform),
+        );
     }
 }
 
@@ -2412,6 +2443,363 @@ impl DeferredLightingBindGroups {
     }
 }
 
+pub(crate) struct HbgiReprojectInputsBindGroup {
+    pub bind_group: wgpu::BindGroup,
+}
+impl HbgiReprojectInputsBindGroup {
+    pub fn desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
+        wgpu::BindGroupLayoutDescriptor {
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Depth,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 5,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 6,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 7,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 8,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+            ],
+            label: Some("HBGI Reproject Inputs Bind Group Layout"),
+        }
+    }
+
+    fn create_bind_group(
+        device: &wgpu::Device,
+        layout: &wgpu::BindGroupLayout,
+        motion_vectors_view: &wgpu::TextureView,
+        current_hbgi_view: &wgpu::TextureView,
+        prev_hbgi_reproject_view: &wgpu::TextureView,
+        current_depth_view: &wgpu::TextureView,
+        current_normal_view: &wgpu::TextureView,
+        prev_depth_history_view: &wgpu::TextureView,
+        prev_normal_history_view: &wgpu::TextureView,
+        current_hbgi_irradiance_view: &wgpu::TextureView,
+        prev_hbgi_irradiance_reproject_view: &wgpu::TextureView,
+    ) -> wgpu::BindGroup {
+        device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(motion_vectors_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(current_hbgi_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(prev_hbgi_reproject_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::TextureView(current_depth_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: wgpu::BindingResource::TextureView(current_normal_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: wgpu::BindingResource::TextureView(prev_depth_history_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 6,
+                    resource: wgpu::BindingResource::TextureView(prev_normal_history_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 7,
+                    resource: wgpu::BindingResource::TextureView(current_hbgi_irradiance_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 8,
+                    resource: wgpu::BindingResource::TextureView(
+                        prev_hbgi_irradiance_reproject_view,
+                    ),
+                },
+            ],
+            label: Some("HBGI Reproject Inputs Bind Group"),
+        })
+    }
+
+    pub fn new(
+        motion_vectors_view: &wgpu::TextureView,
+        current_hbgi_view: &wgpu::TextureView,
+        prev_hbgi_reproject_view: &wgpu::TextureView,
+        current_depth_view: &wgpu::TextureView,
+        current_normal_view: &wgpu::TextureView,
+        prev_depth_history_view: &wgpu::TextureView,
+        prev_normal_history_view: &wgpu::TextureView,
+        current_hbgi_irradiance_view: &wgpu::TextureView,
+        prev_hbgi_irradiance_reproject_view: &wgpu::TextureView,
+        layout: &wgpu::BindGroupLayout,
+        device: &wgpu::Device,
+    ) -> Self {
+        Self {
+            bind_group: Self::create_bind_group(
+                device,
+                layout,
+                motion_vectors_view,
+                current_hbgi_view,
+                prev_hbgi_reproject_view,
+                current_depth_view,
+                current_normal_view,
+                prev_depth_history_view,
+                prev_normal_history_view,
+                current_hbgi_irradiance_view,
+                prev_hbgi_irradiance_reproject_view,
+            ),
+        }
+    }
+
+    pub fn update(
+        &mut self,
+        motion_vectors_view: &wgpu::TextureView,
+        current_hbgi_view: &wgpu::TextureView,
+        prev_hbgi_reproject_view: &wgpu::TextureView,
+        current_depth_view: &wgpu::TextureView,
+        current_normal_view: &wgpu::TextureView,
+        prev_depth_history_view: &wgpu::TextureView,
+        prev_normal_history_view: &wgpu::TextureView,
+        current_hbgi_irradiance_view: &wgpu::TextureView,
+        prev_hbgi_irradiance_reproject_view: &wgpu::TextureView,
+        layout: &wgpu::BindGroupLayout,
+        device: &wgpu::Device,
+    ) {
+        self.bind_group = Self::create_bind_group(
+            device,
+            layout,
+            motion_vectors_view,
+            current_hbgi_view,
+            prev_hbgi_reproject_view,
+            current_depth_view,
+            current_normal_view,
+            prev_depth_history_view,
+            prev_normal_history_view,
+            current_hbgi_irradiance_view,
+            prev_hbgi_irradiance_reproject_view,
+        );
+    }
+}
+
+pub(crate) struct HbgiReprojectSettingsBindGroup {
+    pub bind_group: wgpu::BindGroup,
+}
+impl HbgiReprojectSettingsBindGroup {
+    pub fn desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
+        wgpu::BindGroupLayoutDescriptor {
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+            label: Some("HBGI Reproject Settings Bind Group Layout"),
+        }
+    }
+
+    fn create_bind_group(
+        buffer: &wgpu::Buffer,
+        layout: &wgpu::BindGroupLayout,
+        device: &wgpu::Device,
+    ) -> wgpu::BindGroup {
+        device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: buffer.as_entire_binding(),
+            }],
+            label: Some("HBGI Reproject Settings Bind Group"),
+        })
+    }
+
+    pub fn new(
+        buffer: &wgpu::Buffer,
+        layout: &wgpu::BindGroupLayout,
+        device: &wgpu::Device,
+    ) -> Self {
+        Self {
+            bind_group: Self::create_bind_group(buffer, layout, device),
+        }
+    }
+
+    pub fn update(
+        &mut self,
+        buffer: &wgpu::Buffer,
+        layout: &wgpu::BindGroupLayout,
+        device: &wgpu::Device,
+    ) {
+        self.bind_group = Self::create_bind_group(buffer, layout, device);
+    }
+}
+
+struct HbgiReprojectBindGroups {
+    pub inputs: HbgiReprojectInputsBindGroup,
+    pub settings: HbgiReprojectSettingsBindGroup,
+}
+impl HbgiReprojectBindGroups {
+    pub fn new(
+        motion_vectors_view: &wgpu::TextureView,
+        current_hbgi_view: &wgpu::TextureView,
+        prev_hbgi_reproject_view: &wgpu::TextureView,
+        current_depth_view: &wgpu::TextureView,
+        current_normal_view: &wgpu::TextureView,
+        prev_depth_history_view: &wgpu::TextureView,
+        prev_normal_history_view: &wgpu::TextureView,
+        current_hbgi_irradiance_view: &wgpu::TextureView,
+        prev_hbgi_irradiance_reproject_view: &wgpu::TextureView,
+        settings_buffer: &wgpu::Buffer,
+        layouts: &Layouts,
+        device: &wgpu::Device,
+    ) -> Self {
+        let inputs = HbgiReprojectInputsBindGroup::new(
+            motion_vectors_view,
+            current_hbgi_view,
+            prev_hbgi_reproject_view,
+            current_depth_view,
+            current_normal_view,
+            prev_depth_history_view,
+            prev_normal_history_view,
+            current_hbgi_irradiance_view,
+            prev_hbgi_irradiance_reproject_view,
+            &layouts.hbgi_reproject_inputs,
+            device,
+        );
+        let settings = HbgiReprojectSettingsBindGroup::new(
+            settings_buffer,
+            &layouts.hbgi_reproject_settings,
+            device,
+        );
+
+        Self { inputs, settings }
+    }
+
+    pub fn update_inputs(
+        &mut self,
+        motion_vectors_view: &wgpu::TextureView,
+        current_hbgi_view: &wgpu::TextureView,
+        prev_hbgi_reproject_view: &wgpu::TextureView,
+        current_depth_view: &wgpu::TextureView,
+        current_normal_view: &wgpu::TextureView,
+        prev_depth_history_view: &wgpu::TextureView,
+        prev_normal_history_view: &wgpu::TextureView,
+        current_hbgi_irradiance_view: &wgpu::TextureView,
+        prev_hbgi_irradiance_reproject_view: &wgpu::TextureView,
+        layouts: &Layouts,
+        device: &wgpu::Device,
+    ) {
+        self.inputs.update(
+            motion_vectors_view,
+            current_hbgi_view,
+            prev_hbgi_reproject_view,
+            current_depth_view,
+            current_normal_view,
+            prev_depth_history_view,
+            prev_normal_history_view,
+            current_hbgi_irradiance_view,
+            prev_hbgi_irradiance_reproject_view,
+            &layouts.hbgi_reproject_inputs,
+            device,
+        );
+    }
+
+    pub fn update_settings(
+        &mut self,
+        settings_buffer: &wgpu::Buffer,
+        layouts: &Layouts,
+        device: &wgpu::Device,
+    ) {
+        self.settings
+            .update(settings_buffer, &layouts.hbgi_reproject_settings, device);
+    }
+}
+
 pub(crate) struct HbgiPyramidBindGroups {
     pub base: wgpu::BindGroup,
     pub downsample: Vec<wgpu::BindGroup>,
@@ -3163,6 +3551,7 @@ struct BindGroups {
     deferred_lighting: DeferredLightingBindGroups,
     g_buffer: GBufferBindGroup,
     hbgi: HbgiBindGroups,
+    hbgi_reproject: HbgiReprojectBindGroups,
     gi_blur: GiBlurBindGroup,
     hbgi_pyramid: HbgiPyramidBindGroups,
     lights: LightsBindGroup,
@@ -3678,6 +4067,80 @@ impl DeferredLightingPipeline {
     }
 }
 
+struct HbgiReprojectPipeline {
+    render_pipeline: wgpu::RenderPipeline,
+}
+impl HbgiReprojectPipeline {
+    fn new(wgpu_context: &WgpuContext, shader_cache: &mut ShaderCache, layouts: &Layouts) -> Self {
+        let render_pipeline_layout =
+            wgpu_context
+                .device
+                .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some("HBGI Reproject Pipeline Layout"),
+                    bind_group_layouts: &[
+                        &layouts.camera,
+                        &layouts.hbgi_reproject_inputs,
+                        &layouts.hbgi_reproject_settings,
+                    ],
+                    push_constant_ranges: &[],
+                });
+        let shader_module = shader_cache.get(SHADER_HBGI_REPROJECT_WGSL.to_string(), wgpu_context);
+        let render_pipeline =
+            wgpu_context
+                .device
+                .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                    label: Some("HBGI Reproject Pipeline"),
+                    layout: Some(&render_pipeline_layout),
+                    vertex: wgpu::VertexState {
+                        module: &shader_module,
+                        entry_point: Some("vs_main"),
+                        buffers: &[],
+                        compilation_options: wgpu::PipelineCompilationOptions::default(),
+                    },
+                    fragment: Some(wgpu::FragmentState {
+                        module: &shader_module,
+                        entry_point: Some("fs_main"),
+                        targets: &[
+                            Some(wgpu::ColorTargetState {
+                                format: wgpu::TextureFormat::Rgba16Float,
+                                blend: Some(wgpu::BlendState::REPLACE),
+                                write_mask: wgpu::ColorWrites::ALL,
+                            }),
+                            Some(wgpu::ColorTargetState {
+                                format: wgpu::TextureFormat::R32Float,
+                                blend: None,
+                                write_mask: wgpu::ColorWrites::ALL,
+                            }),
+                            Some(wgpu::ColorTargetState {
+                                format: wgpu::TextureFormat::Rgba16Float,
+                                blend: None,
+                                write_mask: wgpu::ColorWrites::ALL,
+                            }),
+                            Some(wgpu::ColorTargetState {
+                                format: wgpu::TextureFormat::Rgba16Float,
+                                blend: None,
+                                write_mask: wgpu::ColorWrites::ALL,
+                            }),
+                        ],
+                        compilation_options: wgpu::PipelineCompilationOptions::default(),
+                    }),
+                    primitive: wgpu::PrimitiveState {
+                        topology: wgpu::PrimitiveTopology::TriangleList,
+                        strip_index_format: None,
+                        front_face: wgpu::FrontFace::Ccw,
+                        cull_mode: Some(wgpu::Face::Back),
+                        ..Default::default()
+                    },
+                    depth_stencil: None,
+                    multisample: wgpu::MultisampleState::default(),
+                    multiview: None,
+                    cache: None,
+                });
+
+        Self { render_pipeline }
+    }
+}
+
 struct WorldPipelines {
     g_buffer: GBufferPipeline,
     hbgi: HbgiPipeline,
@@ -3714,20 +4177,7 @@ impl WorldPipelines {
         let hbgi_pyramid = HbgiPyramidPipelines::new(wgpu_context, shader_cache, layouts);
         let gi_blur = GiBlurPipeline::new(wgpu_context, shader_cache, layouts);
         let deferred_lighting = DeferredLightingPipeline::new(wgpu_context, shader_cache, layouts);
-        let hbgi_reproject = HbgiReprojectPipeline::new(
-            wgpu_context,
-            shader_cache,
-            &layouts.camera,
-            &g_buffer_targets.motion_vectors,
-            &hbgi_texture.view,
-            &hbgi_texture.irradiance_view,
-            hbgi_reproject_prev,
-            hbgi_irradiance_reproject_prev,
-            depth_texture_view,
-            &g_buffer_targets.normal_roughness,
-            hbgi_reproject_depth_prev,
-            hbgi_reproject_normal_prev,
-        );
+        let hbgi_reproject = HbgiReprojectPipeline::new(wgpu_context, shader_cache, layouts);
         let skybox =
             SkyboxPipeline::new(wgpu_context, shader_cache, &layouts.camera, &layouts.lights);
         let sun_shadow = SunShadowPipeline::new(

@@ -36,7 +36,7 @@ use super::prepare::mesh::{resolve_skinned_draw, PassDrawContext};
 use super::prepare::sun_shadow::prepare_sun_shadow;
 use super::world_context::{
     DeferredLightingGBufferBindGroup, DeferredLightingHbgiBindGroup, GiBlurBindGroup,
-    HbgiPyramidBindGroups,
+    HbgiPyramidBindGroups, HbgiReprojectInputsBindGroup, HbgiReprojectSettingsBindGroup,
 };
 
 use crate::host::assets::io::asset_formats::materialfile;
@@ -63,6 +63,8 @@ pub struct Layouts {
     pub deferred_lighting_gbuffer: wgpu::BindGroupLayout,
     pub deferred_lighting_hbgi: wgpu::BindGroupLayout,
     pub gi_blur: wgpu::BindGroupLayout,
+    pub hbgi_reproject_inputs: wgpu::BindGroupLayout,
+    pub hbgi_reproject_settings: wgpu::BindGroupLayout,
     pub hbgi_pyramid_base: wgpu::BindGroupLayout,
     pub hbgi_pyramid_downsample: wgpu::BindGroupLayout,
 }
@@ -101,6 +103,12 @@ impl Layouts {
         let gi_blur = wgpu_context
             .device
             .create_bind_group_layout(&GiBlurBindGroup::desc());
+        let hbgi_reproject_inputs = wgpu_context
+            .device
+            .create_bind_group_layout(&HbgiReprojectInputsBindGroup::desc());
+        let hbgi_reproject_settings = wgpu_context
+            .device
+            .create_bind_group_layout(&HbgiReprojectSettingsBindGroup::desc());
         let hbgi_pyramid_base = wgpu_context
             .device
             .create_bind_group_layout(&HbgiPyramidBindGroups::base_desc());
@@ -120,6 +128,8 @@ impl Layouts {
             deferred_lighting_gbuffer,
             deferred_lighting_hbgi,
             gi_blur,
+            hbgi_reproject_inputs,
+            hbgi_reproject_settings,
             hbgi_pyramid_base,
             hbgi_pyramid_downsample,
         }
