@@ -37,6 +37,7 @@ use super::prepare::sun_shadow::prepare_sun_shadow;
 use super::world_context::{
     DeferredLightingGBufferBindGroup, DeferredLightingHbgiBindGroup, GiBlurBindGroup,
     HbgiPyramidBindGroups, HbgiReprojectInputsBindGroup, HbgiReprojectSettingsBindGroup,
+    PostProcessingBindGroup,
 };
 
 use crate::host::assets::io::asset_formats::materialfile;
@@ -67,6 +68,7 @@ pub struct Layouts {
     pub hbgi_reproject_settings: wgpu::BindGroupLayout,
     pub hbgi_pyramid_base: wgpu::BindGroupLayout,
     pub hbgi_pyramid_downsample: wgpu::BindGroupLayout,
+    pub post_processing: wgpu::BindGroupLayout,
 }
 impl Layouts {
     pub fn new(wgpu_context: &WgpuContext) -> Self {
@@ -115,6 +117,9 @@ impl Layouts {
         let hbgi_pyramid_downsample = wgpu_context
             .device
             .create_bind_group_layout(&HbgiPyramidBindGroups::downsample_desc());
+        let post_processing = wgpu_context
+            .device
+            .create_bind_group_layout(&PostProcessingBindGroup::desc());
 
         Self {
             camera,
@@ -132,6 +137,7 @@ impl Layouts {
             hbgi_reproject_settings,
             hbgi_pyramid_base,
             hbgi_pyramid_downsample,
+            post_processing,
         }
     }
 }

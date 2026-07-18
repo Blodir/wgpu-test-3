@@ -8,9 +8,9 @@ use crate::{
         SHADER_DEFERRED_LIGHTING_WGSL, SHADER_GI_BLUR_WGSL, SHADER_G_BUFFER_FRAG_WGSL,
         SHADER_G_BUFFER_SKINNED_VERT_WGSL, SHADER_G_BUFFER_STATIC_VERT_WGSL,
         SHADER_HBGI_PYRAMID_WGSL, SHADER_HBGI_REPROJECT_WGSL, SHADER_HBGI_WGSL,
-        SHADER_PBR_FRAG_WGSL, SHADER_SKINNED_TRANSPARENT_VERT_WGSL, SHADER_SKYBOX_WGSL,
-        SHADER_STATIC_TRANSPARENT_VERT_WGSL, SHADER_SUN_SHADOW_SKINNED_VERT_WGSL,
-        SHADER_SUN_SHADOW_STATIC_VERT_WGSL,
+        SHADER_PBR_FRAG_WGSL, SHADER_POST_PROCESSING_WGSL, SHADER_SKINNED_TRANSPARENT_VERT_WGSL,
+        SHADER_SKYBOX_WGSL, SHADER_STATIC_TRANSPARENT_VERT_WGSL,
+        SHADER_SUN_SHADOW_SKINNED_VERT_WGSL, SHADER_SUN_SHADOW_STATIC_VERT_WGSL,
     },
     host::{
         renderer::{
@@ -37,7 +37,6 @@ use crate::{
                 hbgi_pyramid::FloatPyramidTexture,
                 skybox::SkyboxOutputTexture,
             },
-            pipelines::post_processing::PostProcessingPipeline,
             sun_shadow::SunShadowUniform,
             Layouts,
         },
@@ -3319,7 +3318,7 @@ impl LightsBindGroup {
     }
 }
 
-struct PostProcessingBindGroup {
+pub(crate) struct PostProcessingBindGroup {
     pub bind_group: wgpu::BindGroup,
 }
 impl PostProcessingBindGroup {
@@ -4491,6 +4490,60 @@ impl StaticTransparentPipeline {
     }
 }
 
+struct PostProcessingPipeline {
+    render_pipeline: wgpu::RenderPipeline,
+}
+impl PostProcessingPipeline {
+    fn new(wgpu_context: &WgpuContext, shader_cache: &mut ShaderCache, layouts: &Layouts) -> Self {
+        let bind_group_layouts = &[&layouts.post_processing];
+        let render_pipeline_layout =
+            wgpu_context
+                .device
+                .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some("Post Processing Pipeline Layout"),
+                    bind_group_layouts,
+                    push_constant_ranges: &[],
+                });
+        let shader_module = shader_cache.get(SHADER_POST_PROCESSING_WGSL.to_string(), wgpu_context);
+        let render_pipeline =
+            wgpu_context
+                .device
+                .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                    label: Some("Post Processing Render Pipeline"),
+                    layout: Some(&render_pipeline_layout),
+                    vertex: wgpu::VertexState {
+                        module: &shader_module,
+                        entry_point: Some("vs_main"),
+                        buffers: &[],
+                        compilation_options: wgpu::PipelineCompilationOptions::default(),
+                    },
+                    fragment: Some(wgpu::FragmentState {
+                        module: &shader_module,
+                        entry_point: Some("fs_main"),
+                        targets: &[Some(wgpu::ColorTargetState {
+                            format: wgpu_context.surface_config.format,
+                            blend: None,
+                            write_mask: wgpu::ColorWrites::ALL,
+                        })],
+                        compilation_options: wgpu::PipelineCompilationOptions::default(),
+                    }),
+                    primitive: wgpu::PrimitiveState {
+                        topology: wgpu::PrimitiveTopology::TriangleList,
+                        strip_index_format: None,
+                        front_face: wgpu::FrontFace::Ccw,
+                        cull_mode: Some(wgpu::Face::Back),
+                        ..Default::default()
+                    },
+                    depth_stencil: None,
+                    multisample: wgpu::MultisampleState::default(),
+                    multiview: None,
+                    cache: None,
+                });
+
+        Self { render_pipeline }
+    }
+}
+
 struct WorldPipelines {
     g_buffer: GBufferPipeline,
     hbgi: HbgiPipeline,
@@ -4534,8 +4587,7 @@ impl WorldPipelines {
             SkinnedTransparentPipeline::new(wgpu_context, shader_cache, layouts);
         let static_transparent =
             StaticTransparentPipeline::new(wgpu_context, shader_cache, layouts);
-        let post =
-            PostProcessingPipeline::new(wgpu_context, shader_cache, skybox_output, hdr_color);
+        let post = PostProcessingPipeline::new(wgpu_context, shader_cache, layouts);
 
         Self {
             g_buffer,
