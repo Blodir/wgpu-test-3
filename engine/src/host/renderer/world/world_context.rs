@@ -8,6 +8,7 @@ use crate::{
         SHADER_DEFERRED_LIGHTING_WGSL, SHADER_GI_BLUR_WGSL, SHADER_G_BUFFER_FRAG_WGSL,
         SHADER_G_BUFFER_SKINNED_VERT_WGSL, SHADER_G_BUFFER_STATIC_VERT_WGSL,
         SHADER_HBGI_PYRAMID_WGSL, SHADER_HBGI_REPROJECT_WGSL, SHADER_HBGI_WGSL, SHADER_SKYBOX_WGSL,
+        SHADER_SUN_SHADOW_SKINNED_VERT_WGSL, SHADER_SUN_SHADOW_STATIC_VERT_WGSL,
     },
     host::{
         renderer::{
@@ -30,13 +31,14 @@ use crate::{
             attachments::{
                 color::HdrColorTexture,
                 deferred::{GBufferTargets, HbgiTexture},
+                depth::DepthTexture,
                 hbgi_pyramid::FloatPyramidTexture,
                 skybox::SkyboxOutputTexture,
             },
             pipelines::{
                 post_processing::PostProcessingPipeline,
                 skinned_transparent::SkinnedTransparentPipeline,
-                static_transparent::StaticTransparentPipeline, sun_shadow::SunShadowPipeline,
+                static_transparent::StaticTransparentPipeline,
             },
             sun_shadow::SunShadowUniform,
             Layouts,
@@ -4195,6 +4197,134 @@ impl SkyboxPipeline {
     }
 }
 
+struct SunShadowPipeline {
+    skinned_pipeline: wgpu::RenderPipeline,
+    static_pipeline: wgpu::RenderPipeline,
+}
+impl SunShadowPipeline {
+    fn new(wgpu_context: &WgpuContext, shader_cache: &mut ShaderCache, layouts: &Layouts) -> Self {
+        let skinned_pipeline = Self::build_skinned_pipeline(wgpu_context, shader_cache, layouts);
+        let static_pipeline = Self::build_static_pipeline(wgpu_context, shader_cache, layouts);
+
+        Self {
+            skinned_pipeline,
+            static_pipeline,
+        }
+    }
+
+    fn build_skinned_pipeline(
+        wgpu_context: &WgpuContext,
+        shader_cache: &mut ShaderCache,
+        layouts: &Layouts,
+    ) -> wgpu::RenderPipeline {
+        let bind_group_layouts = &[&layouts.sun_shadow_matrix, &layouts.bones];
+        let pipeline_layout =
+            wgpu_context
+                .device
+                .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some("Sun Shadow Skinned Pipeline Layout"),
+                    bind_group_layouts,
+                    push_constant_ranges: &[],
+                });
+        let vertex_shader = shader_cache.get(
+            SHADER_SUN_SHADOW_SKINNED_VERT_WGSL.to_string(),
+            wgpu_context,
+        );
+
+        wgpu_context
+            .device
+            .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("Sun Shadow Skinned Pipeline"),
+                layout: Some(&pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &vertex_shader,
+                    entry_point: Some("vs_main"),
+                    buffers: &[SkinnedVertex::desc()],
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                },
+                fragment: None,
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleList,
+                    strip_index_format: None,
+                    front_face: wgpu::FrontFace::Ccw,
+                    cull_mode: Some(wgpu::Face::Back),
+                    polygon_mode: wgpu::PolygonMode::Fill,
+                    unclipped_depth: false,
+                    conservative: false,
+                },
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: DepthTexture::DEPTH_FORMAT,
+                    depth_write_enabled: true,
+                    depth_compare: wgpu::CompareFunction::Less,
+                    stencil: wgpu::StencilState::default(),
+                    bias: wgpu::DepthBiasState {
+                        constant: 2,
+                        slope_scale: 2.0,
+                        clamp: 0.0,
+                    },
+                }),
+                multisample: wgpu::MultisampleState::default(),
+                multiview: None,
+                cache: None,
+            })
+    }
+
+    fn build_static_pipeline(
+        wgpu_context: &WgpuContext,
+        shader_cache: &mut ShaderCache,
+        layouts: &Layouts,
+    ) -> wgpu::RenderPipeline {
+        let bind_group_layouts = &[&layouts.sun_shadow_matrix, &layouts.instance_storage];
+        let pipeline_layout =
+            wgpu_context
+                .device
+                .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some("Sun Shadow Static Pipeline Layout"),
+                    bind_group_layouts,
+                    push_constant_ranges: &[],
+                });
+        let vertex_shader =
+            shader_cache.get(SHADER_SUN_SHADOW_STATIC_VERT_WGSL.to_string(), wgpu_context);
+
+        wgpu_context
+            .device
+            .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("Sun Shadow Static Pipeline"),
+                layout: Some(&pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &vertex_shader,
+                    entry_point: Some("vs_main"),
+                    buffers: &[StaticVertex::desc()],
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                },
+                fragment: None,
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleList,
+                    strip_index_format: None,
+                    front_face: wgpu::FrontFace::Ccw,
+                    cull_mode: Some(wgpu::Face::Back),
+                    polygon_mode: wgpu::PolygonMode::Fill,
+                    unclipped_depth: false,
+                    conservative: false,
+                },
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: DepthTexture::DEPTH_FORMAT,
+                    depth_write_enabled: true,
+                    depth_compare: wgpu::CompareFunction::Less,
+                    stencil: wgpu::StencilState::default(),
+                    bias: wgpu::DepthBiasState {
+                        constant: 2,
+                        slope_scale: 2.0,
+                        clamp: 0.0,
+                    },
+                }),
+                multisample: wgpu::MultisampleState::default(),
+                multiview: None,
+                cache: None,
+            })
+    }
+}
+
 struct WorldPipelines {
     g_buffer: GBufferPipeline,
     hbgi: HbgiPipeline,
@@ -4233,13 +4363,7 @@ impl WorldPipelines {
         let deferred_lighting = DeferredLightingPipeline::new(wgpu_context, shader_cache, layouts);
         let hbgi_reproject = HbgiReprojectPipeline::new(wgpu_context, shader_cache, layouts);
         let skybox = SkyboxPipeline::new(wgpu_context, shader_cache, layouts);
-        let sun_shadow = SunShadowPipeline::new(
-            wgpu_context,
-            shader_cache,
-            &layouts.sun_shadow_matrix,
-            &layouts.bones,
-            &layouts.instance_storage,
-        );
+        let sun_shadow = SunShadowPipeline::new(wgpu_context, shader_cache, layouts);
         let skinned_transparent = SkinnedTransparentPipeline::new(
             wgpu_context,
             shader_cache,
