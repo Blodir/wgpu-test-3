@@ -5,8 +5,9 @@ use crate::{
     fixed_snapshot::PointLightSnapshot,
     game::scene_tree::Sun,
     global_paths::{
-        SHADER_GI_BLUR_WGSL, SHADER_G_BUFFER_FRAG_WGSL, SHADER_G_BUFFER_SKINNED_VERT_WGSL,
-        SHADER_G_BUFFER_STATIC_VERT_WGSL, SHADER_HBGI_PYRAMID_WGSL, SHADER_HBGI_WGSL,
+        SHADER_DEFERRED_LIGHTING_WGSL, SHADER_GI_BLUR_WGSL, SHADER_G_BUFFER_FRAG_WGSL,
+        SHADER_G_BUFFER_SKINNED_VERT_WGSL, SHADER_G_BUFFER_STATIC_VERT_WGSL,
+        SHADER_HBGI_PYRAMID_WGSL, SHADER_HBGI_WGSL,
     },
     host::{
         renderer::{
@@ -33,8 +34,7 @@ use crate::{
                 skybox::SkyboxOutputTexture,
             },
             pipelines::{
-                deferred_lighting::DeferredLightingPipeline, hbgi_reproject::HbgiReprojectPipeline,
-                post_processing::PostProcessingPipeline,
+                hbgi_reproject::HbgiReprojectPipeline, post_processing::PostProcessingPipeline,
                 skinned_transparent::SkinnedTransparentPipeline, skybox::SkyboxPipeline,
                 static_transparent::StaticTransparentPipeline, sun_shadow::SunShadowPipeline,
             },
@@ -2039,6 +2039,379 @@ impl GiBlurBindGroup {
     }
 }
 
+pub(crate) struct DeferredLightingGBufferBindGroup {
+    pub bind_group: wgpu::BindGroup,
+}
+impl DeferredLightingGBufferBindGroup {
+    pub fn desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
+        wgpu::BindGroupLayoutDescriptor {
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 5,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 6,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Depth,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+            ],
+            label: Some("GBuffer Inputs Bind Group Layout"),
+        }
+    }
+
+    fn create_bind_group(
+        device: &wgpu::Device,
+        layout: &wgpu::BindGroupLayout,
+        albedo_ao_view: &wgpu::TextureView,
+        albedo_ao_sampler: &wgpu::Sampler,
+        normal_roughness_view: &wgpu::TextureView,
+        normal_roughness_sampler: &wgpu::Sampler,
+        emissive_metallic_view: &wgpu::TextureView,
+        emissive_metallic_sampler: &wgpu::Sampler,
+        depth_view: &wgpu::TextureView,
+    ) -> wgpu::BindGroup {
+        device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(albedo_ao_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(albedo_ao_sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(normal_roughness_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::Sampler(normal_roughness_sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: wgpu::BindingResource::TextureView(emissive_metallic_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: wgpu::BindingResource::Sampler(emissive_metallic_sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 6,
+                    resource: wgpu::BindingResource::TextureView(depth_view),
+                },
+            ],
+            label: Some("GBuffer Inputs Bind Group"),
+        })
+    }
+
+    pub fn new(
+        albedo_ao_view: &wgpu::TextureView,
+        albedo_ao_sampler: &wgpu::Sampler,
+        normal_roughness_view: &wgpu::TextureView,
+        normal_roughness_sampler: &wgpu::Sampler,
+        emissive_metallic_view: &wgpu::TextureView,
+        emissive_metallic_sampler: &wgpu::Sampler,
+        depth_view: &wgpu::TextureView,
+        layout: &wgpu::BindGroupLayout,
+        device: &wgpu::Device,
+    ) -> Self {
+        Self {
+            bind_group: Self::create_bind_group(
+                device,
+                layout,
+                albedo_ao_view,
+                albedo_ao_sampler,
+                normal_roughness_view,
+                normal_roughness_sampler,
+                emissive_metallic_view,
+                emissive_metallic_sampler,
+                depth_view,
+            ),
+        }
+    }
+
+    pub fn update(
+        &mut self,
+        albedo_ao_view: &wgpu::TextureView,
+        albedo_ao_sampler: &wgpu::Sampler,
+        normal_roughness_view: &wgpu::TextureView,
+        normal_roughness_sampler: &wgpu::Sampler,
+        emissive_metallic_view: &wgpu::TextureView,
+        emissive_metallic_sampler: &wgpu::Sampler,
+        depth_view: &wgpu::TextureView,
+        layout: &wgpu::BindGroupLayout,
+        device: &wgpu::Device,
+    ) {
+        self.bind_group = Self::create_bind_group(
+            device,
+            layout,
+            albedo_ao_view,
+            albedo_ao_sampler,
+            normal_roughness_view,
+            normal_roughness_sampler,
+            emissive_metallic_view,
+            emissive_metallic_sampler,
+            depth_view,
+        );
+    }
+}
+
+pub(crate) struct DeferredLightingHbgiBindGroup {
+    pub bind_group: wgpu::BindGroup,
+}
+impl DeferredLightingHbgiBindGroup {
+    pub fn desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
+        wgpu::BindGroupLayoutDescriptor {
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+            label: Some("HBGI Inputs Bind Group Layout"),
+        }
+    }
+
+    fn create_bind_group(
+        device: &wgpu::Device,
+        layout: &wgpu::BindGroupLayout,
+        blurred_view: &wgpu::TextureView,
+        blurred_sampler: &wgpu::Sampler,
+        blurred_irradiance_view: &wgpu::TextureView,
+        blurred_irradiance_sampler: &wgpu::Sampler,
+    ) -> wgpu::BindGroup {
+        device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(blurred_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(blurred_sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(blurred_irradiance_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::Sampler(blurred_irradiance_sampler),
+                },
+            ],
+            label: Some("HBGI Inputs Bind Group"),
+        })
+    }
+
+    pub fn new(
+        blurred_view: &wgpu::TextureView,
+        blurred_sampler: &wgpu::Sampler,
+        blurred_irradiance_view: &wgpu::TextureView,
+        blurred_irradiance_sampler: &wgpu::Sampler,
+        layout: &wgpu::BindGroupLayout,
+        device: &wgpu::Device,
+    ) -> Self {
+        Self {
+            bind_group: Self::create_bind_group(
+                device,
+                layout,
+                blurred_view,
+                blurred_sampler,
+                blurred_irradiance_view,
+                blurred_irradiance_sampler,
+            ),
+        }
+    }
+
+    pub fn update(
+        &mut self,
+        blurred_view: &wgpu::TextureView,
+        blurred_sampler: &wgpu::Sampler,
+        blurred_irradiance_view: &wgpu::TextureView,
+        blurred_irradiance_sampler: &wgpu::Sampler,
+        layout: &wgpu::BindGroupLayout,
+        device: &wgpu::Device,
+    ) {
+        self.bind_group = Self::create_bind_group(
+            device,
+            layout,
+            blurred_view,
+            blurred_sampler,
+            blurred_irradiance_view,
+            blurred_irradiance_sampler,
+        );
+    }
+}
+
+struct DeferredLightingBindGroups {
+    pub gbuffer: DeferredLightingGBufferBindGroup,
+    pub hbgi: DeferredLightingHbgiBindGroup,
+}
+impl DeferredLightingBindGroups {
+    pub fn new(
+        albedo_ao_view: &wgpu::TextureView,
+        albedo_ao_sampler: &wgpu::Sampler,
+        normal_roughness_view: &wgpu::TextureView,
+        normal_roughness_sampler: &wgpu::Sampler,
+        emissive_metallic_view: &wgpu::TextureView,
+        emissive_metallic_sampler: &wgpu::Sampler,
+        depth_view: &wgpu::TextureView,
+        blurred_view: &wgpu::TextureView,
+        blurred_sampler: &wgpu::Sampler,
+        blurred_irradiance_view: &wgpu::TextureView,
+        blurred_irradiance_sampler: &wgpu::Sampler,
+        layouts: &Layouts,
+        device: &wgpu::Device,
+    ) -> Self {
+        let gbuffer = DeferredLightingGBufferBindGroup::new(
+            albedo_ao_view,
+            albedo_ao_sampler,
+            normal_roughness_view,
+            normal_roughness_sampler,
+            emissive_metallic_view,
+            emissive_metallic_sampler,
+            depth_view,
+            &layouts.deferred_lighting_gbuffer,
+            device,
+        );
+        let hbgi = DeferredLightingHbgiBindGroup::new(
+            blurred_view,
+            blurred_sampler,
+            blurred_irradiance_view,
+            blurred_irradiance_sampler,
+            &layouts.deferred_lighting_hbgi,
+            device,
+        );
+
+        Self { gbuffer, hbgi }
+    }
+
+    pub fn update_gbuffer(
+        &mut self,
+        albedo_ao_view: &wgpu::TextureView,
+        albedo_ao_sampler: &wgpu::Sampler,
+        normal_roughness_view: &wgpu::TextureView,
+        normal_roughness_sampler: &wgpu::Sampler,
+        emissive_metallic_view: &wgpu::TextureView,
+        emissive_metallic_sampler: &wgpu::Sampler,
+        depth_view: &wgpu::TextureView,
+        layouts: &Layouts,
+        device: &wgpu::Device,
+    ) {
+        self.gbuffer.update(
+            albedo_ao_view,
+            albedo_ao_sampler,
+            normal_roughness_view,
+            normal_roughness_sampler,
+            emissive_metallic_view,
+            emissive_metallic_sampler,
+            depth_view,
+            &layouts.deferred_lighting_gbuffer,
+            device,
+        );
+    }
+
+    pub fn update_hbgi(
+        &mut self,
+        blurred_view: &wgpu::TextureView,
+        blurred_sampler: &wgpu::Sampler,
+        blurred_irradiance_view: &wgpu::TextureView,
+        blurred_irradiance_sampler: &wgpu::Sampler,
+        layouts: &Layouts,
+        device: &wgpu::Device,
+    ) {
+        self.hbgi.update(
+            blurred_view,
+            blurred_sampler,
+            blurred_irradiance_view,
+            blurred_irradiance_sampler,
+            &layouts.deferred_lighting_hbgi,
+            device,
+        );
+    }
+}
+
 pub(crate) struct HbgiPyramidBindGroups {
     pub base: wgpu::BindGroup,
     pub downsample: Vec<wgpu::BindGroup>,
@@ -2787,6 +3160,7 @@ impl InstanceStorageBindGroup {
 struct BindGroups {
     bones: BonesBindGroups,
     camera: CameraBindGroup,
+    deferred_lighting: DeferredLightingBindGroups,
     g_buffer: GBufferBindGroup,
     hbgi: HbgiBindGroups,
     gi_blur: GiBlurBindGroup,
@@ -3237,6 +3611,73 @@ impl GiBlurPipeline {
     }
 }
 
+struct DeferredLightingPipeline {
+    render_pipeline: wgpu::RenderPipeline,
+}
+impl DeferredLightingPipeline {
+    fn new(wgpu_context: &WgpuContext, shader_cache: &mut ShaderCache, layouts: &Layouts) -> Self {
+        let bind_group_layouts = &[
+            &layouts.camera,
+            &layouts.lights,
+            &layouts.deferred_lighting_gbuffer,
+            &layouts.deferred_lighting_hbgi,
+        ];
+        let render_pipeline_layout =
+            wgpu_context
+                .device
+                .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some("Deferred Lighting Pipeline Layout"),
+                    bind_group_layouts,
+                    push_constant_ranges: &[],
+                });
+        let shader_module =
+            shader_cache.get(SHADER_DEFERRED_LIGHTING_WGSL.to_string(), wgpu_context);
+        let render_pipeline =
+            wgpu_context
+                .device
+                .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                    label: Some("Deferred Lighting Pipeline"),
+                    layout: Some(&render_pipeline_layout),
+                    vertex: wgpu::VertexState {
+                        module: &shader_module,
+                        entry_point: Some("vs_main"),
+                        buffers: &[],
+                        compilation_options: wgpu::PipelineCompilationOptions::default(),
+                    },
+                    fragment: Some(wgpu::FragmentState {
+                        module: &shader_module,
+                        entry_point: Some("fs_main"),
+                        targets: &[
+                            Some(wgpu::ColorTargetState {
+                                format: wgpu::TextureFormat::Rgba16Float,
+                                blend: Some(wgpu::BlendState::REPLACE),
+                                write_mask: wgpu::ColorWrites::ALL,
+                            }),
+                            Some(wgpu::ColorTargetState {
+                                format: wgpu::TextureFormat::Rgba16Float,
+                                blend: Some(wgpu::BlendState::REPLACE),
+                                write_mask: wgpu::ColorWrites::ALL,
+                            }),
+                        ],
+                        compilation_options: wgpu::PipelineCompilationOptions::default(),
+                    }),
+                    primitive: wgpu::PrimitiveState {
+                        topology: wgpu::PrimitiveTopology::TriangleList,
+                        strip_index_format: None,
+                        front_face: wgpu::FrontFace::Ccw,
+                        cull_mode: Some(wgpu::Face::Back),
+                        ..Default::default()
+                    },
+                    depth_stencil: None,
+                    multisample: wgpu::MultisampleState::default(),
+                    multiview: None,
+                    cache: None,
+                });
+
+        Self { render_pipeline }
+    }
+}
+
 struct WorldPipelines {
     g_buffer: GBufferPipeline,
     hbgi: HbgiPipeline,
@@ -3272,15 +3713,7 @@ impl WorldPipelines {
         let hbgi = HbgiPipeline::new(wgpu_context, shader_cache, layouts);
         let hbgi_pyramid = HbgiPyramidPipelines::new(wgpu_context, shader_cache, layouts);
         let gi_blur = GiBlurPipeline::new(wgpu_context, shader_cache, layouts);
-        let deferred_lighting = DeferredLightingPipeline::new(
-            wgpu_context,
-            shader_cache,
-            &layouts.camera,
-            &layouts.lights,
-            g_buffer_targets,
-            depth_texture_view,
-            hbgi_texture,
-        );
+        let deferred_lighting = DeferredLightingPipeline::new(wgpu_context, shader_cache, layouts);
         let hbgi_reproject = HbgiReprojectPipeline::new(
             wgpu_context,
             shader_cache,

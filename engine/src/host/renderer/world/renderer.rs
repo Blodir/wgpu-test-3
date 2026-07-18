@@ -34,7 +34,10 @@ use super::prepare::camera::prepare_camera;
 use super::prepare::lights::prepare_lights;
 use super::prepare::mesh::{resolve_skinned_draw, PassDrawContext};
 use super::prepare::sun_shadow::prepare_sun_shadow;
-use super::world_context::{GiBlurBindGroup, HbgiPyramidBindGroups};
+use super::world_context::{
+    DeferredLightingGBufferBindGroup, DeferredLightingHbgiBindGroup, GiBlurBindGroup,
+    HbgiPyramidBindGroups,
+};
 
 use crate::host::assets::io::asset_formats::materialfile;
 use crate::host::assets::store::{PlaceholderTextureIds, RenderAssetStore, TextureRenderId};
@@ -57,6 +60,8 @@ pub struct Layouts {
     pub motion_bones: wgpu::BindGroupLayout,
     pub instance_storage: wgpu::BindGroupLayout,
     pub pbr_material: wgpu::BindGroupLayout,
+    pub deferred_lighting_gbuffer: wgpu::BindGroupLayout,
+    pub deferred_lighting_hbgi: wgpu::BindGroupLayout,
     pub gi_blur: wgpu::BindGroupLayout,
     pub hbgi_pyramid_base: wgpu::BindGroupLayout,
     pub hbgi_pyramid_downsample: wgpu::BindGroupLayout,
@@ -87,6 +92,12 @@ impl Layouts {
         let pbr_material = wgpu_context
             .device
             .create_bind_group_layout(&MaterialBinding::desc());
+        let deferred_lighting_gbuffer = wgpu_context
+            .device
+            .create_bind_group_layout(&DeferredLightingGBufferBindGroup::desc());
+        let deferred_lighting_hbgi = wgpu_context
+            .device
+            .create_bind_group_layout(&DeferredLightingHbgiBindGroup::desc());
         let gi_blur = wgpu_context
             .device
             .create_bind_group_layout(&GiBlurBindGroup::desc());
@@ -106,6 +117,8 @@ impl Layouts {
             motion_bones,
             instance_storage,
             pbr_material,
+            deferred_lighting_gbuffer,
+            deferred_lighting_hbgi,
             gi_blur,
             hbgi_pyramid_base,
             hbgi_pyramid_downsample,
