@@ -1403,9 +1403,7 @@ impl BonesBindGroups {
     }
 }
 
-struct CameraBindGroup {
-    pub bind_group: wgpu::BindGroup,
-}
+struct CameraBindGroup(wgpu::BindGroup);
 impl CameraBindGroup {
     pub fn desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
         wgpu::BindGroupLayoutDescriptor {
@@ -1517,15 +1515,11 @@ impl CameraBindGroup {
         layout: &wgpu::BindGroupLayout,
         device: &wgpu::Device,
     ) -> Self {
-        Self {
-            bind_group: Self::create_bind_group(buffers, layout, device),
-        }
+        Self(Self::create_bind_group(buffers, layout, device))
     }
 }
 
-struct GBufferBindGroup {
-    pub bind_group: wgpu::BindGroup,
-}
+struct GBufferBindGroup(wgpu::BindGroup);
 impl GBufferBindGroup {
     pub fn desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
         wgpu::BindGroupLayoutDescriptor {
@@ -1645,16 +1639,14 @@ impl GBufferBindGroup {
         layout: &wgpu::BindGroupLayout,
         device: &wgpu::Device,
     ) -> Self {
-        Self {
-            bind_group: Self::create_bind_group(
-                texture_views,
-                albedo_sampler,
-                normal_sampler,
-                emissive_sampler,
-                layout,
-                device,
-            ),
-        }
+        Self(Self::create_bind_group(
+            texture_views,
+            albedo_sampler,
+            normal_sampler,
+            emissive_sampler,
+            layout,
+            device,
+        ))
     }
 
     pub fn update(
@@ -1666,7 +1658,7 @@ impl GBufferBindGroup {
         layout: &wgpu::BindGroupLayout,
         device: &wgpu::Device,
     ) {
-        self.bind_group = Self::create_bind_group(
+        self.0 = Self::create_bind_group(
             texture_views,
             albedo_sampler,
             normal_sampler,
@@ -1677,9 +1669,7 @@ impl GBufferBindGroup {
     }
 }
 
-struct HbgiSettingsBindGroup {
-    pub bind_group: wgpu::BindGroup,
-}
+struct HbgiSettingsBindGroup(wgpu::BindGroup);
 impl HbgiSettingsBindGroup {
     pub fn desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
         wgpu::BindGroupLayoutDescriptor {
@@ -1717,15 +1707,11 @@ impl HbgiSettingsBindGroup {
         layout: &wgpu::BindGroupLayout,
         device: &wgpu::Device,
     ) -> Self {
-        Self {
-            bind_group: Self::create_bind_group(buffer, layout, device),
-        }
+        Self(Self::create_bind_group(buffer, layout, device))
     }
 }
 
-struct HbgiInputsBindGroup {
-    pub bind_group: wgpu::BindGroup,
-}
+struct HbgiInputsBindGroup(wgpu::BindGroup);
 impl HbgiInputsBindGroup {
     pub fn desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
         wgpu::BindGroupLayoutDescriptor {
@@ -1821,15 +1807,13 @@ impl HbgiInputsBindGroup {
         layout: &wgpu::BindGroupLayout,
         device: &wgpu::Device,
     ) -> Self {
-        Self {
-            bind_group: Self::create_bind_group(
-                texture_views,
-                hbgi_sampler,
-                normal_sampler,
-                layout,
-                device,
-            ),
-        }
+        Self(Self::create_bind_group(
+            texture_views,
+            hbgi_sampler,
+            normal_sampler,
+            layout,
+            device,
+        ))
     }
 
     pub fn update(
@@ -1840,7 +1824,7 @@ impl HbgiInputsBindGroup {
         layout: &wgpu::BindGroupLayout,
         device: &wgpu::Device,
     ) {
-        self.bind_group =
+        self.0 =
             Self::create_bind_group(texture_views, hbgi_sampler, normal_sampler, layout, device);
     }
 }
@@ -1900,9 +1884,7 @@ impl HbgiBindGroups {
     }
 }
 
-pub(crate) struct GiBlurBindGroup {
-    pub bind_group: wgpu::BindGroup,
-}
+pub(crate) struct GiBlurBindGroup(wgpu::BindGroup);
 impl GiBlurBindGroup {
     pub fn desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
         wgpu::BindGroupLayoutDescriptor {
@@ -2028,19 +2010,17 @@ impl GiBlurBindGroup {
         layout: &wgpu::BindGroupLayout,
         device: &wgpu::Device,
     ) -> Self {
-        Self {
-            bind_group: Self::create_bind_group(
-                device,
-                layout,
-                raw_hbgi_view,
-                raw_hbgi_sampler,
-                raw_hbgi_irradiance_view,
-                raw_hbgi_irradiance_sampler,
-                normal_roughness_view,
-                normal_roughness_sampler,
-                depth_view,
-            ),
-        }
+        Self(Self::create_bind_group(
+            device,
+            layout,
+            raw_hbgi_view,
+            raw_hbgi_sampler,
+            raw_hbgi_irradiance_view,
+            raw_hbgi_irradiance_sampler,
+            normal_roughness_view,
+            normal_roughness_sampler,
+            depth_view,
+        ))
     }
 
     pub fn update(
@@ -2055,7 +2035,7 @@ impl GiBlurBindGroup {
         layout: &wgpu::BindGroupLayout,
         device: &wgpu::Device,
     ) {
-        self.bind_group = Self::create_bind_group(
+        self.0 = Self::create_bind_group(
             device,
             layout,
             raw_hbgi_view,
@@ -2069,9 +2049,7 @@ impl GiBlurBindGroup {
     }
 }
 
-pub(crate) struct DeferredLightingGBufferBindGroup {
-    pub bind_group: wgpu::BindGroup,
-}
+pub(crate) struct DeferredLightingGBufferBindGroup(wgpu::BindGroup);
 impl DeferredLightingGBufferBindGroup {
     pub fn desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
         wgpu::BindGroupLayoutDescriptor {
@@ -2197,19 +2175,17 @@ impl DeferredLightingGBufferBindGroup {
         layout: &wgpu::BindGroupLayout,
         device: &wgpu::Device,
     ) -> Self {
-        Self {
-            bind_group: Self::create_bind_group(
-                device,
-                layout,
-                albedo_ao_view,
-                albedo_ao_sampler,
-                normal_roughness_view,
-                normal_roughness_sampler,
-                emissive_metallic_view,
-                emissive_metallic_sampler,
-                depth_view,
-            ),
-        }
+        Self(Self::create_bind_group(
+            device,
+            layout,
+            albedo_ao_view,
+            albedo_ao_sampler,
+            normal_roughness_view,
+            normal_roughness_sampler,
+            emissive_metallic_view,
+            emissive_metallic_sampler,
+            depth_view,
+        ))
     }
 
     pub fn update(
@@ -2224,7 +2200,7 @@ impl DeferredLightingGBufferBindGroup {
         layout: &wgpu::BindGroupLayout,
         device: &wgpu::Device,
     ) {
-        self.bind_group = Self::create_bind_group(
+        self.0 = Self::create_bind_group(
             device,
             layout,
             albedo_ao_view,
@@ -2238,9 +2214,7 @@ impl DeferredLightingGBufferBindGroup {
     }
 }
 
-pub(crate) struct DeferredLightingHbgiBindGroup {
-    pub bind_group: wgpu::BindGroup,
-}
+pub(crate) struct DeferredLightingHbgiBindGroup(wgpu::BindGroup);
 impl DeferredLightingHbgiBindGroup {
     pub fn desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
         wgpu::BindGroupLayoutDescriptor {
@@ -2322,16 +2296,14 @@ impl DeferredLightingHbgiBindGroup {
         layout: &wgpu::BindGroupLayout,
         device: &wgpu::Device,
     ) -> Self {
-        Self {
-            bind_group: Self::create_bind_group(
-                device,
-                layout,
-                blurred_view,
-                blurred_sampler,
-                blurred_irradiance_view,
-                blurred_irradiance_sampler,
-            ),
-        }
+        Self(Self::create_bind_group(
+            device,
+            layout,
+            blurred_view,
+            blurred_sampler,
+            blurred_irradiance_view,
+            blurred_irradiance_sampler,
+        ))
     }
 
     pub fn update(
@@ -2343,7 +2315,7 @@ impl DeferredLightingHbgiBindGroup {
         layout: &wgpu::BindGroupLayout,
         device: &wgpu::Device,
     ) {
-        self.bind_group = Self::create_bind_group(
+        self.0 = Self::create_bind_group(
             device,
             layout,
             blurred_view,
@@ -2442,9 +2414,7 @@ impl DeferredLightingBindGroups {
     }
 }
 
-pub(crate) struct HbgiReprojectInputsBindGroup {
-    pub bind_group: wgpu::BindGroup,
-}
+pub(crate) struct HbgiReprojectInputsBindGroup(wgpu::BindGroup);
 impl HbgiReprojectInputsBindGroup {
     pub fn desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
         wgpu::BindGroupLayoutDescriptor {
@@ -2616,21 +2586,19 @@ impl HbgiReprojectInputsBindGroup {
         layout: &wgpu::BindGroupLayout,
         device: &wgpu::Device,
     ) -> Self {
-        Self {
-            bind_group: Self::create_bind_group(
-                device,
-                layout,
-                motion_vectors_view,
-                current_hbgi_view,
-                prev_hbgi_reproject_view,
-                current_depth_view,
-                current_normal_view,
-                prev_depth_history_view,
-                prev_normal_history_view,
-                current_hbgi_irradiance_view,
-                prev_hbgi_irradiance_reproject_view,
-            ),
-        }
+        Self(Self::create_bind_group(
+            device,
+            layout,
+            motion_vectors_view,
+            current_hbgi_view,
+            prev_hbgi_reproject_view,
+            current_depth_view,
+            current_normal_view,
+            prev_depth_history_view,
+            prev_normal_history_view,
+            current_hbgi_irradiance_view,
+            prev_hbgi_irradiance_reproject_view,
+        ))
     }
 
     pub fn update(
@@ -2647,7 +2615,7 @@ impl HbgiReprojectInputsBindGroup {
         layout: &wgpu::BindGroupLayout,
         device: &wgpu::Device,
     ) {
-        self.bind_group = Self::create_bind_group(
+        self.0 = Self::create_bind_group(
             device,
             layout,
             motion_vectors_view,
@@ -2663,9 +2631,7 @@ impl HbgiReprojectInputsBindGroup {
     }
 }
 
-pub(crate) struct HbgiReprojectSettingsBindGroup {
-    pub bind_group: wgpu::BindGroup,
-}
+pub(crate) struct HbgiReprojectSettingsBindGroup(wgpu::BindGroup);
 impl HbgiReprojectSettingsBindGroup {
     pub fn desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
         wgpu::BindGroupLayoutDescriptor {
@@ -2703,9 +2669,7 @@ impl HbgiReprojectSettingsBindGroup {
         layout: &wgpu::BindGroupLayout,
         device: &wgpu::Device,
     ) -> Self {
-        Self {
-            bind_group: Self::create_bind_group(buffer, layout, device),
-        }
+        Self(Self::create_bind_group(buffer, layout, device))
     }
 
     pub fn update(
@@ -2714,7 +2678,7 @@ impl HbgiReprojectSettingsBindGroup {
         layout: &wgpu::BindGroupLayout,
         device: &wgpu::Device,
     ) {
-        self.bind_group = Self::create_bind_group(buffer, layout, device);
+        self.0 = Self::create_bind_group(buffer, layout, device);
     }
 }
 
@@ -3031,9 +2995,7 @@ impl HbgiPyramidBindGroups {
     }
 }
 
-struct LightsBindGroup {
-    pub bind_group: wgpu::BindGroup,
-}
+struct LightsBindGroup(wgpu::BindGroup);
 impl LightsBindGroup {
     pub fn desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
         wgpu::BindGroupLayoutDescriptor {
@@ -3271,21 +3233,19 @@ impl LightsBindGroup {
         layout: &wgpu::BindGroupLayout,
         device: &wgpu::Device,
     ) -> Self {
-        Self {
-            bind_group: Self::create_bind_group(
-                buffers,
-                prefiltered_view,
-                prefiltered_sampler,
-                di_view,
-                di_sampler,
-                brdf_view,
-                brdf_sampler,
-                sun_shadow_view,
-                sun_shadow_sampler,
-                layout,
-                device,
-            ),
-        }
+        Self(Self::create_bind_group(
+            buffers,
+            prefiltered_view,
+            prefiltered_sampler,
+            di_view,
+            di_sampler,
+            brdf_view,
+            brdf_sampler,
+            sun_shadow_view,
+            sun_shadow_sampler,
+            layout,
+            device,
+        ))
     }
 
     pub fn update(
@@ -3302,7 +3262,7 @@ impl LightsBindGroup {
         layout: &wgpu::BindGroupLayout,
         device: &wgpu::Device,
     ) {
-        self.bind_group = Self::create_bind_group(
+        self.0 = Self::create_bind_group(
             buffers,
             prefiltered_view,
             prefiltered_sampler,
@@ -3318,9 +3278,7 @@ impl LightsBindGroup {
     }
 }
 
-pub(crate) struct PostProcessingBindGroup {
-    pub bind_group: wgpu::BindGroup,
-}
+pub(crate) struct PostProcessingBindGroup(wgpu::BindGroup);
 impl PostProcessingBindGroup {
     pub fn desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
         wgpu::BindGroupLayoutDescriptor {
@@ -3402,16 +3360,14 @@ impl PostProcessingBindGroup {
         layout: &wgpu::BindGroupLayout,
         device: &wgpu::Device,
     ) -> Self {
-        Self {
-            bind_group: Self::create_bind_group(
-                skybox_view,
-                skybox_sampler,
-                hdr_view,
-                hdr_sampler,
-                layout,
-                device,
-            ),
-        }
+        Self(Self::create_bind_group(
+            skybox_view,
+            skybox_sampler,
+            hdr_view,
+            hdr_sampler,
+            layout,
+            device,
+        ))
     }
 
     pub fn update(
@@ -3423,7 +3379,7 @@ impl PostProcessingBindGroup {
         layout: &wgpu::BindGroupLayout,
         device: &wgpu::Device,
     ) {
-        self.bind_group = Self::create_bind_group(
+        self.0 = Self::create_bind_group(
             skybox_view,
             skybox_sampler,
             hdr_view,
@@ -3434,9 +3390,7 @@ impl PostProcessingBindGroup {
     }
 }
 
-struct SunShadowMatrixBindGroup {
-    pub bind_group: wgpu::BindGroup,
-}
+struct SunShadowMatrixBindGroup(wgpu::BindGroup);
 impl SunShadowMatrixBindGroup {
     pub fn desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
         wgpu::BindGroupLayoutDescriptor {
@@ -3474,9 +3428,7 @@ impl SunShadowMatrixBindGroup {
         layout: &wgpu::BindGroupLayout,
         device: &wgpu::Device,
     ) -> Self {
-        Self {
-            bind_group: Self::create_bind_group(buffer, layout, device),
-        }
+        Self(Self::create_bind_group(buffer, layout, device))
     }
 
     pub fn update(
@@ -3485,13 +3437,11 @@ impl SunShadowMatrixBindGroup {
         layout: &wgpu::BindGroupLayout,
         device: &wgpu::Device,
     ) {
-        self.bind_group = Self::create_bind_group(buffer, layout, device);
+        self.0 = Self::create_bind_group(buffer, layout, device);
     }
 }
 
-struct InstanceStorageBindGroup {
-    pub bind_group: wgpu::BindGroup,
-}
+struct InstanceStorageBindGroup(wgpu::BindGroup);
 impl InstanceStorageBindGroup {
     pub fn desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
         wgpu::BindGroupLayoutDescriptor {
@@ -3529,9 +3479,7 @@ impl InstanceStorageBindGroup {
         layout: &wgpu::BindGroupLayout,
         device: &wgpu::Device,
     ) -> Self {
-        Self {
-            bind_group: Self::create_bind_group(buffer, layout, device),
-        }
+        Self(Self::create_bind_group(buffer, layout, device))
     }
 
     pub fn update(
@@ -3540,7 +3488,7 @@ impl InstanceStorageBindGroup {
         layout: &wgpu::BindGroupLayout,
         device: &wgpu::Device,
     ) {
-        self.bind_group = Self::create_bind_group(buffer, layout, device);
+        self.0 = Self::create_bind_group(buffer, layout, device);
     }
 }
 
