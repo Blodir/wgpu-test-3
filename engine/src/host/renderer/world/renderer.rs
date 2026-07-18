@@ -34,6 +34,7 @@ use super::prepare::camera::prepare_camera;
 use super::prepare::lights::prepare_lights;
 use super::prepare::mesh::{resolve_skinned_draw, PassDrawContext};
 use super::prepare::sun_shadow::prepare_sun_shadow;
+use super::world_context::HbgiPyramidBindGroups;
 
 use crate::host::assets::io::asset_formats::materialfile;
 use crate::host::assets::store::{PlaceholderTextureIds, RenderAssetStore, TextureRenderId};
@@ -56,6 +57,8 @@ pub struct Layouts {
     pub motion_bones: wgpu::BindGroupLayout,
     pub instance_storage: wgpu::BindGroupLayout,
     pub pbr_material: wgpu::BindGroupLayout,
+    pub hbgi_pyramid_base: wgpu::BindGroupLayout,
+    pub hbgi_pyramid_downsample: wgpu::BindGroupLayout,
 }
 impl Layouts {
     pub fn new(wgpu_context: &WgpuContext) -> Self {
@@ -83,6 +86,12 @@ impl Layouts {
         let pbr_material = wgpu_context
             .device
             .create_bind_group_layout(&MaterialBinding::desc());
+        let hbgi_pyramid_base = wgpu_context
+            .device
+            .create_bind_group_layout(&HbgiPyramidBindGroups::base_desc());
+        let hbgi_pyramid_downsample = wgpu_context
+            .device
+            .create_bind_group_layout(&HbgiPyramidBindGroups::downsample_desc());
 
         Self {
             camera,
@@ -93,6 +102,8 @@ impl Layouts {
             motion_bones,
             instance_storage,
             pbr_material,
+            hbgi_pyramid_base,
+            hbgi_pyramid_downsample,
         }
     }
 }

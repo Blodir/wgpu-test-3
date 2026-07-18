@@ -6,7 +6,7 @@ use crate::{
     game::scene_tree::Sun,
     global_paths::{
         SHADER_G_BUFFER_FRAG_WGSL, SHADER_G_BUFFER_SKINNED_VERT_WGSL,
-        SHADER_G_BUFFER_STATIC_VERT_WGSL, SHADER_HBGI_WGSL,
+        SHADER_G_BUFFER_STATIC_VERT_WGSL, SHADER_HBGI_PYRAMID_WGSL, SHADER_HBGI_WGSL,
     },
     host::{
         renderer::{
@@ -34,8 +34,7 @@ use crate::{
             },
             pipelines::{
                 deferred_lighting::DeferredLightingPipeline, gi_blur::GiBlurPipeline,
-                hbgi_pyramid::HbgiPyramidPipeline, hbgi_reproject::HbgiReprojectPipeline,
-                post_processing::PostProcessingPipeline,
+                hbgi_reproject::HbgiReprojectPipeline, post_processing::PostProcessingPipeline,
                 skinned_transparent::SkinnedTransparentPipeline, skybox::SkyboxPipeline,
                 static_transparent::StaticTransparentPipeline, sun_shadow::SunShadowPipeline,
             },
@@ -1176,10 +1175,31 @@ impl Buffers {
     }
 }
 
+struct Samplers {
+    sampler_cache: SamplerCache,
+    hbgi_pyramid_downsample: wgpu::Sampler,
+}
+impl Samplers {
+    fn new(device: &wgpu::Device) -> Self {
+        let sampler_cache = SamplerCache::new();
+        let hbgi_pyramid_downsample = device.create_sampler(&wgpu::SamplerDescriptor {
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::FilterMode::Linear,
+            ..Default::default()
+        });
+
+        Self {
+            sampler_cache,
+            hbgi_pyramid_downsample,
+        }
+    }
+}
+
 struct GpuResources {
     textures: Textures,
     buffers: Buffers,
-    samplers: SamplerCache,
+    samplers: Samplers,
 }
 
 struct BonesBindGroups {
@@ -1850,6 +1870,238 @@ impl HbgiBindGroups {
     }
 }
 
+pub(crate) struct HbgiPyramidBindGroups {
+    pub base: wgpu::BindGroup,
+    pub downsample: Vec<wgpu::BindGroup>,
+}
+impl HbgiPyramidBindGroups {
+    pub fn base_desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
+        wgpu::BindGroupLayoutDescriptor {
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Depth,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+            label: Some("HBGI Pyramid Base Bind Group Layout"),
+        }
+    }
+
+    pub fn downsample_desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
+        wgpu::BindGroupLayoutDescriptor {
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 5,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 6,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 7,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 8,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+            label: Some("HBGI Pyramid Downsample Bind Group Layout"),
+        }
+    }
+
+    fn create_base_bind_group(
+        device: &wgpu::Device,
+        layout: &wgpu::BindGroupLayout,
+        source_hbgi_view: &wgpu::TextureView,
+        source_hbgi_sampler: &wgpu::Sampler,
+        source_depth_view: &wgpu::TextureView,
+        source_normal_view: &wgpu::TextureView,
+        source_normal_sampler: &wgpu::Sampler,
+    ) -> wgpu::BindGroup {
+        device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(source_hbgi_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(source_hbgi_sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(source_depth_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::TextureView(source_normal_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: wgpu::BindingResource::Sampler(source_normal_sampler),
+                },
+            ],
+            label: Some("HBGI Pyramid Base Bind Group"),
+        })
+    }
+
+    fn create_downsample_bind_groups(
+        device: &wgpu::Device,
+        layout: &wgpu::BindGroupLayout,
+        downsample_sampler: &wgpu::Sampler,
+        pyramids: &MipPyramidTextureViews,
+    ) -> Vec<wgpu::BindGroup> {
+        (1..pyramids.diffuse_radiance_ao_mips.len())
+            .map(|dst_mip| {
+                device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    layout,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 5,
+                            resource: wgpu::BindingResource::TextureView(
+                                &pyramids.diffuse_radiance_ao_mips[dst_mip - 1],
+                            ),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 6,
+                            resource: wgpu::BindingResource::TextureView(
+                                &pyramids.depth_mips[dst_mip - 1],
+                            ),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 7,
+                            resource: wgpu::BindingResource::TextureView(
+                                &pyramids.normal_mips[dst_mip - 1],
+                            ),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 8,
+                            resource: wgpu::BindingResource::Sampler(downsample_sampler),
+                        },
+                    ],
+                    label: Some("HBGI Pyramid Downsample Bind Group"),
+                })
+            })
+            .collect()
+    }
+
+    pub fn new(
+        device: &wgpu::Device,
+        layouts: &Layouts,
+        downsample_sampler: &wgpu::Sampler,
+        source_hbgi_view: &wgpu::TextureView,
+        source_hbgi_sampler: &wgpu::Sampler,
+        source_depth_view: &wgpu::TextureView,
+        source_normal_view: &wgpu::TextureView,
+        source_normal_sampler: &wgpu::Sampler,
+        pyramids: &MipPyramidTextureViews,
+    ) -> Self {
+        let base = Self::create_base_bind_group(
+            device,
+            &layouts.hbgi_pyramid_base,
+            source_hbgi_view,
+            source_hbgi_sampler,
+            source_depth_view,
+            source_normal_view,
+            source_normal_sampler,
+        );
+        let downsample = Self::create_downsample_bind_groups(
+            device,
+            &layouts.hbgi_pyramid_downsample,
+            downsample_sampler,
+            pyramids,
+        );
+
+        Self { base, downsample }
+    }
+
+    pub fn update(
+        &mut self,
+        device: &wgpu::Device,
+        layouts: &Layouts,
+        downsample_sampler: &wgpu::Sampler,
+        source_hbgi_view: &wgpu::TextureView,
+        source_hbgi_sampler: &wgpu::Sampler,
+        source_depth_view: &wgpu::TextureView,
+        source_normal_view: &wgpu::TextureView,
+        source_normal_sampler: &wgpu::Sampler,
+        pyramids: &MipPyramidTextureViews,
+    ) {
+        *self = Self::new(
+            device,
+            layouts,
+            downsample_sampler,
+            source_hbgi_view,
+            source_hbgi_sampler,
+            source_depth_view,
+            source_normal_view,
+            source_normal_sampler,
+            pyramids,
+        );
+    }
+}
+
 struct LightsBindGroup {
     pub bind_group: wgpu::BindGroup,
 }
@@ -2368,6 +2620,7 @@ struct BindGroups {
     camera: CameraBindGroup,
     g_buffer: GBufferBindGroup,
     hbgi: HbgiBindGroups,
+    hbgi_pyramid: HbgiPyramidBindGroups,
     lights: LightsBindGroup,
     post_processing: PostProcessingBindGroup,
     sun_shadow_matrix: SunShadowMatrixBindGroup,
@@ -2386,22 +2639,8 @@ struct GBufferPipeline {
 }
 impl GBufferPipeline {
     fn new(wgpu_context: &WgpuContext, shader_cache: &mut ShaderCache, layouts: &Layouts) -> Self {
-        let skinned_pipeline = Self::build_skinned_pipeline(
-            wgpu_context,
-            shader_cache,
-            &layouts.camera,
-            &layouts.lights,
-            &layouts.material,
-            &layouts.motion_bones,
-        );
-        let static_pipeline = Self::build_static_pipeline(
-            wgpu_context,
-            shader_cache,
-            &layouts.camera,
-            &layouts.lights,
-            &layouts.material,
-            &layouts.instance_storage,
-        );
+        let skinned_pipeline = Self::build_skinned_pipeline(wgpu_context, shader_cache, layouts);
+        let static_pipeline = Self::build_static_pipeline(wgpu_context, shader_cache, layouts);
 
         Self {
             skinned_pipeline,
@@ -2412,16 +2651,13 @@ impl GBufferPipeline {
     fn build_skinned_pipeline(
         wgpu_context: &WgpuContext,
         shader_cache: &mut ShaderCache,
-        camera_bind_group_layout: &wgpu::BindGroupLayout,
-        lights_bind_group_layout: &wgpu::BindGroupLayout,
-        material_bind_group_layout: &wgpu::BindGroupLayout,
-        motion_bones_bind_group_layout: &wgpu::BindGroupLayout,
+        layouts: &Layouts,
     ) -> wgpu::RenderPipeline {
         let bind_group_layouts = &[
-            camera_bind_group_layout,
-            lights_bind_group_layout,
-            material_bind_group_layout,
-            motion_bones_bind_group_layout,
+            &layouts.camera,
+            &layouts.lights,
+            &layouts.material,
+            &layouts.motion_bones,
         ];
         let render_pipeline_layout =
             wgpu_context
@@ -2504,16 +2740,13 @@ impl GBufferPipeline {
     fn build_static_pipeline(
         wgpu_context: &WgpuContext,
         shader_cache: &mut ShaderCache,
-        camera_bind_group_layout: &wgpu::BindGroupLayout,
-        lights_bind_group_layout: &wgpu::BindGroupLayout,
-        material_bind_group_layout: &wgpu::BindGroupLayout,
-        instance_bind_group_layout: &wgpu::BindGroupLayout,
+        layouts: &Layouts,
     ) -> wgpu::RenderPipeline {
         let bind_group_layouts = &[
-            camera_bind_group_layout,
-            lights_bind_group_layout,
-            material_bind_group_layout,
-            instance_bind_group_layout,
+            &layouts.camera,
+            &layouts.lights,
+            &layouts.material,
+            &layouts.instance_storage,
         ];
         let render_pipeline_layout =
             wgpu_context
@@ -2663,10 +2896,121 @@ impl HbgiPipeline {
     }
 }
 
+const HBGI_PYRAMID_COLOR_TARGET_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
+const HBGI_PYRAMID_DEPTH_TARGET_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::R32Float;
+
+struct HbgiPyramidPipelines {
+    base_pipeline: wgpu::RenderPipeline,
+    downsample_pipeline: wgpu::RenderPipeline,
+}
+impl HbgiPyramidPipelines {
+    fn new(wgpu_context: &WgpuContext, shader_cache: &mut ShaderCache, layouts: &Layouts) -> Self {
+        let shader_module = shader_cache.get(SHADER_HBGI_PYRAMID_WGSL.to_string(), wgpu_context);
+        let base_pipeline_layout =
+            wgpu_context
+                .device
+                .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some("HBGI Pyramid Base Pipeline Layout"),
+                    bind_group_layouts: &[&layouts.hbgi_pyramid_base],
+                    push_constant_ranges: &[],
+                });
+        let downsample_pipeline_layout =
+            wgpu_context
+                .device
+                .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some("HBGI Pyramid Downsample Pipeline Layout"),
+                    bind_group_layouts: &[&layouts.hbgi_pyramid_downsample],
+                    push_constant_ranges: &[],
+                });
+        let color_targets = &[
+            Some(wgpu::ColorTargetState {
+                format: HBGI_PYRAMID_COLOR_TARGET_FORMAT,
+                blend: None,
+                write_mask: wgpu::ColorWrites::ALL,
+            }),
+            Some(wgpu::ColorTargetState {
+                format: HBGI_PYRAMID_DEPTH_TARGET_FORMAT,
+                blend: None,
+                write_mask: wgpu::ColorWrites::ALL,
+            }),
+            Some(wgpu::ColorTargetState {
+                format: HBGI_PYRAMID_COLOR_TARGET_FORMAT,
+                blend: None,
+                write_mask: wgpu::ColorWrites::ALL,
+            }),
+        ];
+        let base_pipeline =
+            wgpu_context
+                .device
+                .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                    label: Some("HBGI Pyramid Base Pipeline"),
+                    layout: Some(&base_pipeline_layout),
+                    vertex: wgpu::VertexState {
+                        module: &shader_module,
+                        entry_point: Some("vs_main"),
+                        buffers: &[],
+                        compilation_options: wgpu::PipelineCompilationOptions::default(),
+                    },
+                    fragment: Some(wgpu::FragmentState {
+                        module: &shader_module,
+                        entry_point: Some("fs_copy_base"),
+                        targets: color_targets,
+                        compilation_options: wgpu::PipelineCompilationOptions::default(),
+                    }),
+                    primitive: wgpu::PrimitiveState {
+                        topology: wgpu::PrimitiveTopology::TriangleList,
+                        strip_index_format: None,
+                        front_face: wgpu::FrontFace::Ccw,
+                        cull_mode: Some(wgpu::Face::Back),
+                        ..Default::default()
+                    },
+                    depth_stencil: None,
+                    multisample: wgpu::MultisampleState::default(),
+                    multiview: None,
+                    cache: None,
+                });
+        let downsample_pipeline =
+            wgpu_context
+                .device
+                .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                    label: Some("HBGI Pyramid Downsample Pipeline"),
+                    layout: Some(&downsample_pipeline_layout),
+                    vertex: wgpu::VertexState {
+                        module: &shader_module,
+                        entry_point: Some("vs_main"),
+                        buffers: &[],
+                        compilation_options: wgpu::PipelineCompilationOptions::default(),
+                    },
+                    fragment: Some(wgpu::FragmentState {
+                        module: &shader_module,
+                        entry_point: Some("fs_downsample"),
+                        targets: color_targets,
+                        compilation_options: wgpu::PipelineCompilationOptions::default(),
+                    }),
+                    primitive: wgpu::PrimitiveState {
+                        topology: wgpu::PrimitiveTopology::TriangleList,
+                        strip_index_format: None,
+                        front_face: wgpu::FrontFace::Ccw,
+                        cull_mode: Some(wgpu::Face::Back),
+                        ..Default::default()
+                    },
+                    depth_stencil: None,
+                    multisample: wgpu::MultisampleState::default(),
+                    multiview: None,
+                    cache: None,
+                });
+
+        Self {
+            base_pipeline,
+            downsample_pipeline,
+        }
+    }
+}
+
 struct WorldPipelines {
     g_buffer: GBufferPipeline,
     hbgi: HbgiPipeline,
-    hbgi_pyramid: HbgiPyramidPipeline,
+    hbgi_pyramid: HbgiPyramidPipelines,
     gi_blur: GiBlurPipeline,
     deferred_lighting: DeferredLightingPipeline,
     hbgi_reproject: HbgiReprojectPipeline,
@@ -2696,7 +3040,7 @@ impl WorldPipelines {
     ) -> Self {
         let g_buffer = GBufferPipeline::new(wgpu_context, shader_cache, layouts);
         let hbgi = HbgiPipeline::new(wgpu_context, shader_cache, layouts);
-        let hbgi_pyramid = HbgiPyramidPipeline::new(wgpu_context, shader_cache);
+        let hbgi_pyramid = HbgiPyramidPipelines::new(wgpu_context, shader_cache, layouts);
         let gi_blur = GiBlurPipeline::new(
             wgpu_context,
             shader_cache,
