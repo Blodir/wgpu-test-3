@@ -7,7 +7,7 @@ use crate::{
     global_paths::{
         SHADER_DEFERRED_LIGHTING_WGSL, SHADER_GI_BLUR_WGSL, SHADER_G_BUFFER_FRAG_WGSL,
         SHADER_G_BUFFER_SKINNED_VERT_WGSL, SHADER_G_BUFFER_STATIC_VERT_WGSL,
-        SHADER_HBGI_PYRAMID_WGSL, SHADER_HBGI_REPROJECT_WGSL, SHADER_HBGI_WGSL,
+        SHADER_HBGI_PYRAMID_WGSL, SHADER_HBGI_REPROJECT_WGSL, SHADER_HBGI_WGSL, SHADER_SKYBOX_WGSL,
     },
     host::{
         renderer::{
@@ -35,7 +35,7 @@ use crate::{
             },
             pipelines::{
                 post_processing::PostProcessingPipeline,
-                skinned_transparent::SkinnedTransparentPipeline, skybox::SkyboxPipeline,
+                skinned_transparent::SkinnedTransparentPipeline,
                 static_transparent::StaticTransparentPipeline, sun_shadow::SunShadowPipeline,
             },
             sun_shadow::SunShadowUniform,
@@ -4141,6 +4141,60 @@ impl HbgiReprojectPipeline {
     }
 }
 
+struct SkyboxPipeline {
+    render_pipeline: wgpu::RenderPipeline,
+}
+impl SkyboxPipeline {
+    fn new(wgpu_context: &WgpuContext, shader_cache: &mut ShaderCache, layouts: &Layouts) -> Self {
+        let bind_group_layouts = &[&layouts.camera, &layouts.lights];
+        let render_pipeline_layout =
+            wgpu_context
+                .device
+                .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some("Skybox Pipeline Layout"),
+                    bind_group_layouts,
+                    push_constant_ranges: &[],
+                });
+        let shader_module = shader_cache.get(SHADER_SKYBOX_WGSL.to_string(), wgpu_context);
+        let render_pipeline =
+            wgpu_context
+                .device
+                .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                    label: Some("Skybox Render Pipeline"),
+                    layout: Some(&render_pipeline_layout),
+                    vertex: wgpu::VertexState {
+                        module: &shader_module,
+                        entry_point: Some("vs_main"),
+                        buffers: &[],
+                        compilation_options: wgpu::PipelineCompilationOptions::default(),
+                    },
+                    fragment: Some(wgpu::FragmentState {
+                        module: &shader_module,
+                        entry_point: Some("fs_main"),
+                        targets: &[Some(wgpu::ColorTargetState {
+                            format: wgpu::TextureFormat::Rgba16Float,
+                            blend: None,
+                            write_mask: wgpu::ColorWrites::ALL,
+                        })],
+                        compilation_options: wgpu::PipelineCompilationOptions::default(),
+                    }),
+                    primitive: wgpu::PrimitiveState {
+                        topology: wgpu::PrimitiveTopology::TriangleList,
+                        strip_index_format: None,
+                        front_face: wgpu::FrontFace::Ccw,
+                        cull_mode: Some(wgpu::Face::Back),
+                        ..Default::default()
+                    },
+                    depth_stencil: None,
+                    multisample: wgpu::MultisampleState::default(),
+                    multiview: None,
+                    cache: None,
+                });
+
+        Self { render_pipeline }
+    }
+}
+
 struct WorldPipelines {
     g_buffer: GBufferPipeline,
     hbgi: HbgiPipeline,
@@ -4178,8 +4232,7 @@ impl WorldPipelines {
         let gi_blur = GiBlurPipeline::new(wgpu_context, shader_cache, layouts);
         let deferred_lighting = DeferredLightingPipeline::new(wgpu_context, shader_cache, layouts);
         let hbgi_reproject = HbgiReprojectPipeline::new(wgpu_context, shader_cache, layouts);
-        let skybox =
-            SkyboxPipeline::new(wgpu_context, shader_cache, &layouts.camera, &layouts.lights);
+        let skybox = SkyboxPipeline::new(wgpu_context, shader_cache, layouts);
         let sun_shadow = SunShadowPipeline::new(
             wgpu_context,
             shader_cache,
