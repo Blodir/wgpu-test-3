@@ -35,9 +35,9 @@ use super::prepare::lights::prepare_lights;
 use super::prepare::mesh::{resolve_skinned_draw, PassDrawContext};
 use super::prepare::sun_shadow::prepare_sun_shadow;
 use super::world_context::{
-    DeferredLightingGBufferBindGroup, DeferredLightingHbgiBindGroup, GiBlurBindGroup,
-    HbgiPyramidBindGroups, HbgiReprojectInputsBindGroup, HbgiReprojectSettingsBindGroup,
-    PostProcessingBindGroup,
+    DeferredLightingGBufferBindGroup, DeferredLightingHbgiBindGroup, GBufferBindGroup,
+    GiBlurBindGroup, HbgiInputsBindGroup, HbgiPyramidBindGroups, HbgiReprojectInputsBindGroup,
+    HbgiReprojectSettingsBindGroup, HbgiSettingsBindGroup, PostProcessingBindGroup,
 };
 
 use crate::host::assets::io::asset_formats::materialfile;
@@ -61,6 +61,9 @@ pub struct Layouts {
     pub motion_bones: wgpu::BindGroupLayout,
     pub instance_storage: wgpu::BindGroupLayout,
     pub pbr_material: wgpu::BindGroupLayout,
+    pub g_buffer: wgpu::BindGroupLayout,
+    pub hbgi_settings: wgpu::BindGroupLayout,
+    pub hbgi_inputs: wgpu::BindGroupLayout,
     pub deferred_lighting_gbuffer: wgpu::BindGroupLayout,
     pub deferred_lighting_hbgi: wgpu::BindGroupLayout,
     pub gi_blur: wgpu::BindGroupLayout,
@@ -96,6 +99,15 @@ impl Layouts {
         let pbr_material = wgpu_context
             .device
             .create_bind_group_layout(&MaterialBinding::desc());
+        let g_buffer = wgpu_context
+            .device
+            .create_bind_group_layout(&GBufferBindGroup::desc());
+        let hbgi_settings = wgpu_context
+            .device
+            .create_bind_group_layout(&HbgiSettingsBindGroup::desc());
+        let hbgi_inputs = wgpu_context
+            .device
+            .create_bind_group_layout(&HbgiInputsBindGroup::desc());
         let deferred_lighting_gbuffer = wgpu_context
             .device
             .create_bind_group_layout(&DeferredLightingGBufferBindGroup::desc());
@@ -130,6 +142,9 @@ impl Layouts {
             motion_bones,
             instance_storage,
             pbr_material,
+            g_buffer,
+            hbgi_settings,
+            hbgi_inputs,
             deferred_lighting_gbuffer,
             deferred_lighting_hbgi,
             gi_blur,
