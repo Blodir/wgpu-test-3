@@ -1,5 +1,4 @@
 pub mod anim_pose_store;
-pub mod bg_layouts;
 pub mod gpu_context;
 pub mod hbgi_settings;
 pub mod instance_links;
@@ -12,5 +11,5 @@ pub mod skinned_vertex;
 pub mod static_instance;
 pub mod static_vertex;
 pub mod sun_shadow;
-pub use bg_layouts::*;
+pub use gpu_context::BGLayouts;
 pub use renderer::*;
