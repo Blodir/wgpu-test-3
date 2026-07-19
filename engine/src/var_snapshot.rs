@@ -5,7 +5,7 @@ use glam::{Quat, Vec3};
 
 use crate::{
     game::{camera::Camera, sim::SimDebugInfo},
-    host::world::sun_shadow::SUN_SHADOW_MAX_CASCADE_COUNT,
+    host::world::prepare::sun_shadow::SUN_SHADOW_MAX_CASCADE_COUNT,
 };
 
 #[derive(Clone, Copy)]

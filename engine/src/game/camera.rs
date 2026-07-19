@@ -3,7 +3,7 @@ use glam::{Mat3, Mat4, Quat, Vec3, Vec4};
 use crate::{
     host::{
         assets::io::asset_formats::modelfile::Aabb,
-        world::sun_shadow::{
+        world::prepare::sun_shadow::{
             SUN_SHADOW_DEFAULT_CASCADE_COUNT, SUN_SHADOW_DEFAULT_CASCADE_SPLIT_RATIOS,
             SUN_SHADOW_MAX_CASCADE_COUNT,
         },

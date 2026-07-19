@@ -2,11 +2,29 @@ use std::array;
 
 use glam::{Mat4, Vec3};
 
-use crate::host::world::prepare::camera::{build_camera_frustum_corners, PreparedCamera};
-use crate::host::world::sun_shadow::{
-    PreparedSunShadow, PreparedSunShadowCascade, SunShadowUniform, SUN_SHADOW_MAP_SIZE,
-    SUN_SHADOW_MAX_CASCADE_COUNT, SUN_SHADOW_MAX_DISTANCE,
+use crate::host::world::{
+    gpu_context::SunShadowUniform,
+    prepare::camera::{build_camera_frustum_corners, PreparedCamera},
 };
+
+pub const SUN_SHADOW_MAX_CASCADE_COUNT: usize = 4;
+pub const SUN_SHADOW_DEFAULT_CASCADE_COUNT: usize = 4;
+pub const SUN_SHADOW_MAP_SIZE: u32 = 2048;
+pub const SUN_SHADOW_MAX_DISTANCE: f32 = 300.0;
+pub const SUN_SHADOW_DEFAULT_CASCADE_SPLIT_RATIOS: [f32; SUN_SHADOW_MAX_CASCADE_COUNT] =
+    [0.08, 0.2, 0.45, 1.0];
+
+#[derive(Clone, Copy)]
+pub struct PreparedSunShadowCascade {
+    pub light_view_proj: [f32; 16],
+    pub split_depth: f32,
+}
+
+#[derive(Clone, Copy)]
+pub struct PreparedSunShadow {
+    pub cascades: [PreparedSunShadowCascade; SUN_SHADOW_MAX_CASCADE_COUNT],
+    pub cascade_count: usize,
+}
 
 // TEMP: conservative padding so casters near the view frustum do not get clipped out.
 const SUN_SHADOW_XY_MARGIN: f32 = 40.0;

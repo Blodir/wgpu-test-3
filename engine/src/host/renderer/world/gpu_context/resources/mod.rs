@@ -2,7 +2,7 @@ pub mod buffers;
 pub mod samplers;
 pub mod textures;
 
-pub(crate) use buffers::{Buffers, CameraBuffers, LightsBuffers, SunBuffers};
+pub(crate) use buffers::{Buffers, CameraBuffers, LightsBuffers, SunBuffers, SunShadowUniform};
 pub(crate) use samplers::Samplers;
 pub(crate) use textures::{
     GBufferTextures, GiBlurTextures, HbgiTextures, LightingTextures, MipPyramidTextures,

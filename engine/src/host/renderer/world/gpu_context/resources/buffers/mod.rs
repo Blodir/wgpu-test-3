@@ -4,7 +4,7 @@ mod sun;
 
 pub(crate) use camera::CameraBuffers;
 pub(crate) use lights::LightsBuffers;
-pub(crate) use sun::SunBuffers;
+pub(crate) use sun::{SunBuffers, SunShadowUniform};
 
 use glam::Mat4;
 use wgpu::util::DeviceExt as _;

@@ -5,6 +5,5 @@ pub mod instance_links;
 pub mod passes;
 pub mod prepare;
 pub mod renderer;
-pub mod sun_shadow;
 pub use gpu_context::BGLayouts;
 pub use renderer::*;

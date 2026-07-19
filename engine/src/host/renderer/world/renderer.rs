@@ -27,7 +27,7 @@ use crate::host::assets::store::{PlaceholderTextureIds, RenderAssetStore, Textur
 use crate::host::renderer::{HbgiOptions, RendererOptions};
 use crate::host::wgpu_context::WgpuContext;
 use crate::host::world::prepare::mesh::resolve_static_draw;
-use crate::host::world::sun_shadow::SUN_SHADOW_MAX_CASCADE_COUNT;
+use crate::host::world::prepare::sun_shadow::SUN_SHADOW_MAX_CASCADE_COUNT;
 use crate::{fixed_snapshot::FixedSnapshotGuard, var_snapshot::CameraSnapshotPair};
 
 pub struct UploadMaterialRequest<'a> {

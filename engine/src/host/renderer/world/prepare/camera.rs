@@ -5,7 +5,7 @@ use glam::{Mat4, Quat, Vec3};
 use crate::{
     host::{
         utils::lerpf32,
-        world::{gpu_context::CameraBuffers, sun_shadow::SUN_SHADOW_MAX_CASCADE_COUNT},
+        world::{gpu_context::CameraBuffers, prepare::sun_shadow::SUN_SHADOW_MAX_CASCADE_COUNT},
     },
     var_snapshot::CameraSnapshotPair,
 };
