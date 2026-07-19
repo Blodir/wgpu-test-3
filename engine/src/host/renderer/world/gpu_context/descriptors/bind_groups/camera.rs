@@ -36,16 +36,6 @@ impl CameraBindGroup {
                     count: None,
                 },
                 wgpu::BindGroupLayoutEntry {
-                    binding: 3,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
                     binding: 4,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
@@ -89,10 +79,6 @@ impl CameraBindGroup {
                 wgpu::BindGroupEntry {
                     binding: 2,
                     resource: buffers.inverse_view_proj.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: buffers.forward.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 4,

@@ -5,7 +5,6 @@ pub struct CameraBuffers {
     pub view_proj: wgpu::Buffer,
     pub position: wgpu::Buffer,
     pub inverse_view_proj: wgpu::Buffer,
-    pub forward: wgpu::Buffer,
     pub view_rotation: wgpu::Buffer,
     pub prev_view_proj: wgpu::Buffer,
 }
@@ -35,11 +34,6 @@ impl CameraBuffers {
             contents: bytemuck::cast_slice(&Mat4::IDENTITY.to_cols_array()),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
-        let forward = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Camera Forward Buffer"),
-            contents: bytemuck::cast_slice(&[0.0, 0.0, -1.0]),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
         let view_rotation = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Camera View Rotation Buffer"),
             contents: bytemuck::cast_slice(&Self::padded_view_rotation(Vec3::X, Vec3::Y, -Vec3::Z)),
@@ -54,7 +48,6 @@ impl CameraBuffers {
             view_proj,
             position,
             inverse_view_proj,
-            forward,
             view_rotation,
             prev_view_proj,
         }
@@ -65,7 +58,6 @@ impl CameraBuffers {
         view_proj: &[f32; 16],
         position: &[f32; 3],
         inverse_view_proj: &[f32; 16],
-        forward: &[f32; 3],
         view_rotation: &[[f32; 4]; 3],
         prev_view_proj: &[f32; 16],
         queue: &wgpu::Queue,
@@ -77,7 +69,6 @@ impl CameraBuffers {
             0,
             bytemuck::cast_slice(inverse_view_proj),
         );
-        queue.write_buffer(&self.forward, 0, bytemuck::cast_slice(forward));
         queue.write_buffer(&self.view_rotation, 0, bytemuck::cast_slice(view_rotation));
         queue.write_buffer(
             &self.prev_view_proj,

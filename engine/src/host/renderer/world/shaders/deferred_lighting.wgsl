@@ -1,6 +1,6 @@
 @group(0) @binding(1) var<uniform> camera_position: vec3<f32>;
 @group(0) @binding(2) var<uniform> inverse_view_proj: mat4x4<f32>;
-@group(0) @binding(3) var<uniform> camera_forward: vec3<f32>;
+@group(0) @binding(4) var<uniform> camera_view_rotation: mat3x3<f32>;
 
 struct SunShadowUniform {
     light_view_proj: array<mat4x4<f32>, 4>,
@@ -115,7 +115,7 @@ fn active_sun_shadow_far_depth() -> f32 {
 }
 
 fn select_sun_shadow_cascade(world_position: vec3f) -> u32 {
-    let cascade_depth = max(dot(world_position - camera_position, camera_forward), 0.0);
+    let cascade_depth = max(dot(world_position - camera_position, camera_view_rotation[2]), 0.0);
     let cascade_count = max(sun_shadow.cascade_params.x, 1u);
     if (cascade_count == 1u || cascade_depth <= sun_shadow.split_depths.x) {
         return 0u;
@@ -130,7 +130,7 @@ fn select_sun_shadow_cascade(world_position: vec3f) -> u32 {
 }
 
 fn sample_sun_shadow(world_position: vec3f, N: vec3f, L: vec3f) -> f32 {
-    let cascade_depth = max(dot(world_position - camera_position, camera_forward), 0.0);
+    let cascade_depth = max(dot(world_position - camera_position, camera_view_rotation[2]), 0.0);
     if (cascade_depth > active_sun_shadow_far_depth()) {
         return 1.0;
     }

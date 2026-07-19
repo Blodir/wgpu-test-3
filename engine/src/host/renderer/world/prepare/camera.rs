@@ -130,7 +130,6 @@ pub fn prepare_camera(
         &view_proj.to_cols_array(),
         &state.position.to_array(),
         &inverse_view_proj.to_cols_array(),
-        &forward.to_array(),
         &view_rotation,
         &prev_view_proj.to_cols_array(),
         queue,

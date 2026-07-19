@@ -13,7 +13,7 @@ use engine::{
         sim::InputEvent,
     },
     host::renderer::{RenderCommand, RendererOptions, UiFrameInfo},
-    host::world::sun_shadow::SUN_SHADOW_MAX_CASCADE_COUNT,
+    host::world::prepare::sun_shadow::SUN_SHADOW_MAX_CASCADE_COUNT,
     run,
 };
 use generational_arena::Arena;
