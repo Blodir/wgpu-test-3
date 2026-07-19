@@ -1,8 +1,8 @@
+use super::super::bg_layouts::BGLayouts;
 use super::{
     hbgi_reproject_inputs::HbgiReprojectInputsBindGroup,
     hbgi_reproject_settings::HbgiReprojectSettingsBindGroup,
 };
-use super::super::bg_layouts::BGLayouts;
 
 pub(crate) struct HbgiReprojectBindGroups {
     pub(crate) inputs: HbgiReprojectInputsBindGroup,

@@ -1,6 +1,5 @@
 use crate::host::renderer::{
-    rw_texture::RWTextureView,
-    world::gpu_context::resources::ReprojectTextures,
+    rw_texture::RWTextureView, world::gpu_context::resources::ReprojectTextures,
 };
 
 pub struct ReprojectTextureViews {

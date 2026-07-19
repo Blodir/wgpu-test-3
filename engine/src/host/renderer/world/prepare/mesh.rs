@@ -10,7 +10,6 @@ use crate::{
         utils::{safe_lerpu64, QuatExt},
         world::{
             anim_pose_store::{self, AnimPoseStore},
-            gpu_context::BoneMat34,
             instance_links::{
                 SnapshotInstanceCursor, SnapshotInstanceLinks, SnapshotInstanceLinksBuilder,
             },
@@ -19,6 +18,24 @@ use crate::{
         },
     },
 };
+
+#[repr(C)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+pub(crate) struct BoneMat34 {
+    pub mat: [[f32; 4]; 3],
+}
+
+impl Default for BoneMat34 {
+    fn default() -> Self {
+        Self {
+            mat: [
+                [1f32, 0f32, 0f32, 0f32],
+                [0f32, 1f32, 0f32, 0f32],
+                [0f32, 0f32, 1f32, 0f32],
+            ],
+        }
+    }
+}
 
 pub(crate) struct PassDrawContext<'a> {
     pub batch: &'a PassBatches,

@@ -1,8 +1,8 @@
+use super::super::bg_layouts::BGLayouts;
 use super::{
     deferred_lighting_gbuffer::DeferredLightingGBufferBindGroup,
     deferred_lighting_hbgi::DeferredLightingHbgiBindGroup,
 };
-use super::super::bg_layouts::BGLayouts;
 
 pub(crate) struct DeferredLightingBindGroups {
     pub(crate) gbuffer: DeferredLightingGBufferBindGroup,

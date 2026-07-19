@@ -2,13 +2,13 @@ use wgpu::util::DeviceExt as _;
 
 use super::{
     descriptors::{
-        bg_layouts::BGLayouts, BindGroups, BonesBindGroups, CameraBindGroup, DeferredLightingBindGroups,
-        Descriptors, GiBlurBindGroup, HbgiBindGroups, HbgiPyramidBindGroups,
-        HbgiReprojectBindGroups, InstanceStorageBindGroup, LightsBindGroup,
+        bg_layouts::BGLayouts, BindGroups, BonesBindGroups, CameraBindGroup,
+        DeferredLightingBindGroups, Descriptors, GiBlurBindGroup, HbgiBindGroups,
+        HbgiPyramidBindGroups, HbgiReprojectBindGroups, InstanceStorageBindGroup, LightsBindGroup,
         PostProcessingBindGroup, TextureViews,
     },
     pipelines::Pipelines,
-    resources::{BoneMat34, Buffers, Resources, Samplers, Textures},
+    resources::{Buffers, Resources, Samplers, Textures},
 };
 use crate::{
     fixed_snapshot::PointLightSnapshot,
@@ -17,9 +17,8 @@ use crate::{
         assets::store::{PlaceholderTextureIds, RenderAssetStore, TextureRenderId},
         renderer::{
             world::{
-                hbgi_settings::HbgiSettingsUniform,
-                skinned_instance::SkinnedInstance,
-                static_instance::StaticInstance,
+                hbgi_settings::HbgiSettingsUniform, prepare::mesh::BoneMat34,
+                skinned_instance::SkinnedInstance, static_instance::StaticInstance,
             },
             HbgiOptions,
         },
@@ -174,8 +173,7 @@ impl WorldGpuContext {
             bind_group_layouts,
             texture_views,
         };
-        let pipelines =
-            Pipelines::new(wgpu_context, shader_cache, &descriptors.bind_group_layouts);
+        let pipelines = Pipelines::new(wgpu_context, shader_cache, &descriptors.bind_group_layouts);
 
         Self {
             resources,

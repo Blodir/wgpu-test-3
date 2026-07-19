@@ -1,5 +1,5 @@
-pub mod gpu_context;
 pub mod descriptors;
+pub mod gpu_context;
 pub mod pipelines;
 pub mod resources;
 

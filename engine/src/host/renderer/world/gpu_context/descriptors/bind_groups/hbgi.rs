@@ -1,5 +1,5 @@
-use super::{hbgi_inputs::HbgiInputsBindGroup, hbgi_settings::HbgiSettingsBindGroup};
 use super::super::texture_views::MipPyramidTextureViews;
+use super::{hbgi_inputs::HbgiInputsBindGroup, hbgi_settings::HbgiSettingsBindGroup};
 
 pub(crate) struct HbgiBindGroups {
     pub(crate) settings: HbgiSettingsBindGroup,
