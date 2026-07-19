@@ -1,5 +1,5 @@
 use super::super::bg_layouts::BGLayouts;
-use crate::host::renderer::world::gpu_context::resources::MipPyramidTextureViews;
+use super::super::texture_views::MipPyramidTextureViews;
 
 pub(crate) struct HbgiPyramidBindGroups {
     pub base: wgpu::BindGroup,

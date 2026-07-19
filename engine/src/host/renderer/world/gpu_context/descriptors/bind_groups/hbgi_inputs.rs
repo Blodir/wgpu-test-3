@@ -1,4 +1,4 @@
-use crate::host::renderer::world::gpu_context::resources::MipPyramidTextureViews;
+use super::super::texture_views::MipPyramidTextureViews;
 
 pub(crate) struct HbgiInputsBindGroup(pub(crate) wgpu::BindGroup);
 impl HbgiInputsBindGroup {

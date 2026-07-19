@@ -3,7 +3,7 @@ pub mod texture_views;
 pub mod bg_layouts;
 
 pub(crate) use bind_groups::*;
-pub(crate) use texture_views::TextureViews;
+pub(crate) use texture_views::*;
 
 pub(crate) struct Descriptors {
     pub(crate) bind_groups: BindGroups,

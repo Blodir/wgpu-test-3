@@ -1,5 +1,5 @@
 use super::{hbgi_inputs::HbgiInputsBindGroup, hbgi_settings::HbgiSettingsBindGroup};
-use crate::host::renderer::world::gpu_context::resources::MipPyramidTextureViews;
+use super::super::texture_views::MipPyramidTextureViews;
 
 pub(crate) struct HbgiBindGroups {
     pub(crate) settings: HbgiSettingsBindGroup,

@@ -5,10 +5,10 @@ use super::{
         bg_layouts::BGLayouts, BindGroups, BonesBindGroups, CameraBindGroup, DeferredLightingBindGroups,
         Descriptors, GiBlurBindGroup, HbgiBindGroups, HbgiPyramidBindGroups,
         HbgiReprojectBindGroups, InstanceStorageBindGroup, LightsBindGroup,
-        PostProcessingBindGroup,
+        PostProcessingBindGroup, TextureViews,
     },
     pipelines::Pipelines,
-    resources::{BoneMat34, Buffers, Resources, Samplers, TextureViews, Textures},
+    resources::{BoneMat34, Buffers, Resources, Samplers, Textures},
 };
 use crate::{
     fixed_snapshot::PointLightSnapshot,

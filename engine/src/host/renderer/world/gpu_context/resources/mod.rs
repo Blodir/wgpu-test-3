@@ -5,10 +5,8 @@ pub mod textures;
 pub(crate) use buffers::{BoneMat34, Buffers, CameraBuffers, LightsBuffers, SunBuffers};
 pub(crate) use samplers::Samplers;
 pub(crate) use textures::{
-    GBufferTextureViews, GBufferTextures, GiBlurTextureViews, GiBlurTextures,
-    HbgiTextureViews, HbgiTextures, LightingTextureViews, MipPyramidTextureViews,
-    MipPyramidTextures, ReprojectTextureViews, ReprojectTextures, SunShadowTexture2,
-    SunShadowTextureViews, TextureViews, Textures,
+    GBufferTextures, GiBlurTextures, HbgiTextures, LightingTextures, MipPyramidTextures,
+    ReprojectTextures, SunShadowTexture2, Textures,
 };
 
 pub(crate) struct Resources {
