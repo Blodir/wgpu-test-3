@@ -8,11 +8,14 @@ use crate::host::world::sun_shadow::{
     SUN_SHADOW_MAX_CASCADE_COUNT, SUN_SHADOW_MAX_DISTANCE,
 };
 
-use super::super::bindgroups::lights::LightsBinding;
-
 // TEMP: conservative padding so casters near the view frustum do not get clipped out.
 const SUN_SHADOW_XY_MARGIN: f32 = 40.0;
 const SUN_SHADOW_Z_MARGIN: f32 = 200.0;
+
+pub struct PreparedSunShadowResult {
+    pub prepared: PreparedSunShadow,
+    pub uniform: SunShadowUniform,
+}
 
 fn select_light_up_axis(sun_direction: Vec3) -> Vec3 {
     if sun_direction.dot(Vec3::Y).abs() > 0.98 {
@@ -96,9 +99,7 @@ fn build_sun_shadow_light_view_proj(
 pub fn prepare_sun_shadow(
     camera: &PreparedCamera,
     sun_direction: [f32; 3],
-    lights_binding: &LightsBinding,
-    queue: &wgpu::Queue,
-) -> PreparedSunShadow {
+) -> PreparedSunShadowResult {
     let sun_direction = Vec3::from_slice(&sun_direction);
     let shadow_distance = camera.state.zfar.min(SUN_SHADOW_MAX_DISTANCE);
     let near = camera.state.znear.min(shadow_distance);
@@ -130,10 +131,11 @@ pub fn prepare_sun_shadow(
         cascade_params: [cascade_count as u32, 0, 0, 0],
         ..Default::default()
     };
-    lights_binding.update_sun_shadow(&uniform, queue);
-
-    PreparedSunShadow {
-        cascades,
-        cascade_count,
+    PreparedSunShadowResult {
+        prepared: PreparedSunShadow {
+            cascades,
+            cascade_count,
+        },
+        uniform,
     }
 }

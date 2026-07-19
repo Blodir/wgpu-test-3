@@ -27,6 +27,19 @@ pub struct PassDrawContext<'a> {
     pub instance_ranges: Vec<Range<u32>>,
 }
 
+pub struct ResolvedSkinnedDraw<'a> {
+    pub opaque: PassDrawContext<'a>,
+    pub transparent: PassDrawContext<'a>,
+    pub joint_palette: Vec<BoneMat34>,
+    pub instance_data: Vec<SkinnedInstance>,
+}
+
+pub struct ResolvedStaticDraw<'a> {
+    pub opaque: PassDrawContext<'a>,
+    pub transparent: PassDrawContext<'a>,
+    pub instance_data: Vec<StaticInstance>,
+}
+
 enum PoseNodesCacheEntry {
     Pending,
     Missing,
@@ -308,7 +321,7 @@ pub fn resolve_skinned_draw<'a>(
     queue: &wgpu::Queue,
     pose_storage: &mut AnimPoseStore,
     frame_idx: u32,
-) -> (PassDrawContext<'a>, PassDrawContext<'a>) {
+) -> ResolvedSkinnedDraw<'a> {
     let mut joint_palette: Vec<BoneMat34> = vec![];
     let mut instance_data = vec![];
     let skinned_instance_count = snaps.curr.mesh_draw_snapshot.skinned_instances.len();
@@ -352,6 +365,9 @@ pub fn resolve_skinned_draw<'a>(
         (opaque_instance_ranges, transparent_instance_ranges)
     };
 
+    let return_instance_data = instance_data.clone();
+    let return_joint_palette = joint_palette.clone();
+
     instances.update(instance_data, links.finish(), queue, device);
     bones.update(
         joint_palette,
@@ -363,16 +379,18 @@ pub fn resolve_skinned_draw<'a>(
         &instances.prev_buffer,
     );
 
-    (
-        PassDrawContext {
+    ResolvedSkinnedDraw {
+        opaque: PassDrawContext {
             batch: &snaps.curr.mesh_draw_snapshot.opaque_batch,
             instance_ranges: opaque_instance_ranges,
         },
-        PassDrawContext {
+        transparent: PassDrawContext {
             batch: &snaps.curr.mesh_draw_snapshot.transparent_batch,
             instance_ranges: transparent_instance_ranges,
         },
-    )
+        joint_palette: return_joint_palette,
+        instance_data: return_instance_data,
+    }
 }
 
 pub fn resolve_static_draw<'a>(
@@ -384,7 +402,7 @@ pub fn resolve_static_draw<'a>(
     queue: &wgpu::Queue,
     pose_storage: &mut AnimPoseStore,
     frame_idx: u32,
-) -> (PassDrawContext<'a>, PassDrawContext<'a>) {
+) -> ResolvedStaticDraw<'a> {
     let mut instance_data = vec![];
     let static_instance_count = snaps.curr.mesh_draw_snapshot.static_instances.len();
     let mut links = SnapshotInstanceLinksBuilder::new(static_instance_count);
@@ -425,16 +443,18 @@ pub fn resolve_static_draw<'a>(
         (opaque_instance_ranges, transparent_instance_ranges)
     };
 
+    let return_instance_data = instance_data.clone();
     instances.update(instance_data, links.finish(), queue, device);
 
-    (
-        PassDrawContext {
+    ResolvedStaticDraw {
+        opaque: PassDrawContext {
             batch: &snaps.curr.mesh_draw_snapshot.opaque_batch,
             instance_ranges: opaque_instance_ranges,
         },
-        PassDrawContext {
+        transparent: PassDrawContext {
             batch: &snaps.curr.mesh_draw_snapshot.transparent_batch,
             instance_ranges: transparent_instance_ranges,
         },
-    )
+        instance_data: return_instance_data,
+    }
 }

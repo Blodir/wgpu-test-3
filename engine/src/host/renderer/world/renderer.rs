@@ -33,9 +33,18 @@ use super::pipelines::skinned_transparent::SkinnedTransparentPipeline;
 use super::pipelines::skybox::SkyboxPipeline;
 use super::pipelines::sun_shadow::SunShadowPipeline;
 use super::prepare::camera::prepare_camera;
-use super::prepare::lights::prepare_lights;
 use super::prepare::mesh::{resolve_skinned_draw, PassDrawContext};
 use super::prepare::sun_shadow::prepare_sun_shadow;
+use super::{
+    bindgroups::hbgi_settings::HbgiSettingsUniform,
+    passes::{
+        render_deferred_lighting_pass, render_gbuffer_skinned_opaque_pass,
+        render_gbuffer_static_opaque_pass, render_gi_blur_pass, render_hbgi_pass,
+        render_hbgi_pyramid_pass, render_hbgi_reproject_pass, render_post_processing_pass,
+        render_skinned_transparent_pass, render_skybox_pass, render_static_transparent_pass,
+        render_sun_shadow_pass,
+    },
+};
 
 use crate::host::assets::io::asset_formats::materialfile;
 use crate::host::assets::store::{PlaceholderTextureIds, RenderAssetStore, TextureRenderId};
@@ -233,54 +242,56 @@ pub struct WorldRenderer {
 }
 impl WorldRenderer {
     fn refresh_temporal_bind_groups(&mut self, device: &wgpu::Device) {
-        self.hbgi_reproject_pipeline.update_input_bindgroup(
-            device,
-            &self.g_buffer_targets.motion_vectors,
-            &self.hbgi_texture.view,
-            &self.hbgi_texture.irradiance_view,
-            &self.hbgi_reproject_prev,
-            &self.hbgi_irradiance_reproject_prev,
-            &self.attachments.depth_texture.view,
-            &self.g_buffer_targets.normal_roughness,
-            &self.hbgi_reproject_depth_prev,
-            &self.hbgi_reproject_normal_prev,
-        );
-        self.gi_blur_pipeline.update_input_bindgroup(
-            device,
-            &self.g_buffer_targets,
-            &self.attachments.depth_texture.view,
-            &self.hbgi_reproject_write,
-            &self.hbgi_irradiance_reproject_write,
-            &self.hbgi_texture,
-        );
-        self.hbgi_pipeline.update_input_bindgroups(
-            device,
-            &self.hbgi_pyramids,
-            &self.hbgi_options.unwrap_or_default(),
-            0,
-        );
+        self.gpu_context.refresh_temporal_bind_groups(device);
     }
 
     fn clear_temporal_inputs(&self, encoder: &mut wgpu::CommandEncoder) {
         for (label, view, clear_color) in [
             (
                 "Previous GI Source Clear Pass",
-                &self.gi_source_prev.view,
+                &self
+                    .gpu_context
+                    .descriptors
+                    .texture_views
+                    .lighting_target
+                    .diffuse_radiance_ao,
                 wgpu::Color::TRANSPARENT,
             ),
             (
                 "Previous HBGI Reproject Clear Pass",
-                &self.hbgi_reproject_prev.view,
+                self.gpu_context
+                    .descriptors
+                    .texture_views
+                    .reproject
+                    .bent_ao
+                    .get_read_view(&self.gpu_context.resources.textures.reproject.bent_ao),
                 wgpu::Color::TRANSPARENT,
             ),
             (
                 "Previous HBGI Irradiance Reproject Clear Pass",
-                &self.hbgi_irradiance_reproject_prev.view,
+                self.gpu_context
+                    .descriptors
+                    .texture_views
+                    .reproject
+                    .near_field_irradiance
+                    .get_read_view(
+                        &self
+                            .gpu_context
+                            .resources
+                            .textures
+                            .reproject
+                            .near_field_irradiance,
+                    ),
                 wgpu::Color::TRANSPARENT,
             ),
             (
                 "Previous HBGI Reproject Depth Clear Pass",
-                &self.hbgi_reproject_depth_prev.view,
+                self.gpu_context
+                    .descriptors
+                    .texture_views
+                    .reproject
+                    .depth_history
+                    .get_read_view(&self.gpu_context.resources.textures.reproject.depth_history),
                 wgpu::Color {
                     r: 1.0,
                     g: 0.0,
@@ -290,7 +301,12 @@ impl WorldRenderer {
             ),
             (
                 "Previous HBGI Reproject Normal Clear Pass",
-                &self.hbgi_reproject_normal_prev.view,
+                self.gpu_context
+                    .descriptors
+                    .texture_views
+                    .reproject
+                    .normal_history
+                    .get_read_view(&self.gpu_context.resources.textures.reproject.normal_history),
                 wgpu::Color::TRANSPARENT,
             ),
         ] {
@@ -312,24 +328,38 @@ impl WorldRenderer {
     }
 
     fn rotate_temporal_buffers(&mut self, device: &wgpu::Device) {
-        std::mem::swap(&mut self.gi_source_write, &mut self.gi_source_prev);
-        std::mem::swap(
-            &mut self.hbgi_reproject_write,
-            &mut self.hbgi_reproject_prev,
+        self.gpu_context.rotate_temporal_resources(device);
+    }
+
+    fn render_hbgi_pyramid(&self, encoder: &mut wgpu::CommandEncoder) {
+        let context = &self.gpu_context;
+        let pyramids = &context.descriptors.texture_views.pyramids;
+        let bind_groups = &context.descriptors.bind_groups.hbgi_pyramid;
+
+        render_hbgi_pyramid_pass(
+            encoder,
+            "HBGI Pyramid Base Pass",
+            &context.pipelines.hbgi_pyramid.base_pipeline,
+            &bind_groups.base,
+            &pyramids.diffuse_radiance_ao_mips[0],
+            &pyramids.depth_mips[0],
+            &pyramids.normal_mips[0],
+            context,
         );
-        std::mem::swap(
-            &mut self.hbgi_irradiance_reproject_write,
-            &mut self.hbgi_irradiance_reproject_prev,
-        );
-        std::mem::swap(
-            &mut self.hbgi_reproject_depth_write,
-            &mut self.hbgi_reproject_depth_prev,
-        );
-        std::mem::swap(
-            &mut self.hbgi_reproject_normal_write,
-            &mut self.hbgi_reproject_normal_prev,
-        );
-        self.refresh_temporal_bind_groups(device);
+
+        for (dst_mip, bind_group) in bind_groups.downsample.iter().enumerate() {
+            let mip_level = dst_mip + 1;
+            render_hbgi_pyramid_pass(
+                encoder,
+                "HBGI Pyramid Downsample Pass",
+                &context.pipelines.hbgi_pyramid.downsample_pipeline,
+                bind_group,
+                &pyramids.diffuse_radiance_ao_mips[mip_level],
+                &pyramids.depth_mips[mip_level],
+                &pyramids.normal_mips[mip_level],
+                context,
+            );
+        }
     }
 
     fn render_deferred_opaque<'a>(
@@ -343,71 +373,41 @@ impl WorldRenderer {
         prev_inverse_view_proj: &Mat4,
         frame_idx: u32,
     ) {
-        self.g_buffer_pipeline.render_skinned_opaque(
+        render_gbuffer_skinned_opaque_pass(
+            encoder,
             skinned_opaque_pass,
-            encoder,
-            &self.g_buffer_targets,
-            &self.attachments.depth_texture.view,
-            &self.bind_groups.camera.bind_group,
-            &self.bind_groups.lights.bind_group,
-            &self.bind_groups.bones.motion_bind_group,
             render_resources,
+            &self.gpu_context,
         );
-        self.g_buffer_pipeline.render_static_opaque(
-            static_opaque_pass,
+        render_gbuffer_static_opaque_pass(
             encoder,
-            &self.g_buffer_targets,
-            &self.attachments.depth_texture.view,
-            &self.bind_groups.camera.bind_group,
-            &self.bind_groups.lights.bind_group,
-            &self.bind_groups.static_instances.bind_group,
+            static_opaque_pass,
             render_resources,
+            &self.gpu_context,
         );
         if !self.hbgi_reproject_valid {
             self.clear_temporal_inputs(encoder);
         }
-        if self.hbgi_options.is_some() {
-            self.hbgi_pyramid_pipeline.generate(
-                device,
-                encoder,
-                &self.gi_source_prev,
-                &self.attachments.depth_texture.view,
-                &self.g_buffer_targets,
-                &self.hbgi_pyramids,
+        if let Some(hbgi_options) = &self.hbgi_options {
+            self.gpu_context.resources.buffers.update_hbgi_settings(
+                &HbgiSettingsUniform::from_options(hbgi_options, frame_idx),
+                queue,
             );
-            self.hbgi_pipeline.update_input_bindgroups(
-                device,
-                &self.hbgi_pyramids,
-                &self.hbgi_options.unwrap_or_default(),
-                frame_idx,
-            );
-            self.hbgi_pipeline.render(
-                encoder,
-                &self.hbgi_texture,
-                &self.bind_groups.camera.bind_group,
-            );
-            self.hbgi_reproject_pipeline
-                .update_temporal_state(queue, prev_inverse_view_proj);
-            self.hbgi_reproject_pipeline.render(
-                encoder,
-                &self.bind_groups.camera.bind_group,
-                &self.hbgi_reproject_write.view,
-                &self.hbgi_reproject_depth_write.view,
-                &self.hbgi_reproject_normal_write.view,
-                &self.hbgi_irradiance_reproject_write.view,
-            );
-            self.gi_blur_pipeline.render(
-                encoder,
-                &self.hbgi_texture,
-                &self.bind_groups.camera.bind_group,
-            );
+            self.render_hbgi_pyramid(encoder);
+            render_hbgi_pass(encoder, &self.gpu_context);
+            self.gpu_context
+                .resources
+                .buffers
+                .update_hbgi_reproject_settings(prev_inverse_view_proj, queue);
+            render_hbgi_reproject_pass(encoder, &self.gpu_context);
+            render_gi_blur_pass(encoder, &self.gpu_context);
             self.hbgi_reproject_valid = true;
         } else {
             let _clear_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("HBGI Disabled Clear Pass"),
                 color_attachments: &[
                     Some(wgpu::RenderPassColorAttachment {
-                        view: &self.hbgi_texture.view,
+                        view: &self.gpu_context.descriptors.texture_views.hbgi.bent_ao,
                         resolve_target: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Clear(wgpu::Color {
@@ -420,7 +420,12 @@ impl WorldRenderer {
                         },
                     }),
                     Some(wgpu::RenderPassColorAttachment {
-                        view: &self.hbgi_texture.irradiance_view,
+                        view: &self
+                            .gpu_context
+                            .descriptors
+                            .texture_views
+                            .hbgi
+                            .near_field_irradiance,
                         resolve_target: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
@@ -428,7 +433,7 @@ impl WorldRenderer {
                         },
                     }),
                     Some(wgpu::RenderPassColorAttachment {
-                        view: &self.hbgi_texture.blurred_view,
+                        view: &self.gpu_context.descriptors.texture_views.gi_blur.bent_ao,
                         resolve_target: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Clear(wgpu::Color {
@@ -441,7 +446,12 @@ impl WorldRenderer {
                         },
                     }),
                     Some(wgpu::RenderPassColorAttachment {
-                        view: &self.hbgi_texture.blurred_irradiance_view,
+                        view: &self
+                            .gpu_context
+                            .descriptors
+                            .texture_views
+                            .gi_blur
+                            .near_field_irradiance,
                         resolve_target: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
@@ -455,13 +465,7 @@ impl WorldRenderer {
             });
             self.hbgi_reproject_valid = false;
         }
-        self.deferred_lighting_pipeline.render(
-            encoder,
-            &self.attachments.hdr_color.view,
-            &self.gi_source_write.view,
-            &self.bind_groups.camera.bind_group,
-            &self.bind_groups.lights.bind_group,
-        );
+        render_deferred_lighting_pass(encoder, &self.gpu_context);
         self.rotate_temporal_buffers(device);
     }
 
@@ -696,12 +700,12 @@ impl WorldRenderer {
         _shader_cache: &mut ShaderCache,
     ) {
         self.hbgi_options = options.hbgi;
-        self.hbgi_pipeline.update_input_bindgroups(
-            &_wgpu_context.device,
-            &self.hbgi_pyramids,
-            &self.hbgi_options.unwrap_or_default(),
-            0,
-        );
+        if let Some(hbgi_options) = &self.hbgi_options {
+            self.gpu_context.resources.buffers.update_hbgi_settings(
+                &HbgiSettingsUniform::from_options(hbgi_options, 0),
+                &_wgpu_context.queue,
+            );
+        }
         self.hbgi_reproject_valid = false;
     }
 
@@ -745,31 +749,49 @@ impl WorldRenderer {
             .prev_motion_view_proj
             .unwrap_or(prepared_camera.view_proj);
         let prev_inverse_view_proj = prev_motion_view_proj.inverse();
-        prepare_lights(
-            &snaps,
-            &mut self.bind_groups.lights,
-            self.brdf_lut,
-            render_resources,
-            sampler_cache,
-            wgpu_context,
-            &self.bind_groups.layouts.lights,
-            &self.attachments.sun_shadow.array_view,
-        );
-        let prepared_sun_shadow = prepare_sun_shadow(
-            &prepared_camera,
-            snaps.curr.lights.sun.direction,
-            &self.bind_groups.lights,
+        let right = prepared_camera.state.rotation * Vec3::X;
+        let up = prepared_camera.state.rotation * Vec3::Y;
+        let forward = prepared_camera.state.rotation * -Vec3::Z;
+        self.gpu_context.resources.buffers.camera.update(
+            &prepared_camera.view_proj.to_cols_array(),
+            &prepared_camera.state.position.to_array(),
+            &prepared_camera.view_proj.inverse().to_cols_array(),
+            &forward.to_array(),
+            &[
+                [right.x, right.y, right.z, 0.0],
+                [up.x, up.y, up.z, 0.0],
+                [forward.x, forward.y, forward.z, 0.0],
+            ],
+            &prev_motion_view_proj.to_cols_array(),
             &wgpu_context.queue,
         );
-
-        self.pipelines.skybox.render(
-            encoder,
-            &self.attachments.skybox_output.view,
-            &self.bind_groups.camera.bind_group,
-            &self.bind_groups.lights.bind_group,
+        self.gpu_context.update_lights(
+            &snaps.curr.lights.sun,
+            snaps.curr.lights.environment_map_intensity,
+            &snaps.curr.lights.point_lights,
+            snaps
+                .curr
+                .lights
+                .environment_map
+                .as_ref()
+                .map(|env| (env.prefiltered, env.di)),
+            render_resources,
+            &self.placeholders,
+            self.brdf_lut,
+            wgpu_context,
         );
+        let prepared_sun_shadow =
+            prepare_sun_shadow(&prepared_camera, snaps.curr.lights.sun.direction);
+        self.gpu_context
+            .resources
+            .buffers
+            .lights
+            .sun
+            .update_shadow(&prepared_sun_shadow.uniform, &wgpu_context.queue);
 
-        let (skinned_opaque_pass, skinned_transparent_pass) = resolve_skinned_draw(
+        render_skybox_pass(encoder, &self.gpu_context);
+
+        let skinned_draw = resolve_skinned_draw(
             &mut self.bind_groups.bones,
             &self.bind_groups.layouts.bones,
             &self.bind_groups.layouts.motion_bones,
@@ -782,7 +804,7 @@ impl WorldRenderer {
             &mut self.pose_storage,
             frame_idx,
         );
-        let (static_opaque_pass, static_transparent_pass) = resolve_static_draw(
+        let static_draw = resolve_static_draw(
             &mut self.static_instances,
             render_resources,
             &snaps,
@@ -792,35 +814,44 @@ impl WorldRenderer {
             &mut self.pose_storage,
             frame_idx,
         );
-        self.bind_groups.static_instances.update(
-            &self.static_instances.buffer,
-            &self.bind_groups.layouts.instance_storage,
-            &wgpu_context.device,
+        self.gpu_context.upload_skinned_draw(
+            &skinned_draw.instance_data,
+            &skinned_draw.joint_palette,
+            wgpu_context,
         );
+        self.gpu_context
+            .upload_static_draw(&static_draw.instance_data, wgpu_context);
 
         for ((cascade, cascade_view), cascade_bind_group) in prepared_sun_shadow
+            .prepared
             .cascades
             .iter()
-            .take(prepared_sun_shadow.cascade_count)
-            .zip(self.attachments.sun_shadow.cascade_views.iter())
+            .take(prepared_sun_shadow.prepared.cascade_count)
+            .zip(
+                self.gpu_context
+                    .descriptors
+                    .texture_views
+                    .sun_shadow
+                    .cascades
+                    .iter(),
+            )
             .zip(self.bind_groups.sun_shadow_matrices.iter())
         {
             cascade_bind_group.update(&cascade.light_view_proj, &wgpu_context.queue);
-            self.pipelines.sun_shadow.render(
-                &skinned_opaque_pass,
-                &static_opaque_pass,
+            render_sun_shadow_pass(
                 encoder,
+                &skinned_draw.opaque,
+                &static_draw.opaque,
                 cascade_view,
                 &cascade_bind_group.bind_group,
-                &self.bind_groups.bones.bind_group,
-                &self.bind_groups.static_instances.bind_group,
                 render_resources,
+                &self.gpu_context,
             );
         }
 
         self.render_deferred_opaque(
-            &skinned_opaque_pass,
-            &static_opaque_pass,
+            &skinned_draw.opaque,
+            &static_draw.opaque,
             encoder,
             render_resources,
             &wgpu_context.device,
@@ -829,40 +860,28 @@ impl WorldRenderer {
             frame_idx,
         );
 
-        self.pipelines.skinned_transparent.render(
-            &skinned_transparent_pass,
+        render_skinned_transparent_pass(
             encoder,
-            &self.attachments.hdr_color.view,
-            &self.attachments.depth_texture.view,
-            &self.bind_groups.camera.bind_group,
-            &self.bind_groups.lights.bind_group,
-            &self.bind_groups.bones.motion_bind_group,
+            &skinned_draw.transparent,
             render_resources,
+            &self.gpu_context,
         );
 
-        self.pipelines.static_transparent.render(
-            &static_transparent_pass,
+        render_static_transparent_pass(
             encoder,
-            &self.attachments.hdr_color.view,
-            &self.attachments.depth_texture.view,
-            &self.bind_groups.camera.bind_group,
-            &self.bind_groups.lights.bind_group,
-            &self.bind_groups.static_instances.bind_group,
+            &static_draw.transparent,
             render_resources,
+            &self.gpu_context,
         );
 
-        self.pipelines.post.render(encoder, output_view);
+        render_post_processing_pass(encoder, output_view, &self.gpu_context);
         self.prev_motion_view_proj = Some(prepared_camera.view_proj);
     }
 
     pub fn resize(&mut self, wgpu_context: &WgpuContext) {
-        self.attachments.resize(wgpu_context);
-        self.pipelines.post.update_input_bindgroup(
-            &wgpu_context.device,
-            &self.attachments.skybox_output,
-            &self.attachments.hdr_color,
-        );
-        self.resize_deferred(wgpu_context);
+        self.gpu_context.resize(wgpu_context);
+        self.hbgi_reproject_valid = false;
+        self.prev_motion_view_proj = None;
     }
 
     pub fn upload_material(
