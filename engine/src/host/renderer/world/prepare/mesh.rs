@@ -10,31 +10,29 @@ use crate::{
         utils::{safe_lerpu64, QuatExt},
         world::{
             anim_pose_store::{self, AnimPoseStore},
-            bindgroups::bones::{BoneMat34, BonesBinding},
-            buffers::{
-                instance_links::{
-                    SnapshotInstanceCursor, SnapshotInstanceLinks, SnapshotInstanceLinksBuilder,
-                },
-                skinned_instance::{SkinnedInstance, SkinnedInstances},
-                static_instance::{StaticInstance, StaticInstances},
+            gpu_context::BoneMat34,
+            instance_links::{
+                SnapshotInstanceCursor, SnapshotInstanceLinks, SnapshotInstanceLinksBuilder,
             },
+            skinned_instance::SkinnedInstance,
+            static_instance::StaticInstance,
         },
     },
 };
 
-pub struct PassDrawContext<'a> {
+pub(crate) struct PassDrawContext<'a> {
     pub batch: &'a PassBatches,
     pub instance_ranges: Vec<Range<u32>>,
 }
 
-pub struct ResolvedSkinnedDraw<'a> {
+pub(crate) struct ResolvedSkinnedDraw<'a> {
     pub opaque: PassDrawContext<'a>,
     pub transparent: PassDrawContext<'a>,
     pub joint_palette: Vec<BoneMat34>,
     pub instance_data: Vec<SkinnedInstance>,
 }
 
-pub struct ResolvedStaticDraw<'a> {
+pub(crate) struct ResolvedStaticDraw<'a> {
     pub opaque: PassDrawContext<'a>,
     pub transparent: PassDrawContext<'a>,
     pub instance_data: Vec<StaticInstance>,
@@ -229,7 +227,6 @@ fn resolve_static_pass(
     instance_data: &mut Vec<StaticInstance>,
     links: &mut SnapshotInstanceLinksBuilder,
     prev_cursor: &mut SnapshotInstanceCursor,
-    prev_instances: &[StaticInstance],
     prev_links: &SnapshotInstanceLinks,
     node_world_cache: &mut Vec<PoseNodesCacheEntry>,
 ) -> Vec<Range<u32>> {
@@ -293,7 +290,6 @@ fn resolve_static_pass(
                         let instance = StaticInstance::new(model_transform * node_mat);
                         if let Some(prev_snapshot_idx) = curr_node_inst.prev_index {
                             let _ = prev_cursor.take_next(prev_snapshot_idx, prev_links);
-                            let _ = prev_instances;
                         }
                         let write_idx = links.push(instance_idx);
                         debug_assert_eq!(write_idx as usize, instance_data.len());
@@ -309,16 +305,11 @@ fn resolve_static_pass(
     instance_ranges
 }
 
-pub fn resolve_skinned_draw<'a>(
-    bones: &mut BonesBinding,
-    bones_layout: &wgpu::BindGroupLayout,
-    motion_bones_layout: &wgpu::BindGroupLayout,
-    instances: &mut SkinnedInstances,
+pub(crate) fn resolve_skinned_draw<'a>(
+    prev_links: &mut SnapshotInstanceLinks,
     render_resources: &RenderAssetStore,
     snaps: &'a FixedSnapshotGuard,
     t: f32,
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
     pose_storage: &mut AnimPoseStore,
     frame_idx: u32,
 ) -> ResolvedSkinnedDraw<'a> {
@@ -330,8 +321,8 @@ pub fn resolve_skinned_draw<'a>(
     node_world_cache.resize_with(skinned_instance_count, || PoseNodesCacheEntry::Pending);
     let mut node_to_palette_offset = vec![None; skinned_instance_count];
     let (opaque_instance_ranges, transparent_instance_ranges) = {
-        let prev_links = &instances.links;
-        let mut prev_cursor = prev_links.cursor();
+        let prev_links_ref = &*prev_links;
+        let mut prev_cursor = prev_links_ref.cursor();
         let opaque_instance_ranges = resolve_skinned_pass(
             &snaps.curr.mesh_draw_snapshot.opaque_batch,
             render_resources,
@@ -342,7 +333,7 @@ pub fn resolve_skinned_draw<'a>(
             &mut instance_data,
             &mut links,
             &mut prev_cursor,
-            prev_links,
+            prev_links_ref,
             &mut node_world_cache,
             &mut node_to_palette_offset,
             &mut joint_palette,
@@ -357,7 +348,7 @@ pub fn resolve_skinned_draw<'a>(
             &mut instance_data,
             &mut links,
             &mut prev_cursor,
-            prev_links,
+            prev_links_ref,
             &mut node_world_cache,
             &mut node_to_palette_offset,
             &mut joint_palette,
@@ -365,19 +356,7 @@ pub fn resolve_skinned_draw<'a>(
         (opaque_instance_ranges, transparent_instance_ranges)
     };
 
-    let return_instance_data = instance_data.clone();
-    let return_joint_palette = joint_palette.clone();
-
-    instances.update(instance_data, links.finish(), queue, device);
-    bones.update(
-        joint_palette,
-        bones_layout,
-        motion_bones_layout,
-        device,
-        queue,
-        &instances.buffer,
-        &instances.prev_buffer,
-    );
+    *prev_links = links.finish();
 
     ResolvedSkinnedDraw {
         opaque: PassDrawContext {
@@ -388,18 +367,16 @@ pub fn resolve_skinned_draw<'a>(
             batch: &snaps.curr.mesh_draw_snapshot.transparent_batch,
             instance_ranges: transparent_instance_ranges,
         },
-        joint_palette: return_joint_palette,
-        instance_data: return_instance_data,
+        joint_palette,
+        instance_data,
     }
 }
 
-pub fn resolve_static_draw<'a>(
-    instances: &mut StaticInstances,
+pub(crate) fn resolve_static_draw<'a>(
+    prev_links: &mut SnapshotInstanceLinks,
     render_resources: &RenderAssetStore,
     snaps: &'a FixedSnapshotGuard,
     t: f32,
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
     pose_storage: &mut AnimPoseStore,
     frame_idx: u32,
 ) -> ResolvedStaticDraw<'a> {
@@ -409,9 +386,8 @@ pub fn resolve_static_draw<'a>(
     let mut node_world_cache = Vec::with_capacity(static_instance_count);
     node_world_cache.resize_with(static_instance_count, || PoseNodesCacheEntry::Pending);
     let (opaque_instance_ranges, transparent_instance_ranges) = {
-        let prev_instances = instances.data.as_slice();
-        let prev_links = &instances.links;
-        let mut prev_cursor = prev_links.cursor();
+        let prev_links_ref = &*prev_links;
+        let mut prev_cursor = prev_links_ref.cursor();
         let opaque_instance_ranges = resolve_static_pass(
             &snaps.curr.mesh_draw_snapshot.opaque_batch,
             render_resources,
@@ -422,8 +398,7 @@ pub fn resolve_static_draw<'a>(
             &mut instance_data,
             &mut links,
             &mut prev_cursor,
-            prev_instances,
-            prev_links,
+            prev_links_ref,
             &mut node_world_cache,
         );
         let transparent_instance_ranges = resolve_static_pass(
@@ -436,15 +411,13 @@ pub fn resolve_static_draw<'a>(
             &mut instance_data,
             &mut links,
             &mut prev_cursor,
-            prev_instances,
-            prev_links,
+            prev_links_ref,
             &mut node_world_cache,
         );
         (opaque_instance_ranges, transparent_instance_ranges)
     };
 
-    let return_instance_data = instance_data.clone();
-    instances.update(instance_data, links.finish(), queue, device);
+    *prev_links = links.finish();
 
     ResolvedStaticDraw {
         opaque: PassDrawContext {
@@ -455,6 +428,6 @@ pub fn resolve_static_draw<'a>(
             batch: &snaps.curr.mesh_draw_snapshot.transparent_batch,
             instance_ranges: transparent_instance_ranges,
         },
-        instance_data: return_instance_data,
+        instance_data,
     }
 }

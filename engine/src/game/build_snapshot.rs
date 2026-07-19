@@ -17,8 +17,13 @@ use crate::{
         scene_tree::{Environment, RenderDataType, Scene, SceneNodeId},
     },
     host::assets::store::{MaterialRenderId, ModelRenderId, TextureRenderId},
-    host::world::pipelines::MeshPipelineKind,
 };
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum MeshPipelineKind {
+    StaticPbr,
+    SkinnedPbr,
+}
 
 pub fn accumulate_instance_snapshots(
     scene: &Scene,

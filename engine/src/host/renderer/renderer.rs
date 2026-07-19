@@ -5,7 +5,7 @@ use winit::event::WindowEvent;
 use super::gui::GuiRenderer;
 use super::sampler_cache::SamplerCache;
 use super::shader_cache::ShaderCache;
-use super::world::bindgroups::material::MaterialBinding;
+use super::world::material::MaterialBindGroup;
 use super::world::WorldRenderer;
 use crate::api::{BuildUiFn, UiCommand};
 use crate::fixed_snapshot::FixedSnapshotGuard;
@@ -221,7 +221,7 @@ impl<S, C> Renderer<S, C> {
         request: UploadMaterialRequest<'_>,
         render_resources: &RenderAssetStore,
         wgpu_context: &WgpuContext,
-    ) -> Result<MaterialBinding, ()> {
+    ) -> Result<MaterialBindGroup, ()> {
         self.world_renderer.upload_material(
             request,
             render_resources,

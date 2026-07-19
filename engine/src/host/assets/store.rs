@@ -5,7 +5,7 @@ use crate::global_paths::BRDF_LUT_PNG;
 use crate::host::{
     assets::{io::asset_formats::rigfile::Rig, texture::TextureLoadData},
     wgpu_context::WgpuContext,
-    world::bindgroups::material::MaterialBinding,
+    world::material::MaterialBindGroup,
 };
 use generational_arena::{Arena, Index};
 
@@ -80,7 +80,7 @@ pub struct ModelRenderData {
 pub struct RenderAssetStore {
     pub models: Arena<ModelRenderData>,
     pub meshes: Arena<MeshGpuData>,
-    pub materials: Arena<MaterialBinding>,
+    pub materials: Arena<MaterialBindGroup>,
     pub textures: Arena<TextureGpuData>,
 }
 impl RenderAssetStore {

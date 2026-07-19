@@ -1,14 +1,12 @@
 use super::{
-    bindgroups::{
-        bones::BonesBinding, camera::CameraBinding, instance_storage::InstanceStorageBinding,
-        lights::LightsBinding, material::MaterialBinding,
-        sun_shadow_matrix::SunShadowMatrixBindGroup,
-    },
     gpu_context::{
-        DeferredLightingGBufferBindGroup, DeferredLightingHbgiBindGroup, GBufferBindGroup,
-        GiBlurBindGroup, HbgiInputsBindGroup, HbgiPyramidBindGroups, HbgiReprojectInputsBindGroup,
-        HbgiReprojectSettingsBindGroup, HbgiSettingsBindGroup, PostProcessingBindGroup,
+        BonesBindGroups, CameraBindGroup, DeferredLightingGBufferBindGroup,
+        DeferredLightingHbgiBindGroup, GiBlurBindGroup, HbgiInputsBindGroup,
+        HbgiPyramidBindGroups, HbgiReprojectInputsBindGroup, HbgiReprojectSettingsBindGroup,
+        HbgiSettingsBindGroup, InstanceStorageBindGroup, LightsBindGroup,
+        PostProcessingBindGroup, SunShadowMatrixBindGroup,
     },
+    material::MaterialBindGroup,
 };
 use crate::host::wgpu_context::WgpuContext;
 
@@ -21,7 +19,6 @@ pub struct BGLayouts {
     pub motion_bones: wgpu::BindGroupLayout,
     pub instance_storage: wgpu::BindGroupLayout,
     pub pbr_material: wgpu::BindGroupLayout,
-    pub g_buffer: wgpu::BindGroupLayout,
     pub hbgi_settings: wgpu::BindGroupLayout,
     pub hbgi_inputs: wgpu::BindGroupLayout,
     pub deferred_lighting_gbuffer: wgpu::BindGroupLayout,
@@ -37,31 +34,28 @@ impl BGLayouts {
     pub fn new(wgpu_context: &WgpuContext) -> Self {
         let camera = wgpu_context
             .device
-            .create_bind_group_layout(&CameraBinding::desc());
+            .create_bind_group_layout(&CameraBindGroup::desc());
         let lights = wgpu_context
             .device
-            .create_bind_group_layout(&LightsBinding::desc());
+            .create_bind_group_layout(&LightsBindGroup::desc());
         let sun_shadow_matrix = wgpu_context
             .device
             .create_bind_group_layout(&SunShadowMatrixBindGroup::desc());
         let material = wgpu_context
             .device
-            .create_bind_group_layout(&MaterialBinding::desc());
+            .create_bind_group_layout(&MaterialBindGroup::desc());
         let bones = wgpu_context
             .device
-            .create_bind_group_layout(&BonesBinding::desc());
+            .create_bind_group_layout(&BonesBindGroups::desc());
         let motion_bones = wgpu_context
             .device
-            .create_bind_group_layout(&BonesBinding::motion_desc());
+            .create_bind_group_layout(&BonesBindGroups::motion_desc());
         let instance_storage = wgpu_context
             .device
-            .create_bind_group_layout(&InstanceStorageBinding::desc());
+            .create_bind_group_layout(&InstanceStorageBindGroup::desc());
         let pbr_material = wgpu_context
             .device
-            .create_bind_group_layout(&MaterialBinding::desc());
-        let g_buffer = wgpu_context
-            .device
-            .create_bind_group_layout(&GBufferBindGroup::desc());
+            .create_bind_group_layout(&MaterialBindGroup::desc());
         let hbgi_settings = wgpu_context
             .device
             .create_bind_group_layout(&HbgiSettingsBindGroup::desc());
@@ -102,7 +96,6 @@ impl BGLayouts {
             motion_bones,
             instance_storage,
             pbr_material,
-            g_buffer,
             hbgi_settings,
             hbgi_inputs,
             deferred_lighting_gbuffer,

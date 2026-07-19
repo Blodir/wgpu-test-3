@@ -4,18 +4,10 @@ use crate::host::{
     assets::io::asset_formats::materialfile, sampler_cache::SamplerCache, wgpu_context::WgpuContext,
 };
 
-pub struct MaterialBinding {
+pub struct MaterialBindGroup {
     pub bind_group: wgpu::BindGroup,
-    base_color_factor: wgpu::Buffer,
-    metallic_factor: wgpu::Buffer,
-    roughness_factor: wgpu::Buffer,
-    emissive_factor: wgpu::Buffer,
-    normal_texture_scale: wgpu::Buffer,
-    alpha_mask_enabled: wgpu::Buffer,
-    alpha_cutoff: wgpu::Buffer,
-    alpha_blend_enabled: wgpu::Buffer,
 }
-impl MaterialBinding {
+impl MaterialBindGroup {
     pub fn desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
         wgpu::BindGroupLayoutDescriptor {
             entries: &[
@@ -400,16 +392,6 @@ impl MaterialBinding {
                 label: Some("Material Bind Group"),
             });
 
-        Self {
-            bind_group,
-            base_color_factor,
-            metallic_factor,
-            roughness_factor,
-            emissive_factor,
-            normal_texture_scale,
-            alpha_mask_enabled,
-            alpha_cutoff,
-            alpha_blend_enabled,
-        }
+        Self { bind_group }
     }
 }

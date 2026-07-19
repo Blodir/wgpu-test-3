@@ -18,26 +18,21 @@ use crate::{
             rw_buffer::{RWBuffer, RWBufferOptions},
             rw_texture::{RWTexture, RWTextureView},
             world::{
-                bindgroups::{
-                    bones::BoneMat34, hbgi_settings::HbgiSettingsUniform, lights::MAX_POINT_LIGHTS,
-                },
-                buffers::{
-                    skinned_instance::SkinnedInstance, skinned_vertex::SkinnedVertex,
-                    static_instance::StaticInstance, static_vertex::StaticVertex,
-                },
+                hbgi_settings::HbgiSettingsUniform,
+                skinned_instance::SkinnedInstance,
+                skinned_vertex::SkinnedVertex,
+                static_instance::StaticInstance,
+                static_vertex::StaticVertex,
             },
             HbgiOptions,
         },
-        sampler_cache::SamplerCache,
         shader_cache::ShaderCache,
         wgpu_context::WgpuContext,
-        world::{
-            attachments::{color::HdrColorTexture, depth::DepthTexture},
-            sun_shadow::SunShadowUniform,
-            BGLayouts,
-        },
+        world::{sun_shadow::SunShadowUniform, BGLayouts},
     },
 };
+
+const MAX_POINT_LIGHTS: usize = 64;
 
 pub struct GBufferTextures {
     pub albedo_ao: wgpu::Texture,
@@ -734,7 +729,7 @@ pub(crate) struct LightingTextureViews {
     pub(crate) diffuse_radiance_ao: wgpu::TextureView,
 }
 impl LightingTextureViews {
-    pub fn new(textures: &LightingTextures) -> Self {
+    fn new(textures: &LightingTextures) -> Self {
         let lit_hdr = textures.lit_hdr.create_view(&wgpu::TextureViewDescriptor {
             label: Some("Lighting: Lit HDR Texture View"),
             ..Default::default()
@@ -763,7 +758,6 @@ pub(crate) struct Textures {
     sky: wgpu::Texture,
     sun_shadow: SunShadowTexture2,
     lighting_target: LightingTextures,
-    post_process_target: wgpu::Texture,
 }
 impl Textures {
     pub fn new(wgpu_context: &WgpuContext, surface_config: &wgpu::SurfaceConfiguration) -> Self {
@@ -793,20 +787,6 @@ impl Textures {
                     | wgpu::TextureUsages::TEXTURE_BINDING,
                 view_formats: &[],
             });
-        let post_process_target = wgpu_context
-            .device
-            .create_texture(&wgpu::TextureDescriptor {
-                label: Some("Post Process Target Texture"),
-                size,
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format: wgpu::TextureFormat::Rgba16Float,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
-                    | wgpu::TextureUsages::TEXTURE_BINDING,
-                view_formats: &[],
-            });
-
         Self {
             gbuffer,
             hbgi,
@@ -815,7 +795,6 @@ impl Textures {
             pyramids,
             sky,
             sun_shadow,
-            post_process_target,
             lighting_target,
         }
     }
@@ -830,7 +809,6 @@ pub(crate) struct TextureViews {
     pub(crate) sky: wgpu::TextureView,
     pub(crate) sun_shadow: SunShadowTextureViews,
     pub(crate) lighting_target: LightingTextureViews,
-    pub(crate) post_process_target: wgpu::TextureView,
 }
 impl TextureViews {
     pub fn new(textures: &Textures) -> Self {
@@ -846,14 +824,6 @@ impl TextureViews {
             label: Some("Sky Target Texture View"),
             ..Default::default()
         });
-        let post_process_target =
-            textures
-                .post_process_target
-                .create_view(&wgpu::TextureViewDescriptor {
-                    label: Some("Post Process Target Texture View"),
-                    ..Default::default()
-                });
-
         Self {
             gbuffer,
             hbgi,
@@ -863,7 +833,6 @@ impl TextureViews {
             sky,
             sun_shadow,
             lighting_target,
-            post_process_target,
         }
     }
 }
@@ -1092,6 +1061,23 @@ const FULLSCREEN_QUAD_INDICES: &[u16] = &[0, 2, 1, 3, 2, 0];
 
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+pub(crate) struct BoneMat34 {
+    pub mat: [[f32; 4]; 3],
+}
+impl Default for BoneMat34 {
+    fn default() -> Self {
+        Self {
+            mat: [
+                [1f32, 0f32, 0f32, 0f32],
+                [0f32, 1f32, 0f32, 0f32],
+                [0f32, 0f32, 1f32, 0f32],
+            ],
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 struct HbgiReprojectUniform {
     prev_inverse_view_proj: [[f32; 4]; 4],
 }
@@ -1206,7 +1192,6 @@ impl Buffers {
 }
 
 struct Samplers {
-    sampler_cache: SamplerCache,
     nearest: wgpu::Sampler,
     linear: wgpu::Sampler,
     comparison: wgpu::Sampler,
@@ -1214,7 +1199,6 @@ struct Samplers {
 }
 impl Samplers {
     fn new(device: &wgpu::Device) -> Self {
-        let sampler_cache = SamplerCache::new();
         let nearest = device.create_sampler(&wgpu::SamplerDescriptor::default());
         let linear = device.create_sampler(&wgpu::SamplerDescriptor {
             mag_filter: wgpu::FilterMode::Linear,
@@ -1240,7 +1224,6 @@ impl Samplers {
         });
 
         Self {
-            sampler_cache,
             nearest,
             linear,
             comparison,
@@ -1410,20 +1393,6 @@ impl BonesBindGroups {
             ),
         }
     }
-
-    pub fn update(
-        &mut self,
-        bones: &RWBuffer,
-        skinned_instances: &RWBuffer,
-        layout: &wgpu::BindGroupLayout,
-        motion_layout: &wgpu::BindGroupLayout,
-        device: &wgpu::Device,
-    ) {
-        self.bones_bind_group =
-            Self::create_bones_bind_group(bones, skinned_instances, layout, device);
-        self.motion_bind_group =
-            Self::create_motion_bind_group(bones, skinned_instances, motion_layout, device);
-    }
 }
 
 pub(crate) struct CameraBindGroup(pub(crate) wgpu::BindGroup);
@@ -1539,149 +1508,6 @@ impl CameraBindGroup {
         device: &wgpu::Device,
     ) -> Self {
         Self(Self::create_bind_group(buffers, layout, device))
-    }
-}
-
-pub(crate) struct GBufferBindGroup(pub(crate) wgpu::BindGroup);
-impl GBufferBindGroup {
-    pub fn desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
-        wgpu::BindGroupLayoutDescriptor {
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 3,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 4,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 5,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 6,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Depth,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-            ],
-            label: Some("GBuffer Inputs Bind Group Layout"),
-        }
-    }
-
-    fn create_bind_group(
-        texture_views: &GBufferTextureViews,
-        albedo_sampler: &wgpu::Sampler,
-        normal_sampler: &wgpu::Sampler,
-        emissive_sampler: &wgpu::Sampler,
-        layout: &wgpu::BindGroupLayout,
-        device: &wgpu::Device,
-    ) -> wgpu::BindGroup {
-        device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&texture_views.albedo_ao),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(albedo_sampler),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::TextureView(&texture_views.normal_roughness),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: wgpu::BindingResource::Sampler(normal_sampler),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 4,
-                    resource: wgpu::BindingResource::TextureView(&texture_views.emissive_metallic),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 5,
-                    resource: wgpu::BindingResource::Sampler(emissive_sampler),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 6,
-                    resource: wgpu::BindingResource::TextureView(&texture_views.depth),
-                },
-            ],
-            label: Some("GBuffer Inputs Bind Group"),
-        })
-    }
-
-    pub fn new(
-        texture_views: &GBufferTextureViews,
-        albedo_sampler: &wgpu::Sampler,
-        normal_sampler: &wgpu::Sampler,
-        emissive_sampler: &wgpu::Sampler,
-        layout: &wgpu::BindGroupLayout,
-        device: &wgpu::Device,
-    ) -> Self {
-        Self(Self::create_bind_group(
-            texture_views,
-            albedo_sampler,
-            normal_sampler,
-            emissive_sampler,
-            layout,
-            device,
-        ))
-    }
-
-    pub fn update(&mut self, context: &WorldGpuContext, device: &wgpu::Device) {
-        let texture_views = &context.descriptors.texture_views.gbuffer;
-        self.0 = Self::create_bind_group(
-            texture_views,
-            &context.resources.samplers.nearest,
-            &context.resources.samplers.nearest,
-            &context.resources.samplers.nearest,
-            &context.descriptors.bind_group_layouts.g_buffer,
-            device,
-        );
     }
 }
 
@@ -1831,16 +1657,6 @@ impl HbgiInputsBindGroup {
             device,
         ))
     }
-
-    pub fn update(&mut self, context: &WorldGpuContext, device: &wgpu::Device) {
-        self.0 = Self::create_bind_group(
-            &context.descriptors.texture_views.pyramids,
-            &context.resources.samplers.hbgi_pyramid_downsample,
-            &context.resources.samplers.hbgi_pyramid_downsample,
-            &context.descriptors.bind_group_layouts.hbgi_inputs,
-            device,
-        );
-    }
 }
 
 pub(crate) struct HbgiBindGroups {
@@ -1868,18 +1684,6 @@ impl HbgiBindGroups {
         );
 
         Self { settings, inputs }
-    }
-
-    pub fn update_inputs(&mut self, context: &WorldGpuContext, device: &wgpu::Device) {
-        self.inputs.update(context, device);
-    }
-
-    pub fn update_settings(&mut self, context: &WorldGpuContext, device: &wgpu::Device) {
-        self.settings = HbgiSettingsBindGroup::new(
-            &context.resources.buffers.hbgi_settings,
-            &context.descriptors.bind_group_layouts.hbgi_settings,
-            device,
-        );
     }
 }
 
@@ -2021,21 +1825,6 @@ impl GiBlurBindGroup {
             depth_view,
         ))
     }
-
-    pub fn update(&mut self, context: &WorldGpuContext, device: &wgpu::Device) {
-        let texture_views = &context.descriptors.texture_views;
-        self.0 = Self::create_bind_group(
-            device,
-            &context.descriptors.bind_group_layouts.gi_blur,
-            &texture_views.hbgi.bent_ao,
-            &context.resources.samplers.linear,
-            &texture_views.hbgi.near_field_irradiance,
-            &context.resources.samplers.linear,
-            &texture_views.gbuffer.normal_roughness,
-            &context.resources.samplers.nearest,
-            &texture_views.gbuffer.depth,
-        );
-    }
 }
 
 pub(crate) struct DeferredLightingGBufferBindGroup(pub(crate) wgpu::BindGroup);
@@ -2176,24 +1965,6 @@ impl DeferredLightingGBufferBindGroup {
             depth_view,
         ))
     }
-
-    pub fn update(&mut self, context: &WorldGpuContext, device: &wgpu::Device) {
-        let texture_views = &context.descriptors.texture_views.gbuffer;
-        self.0 = Self::create_bind_group(
-            device,
-            &context
-                .descriptors
-                .bind_group_layouts
-                .deferred_lighting_gbuffer,
-            &texture_views.albedo_ao,
-            &context.resources.samplers.nearest,
-            &texture_views.normal_roughness,
-            &context.resources.samplers.nearest,
-            &texture_views.emissive_metallic,
-            &context.resources.samplers.nearest,
-            &texture_views.depth,
-        );
-    }
 }
 
 pub(crate) struct DeferredLightingHbgiBindGroup(pub(crate) wgpu::BindGroup);
@@ -2287,21 +2058,6 @@ impl DeferredLightingHbgiBindGroup {
             blurred_irradiance_sampler,
         ))
     }
-
-    pub fn update(&mut self, context: &WorldGpuContext, device: &wgpu::Device) {
-        let texture_views = &context.descriptors.texture_views.gi_blur;
-        self.0 = Self::create_bind_group(
-            device,
-            &context
-                .descriptors
-                .bind_group_layouts
-                .deferred_lighting_hbgi,
-            &texture_views.bent_ao,
-            &context.resources.samplers.linear,
-            &texture_views.near_field_irradiance,
-            &context.resources.samplers.linear,
-        );
-    }
 }
 
 pub(crate) struct DeferredLightingBindGroups {
@@ -2345,14 +2101,6 @@ impl DeferredLightingBindGroups {
         );
 
         Self { gbuffer, hbgi }
-    }
-
-    pub fn update_gbuffer(&mut self, context: &WorldGpuContext, device: &wgpu::Device) {
-        self.gbuffer.update(context, device);
-    }
-
-    pub fn update_hbgi(&mut self, context: &WorldGpuContext, device: &wgpu::Device) {
-        self.hbgi.update(context, device);
     }
 }
 
@@ -2542,36 +2290,6 @@ impl HbgiReprojectInputsBindGroup {
             prev_hbgi_irradiance_reproject_view,
         ))
     }
-
-    pub fn update(&mut self, context: &WorldGpuContext, device: &wgpu::Device) {
-        let texture_views = &context.descriptors.texture_views;
-        let reproject_textures = &context.resources.textures.reproject;
-        self.0 = Self::create_bind_group(
-            device,
-            &context.descriptors.bind_group_layouts.hbgi_reproject_inputs,
-            &texture_views.gbuffer.motion_vectors,
-            &texture_views.hbgi.bent_ao,
-            texture_views
-                .reproject
-                .bent_ao
-                .get_read_view(&reproject_textures.bent_ao),
-            &texture_views.gbuffer.depth,
-            &texture_views.gbuffer.normal_roughness,
-            texture_views
-                .reproject
-                .depth_history
-                .get_read_view(&reproject_textures.depth_history),
-            texture_views
-                .reproject
-                .normal_history
-                .get_read_view(&reproject_textures.normal_history),
-            &texture_views.hbgi.near_field_irradiance,
-            texture_views
-                .reproject
-                .near_field_irradiance
-                .get_read_view(&reproject_textures.near_field_irradiance),
-        );
-    }
 }
 
 pub(crate) struct HbgiReprojectSettingsBindGroup(pub(crate) wgpu::BindGroup);
@@ -2614,17 +2332,6 @@ impl HbgiReprojectSettingsBindGroup {
     ) -> Self {
         Self(Self::create_bind_group(buffer, layout, device))
     }
-
-    pub fn update(&mut self, context: &WorldGpuContext, device: &wgpu::Device) {
-        self.0 = Self::create_bind_group(
-            &context.resources.buffers.hbgi_reproject_settings,
-            &context
-                .descriptors
-                .bind_group_layouts
-                .hbgi_reproject_settings,
-            device,
-        );
-    }
 }
 
 pub(crate) struct HbgiReprojectBindGroups {
@@ -2666,14 +2373,6 @@ impl HbgiReprojectBindGroups {
         );
 
         Self { inputs, settings }
-    }
-
-    pub fn update_inputs(&mut self, context: &WorldGpuContext, device: &wgpu::Device) {
-        self.inputs.update(context, device);
-    }
-
-    pub fn update_settings(&mut self, context: &WorldGpuContext, device: &wgpu::Device) {
-        self.settings.update(context, device);
     }
 }
 
@@ -2881,21 +2580,6 @@ impl HbgiPyramidBindGroups {
         );
 
         Self { base, downsample }
-    }
-
-    pub fn update(&mut self, device: &wgpu::Device, context: &WorldGpuContext) {
-        let texture_views = &context.descriptors.texture_views;
-        *self = Self::new(
-            device,
-            &context.descriptors.bind_group_layouts,
-            &context.resources.samplers.hbgi_pyramid_downsample,
-            &texture_views.hbgi.bent_ao,
-            &context.resources.samplers.nearest,
-            &texture_views.gbuffer.depth,
-            &texture_views.gbuffer.normal_roughness,
-            &context.resources.samplers.nearest,
-            &texture_views.pyramids,
-        );
     }
 }
 
@@ -3151,32 +2835,6 @@ impl LightsBindGroup {
             device,
         ))
     }
-
-    pub fn update(
-        &mut self,
-        context: &WorldGpuContext,
-        prefiltered_view: &wgpu::TextureView,
-        prefiltered_sampler: &wgpu::Sampler,
-        di_view: &wgpu::TextureView,
-        di_sampler: &wgpu::Sampler,
-        brdf_view: &wgpu::TextureView,
-        brdf_sampler: &wgpu::Sampler,
-        device: &wgpu::Device,
-    ) {
-        self.0 = Self::create_bind_group(
-            &context.resources.buffers.lights,
-            prefiltered_view,
-            prefiltered_sampler,
-            di_view,
-            di_sampler,
-            brdf_view,
-            brdf_sampler,
-            &context.descriptors.texture_views.sun_shadow.array,
-            &context.resources.samplers.comparison,
-            &context.descriptors.bind_group_layouts.lights,
-            device,
-        );
-    }
 }
 
 pub(crate) struct PostProcessingBindGroup(pub(crate) wgpu::BindGroup);
@@ -3270,20 +2928,12 @@ impl PostProcessingBindGroup {
             device,
         ))
     }
-
-    pub fn update(&mut self, context: &WorldGpuContext, device: &wgpu::Device) {
-        self.0 = Self::create_bind_group(
-            &context.descriptors.texture_views.sky,
-            &context.resources.samplers.linear,
-            &context.descriptors.texture_views.lighting_target.lit_hdr,
-            &context.resources.samplers.nearest,
-            &context.descriptors.bind_group_layouts.post_processing,
-            device,
-        );
-    }
 }
 
-struct SunShadowMatrixBindGroup(wgpu::BindGroup);
+pub(crate) struct SunShadowMatrixBindGroup {
+    buffer: wgpu::Buffer,
+    pub(crate) bind_group: wgpu::BindGroup,
+}
 impl SunShadowMatrixBindGroup {
     pub fn desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
         wgpu::BindGroupLayoutDescriptor {
@@ -3301,36 +2951,25 @@ impl SunShadowMatrixBindGroup {
         }
     }
 
-    fn create_bind_group(
-        buffer: &wgpu::Buffer,
-        layout: &wgpu::BindGroupLayout,
-        device: &wgpu::Device,
-    ) -> wgpu::BindGroup {
-        device.create_bind_group(&wgpu::BindGroupDescriptor {
+    pub fn new(device: &wgpu::Device, layout: &wgpu::BindGroupLayout) -> Self {
+        let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Sun Shadow Matrix Buffer"),
+            contents: bytemuck::cast_slice(&glam::Mat4::IDENTITY.to_cols_array()),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
                 resource: buffer.as_entire_binding(),
             }],
             label: Some("Sun Shadow Matrix Bind Group"),
-        })
+        });
+        Self { buffer, bind_group }
     }
 
-    pub fn new(
-        buffer: &wgpu::Buffer,
-        layout: &wgpu::BindGroupLayout,
-        device: &wgpu::Device,
-    ) -> Self {
-        Self(Self::create_bind_group(buffer, layout, device))
-    }
-
-    pub fn update(
-        &mut self,
-        buffer: &wgpu::Buffer,
-        layout: &wgpu::BindGroupLayout,
-        device: &wgpu::Device,
-    ) {
-        self.0 = Self::create_bind_group(buffer, layout, device);
+    pub fn update(&self, light_view_proj: &[f32; 16], queue: &wgpu::Queue) {
+        queue.write_buffer(&self.buffer, 0, bytemuck::cast_slice(light_view_proj));
     }
 }
 
@@ -3374,29 +3013,18 @@ impl InstanceStorageBindGroup {
     ) -> Self {
         Self(Self::create_bind_group(buffer, layout, device))
     }
-
-    pub fn update(
-        &mut self,
-        buffer: &wgpu::Buffer,
-        layout: &wgpu::BindGroupLayout,
-        device: &wgpu::Device,
-    ) {
-        self.0 = Self::create_bind_group(buffer, layout, device);
-    }
 }
 
 pub(crate) struct BindGroups {
     pub(crate) bones: BonesBindGroups,
     pub(crate) camera: CameraBindGroup,
     pub(crate) deferred_lighting: DeferredLightingBindGroups,
-    pub(crate) g_buffer: GBufferBindGroup,
     pub(crate) hbgi: HbgiBindGroups,
     pub(crate) hbgi_reproject: HbgiReprojectBindGroups,
     pub(crate) gi_blur: GiBlurBindGroup,
     pub(crate) hbgi_pyramid: HbgiPyramidBindGroups,
     pub(crate) lights: LightsBindGroup,
     pub(crate) post_processing: PostProcessingBindGroup,
-    pub(crate) sun_shadow_matrix: SunShadowMatrixBindGroup,
     pub(crate) static_instances: InstanceStorageBindGroup,
 }
 
@@ -4123,7 +3751,7 @@ impl SunShadowPipeline {
                     conservative: false,
                 },
                 depth_stencil: Some(wgpu::DepthStencilState {
-                    format: DepthTexture::DEPTH_FORMAT,
+                    format: GBufferTextures::DEPTH_FORMAT,
                     depth_write_enabled: true,
                     depth_compare: wgpu::CompareFunction::Less,
                     stencil: wgpu::StencilState::default(),
@@ -4178,7 +3806,7 @@ impl SunShadowPipeline {
                     conservative: false,
                 },
                 depth_stencil: Some(wgpu::DepthStencilState {
-                    format: DepthTexture::DEPTH_FORMAT,
+                    format: GBufferTextures::DEPTH_FORMAT,
                     depth_write_enabled: true,
                     depth_compare: wgpu::CompareFunction::Less,
                     stencil: wgpu::StencilState::default(),
@@ -4266,7 +3894,7 @@ impl SkinnedTransparentPipeline {
                     conservative: false,
                 },
                 depth_stencil: Some(wgpu::DepthStencilState {
-                    format: DepthTexture::DEPTH_FORMAT,
+                    format: GBufferTextures::DEPTH_FORMAT,
                     depth_write_enabled: false,
                     depth_compare: wgpu::CompareFunction::LessEqual,
                     stencil: wgpu::StencilState::default(),
@@ -4354,7 +3982,7 @@ impl StaticTransparentPipeline {
                     conservative: false,
                 },
                 depth_stencil: Some(wgpu::DepthStencilState {
-                    format: DepthTexture::DEPTH_FORMAT,
+                    format: GBufferTextures::DEPTH_FORMAT,
                     depth_write_enabled: false,
                     depth_compare: wgpu::CompareFunction::LessEqual,
                     stencil: wgpu::StencilState::default(),
@@ -4520,6 +4148,15 @@ impl WorldGpuContext {
                 &bind_group_layouts.camera,
                 device,
             ),
+            hbgi: HbgiBindGroups::new(
+                &resources.buffers.hbgi_settings,
+                &bind_group_layouts.hbgi_settings,
+                &texture_views.pyramids,
+                &resources.samplers.hbgi_pyramid_downsample,
+                &resources.samplers.hbgi_pyramid_downsample,
+                &bind_group_layouts.hbgi_inputs,
+                device,
+            ),
             deferred_lighting: DeferredLightingBindGroups::new(
                 &texture_views.gbuffer.albedo_ao,
                 &resources.samplers.nearest,
@@ -4533,23 +4170,6 @@ impl WorldGpuContext {
                 &texture_views.gi_blur.near_field_irradiance,
                 &resources.samplers.linear,
                 &bind_group_layouts,
-                device,
-            ),
-            g_buffer: GBufferBindGroup::new(
-                &texture_views.gbuffer,
-                &resources.samplers.nearest,
-                &resources.samplers.nearest,
-                &resources.samplers.nearest,
-                &bind_group_layouts.g_buffer,
-                device,
-            ),
-            hbgi: HbgiBindGroups::new(
-                &resources.buffers.hbgi_settings,
-                &bind_group_layouts.hbgi_settings,
-                &texture_views.pyramids,
-                &resources.samplers.hbgi_pyramid_downsample,
-                &resources.samplers.hbgi_pyramid_downsample,
-                &bind_group_layouts.hbgi_inputs,
                 device,
             ),
             hbgi_reproject: HbgiReprojectBindGroups::new(
@@ -4621,11 +4241,6 @@ impl WorldGpuContext {
                 &bind_group_layouts.post_processing,
                 device,
             ),
-            sun_shadow_matrix: SunShadowMatrixBindGroup::new(
-                &resources.buffers.lights.sun.shadow,
-                &bind_group_layouts.sun_shadow_matrix,
-                device,
-            ),
             static_instances: InstanceStorageBindGroup::new(
                 &resources.buffers.static_instances,
                 &bind_group_layouts.instance_storage,
@@ -4648,14 +4263,6 @@ impl WorldGpuContext {
     }
 
     fn rebuild_surface_bind_groups(&mut self, device: &wgpu::Device) {
-        self.descriptors.bind_groups.g_buffer = GBufferBindGroup::new(
-            &self.descriptors.texture_views.gbuffer,
-            &self.resources.samplers.nearest,
-            &self.resources.samplers.nearest,
-            &self.resources.samplers.nearest,
-            &self.descriptors.bind_group_layouts.g_buffer,
-            device,
-        );
         self.descriptors.bind_groups.hbgi = HbgiBindGroups::new(
             &self.resources.buffers.hbgi_settings,
             &self.descriptors.bind_group_layouts.hbgi_settings,
@@ -4893,7 +4500,6 @@ impl WorldGpuContext {
         self.resources.textures.pyramids = new_textures.pyramids;
         self.resources.textures.sky = new_textures.sky;
         self.resources.textures.lighting_target = new_textures.lighting_target;
-        self.resources.textures.post_process_target = new_textures.post_process_target;
 
         self.descriptors.texture_views = TextureViews::new(&self.resources.textures);
         self.rebuild_surface_bind_groups(&wgpu_context.device);

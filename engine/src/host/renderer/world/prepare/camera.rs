@@ -5,7 +5,7 @@ use glam::{Mat4, Quat, Vec3};
 use crate::{
     host::{
         utils::lerpf32,
-        world::{bindgroups::camera::CameraBinding, sun_shadow::SUN_SHADOW_MAX_CASCADE_COUNT},
+        world::{gpu_context::CameraBuffers, sun_shadow::SUN_SHADOW_MAX_CASCADE_COUNT},
     },
     var_snapshot::CameraSnapshotPair,
 };
@@ -102,7 +102,7 @@ pub fn build_camera_frustum_corners(
 }
 
 pub fn prepare_camera(
-    camera: &mut CameraBinding,
+    camera: &CameraBuffers,
     camera_pair: &CameraSnapshotPair,
     now: Instant,
     prev_view_proj: Option<&Mat4>,
