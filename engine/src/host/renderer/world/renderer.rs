@@ -5,14 +5,14 @@ use glam::Mat4;
 use super::super::sampler_cache::SamplerCache;
 use super::super::shader_cache::ShaderCache;
 use super::anim_pose_store::AnimPoseStore;
+use super::external::MaterialBindGroup;
 use super::gpu_context::{BGLayouts, SunShadowMatrixBindGroup, WorldGpuContext};
 use super::instance_links::SnapshotInstanceLinks;
-use super::material::MaterialBindGroup;
 use super::prepare::camera::prepare_camera;
 use super::prepare::mesh::{resolve_skinned_draw, PassDrawContext};
 use super::prepare::sun_shadow::prepare_sun_shadow;
 use super::{
-    hbgi_settings::HbgiSettingsUniform,
+    gpu_context::HbgiSettingsUniform,
     passes::{
         render_deferred_lighting_pass, render_gbuffer_skinned_opaque_pass,
         render_gbuffer_static_opaque_pass, render_gi_blur_pass, render_hbgi_pass,

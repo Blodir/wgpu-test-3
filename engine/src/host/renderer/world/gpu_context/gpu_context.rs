@@ -17,8 +17,8 @@ use crate::{
         assets::store::{PlaceholderTextureIds, RenderAssetStore, TextureRenderId},
         renderer::{
             world::{
-                hbgi_settings::HbgiSettingsUniform, prepare::mesh::BoneMat34,
-                skinned_instance::SkinnedInstance, static_instance::StaticInstance,
+                gpu_context::HbgiSettingsUniform,
+                prepare::mesh::{BoneMat34, SkinnedInstance, StaticInstance},
             },
             HbgiOptions,
         },

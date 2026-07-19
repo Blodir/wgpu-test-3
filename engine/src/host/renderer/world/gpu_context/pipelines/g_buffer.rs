@@ -5,9 +5,8 @@ use crate::{
     },
     host::{
         renderer::world::{
+            external::{SkinnedVertex, StaticVertex},
             gpu_context::{BGLayouts, GBufferTextures},
-            skinned_vertex::SkinnedVertex,
-            static_vertex::StaticVertex,
         },
         shader_cache::ShaderCache,
         wgpu_context::WgpuContext,

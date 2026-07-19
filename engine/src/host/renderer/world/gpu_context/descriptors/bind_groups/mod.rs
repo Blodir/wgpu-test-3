@@ -28,7 +28,7 @@ pub(crate) use hbgi_pyramid::HbgiPyramidBindGroups;
 pub(crate) use hbgi_reproject::HbgiReprojectBindGroups;
 pub(crate) use hbgi_reproject_inputs::HbgiReprojectInputsBindGroup;
 pub(crate) use hbgi_reproject_settings::HbgiReprojectSettingsBindGroup;
-pub(crate) use hbgi_settings::HbgiSettingsBindGroup;
+pub(crate) use hbgi_settings::{HbgiSettingsBindGroup, HbgiSettingsUniform};
 pub(crate) use instance_storage::InstanceStorageBindGroup;
 pub(crate) use lights::LightsBindGroup;
 pub(crate) use post_processing::PostProcessingBindGroup;

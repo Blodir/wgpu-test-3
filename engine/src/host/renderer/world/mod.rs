@@ -1,15 +1,10 @@
 pub mod anim_pose_store;
+pub mod external;
 pub mod gpu_context;
-pub mod hbgi_settings;
 pub mod instance_links;
-pub mod material;
 pub mod passes;
 pub mod prepare;
 pub mod renderer;
-pub mod skinned_instance;
-pub mod skinned_vertex;
-pub mod static_instance;
-pub mod static_vertex;
 pub mod sun_shadow;
 pub use gpu_context::BGLayouts;
 pub use renderer::*;

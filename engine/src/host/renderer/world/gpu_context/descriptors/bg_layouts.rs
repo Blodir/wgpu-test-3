@@ -4,7 +4,7 @@ use super::bind_groups::{
     HbgiReprojectInputsBindGroup, HbgiReprojectSettingsBindGroup, HbgiSettingsBindGroup,
     InstanceStorageBindGroup, LightsBindGroup, PostProcessingBindGroup, SunShadowMatrixBindGroup,
 };
-use crate::host::renderer::world::material::MaterialBindGroup;
+use crate::host::renderer::world::external::MaterialBindGroup;
 use crate::host::wgpu_context::WgpuContext;
 
 pub struct BGLayouts {

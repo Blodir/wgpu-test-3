@@ -2,9 +2,8 @@ use crate::{
     global_paths::{SHADER_SUN_SHADOW_SKINNED_VERT_WGSL, SHADER_SUN_SHADOW_STATIC_VERT_WGSL},
     host::{
         renderer::world::{
+            external::{SkinnedVertex, StaticVertex},
             gpu_context::{BGLayouts, GBufferTextures},
-            skinned_vertex::SkinnedVertex,
-            static_vertex::StaticVertex,
         },
         shader_cache::ShaderCache,
         wgpu_context::WgpuContext,

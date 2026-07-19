@@ -5,7 +5,7 @@ use winit::event::WindowEvent;
 use super::gui::GuiRenderer;
 use super::sampler_cache::SamplerCache;
 use super::shader_cache::ShaderCache;
-use super::world::material::MaterialBindGroup;
+use super::world::external::MaterialBindGroup;
 use super::world::WorldRenderer;
 use crate::api::{BuildUiFn, UiCommand};
 use crate::fixed_snapshot::FixedSnapshotGuard;

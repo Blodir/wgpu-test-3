@@ -4,8 +4,8 @@ use std::sync::Arc;
 use crate::global_paths::BRDF_LUT_PNG;
 use crate::host::{
     assets::{io::asset_formats::rigfile::Rig, texture::TextureLoadData},
+    renderer::world::external::MaterialBindGroup,
     wgpu_context::WgpuContext,
-    world::material::MaterialBindGroup,
 };
 use generational_arena::{Arena, Index};
 

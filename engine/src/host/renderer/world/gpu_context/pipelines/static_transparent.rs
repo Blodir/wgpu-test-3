@@ -2,8 +2,8 @@ use crate::{
     global_paths::{SHADER_PBR_FRAG_WGSL, SHADER_STATIC_TRANSPARENT_VERT_WGSL},
     host::{
         renderer::world::{
+            external::StaticVertex,
             gpu_context::{BGLayouts, GBufferTextures},
-            static_vertex::StaticVertex,
         },
         shader_cache::ShaderCache,
         wgpu_context::WgpuContext,

@@ -2,8 +2,8 @@ use crate::{
     global_paths::{SHADER_PBR_FRAG_WGSL, SHADER_SKINNED_TRANSPARENT_VERT_WGSL},
     host::{
         renderer::world::{
+            external::SkinnedVertex,
             gpu_context::{BGLayouts, GBufferTextures},
-            skinned_vertex::SkinnedVertex,
         },
         shader_cache::ShaderCache,
         wgpu_context::WgpuContext,
