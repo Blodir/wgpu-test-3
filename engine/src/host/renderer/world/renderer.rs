@@ -21,6 +21,7 @@ use super::bindgroups::lights::LightsBinding;
 use super::bindgroups::material::MaterialBinding;
 use super::bindgroups::sun_shadow_matrix::SunShadowMatrixBindGroup;
 use super::buffers::skinned_instance::SkinnedInstances;
+use super::gpu_context::WorldGpuContext;
 use super::pipelines::deferred_lighting::DeferredLightingPipeline;
 use super::pipelines::g_buffer::GBufferPipeline;
 use super::pipelines::gi_blur::GiBlurPipeline;
@@ -200,6 +201,7 @@ impl WorldPipelines {
 pub struct WorldRenderer {
     attachments: WorldAttachments,
     bind_groups: WorldBindGroups,
+    gpu_context: WorldGpuContext,
     pipelines: WorldPipelines,
     hbgi_options: Option<HbgiOptions>,
     g_buffer_targets: GBufferTargets,
@@ -561,6 +563,14 @@ impl WorldRenderer {
             &attachments,
         );
         let hbgi_options = options.hbgi;
+        let gpu_context = WorldGpuContext::new(
+            wgpu_context,
+            shader_cache,
+            render_resources,
+            &placeholders,
+            brdf_lut,
+            hbgi_options.as_ref(),
+        );
         let g_buffer_targets =
             GBufferTargets::new(&wgpu_context.device, &wgpu_context.surface_config);
         let hbgi_texture = HbgiTexture::new(&wgpu_context.device, &wgpu_context.surface_config);
@@ -647,6 +657,7 @@ impl WorldRenderer {
         Self {
             attachments,
             bind_groups,
+            gpu_context,
             pipelines,
             hbgi_options,
             g_buffer_targets,

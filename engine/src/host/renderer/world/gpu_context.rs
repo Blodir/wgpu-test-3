@@ -13,6 +13,7 @@ use crate::{
         SHADER_SUN_SHADOW_SKINNED_VERT_WGSL, SHADER_SUN_SHADOW_STATIC_VERT_WGSL,
     },
     host::{
+        assets::store::{PlaceholderTextureIds, RenderAssetStore, TextureRenderId},
         renderer::{
             rw_buffer::{RWBuffer, RWBufferOptions},
             rw_texture::{RWTexture, RWTextureView},
@@ -25,18 +26,13 @@ use crate::{
                     static_instance::StaticInstance, static_vertex::StaticVertex,
                 },
             },
+            HbgiOptions,
         },
         sampler_cache::SamplerCache,
         shader_cache::ShaderCache,
         wgpu_context::WgpuContext,
         world::{
-            attachments::{
-                color::HdrColorTexture,
-                deferred::{GBufferTargets, HbgiTexture},
-                depth::DepthTexture,
-                hbgi_pyramid::FloatPyramidTexture,
-                skybox::SkyboxOutputTexture,
-            },
+            attachments::{color::HdrColorTexture, depth::DepthTexture},
             sun_shadow::SunShadowUniform,
             BGLayouts,
         },
@@ -650,7 +646,7 @@ pub struct ReprojectTextureViews {
     pub normal_history: RWTextureView,
 }
 impl ReprojectTextureViews {
-    pub fn new(textures: ReprojectTextures) -> Self {
+    pub fn new(textures: &ReprojectTextures) -> Self {
         let near_field_irradiance = RWTextureView::new(
             &textures.near_field_irradiance,
             &wgpu::TextureViewDescriptor {
@@ -837,11 +833,11 @@ pub(crate) struct TextureViews {
     pub(crate) post_process_target: wgpu::TextureView,
 }
 impl TextureViews {
-    pub fn new(textures: Textures) -> Self {
+    pub fn new(textures: &Textures) -> Self {
         let gbuffer = GBufferTextureViews::new(&textures.gbuffer);
         let hbgi = HbgiTextureViews::new(&textures.hbgi);
         let gi_blur = GiBlurTextureViews::new(&textures.gi_blur);
-        let reproject = ReprojectTextureViews::new(textures.reproject);
+        let reproject = ReprojectTextureViews::new(&textures.reproject);
         let pyramids = MipPyramidTextureViews::new(&textures.pyramids);
         let sun_shadow = SunShadowTextureViews::new(&textures.sun_shadow.0);
         let lighting_target = LightingTextureViews::new(&textures.lighting_target);
@@ -3411,7 +3407,11 @@ pub(crate) struct GBufferPipeline {
     pub(crate) static_pipeline: wgpu::RenderPipeline,
 }
 impl GBufferPipeline {
-    fn new(wgpu_context: &WgpuContext, shader_cache: &mut ShaderCache, layouts: &BGLayouts) -> Self {
+    fn new(
+        wgpu_context: &WgpuContext,
+        shader_cache: &mut ShaderCache,
+        layouts: &BGLayouts,
+    ) -> Self {
         let skinned_pipeline = Self::build_skinned_pipeline(wgpu_context, shader_cache, layouts);
         let static_pipeline = Self::build_static_pipeline(wgpu_context, shader_cache, layouts);
 
@@ -3604,7 +3604,11 @@ pub(crate) struct HbgiPipeline {
     pub(crate) render_pipeline: wgpu::RenderPipeline,
 }
 impl HbgiPipeline {
-    fn new(wgpu_context: &WgpuContext, shader_cache: &mut ShaderCache, layouts: &BGLayouts) -> Self {
+    fn new(
+        wgpu_context: &WgpuContext,
+        shader_cache: &mut ShaderCache,
+        layouts: &BGLayouts,
+    ) -> Self {
         let hbgi_inputs_bind_group_layout = wgpu_context
             .device
             .create_bind_group_layout(&HbgiInputsBindGroup::desc());
@@ -3677,7 +3681,11 @@ pub(crate) struct HbgiPyramidPipelines {
     pub(crate) downsample_pipeline: wgpu::RenderPipeline,
 }
 impl HbgiPyramidPipelines {
-    fn new(wgpu_context: &WgpuContext, shader_cache: &mut ShaderCache, layouts: &BGLayouts) -> Self {
+    fn new(
+        wgpu_context: &WgpuContext,
+        shader_cache: &mut ShaderCache,
+        layouts: &BGLayouts,
+    ) -> Self {
         let shader_module = shader_cache.get(SHADER_HBGI_PYRAMID_WGSL.to_string(), wgpu_context);
         let base_pipeline_layout =
             wgpu_context
@@ -3784,7 +3792,11 @@ pub(crate) struct GiBlurPipeline {
     pub(crate) render_pipeline: wgpu::RenderPipeline,
 }
 impl GiBlurPipeline {
-    fn new(wgpu_context: &WgpuContext, shader_cache: &mut ShaderCache, layouts: &BGLayouts) -> Self {
+    fn new(
+        wgpu_context: &WgpuContext,
+        shader_cache: &mut ShaderCache,
+        layouts: &BGLayouts,
+    ) -> Self {
         let render_pipeline_layout =
             wgpu_context
                 .device
@@ -3844,7 +3856,11 @@ pub(crate) struct DeferredLightingPipeline {
     pub(crate) render_pipeline: wgpu::RenderPipeline,
 }
 impl DeferredLightingPipeline {
-    fn new(wgpu_context: &WgpuContext, shader_cache: &mut ShaderCache, layouts: &BGLayouts) -> Self {
+    fn new(
+        wgpu_context: &WgpuContext,
+        shader_cache: &mut ShaderCache,
+        layouts: &BGLayouts,
+    ) -> Self {
         let bind_group_layouts = &[
             &layouts.camera,
             &layouts.lights,
@@ -3911,7 +3927,11 @@ pub(crate) struct HbgiReprojectPipeline {
     pub(crate) render_pipeline: wgpu::RenderPipeline,
 }
 impl HbgiReprojectPipeline {
-    fn new(wgpu_context: &WgpuContext, shader_cache: &mut ShaderCache, layouts: &BGLayouts) -> Self {
+    fn new(
+        wgpu_context: &WgpuContext,
+        shader_cache: &mut ShaderCache,
+        layouts: &BGLayouts,
+    ) -> Self {
         let render_pipeline_layout =
             wgpu_context
                 .device
@@ -3985,7 +4005,11 @@ pub(crate) struct SkyboxPipeline {
     pub(crate) render_pipeline: wgpu::RenderPipeline,
 }
 impl SkyboxPipeline {
-    fn new(wgpu_context: &WgpuContext, shader_cache: &mut ShaderCache, layouts: &BGLayouts) -> Self {
+    fn new(
+        wgpu_context: &WgpuContext,
+        shader_cache: &mut ShaderCache,
+        layouts: &BGLayouts,
+    ) -> Self {
         let bind_group_layouts = &[&layouts.camera, &layouts.lights];
         let render_pipeline_layout =
             wgpu_context
@@ -4040,7 +4064,11 @@ pub(crate) struct SunShadowPipeline {
     pub(crate) static_pipeline: wgpu::RenderPipeline,
 }
 impl SunShadowPipeline {
-    fn new(wgpu_context: &WgpuContext, shader_cache: &mut ShaderCache, layouts: &BGLayouts) -> Self {
+    fn new(
+        wgpu_context: &WgpuContext,
+        shader_cache: &mut ShaderCache,
+        layouts: &BGLayouts,
+    ) -> Self {
         let skinned_pipeline = Self::build_skinned_pipeline(wgpu_context, shader_cache, layouts);
         let static_pipeline = Self::build_static_pipeline(wgpu_context, shader_cache, layouts);
 
@@ -4167,7 +4195,11 @@ pub(crate) struct SkinnedTransparentPipeline {
     pub(crate) pipeline: wgpu::RenderPipeline,
 }
 impl SkinnedTransparentPipeline {
-    fn new(wgpu_context: &WgpuContext, shader_cache: &mut ShaderCache, layouts: &BGLayouts) -> Self {
+    fn new(
+        wgpu_context: &WgpuContext,
+        shader_cache: &mut ShaderCache,
+        layouts: &BGLayouts,
+    ) -> Self {
         let pipeline = Self::build_pipeline(wgpu_context, shader_cache, layouts);
         Self { pipeline }
     }
@@ -4251,7 +4283,11 @@ pub(crate) struct StaticTransparentPipeline {
     pub(crate) pipeline: wgpu::RenderPipeline,
 }
 impl StaticTransparentPipeline {
-    fn new(wgpu_context: &WgpuContext, shader_cache: &mut ShaderCache, layouts: &BGLayouts) -> Self {
+    fn new(
+        wgpu_context: &WgpuContext,
+        shader_cache: &mut ShaderCache,
+        layouts: &BGLayouts,
+    ) -> Self {
         let pipeline = Self::build_pipeline(wgpu_context, shader_cache, layouts);
         Self { pipeline }
     }
@@ -4335,7 +4371,11 @@ pub(crate) struct PostProcessingPipeline {
     pub(crate) render_pipeline: wgpu::RenderPipeline,
 }
 impl PostProcessingPipeline {
-    fn new(wgpu_context: &WgpuContext, shader_cache: &mut ShaderCache, layouts: &BGLayouts) -> Self {
+    fn new(
+        wgpu_context: &WgpuContext,
+        shader_cache: &mut ShaderCache,
+        layouts: &BGLayouts,
+    ) -> Self {
         let bind_group_layouts = &[&layouts.post_processing];
         let render_pipeline_layout =
             wgpu_context
@@ -4403,18 +4443,6 @@ impl WorldPipelines {
         wgpu_context: &WgpuContext,
         shader_cache: &mut ShaderCache,
         layouts: &BGLayouts,
-        _resources: &GpuResources,
-        g_buffer_targets: &GBufferTargets,
-        depth_texture_view: &wgpu::TextureView,
-        hbgi_texture: &HbgiTexture,
-        hbgi_reproject_prev: &HdrColorTexture,
-        hbgi_irradiance_reproject_prev: &HdrColorTexture,
-        hbgi_reproject_depth_prev: &FloatPyramidTexture,
-        hbgi_reproject_normal_prev: &HdrColorTexture,
-        hbgi_reproject_write: &HdrColorTexture,
-        hbgi_irradiance_reproject_write: &HdrColorTexture,
-        skybox_output: &SkyboxOutputTexture,
-        hdr_color: &HdrColorTexture,
     ) -> Self {
         let g_buffer = GBufferPipeline::new(wgpu_context, shader_cache, layouts);
         let hbgi = HbgiPipeline::new(wgpu_context, shader_cache, layouts);
@@ -4450,4 +4478,168 @@ pub(crate) struct WorldGpuContext {
     pub(crate) resources: GpuResources,
     pub(crate) descriptors: Descriptors,
     pub(crate) pipelines: WorldPipelines,
+}
+impl WorldGpuContext {
+    pub(crate) fn new(
+        wgpu_context: &WgpuContext,
+        shader_cache: &mut ShaderCache,
+        render_resources: &RenderAssetStore,
+        placeholders: &PlaceholderTextureIds,
+        brdf_lut: TextureRenderId,
+        hbgi_options: Option<&HbgiOptions>,
+    ) -> Self {
+        let hbgi_settings =
+            hbgi_options.map(|options| HbgiSettingsUniform::from_options(options, 0));
+        let resources = GpuResources {
+            textures: Textures::new(wgpu_context, &wgpu_context.surface_config),
+            buffers: Buffers::new(wgpu_context, hbgi_settings.as_ref()),
+            samplers: Samplers::new(&wgpu_context.device),
+        };
+        let texture_views = TextureViews::new(&resources.textures);
+        let bind_group_layouts = BGLayouts::new(wgpu_context);
+        let device = &wgpu_context.device;
+        let textures = &render_resources.textures;
+        let prefiltered = textures.get(placeholders.prefiltered.into()).unwrap();
+        let di = textures.get(placeholders.di.into()).unwrap();
+        let brdf = textures.get(brdf_lut.into()).unwrap();
+
+        let bind_groups = BindGroups {
+            bones: BonesBindGroups::new(
+                &resources.buffers.bones,
+                &resources.buffers.skinned_instances,
+                &bind_group_layouts.bones,
+                &bind_group_layouts.motion_bones,
+                device,
+            ),
+            camera: CameraBindGroup::new(
+                &resources.buffers.camera,
+                &bind_group_layouts.camera,
+                device,
+            ),
+            deferred_lighting: DeferredLightingBindGroups::new(
+                &texture_views.gbuffer.albedo_ao,
+                &resources.samplers.nearest,
+                &texture_views.gbuffer.normal_roughness,
+                &resources.samplers.nearest,
+                &texture_views.gbuffer.emissive_metallic,
+                &resources.samplers.nearest,
+                &texture_views.gbuffer.depth,
+                &texture_views.gi_blur.bent_ao,
+                &resources.samplers.linear,
+                &texture_views.gi_blur.near_field_irradiance,
+                &resources.samplers.linear,
+                &bind_group_layouts,
+                device,
+            ),
+            g_buffer: GBufferBindGroup::new(
+                &texture_views.gbuffer,
+                &resources.samplers.nearest,
+                &resources.samplers.nearest,
+                &resources.samplers.nearest,
+                &bind_group_layouts.g_buffer,
+                device,
+            ),
+            hbgi: HbgiBindGroups::new(
+                &resources.buffers.hbgi_settings,
+                &bind_group_layouts.hbgi_settings,
+                &texture_views.pyramids,
+                &resources.samplers.hbgi_pyramid_downsample,
+                &resources.samplers.hbgi_pyramid_downsample,
+                &bind_group_layouts.hbgi_inputs,
+                device,
+            ),
+            hbgi_reproject: HbgiReprojectBindGroups::new(
+                &texture_views.gbuffer.motion_vectors,
+                &texture_views.hbgi.bent_ao,
+                texture_views
+                    .reproject
+                    .bent_ao
+                    .get_read_view(&resources.textures.reproject.bent_ao),
+                &texture_views.gbuffer.depth,
+                &texture_views.gbuffer.normal_roughness,
+                texture_views
+                    .reproject
+                    .depth_history
+                    .get_read_view(&resources.textures.reproject.depth_history),
+                texture_views
+                    .reproject
+                    .normal_history
+                    .get_read_view(&resources.textures.reproject.normal_history),
+                &texture_views.hbgi.near_field_irradiance,
+                texture_views
+                    .reproject
+                    .near_field_irradiance
+                    .get_read_view(&resources.textures.reproject.near_field_irradiance),
+                &resources.buffers.hbgi_reproject_settings,
+                &bind_group_layouts,
+                device,
+            ),
+            gi_blur: GiBlurBindGroup::new(
+                &texture_views.hbgi.bent_ao,
+                &resources.samplers.linear,
+                &texture_views.hbgi.near_field_irradiance,
+                &resources.samplers.linear,
+                &texture_views.gbuffer.normal_roughness,
+                &resources.samplers.nearest,
+                &texture_views.gbuffer.depth,
+                &bind_group_layouts.gi_blur,
+                device,
+            ),
+            hbgi_pyramid: HbgiPyramidBindGroups::new(
+                device,
+                &bind_group_layouts,
+                &resources.samplers.hbgi_pyramid_downsample,
+                &texture_views.hbgi.bent_ao,
+                &resources.samplers.nearest,
+                &texture_views.gbuffer.depth,
+                &texture_views.gbuffer.normal_roughness,
+                &resources.samplers.nearest,
+                &texture_views.pyramids,
+            ),
+            lights: LightsBindGroup::new(
+                &resources.buffers.lights,
+                &prefiltered.texture_view,
+                &resources.samplers.linear,
+                &di.texture_view,
+                &resources.samplers.linear,
+                &brdf.texture_view,
+                &resources.samplers.linear,
+                &texture_views.sun_shadow.array,
+                &resources.samplers.comparison,
+                &bind_group_layouts.lights,
+                device,
+            ),
+            post_processing: PostProcessingBindGroup::new(
+                &texture_views.sky,
+                &resources.samplers.linear,
+                &texture_views.lighting_target.lit_hdr,
+                &resources.samplers.nearest,
+                &bind_group_layouts.post_processing,
+                device,
+            ),
+            sun_shadow_matrix: SunShadowMatrixBindGroup::new(
+                &resources.buffers.lights.sun.shadow,
+                &bind_group_layouts.sun_shadow_matrix,
+                device,
+            ),
+            static_instances: InstanceStorageBindGroup::new(
+                &resources.buffers.static_instances,
+                &bind_group_layouts.instance_storage,
+                device,
+            ),
+        };
+        let descriptors = Descriptors {
+            bind_groups,
+            bind_group_layouts,
+            texture_views,
+        };
+        let pipelines =
+            WorldPipelines::new(wgpu_context, shader_cache, &descriptors.bind_group_layouts);
+
+        Self {
+            resources,
+            descriptors,
+            pipelines,
+        }
+    }
 }
