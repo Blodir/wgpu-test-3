@@ -733,9 +733,9 @@ impl LightingTextures {
     }
 }
 
-struct LightingTextureViews {
-    lit_hdr: wgpu::TextureView,
-    diffuse_radiance_ao: wgpu::TextureView,
+pub(crate) struct LightingTextureViews {
+    pub(crate) lit_hdr: wgpu::TextureView,
+    pub(crate) diffuse_radiance_ao: wgpu::TextureView,
 }
 impl LightingTextureViews {
     pub fn new(textures: &LightingTextures) -> Self {
@@ -758,11 +758,11 @@ impl LightingTextureViews {
     }
 }
 
-struct Textures {
+pub(crate) struct Textures {
     gbuffer: GBufferTextures,
     hbgi: HbgiTextures,
     gi_blur: GiBlurTextures,
-    reproject: ReprojectTextures,
+    pub(crate) reproject: ReprojectTextures,
     pyramids: MipPyramidTextures,
     sky: wgpu::Texture,
     sun_shadow: SunShadowTexture2,
@@ -825,16 +825,16 @@ impl Textures {
     }
 }
 
-struct TextureViews {
-    gbuffer: GBufferTextureViews,
-    hbgi: HbgiTextureViews,
-    gi_blur: GiBlurTextureViews,
-    reproject: ReprojectTextureViews,
-    pyramids: MipPyramidTextureViews,
-    sky: wgpu::TextureView,
-    sun_shadow: SunShadowTextureViews,
-    lighting_target: LightingTextureViews,
-    post_process_target: wgpu::TextureView,
+pub(crate) struct TextureViews {
+    pub(crate) gbuffer: GBufferTextureViews,
+    pub(crate) hbgi: HbgiTextureViews,
+    pub(crate) gi_blur: GiBlurTextureViews,
+    pub(crate) reproject: ReprojectTextureViews,
+    pub(crate) pyramids: MipPyramidTextureViews,
+    pub(crate) sky: wgpu::TextureView,
+    pub(crate) sun_shadow: SunShadowTextureViews,
+    pub(crate) lighting_target: LightingTextureViews,
+    pub(crate) post_process_target: wgpu::TextureView,
 }
 impl TextureViews {
     pub fn new(textures: Textures) -> Self {
@@ -1100,7 +1100,7 @@ struct HbgiReprojectUniform {
     prev_inverse_view_proj: [[f32; 4]; 4],
 }
 
-struct Buffers {
+pub(crate) struct Buffers {
     pub bones: RWBuffer,
     pub camera: CameraBuffers,
     pub hbgi_settings: wgpu::Buffer,
@@ -1249,13 +1249,13 @@ impl Samplers {
     }
 }
 
-struct GpuResources {
-    textures: Textures,
-    buffers: Buffers,
+pub(crate) struct GpuResources {
+    pub(crate) textures: Textures,
+    pub(crate) buffers: Buffers,
     samplers: Samplers,
 }
 
-struct BonesBindGroups {
+pub(crate) struct BonesBindGroups {
     pub bones_bind_group: wgpu::BindGroup,
     pub motion_bind_group: wgpu::BindGroup,
 }
@@ -1426,7 +1426,7 @@ impl BonesBindGroups {
     }
 }
 
-struct CameraBindGroup(wgpu::BindGroup);
+pub(crate) struct CameraBindGroup(pub(crate) wgpu::BindGroup);
 impl CameraBindGroup {
     pub fn desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
         wgpu::BindGroupLayoutDescriptor {
@@ -1542,7 +1542,7 @@ impl CameraBindGroup {
     }
 }
 
-pub(crate) struct GBufferBindGroup(wgpu::BindGroup);
+pub(crate) struct GBufferBindGroup(pub(crate) wgpu::BindGroup);
 impl GBufferBindGroup {
     pub fn desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
         wgpu::BindGroupLayoutDescriptor {
@@ -1672,7 +1672,7 @@ impl GBufferBindGroup {
         ))
     }
 
-    pub fn update(&mut self, context: &WorldContext, device: &wgpu::Device) {
+    pub fn update(&mut self, context: &WorldGpuContext, device: &wgpu::Device) {
         let texture_views = &context.descriptors.texture_views.gbuffer;
         self.0 = Self::create_bind_group(
             texture_views,
@@ -1685,7 +1685,7 @@ impl GBufferBindGroup {
     }
 }
 
-pub(crate) struct HbgiSettingsBindGroup(wgpu::BindGroup);
+pub(crate) struct HbgiSettingsBindGroup(pub(crate) wgpu::BindGroup);
 impl HbgiSettingsBindGroup {
     pub fn desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
         wgpu::BindGroupLayoutDescriptor {
@@ -1727,7 +1727,7 @@ impl HbgiSettingsBindGroup {
     }
 }
 
-pub(crate) struct HbgiInputsBindGroup(wgpu::BindGroup);
+pub(crate) struct HbgiInputsBindGroup(pub(crate) wgpu::BindGroup);
 impl HbgiInputsBindGroup {
     pub fn desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
         wgpu::BindGroupLayoutDescriptor {
@@ -1832,7 +1832,7 @@ impl HbgiInputsBindGroup {
         ))
     }
 
-    pub fn update(&mut self, context: &WorldContext, device: &wgpu::Device) {
+    pub fn update(&mut self, context: &WorldGpuContext, device: &wgpu::Device) {
         self.0 = Self::create_bind_group(
             &context.descriptors.texture_views.pyramids,
             &context.resources.samplers.hbgi_pyramid_downsample,
@@ -1843,9 +1843,9 @@ impl HbgiInputsBindGroup {
     }
 }
 
-struct HbgiBindGroups {
-    pub settings: HbgiSettingsBindGroup,
-    pub inputs: HbgiInputsBindGroup,
+pub(crate) struct HbgiBindGroups {
+    pub(crate) settings: HbgiSettingsBindGroup,
+    pub(crate) inputs: HbgiInputsBindGroup,
 }
 impl HbgiBindGroups {
     pub fn new(
@@ -1870,11 +1870,11 @@ impl HbgiBindGroups {
         Self { settings, inputs }
     }
 
-    pub fn update_inputs(&mut self, context: &WorldContext, device: &wgpu::Device) {
+    pub fn update_inputs(&mut self, context: &WorldGpuContext, device: &wgpu::Device) {
         self.inputs.update(context, device);
     }
 
-    pub fn update_settings(&mut self, context: &WorldContext, device: &wgpu::Device) {
+    pub fn update_settings(&mut self, context: &WorldGpuContext, device: &wgpu::Device) {
         self.settings = HbgiSettingsBindGroup::new(
             &context.resources.buffers.hbgi_settings,
             &context.descriptors.bind_group_layouts.hbgi_settings,
@@ -1883,7 +1883,7 @@ impl HbgiBindGroups {
     }
 }
 
-pub(crate) struct GiBlurBindGroup(wgpu::BindGroup);
+pub(crate) struct GiBlurBindGroup(pub(crate) wgpu::BindGroup);
 impl GiBlurBindGroup {
     pub fn desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
         wgpu::BindGroupLayoutDescriptor {
@@ -2022,7 +2022,7 @@ impl GiBlurBindGroup {
         ))
     }
 
-    pub fn update(&mut self, context: &WorldContext, device: &wgpu::Device) {
+    pub fn update(&mut self, context: &WorldGpuContext, device: &wgpu::Device) {
         let texture_views = &context.descriptors.texture_views;
         self.0 = Self::create_bind_group(
             device,
@@ -2038,7 +2038,7 @@ impl GiBlurBindGroup {
     }
 }
 
-pub(crate) struct DeferredLightingGBufferBindGroup(wgpu::BindGroup);
+pub(crate) struct DeferredLightingGBufferBindGroup(pub(crate) wgpu::BindGroup);
 impl DeferredLightingGBufferBindGroup {
     pub fn desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
         wgpu::BindGroupLayoutDescriptor {
@@ -2177,7 +2177,7 @@ impl DeferredLightingGBufferBindGroup {
         ))
     }
 
-    pub fn update(&mut self, context: &WorldContext, device: &wgpu::Device) {
+    pub fn update(&mut self, context: &WorldGpuContext, device: &wgpu::Device) {
         let texture_views = &context.descriptors.texture_views.gbuffer;
         self.0 = Self::create_bind_group(
             device,
@@ -2196,7 +2196,7 @@ impl DeferredLightingGBufferBindGroup {
     }
 }
 
-pub(crate) struct DeferredLightingHbgiBindGroup(wgpu::BindGroup);
+pub(crate) struct DeferredLightingHbgiBindGroup(pub(crate) wgpu::BindGroup);
 impl DeferredLightingHbgiBindGroup {
     pub fn desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
         wgpu::BindGroupLayoutDescriptor {
@@ -2288,7 +2288,7 @@ impl DeferredLightingHbgiBindGroup {
         ))
     }
 
-    pub fn update(&mut self, context: &WorldContext, device: &wgpu::Device) {
+    pub fn update(&mut self, context: &WorldGpuContext, device: &wgpu::Device) {
         let texture_views = &context.descriptors.texture_views.gi_blur;
         self.0 = Self::create_bind_group(
             device,
@@ -2304,9 +2304,9 @@ impl DeferredLightingHbgiBindGroup {
     }
 }
 
-struct DeferredLightingBindGroups {
-    pub gbuffer: DeferredLightingGBufferBindGroup,
-    pub hbgi: DeferredLightingHbgiBindGroup,
+pub(crate) struct DeferredLightingBindGroups {
+    pub(crate) gbuffer: DeferredLightingGBufferBindGroup,
+    pub(crate) hbgi: DeferredLightingHbgiBindGroup,
 }
 impl DeferredLightingBindGroups {
     pub fn new(
@@ -2347,16 +2347,16 @@ impl DeferredLightingBindGroups {
         Self { gbuffer, hbgi }
     }
 
-    pub fn update_gbuffer(&mut self, context: &WorldContext, device: &wgpu::Device) {
+    pub fn update_gbuffer(&mut self, context: &WorldGpuContext, device: &wgpu::Device) {
         self.gbuffer.update(context, device);
     }
 
-    pub fn update_hbgi(&mut self, context: &WorldContext, device: &wgpu::Device) {
+    pub fn update_hbgi(&mut self, context: &WorldGpuContext, device: &wgpu::Device) {
         self.hbgi.update(context, device);
     }
 }
 
-pub(crate) struct HbgiReprojectInputsBindGroup(wgpu::BindGroup);
+pub(crate) struct HbgiReprojectInputsBindGroup(pub(crate) wgpu::BindGroup);
 impl HbgiReprojectInputsBindGroup {
     pub fn desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
         wgpu::BindGroupLayoutDescriptor {
@@ -2543,7 +2543,7 @@ impl HbgiReprojectInputsBindGroup {
         ))
     }
 
-    pub fn update(&mut self, context: &WorldContext, device: &wgpu::Device) {
+    pub fn update(&mut self, context: &WorldGpuContext, device: &wgpu::Device) {
         let texture_views = &context.descriptors.texture_views;
         let reproject_textures = &context.resources.textures.reproject;
         self.0 = Self::create_bind_group(
@@ -2574,7 +2574,7 @@ impl HbgiReprojectInputsBindGroup {
     }
 }
 
-pub(crate) struct HbgiReprojectSettingsBindGroup(wgpu::BindGroup);
+pub(crate) struct HbgiReprojectSettingsBindGroup(pub(crate) wgpu::BindGroup);
 impl HbgiReprojectSettingsBindGroup {
     pub fn desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
         wgpu::BindGroupLayoutDescriptor {
@@ -2615,7 +2615,7 @@ impl HbgiReprojectSettingsBindGroup {
         Self(Self::create_bind_group(buffer, layout, device))
     }
 
-    pub fn update(&mut self, context: &WorldContext, device: &wgpu::Device) {
+    pub fn update(&mut self, context: &WorldGpuContext, device: &wgpu::Device) {
         self.0 = Self::create_bind_group(
             &context.resources.buffers.hbgi_reproject_settings,
             &context
@@ -2627,9 +2627,9 @@ impl HbgiReprojectSettingsBindGroup {
     }
 }
 
-struct HbgiReprojectBindGroups {
-    pub inputs: HbgiReprojectInputsBindGroup,
-    pub settings: HbgiReprojectSettingsBindGroup,
+pub(crate) struct HbgiReprojectBindGroups {
+    pub(crate) inputs: HbgiReprojectInputsBindGroup,
+    pub(crate) settings: HbgiReprojectSettingsBindGroup,
 }
 impl HbgiReprojectBindGroups {
     pub fn new(
@@ -2668,11 +2668,11 @@ impl HbgiReprojectBindGroups {
         Self { inputs, settings }
     }
 
-    pub fn update_inputs(&mut self, context: &WorldContext, device: &wgpu::Device) {
+    pub fn update_inputs(&mut self, context: &WorldGpuContext, device: &wgpu::Device) {
         self.inputs.update(context, device);
     }
 
-    pub fn update_settings(&mut self, context: &WorldContext, device: &wgpu::Device) {
+    pub fn update_settings(&mut self, context: &WorldGpuContext, device: &wgpu::Device) {
         self.settings.update(context, device);
     }
 }
@@ -2883,7 +2883,7 @@ impl HbgiPyramidBindGroups {
         Self { base, downsample }
     }
 
-    pub fn update(&mut self, device: &wgpu::Device, context: &WorldContext) {
+    pub fn update(&mut self, device: &wgpu::Device, context: &WorldGpuContext) {
         let texture_views = &context.descriptors.texture_views;
         *self = Self::new(
             device,
@@ -2899,7 +2899,7 @@ impl HbgiPyramidBindGroups {
     }
 }
 
-struct LightsBindGroup(wgpu::BindGroup);
+pub(crate) struct LightsBindGroup(pub(crate) wgpu::BindGroup);
 impl LightsBindGroup {
     pub fn desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
         wgpu::BindGroupLayoutDescriptor {
@@ -3154,7 +3154,7 @@ impl LightsBindGroup {
 
     pub fn update(
         &mut self,
-        context: &WorldContext,
+        context: &WorldGpuContext,
         prefiltered_view: &wgpu::TextureView,
         prefiltered_sampler: &wgpu::Sampler,
         di_view: &wgpu::TextureView,
@@ -3179,7 +3179,7 @@ impl LightsBindGroup {
     }
 }
 
-pub(crate) struct PostProcessingBindGroup(wgpu::BindGroup);
+pub(crate) struct PostProcessingBindGroup(pub(crate) wgpu::BindGroup);
 impl PostProcessingBindGroup {
     pub fn desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
         wgpu::BindGroupLayoutDescriptor {
@@ -3271,7 +3271,7 @@ impl PostProcessingBindGroup {
         ))
     }
 
-    pub fn update(&mut self, context: &WorldContext, device: &wgpu::Device) {
+    pub fn update(&mut self, context: &WorldGpuContext, device: &wgpu::Device) {
         self.0 = Self::create_bind_group(
             &context.descriptors.texture_views.sky,
             &context.resources.samplers.linear,
@@ -3334,7 +3334,7 @@ impl SunShadowMatrixBindGroup {
     }
 }
 
-struct InstanceStorageBindGroup(wgpu::BindGroup);
+pub(crate) struct InstanceStorageBindGroup(pub(crate) wgpu::BindGroup);
 impl InstanceStorageBindGroup {
     pub fn desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
         wgpu::BindGroupLayoutDescriptor {
@@ -3385,30 +3385,30 @@ impl InstanceStorageBindGroup {
     }
 }
 
-struct BindGroups {
-    bones: BonesBindGroups,
-    camera: CameraBindGroup,
-    deferred_lighting: DeferredLightingBindGroups,
-    g_buffer: GBufferBindGroup,
-    hbgi: HbgiBindGroups,
-    hbgi_reproject: HbgiReprojectBindGroups,
-    gi_blur: GiBlurBindGroup,
-    hbgi_pyramid: HbgiPyramidBindGroups,
-    lights: LightsBindGroup,
-    post_processing: PostProcessingBindGroup,
-    sun_shadow_matrix: SunShadowMatrixBindGroup,
-    static_instances: InstanceStorageBindGroup,
+pub(crate) struct BindGroups {
+    pub(crate) bones: BonesBindGroups,
+    pub(crate) camera: CameraBindGroup,
+    pub(crate) deferred_lighting: DeferredLightingBindGroups,
+    pub(crate) g_buffer: GBufferBindGroup,
+    pub(crate) hbgi: HbgiBindGroups,
+    pub(crate) hbgi_reproject: HbgiReprojectBindGroups,
+    pub(crate) gi_blur: GiBlurBindGroup,
+    pub(crate) hbgi_pyramid: HbgiPyramidBindGroups,
+    pub(crate) lights: LightsBindGroup,
+    pub(crate) post_processing: PostProcessingBindGroup,
+    pub(crate) sun_shadow_matrix: SunShadowMatrixBindGroup,
+    pub(crate) static_instances: InstanceStorageBindGroup,
 }
 
-struct Descriptors {
-    bind_groups: BindGroups,
+pub(crate) struct Descriptors {
+    pub(crate) bind_groups: BindGroups,
     bind_group_layouts: Layouts,
-    texture_views: TextureViews,
+    pub(crate) texture_views: TextureViews,
 }
 
-struct GBufferPipeline {
-    skinned_pipeline: wgpu::RenderPipeline,
-    static_pipeline: wgpu::RenderPipeline,
+pub(crate) struct GBufferPipeline {
+    pub(crate) skinned_pipeline: wgpu::RenderPipeline,
+    pub(crate) static_pipeline: wgpu::RenderPipeline,
 }
 impl GBufferPipeline {
     fn new(wgpu_context: &WgpuContext, shader_cache: &mut ShaderCache, layouts: &Layouts) -> Self {
@@ -3600,8 +3600,8 @@ impl GBufferPipeline {
     }
 }
 
-struct HbgiPipeline {
-    render_pipeline: wgpu::RenderPipeline,
+pub(crate) struct HbgiPipeline {
+    pub(crate) render_pipeline: wgpu::RenderPipeline,
 }
 impl HbgiPipeline {
     fn new(wgpu_context: &WgpuContext, shader_cache: &mut ShaderCache, layouts: &Layouts) -> Self {
@@ -3672,9 +3672,9 @@ impl HbgiPipeline {
 const HBGI_PYRAMID_COLOR_TARGET_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 const HBGI_PYRAMID_DEPTH_TARGET_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::R32Float;
 
-struct HbgiPyramidPipelines {
-    base_pipeline: wgpu::RenderPipeline,
-    downsample_pipeline: wgpu::RenderPipeline,
+pub(crate) struct HbgiPyramidPipelines {
+    pub(crate) base_pipeline: wgpu::RenderPipeline,
+    pub(crate) downsample_pipeline: wgpu::RenderPipeline,
 }
 impl HbgiPyramidPipelines {
     fn new(wgpu_context: &WgpuContext, shader_cache: &mut ShaderCache, layouts: &Layouts) -> Self {
@@ -3780,8 +3780,8 @@ impl HbgiPyramidPipelines {
     }
 }
 
-struct GiBlurPipeline {
-    render_pipeline: wgpu::RenderPipeline,
+pub(crate) struct GiBlurPipeline {
+    pub(crate) render_pipeline: wgpu::RenderPipeline,
 }
 impl GiBlurPipeline {
     fn new(wgpu_context: &WgpuContext, shader_cache: &mut ShaderCache, layouts: &Layouts) -> Self {
@@ -3840,8 +3840,8 @@ impl GiBlurPipeline {
     }
 }
 
-struct DeferredLightingPipeline {
-    render_pipeline: wgpu::RenderPipeline,
+pub(crate) struct DeferredLightingPipeline {
+    pub(crate) render_pipeline: wgpu::RenderPipeline,
 }
 impl DeferredLightingPipeline {
     fn new(wgpu_context: &WgpuContext, shader_cache: &mut ShaderCache, layouts: &Layouts) -> Self {
@@ -3907,8 +3907,8 @@ impl DeferredLightingPipeline {
     }
 }
 
-struct HbgiReprojectPipeline {
-    render_pipeline: wgpu::RenderPipeline,
+pub(crate) struct HbgiReprojectPipeline {
+    pub(crate) render_pipeline: wgpu::RenderPipeline,
 }
 impl HbgiReprojectPipeline {
     fn new(wgpu_context: &WgpuContext, shader_cache: &mut ShaderCache, layouts: &Layouts) -> Self {
@@ -3981,8 +3981,8 @@ impl HbgiReprojectPipeline {
     }
 }
 
-struct SkyboxPipeline {
-    render_pipeline: wgpu::RenderPipeline,
+pub(crate) struct SkyboxPipeline {
+    pub(crate) render_pipeline: wgpu::RenderPipeline,
 }
 impl SkyboxPipeline {
     fn new(wgpu_context: &WgpuContext, shader_cache: &mut ShaderCache, layouts: &Layouts) -> Self {
@@ -4035,9 +4035,9 @@ impl SkyboxPipeline {
     }
 }
 
-struct SunShadowPipeline {
-    skinned_pipeline: wgpu::RenderPipeline,
-    static_pipeline: wgpu::RenderPipeline,
+pub(crate) struct SunShadowPipeline {
+    pub(crate) skinned_pipeline: wgpu::RenderPipeline,
+    pub(crate) static_pipeline: wgpu::RenderPipeline,
 }
 impl SunShadowPipeline {
     fn new(wgpu_context: &WgpuContext, shader_cache: &mut ShaderCache, layouts: &Layouts) -> Self {
@@ -4163,8 +4163,8 @@ impl SunShadowPipeline {
     }
 }
 
-struct SkinnedTransparentPipeline {
-    pub pipeline: wgpu::RenderPipeline,
+pub(crate) struct SkinnedTransparentPipeline {
+    pub(crate) pipeline: wgpu::RenderPipeline,
 }
 impl SkinnedTransparentPipeline {
     fn new(wgpu_context: &WgpuContext, shader_cache: &mut ShaderCache, layouts: &Layouts) -> Self {
@@ -4247,8 +4247,8 @@ impl SkinnedTransparentPipeline {
     }
 }
 
-struct StaticTransparentPipeline {
-    pub pipeline: wgpu::RenderPipeline,
+pub(crate) struct StaticTransparentPipeline {
+    pub(crate) pipeline: wgpu::RenderPipeline,
 }
 impl StaticTransparentPipeline {
     fn new(wgpu_context: &WgpuContext, shader_cache: &mut ShaderCache, layouts: &Layouts) -> Self {
@@ -4331,8 +4331,8 @@ impl StaticTransparentPipeline {
     }
 }
 
-struct PostProcessingPipeline {
-    render_pipeline: wgpu::RenderPipeline,
+pub(crate) struct PostProcessingPipeline {
+    pub(crate) render_pipeline: wgpu::RenderPipeline,
 }
 impl PostProcessingPipeline {
     fn new(wgpu_context: &WgpuContext, shader_cache: &mut ShaderCache, layouts: &Layouts) -> Self {
@@ -4385,18 +4385,18 @@ impl PostProcessingPipeline {
     }
 }
 
-struct WorldPipelines {
-    g_buffer: GBufferPipeline,
-    hbgi: HbgiPipeline,
-    hbgi_pyramid: HbgiPyramidPipelines,
-    gi_blur: GiBlurPipeline,
-    deferred_lighting: DeferredLightingPipeline,
-    hbgi_reproject: HbgiReprojectPipeline,
-    skybox: SkyboxPipeline,
-    sun_shadow: SunShadowPipeline,
-    skinned_transparent: SkinnedTransparentPipeline,
-    static_transparent: StaticTransparentPipeline,
-    post: PostProcessingPipeline,
+pub(crate) struct WorldPipelines {
+    pub(crate) g_buffer: GBufferPipeline,
+    pub(crate) hbgi: HbgiPipeline,
+    pub(crate) hbgi_pyramid: HbgiPyramidPipelines,
+    pub(crate) gi_blur: GiBlurPipeline,
+    pub(crate) deferred_lighting: DeferredLightingPipeline,
+    pub(crate) hbgi_reproject: HbgiReprojectPipeline,
+    pub(crate) skybox: SkyboxPipeline,
+    pub(crate) sun_shadow: SunShadowPipeline,
+    pub(crate) skinned_transparent: SkinnedTransparentPipeline,
+    pub(crate) static_transparent: StaticTransparentPipeline,
+    pub(crate) post: PostProcessingPipeline,
 }
 impl WorldPipelines {
     fn new(
@@ -4446,8 +4446,8 @@ impl WorldPipelines {
     }
 }
 
-pub(crate) struct WorldContext {
-    resources: GpuResources,
-    descriptors: Descriptors,
-    pipelines: WorldPipelines,
+pub(crate) struct WorldGpuContext {
+    pub(crate) resources: GpuResources,
+    pub(crate) descriptors: Descriptors,
+    pub(crate) pipelines: WorldPipelines,
 }
