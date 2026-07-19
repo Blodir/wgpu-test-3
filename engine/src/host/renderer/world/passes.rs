@@ -1,4 +1,4 @@
-use super::{prepare::mesh::PassDrawContext, world_context::WorldGpuContext};
+use super::{prepare::mesh::PassDrawContext, gpu_context::WorldGpuContext};
 use crate::host::assets::store::RenderAssetStore;
 
 const FULLSCREEN_QUAD_INDEX_COUNT: u32 = 6;

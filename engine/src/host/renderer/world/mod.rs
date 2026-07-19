@@ -1,5 +1,6 @@
 pub mod anim_pose_store;
 pub mod attachments;
+pub mod bg_layouts;
 pub mod bindgroups;
 pub mod buffers;
 pub mod passes;
@@ -7,5 +8,6 @@ pub mod pipelines;
 pub mod prepare;
 pub mod renderer;
 pub mod sun_shadow;
-pub mod world_context;
+pub mod gpu_context;
+pub use bg_layouts::*;
 pub use renderer::*;
