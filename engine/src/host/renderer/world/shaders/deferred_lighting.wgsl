@@ -236,7 +236,7 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
         hbgi_irradiance_sampler,
         uv
     ).rgba;
-    if (depth >= 1.0) {
+    if (depth <= 0.0) {
         return FragmentOutput(vec4f(0.0, 0.0, 0.0, 0.0), vec4f(0.0, 0.0, 0.0, 0.0));
     }
     let world_position = reconstruct_world_position_from_depth(uv, depth);

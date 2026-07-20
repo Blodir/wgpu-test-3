@@ -27,6 +27,23 @@ pub struct PreparedCamera {
     pub view_proj: Mat4,
 }
 
+fn reverse_z_perspective_rh(fovy: f32, aspect: f32, znear: f32, zfar: f32) -> Mat4 {
+    debug_assert!(znear > 0.0);
+    debug_assert!(zfar > znear);
+
+    let tan_half_fovy = (fovy * 0.5).tan();
+    let h = 1.0 / tan_half_fovy;
+    let w = h / aspect;
+    let r = znear / (zfar - znear);
+
+    Mat4::from_cols_array(&[
+        w, 0.0, 0.0, 0.0,
+        0.0, h, 0.0, 0.0,
+        0.0, 0.0, r, -1.0,
+        0.0, 0.0, r * zfar, 0.0,
+    ])
+}
+
 pub fn interpolate_camera_state(
     camera_pair: &CameraSnapshotPair,
     now: Instant,
@@ -111,7 +128,7 @@ pub fn prepare_camera(
 
     let rot_inv = state.rotation.conjugate();
     let view = Mat4::from_rotation_translation(rot_inv, -(rot_inv * state.position));
-    let proj = Mat4::perspective_rh(state.fovy, state.aspect, state.znear, state.zfar);
+    let proj = reverse_z_perspective_rh(state.fovy, state.aspect, state.znear, state.zfar);
     let view_proj: Mat4 = proj * view;
     let right = state.rotation * Vec3::X;
     let up = state.rotation * Vec3::Y;

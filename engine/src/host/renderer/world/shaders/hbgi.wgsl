@@ -141,7 +141,7 @@ fn sample_world_position_from_depth(uv: vec2f, lod: f32) -> vec4f {
     let clamped_uv = clamp(uv, vec2f(0.0), max_uv);
     let depth = sample_hbgi_depth(clamped_uv, lod);
 
-    if (depth >= 1.0) {
+    if (depth <= 0.0) {
         return vec4f(0.0);
     }
 

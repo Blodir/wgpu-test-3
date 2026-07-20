@@ -48,19 +48,18 @@ fn safe_normalize3(v: vec3f) -> vec3f {
     return vec3f(0.0);
 }
 
-fn sample_depth_box_2x2(coord: vec2u) -> f32 {
+fn sample_depth_hiz_2x2(coord: vec2u) -> f32 {
     let dims = textureDimensions(downsample_depth_texture);
     let max_coord = dims - vec2u(1u, 1u);
     let c00 = min(coord, max_coord);
     let c10 = min(coord + vec2u(1u, 0u), max_coord);
     let c01 = min(coord + vec2u(0u, 1u), max_coord);
     let c11 = min(coord + vec2u(1u, 1u), max_coord);
-    return 0.25 * (
-        textureLoad(downsample_depth_texture, vec2i(c00), 0).x
-        + textureLoad(downsample_depth_texture, vec2i(c10), 0).x
-        + textureLoad(downsample_depth_texture, vec2i(c01), 0).x
-        + textureLoad(downsample_depth_texture, vec2i(c11), 0).x
-    );
+    let d00 = textureLoad(downsample_depth_texture, vec2i(c00), 0).x;
+    let d10 = textureLoad(downsample_depth_texture, vec2i(c10), 0).x;
+    let d01 = textureLoad(downsample_depth_texture, vec2i(c01), 0).x;
+    let d11 = textureLoad(downsample_depth_texture, vec2i(c11), 0).x;
+    return max(max(d00, d10), max(d01, d11));
 }
 
 @fragment
@@ -86,7 +85,7 @@ fn fs_copy_base(in: VertexOutput) -> FragmentOutput {
 @fragment
 fn fs_downsample(in: VertexOutput) -> FragmentOutput {
     let dst_coord = vec2u(in.clip_position.xy);
-    let depth = sample_depth_box_2x2(dst_coord * 2u);
+    let depth = sample_depth_hiz_2x2(dst_coord * 2u);
     let hbgi = textureSampleLevel(downsample_hbgi_texture, downsample_sampler, in.tex_coords, 0.0);
     let normal = textureSampleLevel(
         downsample_normal_texture,

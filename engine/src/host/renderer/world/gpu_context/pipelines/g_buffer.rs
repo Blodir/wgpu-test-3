@@ -108,7 +108,7 @@ impl GBufferPipeline {
                 depth_stencil: Some(wgpu::DepthStencilState {
                     format: GBufferTextures::DEPTH_FORMAT,
                     depth_write_enabled: true,
-                    depth_compare: wgpu::CompareFunction::Less,
+                    depth_compare: wgpu::CompareFunction::Greater,
                     stencil: wgpu::StencilState::default(),
                     bias: wgpu::DepthBiasState::default(),
                 }),
@@ -197,7 +197,7 @@ impl GBufferPipeline {
                 depth_stencil: Some(wgpu::DepthStencilState {
                     format: GBufferTextures::DEPTH_FORMAT,
                     depth_write_enabled: true,
-                    depth_compare: wgpu::CompareFunction::Less,
+                    depth_compare: wgpu::CompareFunction::Greater,
                     stencil: wgpu::StencilState::default(),
                     bias: wgpu::DepthBiasState::default(),
                 }),

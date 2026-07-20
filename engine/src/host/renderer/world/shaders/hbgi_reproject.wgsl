@@ -116,7 +116,7 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
     let current_hbgi_irradiance = textureLoad(current_hbgi_irradiance_texture, history_coord, 0);
     let curr_normal_sample = textureLoad(current_normal_texture, full_coord, 0);
 
-    if (curr_depth >= 1.0) {
+    if (curr_depth <= 0.0) {
         return current_frame_output(
             current_hbgi,
             current_hbgi_irradiance,
@@ -143,7 +143,7 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
 
     let prev_coord = clamp_coord(vec2i(prev_uv * history_dims), history_max_coord);
     let prev_depth = textureLoad(prev_depth_history_texture, prev_coord, 0).x;
-    if (prev_depth >= 1.0) {
+    if (prev_depth <= 0.0) {
         return current_frame_output(
             current_hbgi,
             current_hbgi_irradiance,

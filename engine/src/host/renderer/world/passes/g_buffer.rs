@@ -120,7 +120,7 @@ pub(crate) fn render_gbuffer_skinned_opaque_pass<'a>(
         depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
             view: &context.descriptors.texture_views.gbuffer.depth,
             depth_ops: Some(wgpu::Operations {
-                load: wgpu::LoadOp::Clear(1.0),
+                load: wgpu::LoadOp::Clear(0.0),
                 store: wgpu::StoreOp::Store,
             }),
             stencil_ops: None,

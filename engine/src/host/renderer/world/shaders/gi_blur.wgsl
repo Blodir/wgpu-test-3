@@ -72,7 +72,7 @@ fn sample_world_position_from_depth(uv: vec2f) -> vec4f {
     let full_dims = vec2i(textureDimensions(depth_texture));
     let pixel = clamp(vec2i(uv * vec2f(full_dims)), vec2i(0), full_dims - vec2i(1));
     let depth = textureLoad(depth_texture, pixel, 0);
-    if (depth >= 1.0) {
+    if (depth <= 0.0) {
         return vec4f(0.0);
     }
     let pixel_uv = (vec2f(pixel) + vec2f(0.5)) / vec2f(full_dims);
