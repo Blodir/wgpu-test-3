@@ -4,8 +4,7 @@ use glam::{Mat4, Quat, Vec3};
 
 use crate::{
     host::{
-        utils::lerpf32,
-        world::{gpu_context::CameraBuffers, prepare::sun_shadow::SUN_SHADOW_MAX_CASCADE_COUNT},
+        utils::lerpf32, wgpu_context::WgpuContext, world::{gpu_context::CameraBuffers, prepare::sun_shadow::SUN_SHADOW_MAX_CASCADE_COUNT}
     },
     var_snapshot::CameraSnapshotPair,
 };
@@ -106,10 +105,9 @@ pub fn prepare_camera(
     camera_pair: &CameraSnapshotPair,
     now: Instant,
     prev_view_proj: Option<&Mat4>,
-    queue: &wgpu::Queue,
-    surface_config: &wgpu::SurfaceConfiguration,
+    wgpu_context: &WgpuContext,
 ) -> PreparedCamera {
-    let state = interpolate_camera_state(camera_pair, now, surface_config);
+    let state = interpolate_camera_state(camera_pair, now, &wgpu_context.surface_config);
 
     let rot_inv = state.rotation.conjugate();
     let view = Mat4::from_rotation_translation(rot_inv, -(rot_inv * state.position));
@@ -132,7 +130,7 @@ pub fn prepare_camera(
         &inverse_view_proj.to_cols_array(),
         &view_rotation,
         &prev_view_proj.to_cols_array(),
-        queue,
+        &wgpu_context.queue,
     );
 
     PreparedCamera { state, view_proj }

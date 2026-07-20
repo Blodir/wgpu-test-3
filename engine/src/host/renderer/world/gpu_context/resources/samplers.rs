@@ -13,7 +13,7 @@ impl Samplers {
             ..Default::default()
         });
         let comparison = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("Sun Shadow Sampler"),
+            label: Some("Comparison Sampler"),
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             address_mode_w: wgpu::AddressMode::ClampToEdge,

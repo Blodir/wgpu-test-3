@@ -278,7 +278,6 @@ impl WorldRenderer {
         wgpu_context: &WgpuContext,
         placeholders: PlaceholderTextureIds,
         brdf_lut: TextureRenderId,
-        _sampler_cache: &mut SamplerCache,
         shader_cache: &mut ShaderCache,
         render_resources: &RenderAssetStore,
         options: RendererOptions,
@@ -337,7 +336,6 @@ impl WorldRenderer {
         snaps: &FixedSnapshotGuard,
         wgpu_context: &WgpuContext,
         render_resources: &RenderAssetStore,
-        _sampler_cache: &mut SamplerCache,
         frame_idx: u32,
         encoder: &mut wgpu::CommandEncoder,
         output_view: &wgpu::TextureView,
@@ -358,8 +356,7 @@ impl WorldRenderer {
             camera_pair,
             now,
             self.prev_motion_view_proj.as_ref(),
-            &wgpu_context.queue,
-            &wgpu_context.surface_config,
+            &wgpu_context,
         );
         let prev_motion_view_proj = self
             .prev_motion_view_proj
