@@ -1,4 +1,4 @@
-use std::{array, time::Instant};
+use std::time::Instant;
 
 use glam::Mat4;
 
@@ -6,7 +6,7 @@ use super::super::sampler_cache::SamplerCache;
 use super::super::shader_cache::ShaderCache;
 use super::anim_pose_store::AnimPoseStore;
 use super::external::MaterialBindGroup;
-use super::gpu_context::{BGLayouts, SunShadowMatrixBindGroup, WorldGpuContext};
+use super::gpu_context::WorldGpuContext;
 use super::instance_links::SnapshotInstanceLinks;
 use super::prepare::camera::prepare_camera;
 use super::prepare::mesh::{resolve_skinned_draw, PassDrawContext};
@@ -27,7 +27,6 @@ use crate::host::assets::store::{PlaceholderTextureIds, RenderAssetStore, Textur
 use crate::host::renderer::{HbgiOptions, RendererOptions};
 use crate::host::wgpu_context::WgpuContext;
 use crate::host::world::prepare::mesh::resolve_static_draw;
-use crate::host::world::prepare::sun_shadow::SUN_SHADOW_MAX_CASCADE_COUNT;
 use crate::{fixed_snapshot::FixedSnapshotGuard, var_snapshot::CameraSnapshotPair};
 
 pub struct UploadMaterialRequest<'a> {
@@ -39,25 +38,7 @@ pub struct UploadMaterialRequest<'a> {
     pub metallic_roughness_texture: &'a Option<TextureRenderId>,
 }
 
-struct WorldBindGroups {
-    layouts: BGLayouts,
-    sun_shadow_matrices: [SunShadowMatrixBindGroup; SUN_SHADOW_MAX_CASCADE_COUNT],
-}
-impl WorldBindGroups {
-    fn new(wgpu_context: &WgpuContext) -> Self {
-        let layouts = BGLayouts::new(wgpu_context);
-        let sun_shadow_matrices = array::from_fn(|_| {
-            SunShadowMatrixBindGroup::new(&wgpu_context.device, &layouts.sun_shadow_matrix)
-        });
-        Self {
-            layouts,
-            sun_shadow_matrices,
-        }
-    }
-}
-
 pub struct WorldRenderer {
-    bind_groups: WorldBindGroups,
     gpu_context: WorldGpuContext,
     hbgi_options: Option<HbgiOptions>,
     hbgi_reproject_valid: bool,
@@ -72,7 +53,7 @@ impl WorldRenderer {
     fn clear_temporal_inputs(&self, encoder: &mut wgpu::CommandEncoder) {
         for (label, view, clear_color) in [
             (
-                "Previous GI Source Clear Pass",
+                "Lighting Target > Diffuse Radiance AO - Clear Pass",
                 &self
                     .gpu_context
                     .descriptors
@@ -82,7 +63,7 @@ impl WorldRenderer {
                 wgpu::Color::TRANSPARENT,
             ),
             (
-                "Previous HBGI Reproject Clear Pass",
+                "Reproject > Bent AO - Clear Pass",
                 self.gpu_context
                     .descriptors
                     .texture_views
@@ -92,7 +73,7 @@ impl WorldRenderer {
                 wgpu::Color::TRANSPARENT,
             ),
             (
-                "Previous HBGI Irradiance Reproject Clear Pass",
+                "Reproject > Near Field Irradiance - Clear Pass",
                 self.gpu_context
                     .descriptors
                     .texture_views
@@ -109,7 +90,7 @@ impl WorldRenderer {
                 wgpu::Color::TRANSPARENT,
             ),
             (
-                "Previous HBGI Reproject Depth Clear Pass",
+                "Reproject > Depth History - Clear Pass",
                 self.gpu_context
                     .descriptors
                     .texture_views
@@ -124,7 +105,7 @@ impl WorldRenderer {
                 },
             ),
             (
-                "Previous HBGI Reproject Normal Clear Pass",
+                "Reproject > Normal History - Clear Pass",
                 self.gpu_context
                     .descriptors
                     .texture_views
@@ -171,8 +152,8 @@ impl WorldRenderer {
             context,
         );
 
-        for (dst_mip, bind_group) in bind_groups.downsample.iter().enumerate() {
-            let mip_level = dst_mip + 1;
+        for (idx, bind_group) in bind_groups.downsample.iter().enumerate() {
+            let mip_level = idx + 1;
             render_hbgi_pyramid_pass(
                 encoder,
                 "HBGI Pyramid Downsample Pass",
@@ -313,11 +294,9 @@ impl WorldRenderer {
             brdf_lut,
             hbgi_options.as_ref(),
         );
-        let bind_groups = WorldBindGroups::new(wgpu_context);
         let pose_storage = AnimPoseStore::new();
 
         Self {
-            bind_groups,
             gpu_context,
             hbgi_options,
             hbgi_reproject_valid: false,
@@ -449,7 +428,13 @@ impl WorldRenderer {
                     .cascades
                     .iter(),
             )
-            .zip(self.bind_groups.sun_shadow_matrices.iter())
+            .zip(
+                self.gpu_context
+                    .descriptors
+                    .bind_groups
+                    .sun_shadow_matrices
+                    .iter(),
+            )
         {
             cascade_bind_group.update(&cascade.light_view_proj, &wgpu_context.queue);
             render_sun_shadow_pass(
@@ -559,7 +544,7 @@ impl WorldRenderer {
             metallic_roughness_view,
             normal_view,
             occlusion_view,
-            &self.bind_groups.layouts.material,
+            &self.gpu_context.descriptors.bind_group_layouts.material,
             wgpu_context,
             sampler_cache,
         ))

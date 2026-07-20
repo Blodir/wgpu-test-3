@@ -1,3 +1,5 @@
+use crate::host::world::prepare::sun_shadow::SUN_SHADOW_MAX_CASCADE_COUNT;
+
 pub mod bones;
 pub mod camera;
 pub mod deferred_lighting;
@@ -45,4 +47,5 @@ pub(crate) struct BindGroups {
     pub(crate) lights: LightsBindGroup,
     pub(crate) post_processing: PostProcessingBindGroup,
     pub(crate) static_instances: InstanceStorageBindGroup,
+    pub(crate) sun_shadow_matrices: [SunShadowMatrixBindGroup; SUN_SHADOW_MAX_CASCADE_COUNT],
 }

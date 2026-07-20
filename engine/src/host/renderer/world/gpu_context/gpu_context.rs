@@ -1,3 +1,5 @@
+use std::array;
+
 use wgpu::util::DeviceExt as _;
 
 use super::{
@@ -5,7 +7,7 @@ use super::{
         bg_layouts::BGLayouts, BindGroups, BonesBindGroups, CameraBindGroup,
         DeferredLightingBindGroups, Descriptors, GiBlurBindGroup, HbgiBindGroups,
         HbgiPyramidBindGroups, HbgiReprojectBindGroups, InstanceStorageBindGroup, LightsBindGroup,
-        PostProcessingBindGroup, TextureViews,
+        PostProcessingBindGroup, SunShadowMatrixBindGroup, TextureViews,
     },
     pipelines::Pipelines,
     resources::{Buffers, Resources, Samplers, Textures},
@@ -167,6 +169,9 @@ impl WorldGpuContext {
                 &bind_group_layouts.instance_storage,
                 device,
             ),
+            sun_shadow_matrices: array::from_fn(|_| {
+                SunShadowMatrixBindGroup::new(device, &bind_group_layouts.sun_shadow_matrix)
+            }),
         };
         let descriptors = Descriptors {
             bind_groups,
