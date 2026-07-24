@@ -15,6 +15,10 @@ struct HbgiSettingsUniform {
 
 @group(2) @binding(0) var<uniform> hbgi_settings: HbgiSettingsUniform;
 
+@group(3) @binding(4) var env_di_texture: texture_cube<f32>;
+@group(3) @binding(5) var env_di_texture_sampler: sampler;
+@group(3) @binding(8) var<uniform> environment_map_intensity: f32;
+
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
     @location(0) tex_coords: vec2<f32>,
@@ -400,9 +404,17 @@ fn shbgi(in: VertexOutput) -> FragmentOutput {
     let S = f32(DIRECTIONS);
     let ao = (1.0 / S) * visibility_acc;
     let bent_n_w = safe_normalize3(bent_acc_w);
+
+    let far_field_sample = textureSample(
+        env_di_texture,
+        env_di_texture_sampler,
+        bent_n_w
+    );
+
+    let E_far = far_field_sample.rgb * ao * environment_map_intensity;
     let E_near = sanitize_rgb(irradiance_acc * (PI / S));
 
-    return FragmentOutput(vec4f(bent_n_w, ao), vec4f(E_near, debug));
+    return FragmentOutput(vec4f(bent_n_w, ao), vec4f(E_near + E_far, debug));
 }
 
 @fragment

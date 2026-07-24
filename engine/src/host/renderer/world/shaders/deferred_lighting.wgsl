@@ -12,8 +12,6 @@ struct SunShadowUniform {
 @group(1) @binding(1) var<uniform> light_col: vec3<f32>;
 @group(1) @binding(2) var environment_texture: texture_cube<f32>;
 @group(1) @binding(3) var environment_texture_sampler: sampler;
-@group(1) @binding(4) var diffuse_irradiance_texture: texture_cube<f32>;
-@group(1) @binding(5) var diffuse_irradiance_texture_sampler: sampler;
 @group(1) @binding(6) var brdf_lut: texture_2d<f32>;
 @group(1) @binding(7) var brdf_lut_sampler: sampler;
 @group(1) @binding(8) var<uniform> environment_map_intensity: f32;
@@ -315,12 +313,6 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
     var k_d2 = 1.0 - k_s2;
     k_d2 *= 1.0 - surface_metallic;
 
-    let far_field_sample = textureSample(
-        diffuse_irradiance_texture,
-        diffuse_irradiance_texture_sampler,
-        bent_n_w // Use bent normal from HBGI
-    );
-
     // TODO: this is a temp function to scale back the (brutal) effect of large radius HBGI AO
     let diffuse_ao = pow(
         clamp(0.0, 1.0, hbgi_F0_compensation(hbgi.w) * hbgi.w - 0.1) + 0.1,
@@ -335,13 +327,9 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
     let specular_ao = diffuse_ao; // TODO figure out a realistic ao function for specular?
     let far_specular = prefiltered_color * (F_env * brdf_specular_lut.x + brdf_specular_lut.y) * specular_ao * environment_map_intensity;
 
-    // Horizon-Based Indirect Lighting (HBIL) - Benoit Mayaux - Section 2.2.3, 2.3.
-    let E_far = far_field_sample.rgb * diffuse_ao * environment_map_intensity;
-    let E_near = hbgi_irradiance.rgb * (1 - F0);
-    let far_diffuse  = E_far * k_d2 * surface_color / PI;
-    let near_diffuse = E_near * surface_color / PI;
+    let indirect_diffuse = hbgi_irradiance.rgb * k_d2 * surface_color / PI;
 
-    let final_diffuse = far_diffuse + near_diffuse + direct_diffuse;
+    let final_diffuse = indirect_diffuse + direct_diffuse;
     let final_specular = direct_specular + far_specular;
 
     let final_color = vec4f(

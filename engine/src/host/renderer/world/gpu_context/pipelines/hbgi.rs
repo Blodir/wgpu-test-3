@@ -1,7 +1,7 @@
 use crate::{
     global_paths::SHADER_HBGI_WGSL,
     host::{
-        renderer::world::gpu_context::{BGLayouts, HbgiInputsBindGroup, HbgiSettingsBindGroup},
+        renderer::world::gpu_context::{BGLayouts, LightsBindGroup},
         shader_cache::ShaderCache,
         wgpu_context::WgpuContext,
     },
@@ -17,12 +17,6 @@ impl HbgiPipeline {
         shader_cache: &mut ShaderCache,
         layouts: &BGLayouts,
     ) -> Self {
-        let hbgi_inputs_bind_group_layout = wgpu_context
-            .device
-            .create_bind_group_layout(&HbgiInputsBindGroup::desc());
-        let hbgi_settings_bind_group_layout = wgpu_context
-            .device
-            .create_bind_group_layout(&HbgiSettingsBindGroup::desc());
         let render_pipeline_layout =
             wgpu_context
                 .device
@@ -30,8 +24,9 @@ impl HbgiPipeline {
                     label: Some("HBGI Pipeline Layout"),
                     bind_group_layouts: &[
                         &layouts.camera,
-                        &hbgi_inputs_bind_group_layout,
-                        &hbgi_settings_bind_group_layout,
+                        &layouts.hbgi_inputs,
+                        &layouts.hbgi_settings,
+                        &layouts.lights,
                     ],
                     push_constant_ranges: &[],
                 });

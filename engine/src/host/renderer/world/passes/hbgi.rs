@@ -37,6 +37,7 @@ pub(crate) fn render_hbgi_pass(encoder: &mut wgpu::CommandEncoder, context: &Wor
     render_pass.set_bind_group(0, &context.descriptors.bind_groups.camera.0, &[]);
     render_pass.set_bind_group(1, &context.descriptors.bind_groups.hbgi.inputs.0, &[]);
     render_pass.set_bind_group(2, &context.descriptors.bind_groups.hbgi.settings.0, &[]);
+    render_pass.set_bind_group(3, &context.descriptors.bind_groups.lights.0, &[]);
     render_pass.set_index_buffer(
         context.resources.buffers.fullscreen_quad_indices.slice(..),
         wgpu::IndexFormat::Uint16,

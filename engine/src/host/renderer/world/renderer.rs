@@ -177,6 +177,11 @@ impl WorldRenderer {
         queue: &wgpu::Queue,
         prev_inverse_view_proj: &Mat4,
         frame_idx: u32,
+        sun: &crate::game::scene_tree::Sun,
+        environment_map_intensity: f32,
+        point_lights: &[crate::fixed_snapshot::PointLightSnapshot],
+        environment_map: Option<(TextureRenderId, TextureRenderId)>,
+        wgpu_context: &WgpuContext,
     ) {
         render_gbuffer_skinned_opaque_pass(
             encoder,
@@ -189,6 +194,16 @@ impl WorldRenderer {
             static_opaque_pass,
             render_resources,
             &self.gpu_context,
+        );
+        self.gpu_context.update_lights(
+            sun,
+            environment_map_intensity,
+            point_lights,
+            environment_map,
+            render_resources,
+            &self.placeholders,
+            self.brdf_lut,
+            wgpu_context,
         );
         if !self.hbgi_reproject_valid {
             self.clear_temporal_inputs(encoder);
@@ -362,21 +377,6 @@ impl WorldRenderer {
             .prev_motion_view_proj
             .unwrap_or(prepared_camera.view_proj);
         let prev_inverse_view_proj = prev_motion_view_proj.inverse();
-        self.gpu_context.update_lights(
-            &snaps.curr.lights.sun,
-            snaps.curr.lights.environment_map_intensity,
-            &snaps.curr.lights.point_lights,
-            snaps
-                .curr
-                .lights
-                .environment_map
-                .as_ref()
-                .map(|env| (env.prefiltered, env.di)),
-            render_resources,
-            &self.placeholders,
-            self.brdf_lut,
-            wgpu_context,
-        );
         let prepared_sun_shadow =
             prepare_sun_shadow(&prepared_camera, snaps.curr.lights.sun.direction);
         self.gpu_context
@@ -454,6 +454,16 @@ impl WorldRenderer {
             &wgpu_context.queue,
             &prev_inverse_view_proj,
             frame_idx,
+            &snaps.curr.lights.sun,
+            snaps.curr.lights.environment_map_intensity,
+            &snaps.curr.lights.point_lights,
+            snaps
+                .curr
+                .lights
+                .environment_map
+                .as_ref()
+                .map(|env| (env.prefiltered, env.di)),
+            wgpu_context,
         );
 
         render_skinned_transparent_pass(
