@@ -51,7 +51,7 @@ impl HbgiReprojectPipeline {
                                 write_mask: wgpu::ColorWrites::ALL,
                             }),
                             Some(wgpu::ColorTargetState {
-                                format: wgpu::TextureFormat::R32Float,
+                                format: wgpu::TextureFormat::Rgba16Float,
                                 blend: None,
                                 write_mask: wgpu::ColorWrites::ALL,
                             }),

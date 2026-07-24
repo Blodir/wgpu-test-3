@@ -49,9 +49,10 @@ fn current_frame_output(
     depth: f32,
     normal: vec4f,
 ) -> FragmentOutput {
+    let curr_lum = luminance(hbgi_irradiance.rgb);
     return FragmentOutput(
         hbgi,
-        vec4f(depth, 0.0, 0.0, 1.0),
+        vec4f(depth, curr_lum, curr_lum * curr_lum, 1.0),
         normal,
         hbgi_irradiance
     );
@@ -85,6 +86,10 @@ fn clamp_coord(coord: vec2i, max_coord: vec2i) -> vec2i {
 
 fn clamp_coordf(coord: vec2f, max_coord: vec2f) -> vec2f {
     return clamp(coord, vec2f(0), max_coord);
+}
+
+fn luminance(rgb: vec3f) -> f32 {
+    return dot(rgb, vec3f(0.2126, 0.7152, 0.0722));
 }
 
 @vertex
@@ -193,13 +198,16 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
     var prev_irradiance_acc = vec3f(0.0);
     var prev_bent_normal_acc = vec3f(0.0);
     var prev_ao_acc = 0.0;
+    var prev_first_moment_acc = 0.0;
+    var prev_second_moment_acc = 0.0;
     var valid_weight_sum = 0.0;
     for (var i = 0; i < 4; i++) {
         let coords = clamp_coord(taps[i], history_max_coord);
         let tap_uv = (vec2f(coords) + vec2f(0.5)) / history_dims;
         let tap_weight = tap_weights[i];
 
-        let prev_depth = textureLoad(prev_depth_history_texture, coords, 0).x;
+        let prev_depth_history = textureLoad(prev_depth_history_texture, coords, 0);
+        let prev_depth = prev_depth_history.x;
         if (prev_depth <= 0.0) {
             continue;
         }
@@ -240,6 +248,8 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
         prev_irradiance_acc += filtered_prev_irradiance * tap_weight;
         prev_bent_normal_acc += prev_bent_ao.xyz * tap_weight;
         prev_ao_acc += prev_bent_ao.w * tap_weight;
+        prev_first_moment_acc += prev_depth_history.y * tap_weight;
+        prev_second_moment_acc += prev_depth_history.z * tap_weight;
         valid_weight_sum += tap_weight;
     }
     if (valid_weight_sum <= 0.0) {
@@ -254,17 +264,24 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
     prev_irradiance_acc /= valid_weight_sum;
     prev_bent_normal_acc /= valid_weight_sum;
     prev_ao_acc /= valid_weight_sum;
+    prev_first_moment_acc /= valid_weight_sum;
+    prev_second_moment_acc /= valid_weight_sum;
 
     let final_bent_normal = mix(normalize(prev_bent_normal_acc), curr_bent_ao.xyz, TEMPORAL_RESPONSE);
     let final_ao = mix(prev_ao_acc, curr_bent_ao.w, TEMPORAL_RESPONSE);
     let final_irradiance = mix(prev_irradiance_acc, curr_hbgi_irradiance.rgb, TEMPORAL_RESPONSE);
 
-    // TODO 4.2 Variance estimation
+    // 4.2 Variance estimation
+    let curr_lum = luminance(curr_hbgi_irradiance.rgb);
+    let first_moment = mix(prev_first_moment_acc, curr_lum, TEMPORAL_RESPONSE);
+    let second_moment = mix(prev_second_moment_acc, curr_lum * curr_lum, TEMPORAL_RESPONSE);
 
-    return current_frame_output(
+    // TODO add history length and variance estimate in limited history cases (last paragraph of 4.2)
+
+    return FragmentOutput(
         vec4f(final_bent_normal, final_ao),
+        vec4f(curr_depth, first_moment, second_moment, 1.0),
+        curr_normal_sample,
         vec4f(final_irradiance, curr_hbgi_irradiance.a),
-        curr_depth,
-        curr_normal_sample
     );
 }
