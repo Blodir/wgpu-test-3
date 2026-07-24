@@ -101,7 +101,8 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
     return out;
 }
 
-fn old(in: VertexOutput) -> FragmentOutput {
+@fragment
+fn fs_main(in: VertexOutput) -> FragmentOutput {
     let full_dims_u = textureDimensions(current_depth_texture);
     let full_dims = vec2f(full_dims_u);
     let full_max_coord = vec2i(full_dims_u) - vec2i(1);
