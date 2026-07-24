@@ -32,7 +32,6 @@ struct FragmentOutput {
 const PI: f32 = 3.14159265358979323846;
 const DIRECTIONS: u32 = 4u;
 const STEPS_PER_DIRECTION: u32 = 8u;
-const JITTER_SAMPLES: f32 = 1.0;
 
 @vertex
 fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
@@ -201,7 +200,8 @@ fn shbgi(in: VertexOutput) -> FragmentOutput {
 
     let normal_sample = sample_hbgi_normal(uv, 0.0);
 
-    let dims = vec2<f32>(textureDimensions(hbgi_depth_pyramid_texture, 0));
+    let dims_u = textureDimensions(hbgi_depth_pyramid_texture, 0);
+    let dims = vec2<f32>(dims_u);
     let max_hbgi_pyramid_lod = f32(textureNumLevels(hbgi_pyramid_texture) - 1u);
 
     let spatial_noise = gradient_noise(uv * dims);

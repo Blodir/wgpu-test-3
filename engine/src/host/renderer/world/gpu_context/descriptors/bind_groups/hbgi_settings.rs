@@ -16,6 +16,7 @@ impl Default for HbgiSettingsUniform {
 impl HbgiSettingsUniform {
     pub fn from_options(hbgi_options: &HbgiOptions, frame_index: u32) -> Self {
         let (temporal_rotation, temporal_offset) = r2_quasirandom_sequence(frame_index);
+        //let [temporal_rotation, temporal_offset] = PRECOMPUTED_R2_SAMPLES[(frame_index as usize) % PRECOMPUTED_R2_SAMPLES.len()];
         Self {
             params0: [
                 hbgi_options.radius_pixels,
@@ -27,6 +28,17 @@ impl HbgiSettingsUniform {
         }
     }
 }
+
+const PRECOMPUTED_R2_SAMPLES: [[f32; 2]; 8] = [
+    [0.50000000, 0.50000000],
+    [0.11803399, 0.88196601],
+    [0.73606798, 0.26393202],
+    [0.35410197, 0.64589803],
+    [0.97213595, 0.02786405],
+    [0.59016994, 0.40983006],
+    [0.20820393, 0.79179607],
+    [0.82623792, 0.17376208],
+];
 
 // https://extremelearning.com.au/unreasonable-effectiveness-of-quasirandom-sequences
 fn r2_quasirandom_sequence(n: u32) -> (f32, f32) {
