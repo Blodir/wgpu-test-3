@@ -3,8 +3,8 @@
 @group(0) @binding(2) var<uniform> inverse_view_proj: mat4x4<f32>;
 
 @group(1) @binding(0) var motion_vectors_texture: texture_2d<f32>;
-@group(1) @binding(1) var current_hbgi_texture: texture_2d<f32>;
-@group(1) @binding(2) var prev_hbgi_reproject_texture: texture_2d<f32>;
+@group(1) @binding(1) var current_bent_ao_texture: texture_2d<f32>;
+@group(1) @binding(2) var prev_bent_ao_reproject_texture: texture_2d<f32>;
 @group(1) @binding(3) var current_depth_texture: texture_depth_2d;
 @group(1) @binding(4) var current_normal_texture: texture_2d<f32>;
 @group(1) @binding(5) var prev_depth_history_texture: texture_2d<f32>;
@@ -16,7 +16,7 @@ struct HbgiReprojectUniform {
     prev_inverse_view_proj: mat4x4<f32>,
 }
 
-@group(2) @binding(0) var<uniform> hbgi_reproject: HbgiReprojectUniform;
+@group(2) @binding(0) var<uniform> hbgi_reproject_settings: HbgiReprojectUniform;
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
@@ -30,7 +30,7 @@ struct FragmentOutput {
     @location(3) hbgi_irradiance_reproject: vec4<f32>,
 }
 
-const TEMPORAL_RESPONSE: f32 = 0.01;
+const TEMPORAL_RESPONSE: f32 = 0.2;
 const HISTORY_CLAMP_WEIGHT: f32 = 0.25;
 
 fn safe_normalize3(v: vec3f) -> vec3f {
@@ -101,18 +101,17 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
     return out;
 }
 
-@fragment
-fn fs_main(in: VertexOutput) -> FragmentOutput {
+fn old(in: VertexOutput) -> FragmentOutput {
     let full_dims_u = textureDimensions(current_depth_texture);
     let full_dims = vec2f(full_dims_u);
     let full_max_coord = vec2i(full_dims_u) - vec2i(1);
     let full_coord = clamp_coord(vec2i(in.tex_coords * full_dims), full_max_coord);
-    let history_dims_u = textureDimensions(current_hbgi_texture);
+    let history_dims_u = textureDimensions(current_bent_ao_texture);
     let history_dims = vec2f(history_dims_u);
     let history_max_coord = vec2i(history_dims_u) - vec2i(1);
     let history_coord = clamp_coord(vec2i(in.tex_coords * history_dims), history_max_coord);
     let curr_depth = textureLoad(current_depth_texture, full_coord, 0);
-    let current_hbgi = textureLoad(current_hbgi_texture, history_coord, 0);
+    let current_hbgi = textureLoad(current_bent_ao_texture, history_coord, 0);
     let current_hbgi_irradiance = textureLoad(current_hbgi_irradiance_texture, history_coord, 0);
     let curr_normal_sample = textureLoad(current_normal_texture, full_coord, 0);
 
@@ -155,13 +154,13 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
     let prev_world_position = reconstruct_world_position_from_depth(
         prev_uv,
         prev_depth,
-        hbgi_reproject.prev_inverse_view_proj
+        hbgi_reproject_settings.prev_inverse_view_proj
     );
     let pos_similarity = saturate(1.0 - distance(prev_world_position, curr_world_position));
     let blend_weight = mix(1.0, TEMPORAL_RESPONSE, pos_similarity);
 
     var min_hbgi = textureLoad(
-        current_hbgi_texture,
+        current_bent_ao_texture,
         clamp_coord(history_coord + vec2i(1, 1), history_max_coord),
         0
     );
@@ -175,7 +174,7 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
     for (var sample_idx: i32 = 0; sample_idx < 3; sample_idx += 1) {
         let offset = array<vec2i, 3>(vec2i(1, -1), vec2i(-1, 1), vec2i(-1, -1))[sample_idx];
         let current_hbgi_sample = textureLoad(
-            current_hbgi_texture,
+            current_bent_ao_texture,
             clamp_coord(history_coord + offset, history_max_coord),
             0
         );
@@ -190,7 +189,7 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
         max_hbgi_irradiance = max(max_hbgi_irradiance, current_hbgi_irradiance_sample);
     }
 
-    let prev_hbgi_reproject = textureLoad(prev_hbgi_reproject_texture, prev_coord, 0);
+    let prev_hbgi_reproject = textureLoad(prev_bent_ao_reproject_texture, prev_coord, 0);
     let prev_hbgi_irradiance_reproject = textureLoad(
         prev_hbgi_irradiance_reproject_texture,
         prev_coord,
