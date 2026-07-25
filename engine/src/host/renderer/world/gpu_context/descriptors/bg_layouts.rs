@@ -1,8 +1,9 @@
 use super::bind_groups::{
     BonesBindGroups, CameraBindGroup, DeferredLightingGBufferBindGroup,
-    DeferredLightingHbgiBindGroup, GiBlurBindGroup, HbgiInputsBindGroup, HbgiPyramidBindGroups,
+    DeferredLightingHbgiBindGroup, HbgiInputsBindGroup, HbgiPyramidBindGroups,
     HbgiReprojectInputsBindGroup, HbgiReprojectSettingsBindGroup, HbgiSettingsBindGroup,
-    InstanceStorageBindGroup, LightsBindGroup, PostProcessingBindGroup, SunShadowMatrixBindGroup,
+    HbgiSvgfInputsBindGroup, HbgiSvgfSettingsBindGroup, InstanceStorageBindGroup,
+    LightsBindGroup, PostProcessingBindGroup, SunShadowMatrixBindGroup,
 };
 use crate::host::renderer::world::external::MaterialBindGroup;
 use crate::host::wgpu_context::WgpuContext;
@@ -20,9 +21,10 @@ pub struct BGLayouts {
     pub hbgi_inputs: wgpu::BindGroupLayout,
     pub deferred_lighting_gbuffer: wgpu::BindGroupLayout,
     pub deferred_lighting_hbgi: wgpu::BindGroupLayout,
-    pub gi_blur: wgpu::BindGroupLayout,
     pub hbgi_reproject_inputs: wgpu::BindGroupLayout,
     pub hbgi_reproject_settings: wgpu::BindGroupLayout,
+    pub hbgi_svgf_inputs: wgpu::BindGroupLayout,
+    pub hbgi_svgf_settings: wgpu::BindGroupLayout,
     pub hbgi_pyramid_base: wgpu::BindGroupLayout,
     pub hbgi_pyramid_downsample: wgpu::BindGroupLayout,
     pub post_processing: wgpu::BindGroupLayout,
@@ -65,15 +67,18 @@ impl BGLayouts {
         let deferred_lighting_hbgi = wgpu_context
             .device
             .create_bind_group_layout(&DeferredLightingHbgiBindGroup::desc());
-        let gi_blur = wgpu_context
-            .device
-            .create_bind_group_layout(&GiBlurBindGroup::desc());
         let hbgi_reproject_inputs = wgpu_context
             .device
             .create_bind_group_layout(&HbgiReprojectInputsBindGroup::desc());
         let hbgi_reproject_settings = wgpu_context
             .device
             .create_bind_group_layout(&HbgiReprojectSettingsBindGroup::desc());
+        let hbgi_svgf_inputs = wgpu_context
+            .device
+            .create_bind_group_layout(&HbgiSvgfInputsBindGroup::desc());
+        let hbgi_svgf_settings = wgpu_context
+            .device
+            .create_bind_group_layout(&HbgiSvgfSettingsBindGroup::desc());
         let hbgi_pyramid_base = wgpu_context
             .device
             .create_bind_group_layout(&HbgiPyramidBindGroups::base_desc());
@@ -97,9 +102,10 @@ impl BGLayouts {
             hbgi_inputs,
             deferred_lighting_gbuffer,
             deferred_lighting_hbgi,
-            gi_blur,
             hbgi_reproject_inputs,
             hbgi_reproject_settings,
+            hbgi_svgf_inputs,
+            hbgi_svgf_settings,
             hbgi_pyramid_base,
             hbgi_pyramid_downsample,
             post_processing,

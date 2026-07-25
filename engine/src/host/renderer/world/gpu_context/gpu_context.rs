@@ -5,8 +5,8 @@ use wgpu::util::DeviceExt as _;
 use super::{
     descriptors::{
         bg_layouts::BGLayouts, BindGroups, BonesBindGroups, CameraBindGroup,
-        DeferredLightingBindGroups, Descriptors, GiBlurBindGroup, HbgiBindGroups,
-        HbgiPyramidBindGroups, HbgiReprojectBindGroups, InstanceStorageBindGroup, LightsBindGroup,
+        DeferredLightingBindGroups, Descriptors, HbgiBindGroups, HbgiPyramidBindGroups,
+        HbgiReprojectBindGroups, HbgiSvgfBindGroups, InstanceStorageBindGroup, LightsBindGroup,
         PostProcessingBindGroup, SunShadowMatrixBindGroup, TextureViews,
     },
     pipelines::Pipelines,
@@ -88,9 +88,9 @@ impl WorldGpuContext {
                 &texture_views.gbuffer.emissive_metallic,
                 &resources.samplers.nearest,
                 &texture_views.gbuffer.depth,
-                &texture_views.gi_blur.bent_ao,
+                &texture_views.hbgi_svgf.bent_ao_a,
                 &resources.samplers.linear,
-                &texture_views.gi_blur.near_field_irradiance,
+                &texture_views.hbgi_svgf.irradiance_variance_a,
                 &resources.samplers.linear,
                 &bind_group_layouts,
                 device,
@@ -121,15 +121,26 @@ impl WorldGpuContext {
                 &bind_group_layouts,
                 device,
             ),
-            gi_blur: GiBlurBindGroup::new(
-                &texture_views.hbgi.bent_ao,
-                &resources.samplers.linear,
-                &texture_views.hbgi.near_field_irradiance,
-                &resources.samplers.linear,
+            hbgi_svgf: HbgiSvgfBindGroups::new(
+                texture_views
+                    .reproject
+                    .bent_ao
+                    .get_write_view(&resources.textures.reproject.bent_ao),
+                texture_views
+                    .reproject
+                    .near_field_irradiance
+                    .get_write_view(&resources.textures.reproject.near_field_irradiance),
+                texture_views
+                    .reproject
+                    .depth_history
+                    .get_write_view(&resources.textures.reproject.depth_history),
+                &texture_views.hbgi_svgf.bent_ao_a,
+                &texture_views.hbgi_svgf.irradiance_variance_a,
+                &texture_views.hbgi_svgf.bent_ao_b,
+                &texture_views.hbgi_svgf.irradiance_variance_b,
                 &texture_views.gbuffer.normal_roughness,
-                &resources.samplers.nearest,
-                &texture_views.gbuffer.depth,
-                &bind_group_layouts.gi_blur,
+                &resources.buffers.hbgi_svgf_settings,
+                &bind_group_layouts,
                 device,
             ),
             hbgi_pyramid: HbgiPyramidBindGroups::new(
@@ -205,9 +216,9 @@ impl WorldGpuContext {
             &self.descriptors.texture_views.gbuffer.emissive_metallic,
             &self.resources.samplers.nearest,
             &self.descriptors.texture_views.gbuffer.depth,
-            &self.descriptors.texture_views.gi_blur.bent_ao,
+            &self.descriptors.texture_views.hbgi_svgf.bent_ao_a,
             &self.resources.samplers.linear,
-            &self.descriptors.texture_views.gi_blur.near_field_irradiance,
+            &self.descriptors.texture_views.hbgi_svgf.irradiance_variance_a,
             &self.resources.samplers.linear,
             &self.descriptors.bind_group_layouts,
             device,
@@ -353,23 +364,29 @@ impl WorldGpuContext {
     }
 
     pub(crate) fn refresh_temporal_bind_groups(&mut self, device: &wgpu::Device) {
-        self.descriptors.bind_groups.gi_blur = GiBlurBindGroup::new(
+        self.descriptors.bind_groups.hbgi_svgf = HbgiSvgfBindGroups::new(
             self.descriptors
                 .texture_views
                 .reproject
                 .bent_ao
                 .get_write_view(&self.resources.textures.reproject.bent_ao),
-            &self.resources.samplers.linear,
             self.descriptors
                 .texture_views
                 .reproject
                 .near_field_irradiance
                 .get_write_view(&self.resources.textures.reproject.near_field_irradiance),
-            &self.resources.samplers.linear,
+            self.descriptors
+                .texture_views
+                .reproject
+                .depth_history
+                .get_write_view(&self.resources.textures.reproject.depth_history),
+            &self.descriptors.texture_views.hbgi_svgf.bent_ao_a,
+            &self.descriptors.texture_views.hbgi_svgf.irradiance_variance_a,
+            &self.descriptors.texture_views.hbgi_svgf.bent_ao_b,
+            &self.descriptors.texture_views.hbgi_svgf.irradiance_variance_b,
             &self.descriptors.texture_views.gbuffer.normal_roughness,
-            &self.resources.samplers.nearest,
-            &self.descriptors.texture_views.gbuffer.depth,
-            &self.descriptors.bind_group_layouts.gi_blur,
+            &self.resources.buffers.hbgi_svgf_settings,
+            &self.descriptors.bind_group_layouts,
             device,
         );
         self.descriptors.bind_groups.hbgi_reproject = HbgiReprojectBindGroups::new(
@@ -420,7 +437,7 @@ impl WorldGpuContext {
         let new_textures = Textures::new(wgpu_context, &wgpu_context.surface_config);
         self.resources.textures.gbuffer = new_textures.gbuffer;
         self.resources.textures.hbgi = new_textures.hbgi;
-        self.resources.textures.gi_blur = new_textures.gi_blur;
+        self.resources.textures.hbgi_svgf = new_textures.hbgi_svgf;
         self.resources.textures.reproject = new_textures.reproject;
         self.resources.textures.pyramids = new_textures.pyramids;
         self.resources.textures.sky = new_textures.sky;

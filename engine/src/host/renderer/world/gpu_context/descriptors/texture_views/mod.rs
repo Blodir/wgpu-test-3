@@ -1,14 +1,14 @@
 pub mod g_buffer;
-pub mod gi_blur;
 pub mod hbgi;
+pub mod hbgi_svgf;
 pub mod lighting;
 pub mod mip_pyramid;
 pub mod reproject;
 pub mod sun_shadow;
 
 pub(crate) use g_buffer::GBufferTextureViews;
-pub(crate) use gi_blur::GiBlurTextureViews;
 pub(crate) use hbgi::HbgiTextureViews;
+pub(crate) use hbgi_svgf::HbgiSvgfTextureViews;
 pub(crate) use lighting::LightingTextureViews;
 pub(crate) use mip_pyramid::MipPyramidTextureViews;
 pub(crate) use reproject::ReprojectTextureViews;
@@ -19,7 +19,7 @@ use crate::host::world::gpu_context::Textures;
 pub(crate) struct TextureViews {
     pub(crate) gbuffer: GBufferTextureViews,
     pub(crate) hbgi: HbgiTextureViews,
-    pub(crate) gi_blur: GiBlurTextureViews,
+    pub(crate) hbgi_svgf: HbgiSvgfTextureViews,
     pub(crate) reproject: ReprojectTextureViews,
     pub(crate) pyramids: MipPyramidTextureViews,
     pub(crate) sky: wgpu::TextureView,
@@ -30,7 +30,7 @@ impl TextureViews {
     pub fn new(textures: &Textures) -> Self {
         let gbuffer = GBufferTextureViews::new(&textures.gbuffer);
         let hbgi = HbgiTextureViews::new(&textures.hbgi);
-        let gi_blur = GiBlurTextureViews::new(&textures.gi_blur);
+        let hbgi_svgf = HbgiSvgfTextureViews::new(&textures.hbgi_svgf);
         let reproject = ReprojectTextureViews::new(&textures.reproject);
         let pyramids = MipPyramidTextureViews::new(&textures.pyramids);
         let sun_shadow = SunShadowTextureViews::new(&textures.sun_shadow.0);
@@ -43,7 +43,7 @@ impl TextureViews {
         Self {
             gbuffer,
             hbgi,
-            gi_blur,
+            hbgi_svgf,
             reproject,
             pyramids,
             sky,

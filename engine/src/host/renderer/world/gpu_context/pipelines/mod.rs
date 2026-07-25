@@ -1,9 +1,9 @@
 mod deferred_lighting;
 mod g_buffer;
-mod gi_blur;
 mod hbgi;
 mod hbgi_pyramid;
 mod hbgi_reproject;
+mod hbgi_svgf;
 mod post_processing;
 mod skinned_transparent;
 mod skybox;
@@ -12,10 +12,10 @@ mod sun_shadow;
 
 pub(crate) use deferred_lighting::DeferredLightingPipeline;
 pub(crate) use g_buffer::GBufferPipeline;
-pub(crate) use gi_blur::GiBlurPipeline;
 pub(crate) use hbgi::HbgiPipeline;
 pub(crate) use hbgi_pyramid::HbgiPyramidPipelines;
 pub(crate) use hbgi_reproject::HbgiReprojectPipeline;
+pub(crate) use hbgi_svgf::HbgiSvgfPipeline;
 pub(crate) use post_processing::PostProcessingPipeline;
 pub(crate) use skinned_transparent::SkinnedTransparentPipeline;
 pub(crate) use skybox::SkyboxPipeline;
@@ -30,7 +30,7 @@ pub(crate) struct Pipelines {
     pub(crate) g_buffer: GBufferPipeline,
     pub(crate) hbgi: HbgiPipeline,
     pub(crate) hbgi_pyramid: HbgiPyramidPipelines,
-    pub(crate) gi_blur: GiBlurPipeline,
+    pub(crate) hbgi_svgf: HbgiSvgfPipeline,
     pub(crate) deferred_lighting: DeferredLightingPipeline,
     pub(crate) hbgi_reproject: HbgiReprojectPipeline,
     pub(crate) skybox: SkyboxPipeline,
@@ -49,7 +49,7 @@ impl Pipelines {
         let g_buffer = GBufferPipeline::new(wgpu_context, shader_cache, layouts);
         let hbgi = HbgiPipeline::new(wgpu_context, shader_cache, layouts);
         let hbgi_pyramid = HbgiPyramidPipelines::new(wgpu_context, shader_cache, layouts);
-        let gi_blur = GiBlurPipeline::new(wgpu_context, shader_cache, layouts);
+        let hbgi_svgf = HbgiSvgfPipeline::new(wgpu_context, shader_cache, layouts);
         let deferred_lighting = DeferredLightingPipeline::new(wgpu_context, shader_cache, layouts);
         let hbgi_reproject = HbgiReprojectPipeline::new(wgpu_context, shader_cache, layouts);
         let skybox = SkyboxPipeline::new(wgpu_context, shader_cache, layouts);
@@ -64,7 +64,7 @@ impl Pipelines {
             g_buffer,
             hbgi,
             hbgi_pyramid,
-            gi_blur,
+            hbgi_svgf,
             deferred_lighting,
             hbgi_reproject,
             skybox,

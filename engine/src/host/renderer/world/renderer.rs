@@ -15,10 +15,10 @@ use super::{
     gpu_context::HbgiSettingsUniform,
     passes::{
         render_deferred_lighting_pass, render_gbuffer_skinned_opaque_pass,
-        render_gbuffer_static_opaque_pass, render_gi_blur_pass, render_hbgi_pass,
+        render_gbuffer_static_opaque_pass, render_hbgi_pass,
         render_hbgi_pyramid_pass, render_hbgi_reproject_pass, render_post_processing_pass,
-        render_skinned_transparent_pass, render_skybox_pass, render_static_transparent_pass,
-        render_sun_shadow_pass,
+        render_hbgi_svgf_pass, render_skinned_transparent_pass, render_skybox_pass,
+        render_static_transparent_pass, render_sun_shadow_pass,
     },
 };
 
@@ -220,7 +220,7 @@ impl WorldRenderer {
                 .buffers
                 .update_hbgi_reproject_settings(prev_inverse_view_proj, queue);
             render_hbgi_reproject_pass(encoder, &self.gpu_context);
-            render_gi_blur_pass(encoder, &self.gpu_context);
+            render_hbgi_svgf_pass(encoder, &self.gpu_context, wgpu_context);
             self.hbgi_reproject_valid = true;
         } else {
             let _clear_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -253,7 +253,7 @@ impl WorldRenderer {
                         },
                     }),
                     Some(wgpu::RenderPassColorAttachment {
-                        view: &self.gpu_context.descriptors.texture_views.gi_blur.bent_ao,
+                        view: &self.gpu_context.descriptors.texture_views.hbgi_svgf.bent_ao_a,
                         resolve_target: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Clear(wgpu::Color {
@@ -270,8 +270,8 @@ impl WorldRenderer {
                             .gpu_context
                             .descriptors
                             .texture_views
-                            .gi_blur
-                            .near_field_irradiance,
+                            .hbgi_svgf
+                            .irradiance_variance_a,
                         resolve_target: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),

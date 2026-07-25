@@ -28,11 +28,18 @@ struct HbgiReprojectUniform {
     prev_inverse_view_proj: [[f32; 4]; 4],
 }
 
+#[repr(C)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+struct HbgiSvgfUniform {
+    params: [u32; 4],
+}
+
 pub(crate) struct Buffers {
     pub bones: RWBuffer,
     pub camera: CameraBuffers,
     pub hbgi_settings: wgpu::Buffer,
     pub hbgi_reproject_settings: wgpu::Buffer,
+    pub hbgi_svgf_settings: wgpu::Buffer,
     pub fullscreen_quad_indices: wgpu::Buffer,
     pub skinned_instances: RWBuffer,
     pub static_instances: wgpu::Buffer,
@@ -77,6 +84,13 @@ impl Buffers {
                 }),
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             });
+        let hbgi_svgf_settings = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("HBGI SVGF Settings Buffer"),
+            contents: bytemuck::bytes_of(&HbgiSvgfUniform {
+                params: [1, 1, 0, 0],
+            }),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
         let fullscreen_quad_indices =
             device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("Fullscreen Quad Index Buffer"),
@@ -111,6 +125,7 @@ impl Buffers {
             camera,
             hbgi_settings,
             hbgi_reproject_settings,
+            hbgi_svgf_settings,
             fullscreen_quad_indices,
             skinned_instances,
             static_instances,
@@ -135,5 +150,12 @@ impl Buffers {
             0,
             bytemuck::bytes_of(&uniform),
         );
+    }
+
+    pub fn update_hbgi_svgf_settings(&self, pass_index: u32, queue: &wgpu::Queue) {
+        let uniform = HbgiSvgfUniform {
+            params: [1u32 << pass_index, u32::from(pass_index == 0), 0, 0],
+        };
+        queue.write_buffer(&self.hbgi_svgf_settings, 0, bytemuck::bytes_of(&uniform));
     }
 }

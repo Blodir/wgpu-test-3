@@ -1,16 +1,16 @@
 use crate::{
-    global_paths::SHADER_GI_BLUR_WGSL,
+    global_paths::SHADER_HBGI_SVGF_WGSL,
     host::{
         renderer::world::gpu_context::BGLayouts, shader_cache::ShaderCache,
         wgpu_context::WgpuContext,
     },
 };
 
-pub(crate) struct GiBlurPipeline {
+pub(crate) struct HbgiSvgfPipeline {
     pub(crate) render_pipeline: wgpu::RenderPipeline,
 }
 
-impl GiBlurPipeline {
+impl HbgiSvgfPipeline {
     pub(crate) fn new(
         wgpu_context: &WgpuContext,
         shader_cache: &mut ShaderCache,
@@ -20,16 +20,20 @@ impl GiBlurPipeline {
             wgpu_context
                 .device
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                    label: Some("GI Blur Pipeline Layout"),
-                    bind_group_layouts: &[&layouts.gi_blur, &layouts.camera],
+                    label: Some("HBGI SVGF Pipeline Layout"),
+                    bind_group_layouts: &[
+                        &layouts.hbgi_svgf_inputs,
+                        &layouts.camera,
+                        &layouts.hbgi_svgf_settings,
+                    ],
                     push_constant_ranges: &[],
                 });
-        let shader_module = shader_cache.get(SHADER_GI_BLUR_WGSL.to_string(), wgpu_context);
+        let shader_module = shader_cache.get(SHADER_HBGI_SVGF_WGSL.to_string(), wgpu_context);
         let render_pipeline =
             wgpu_context
                 .device
                 .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                    label: Some("GI Blur Pipeline"),
+                    label: Some("HBGI SVGF Pipeline"),
                     layout: Some(&render_pipeline_layout),
                     vertex: wgpu::VertexState {
                         module: &shader_module,
@@ -43,12 +47,12 @@ impl GiBlurPipeline {
                         targets: &[
                             Some(wgpu::ColorTargetState {
                                 format: wgpu::TextureFormat::Rgba16Float,
-                                blend: None,
+                                blend: Some(wgpu::BlendState::REPLACE),
                                 write_mask: wgpu::ColorWrites::ALL,
                             }),
                             Some(wgpu::ColorTargetState {
                                 format: wgpu::TextureFormat::Rgba16Float,
-                                blend: None,
+                                blend: Some(wgpu::BlendState::REPLACE),
                                 write_mask: wgpu::ColorWrites::ALL,
                             }),
                         ],
