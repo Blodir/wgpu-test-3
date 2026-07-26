@@ -4,7 +4,9 @@ use glam::{Mat4, Quat, Vec3};
 
 use crate::{
     host::{
-        utils::lerpf32, wgpu_context::WgpuContext, world::{gpu_context::CameraBuffers, prepare::sun_shadow::SUN_SHADOW_MAX_CASCADE_COUNT}
+        utils::lerpf32,
+        wgpu_context::WgpuContext,
+        world::{gpu_context::CameraBuffers, prepare::sun_shadow::SUN_SHADOW_MAX_CASCADE_COUNT},
     },
     var_snapshot::CameraSnapshotPair,
 };
@@ -37,10 +39,22 @@ fn reverse_z_perspective_rh(fovy: f32, aspect: f32, znear: f32, zfar: f32) -> Ma
     let r = znear / (zfar - znear);
 
     Mat4::from_cols_array(&[
-        w, 0.0, 0.0, 0.0,
-        0.0, h, 0.0, 0.0,
-        0.0, 0.0, r, -1.0,
-        0.0, 0.0, r * zfar, 0.0,
+        w,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        h,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        r,
+        -1.0,
+        0.0,
+        0.0,
+        r * zfar,
+        0.0,
     ])
 }
 

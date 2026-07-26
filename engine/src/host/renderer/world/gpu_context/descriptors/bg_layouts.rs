@@ -2,8 +2,8 @@ use super::bind_groups::{
     BonesBindGroups, CameraBindGroup, DeferredLightingGBufferBindGroup,
     DeferredLightingHbgiBindGroup, HbgiInputsBindGroup, HbgiPyramidBindGroups,
     HbgiReprojectInputsBindGroup, HbgiReprojectSettingsBindGroup, HbgiSettingsBindGroup,
-    HbgiSvgfInputsBindGroup, HbgiSvgfSettingsBindGroup, InstanceStorageBindGroup,
-    LightsBindGroup, PostProcessingBindGroup, SunShadowMatrixBindGroup,
+    HbgiSvgfInputsBindGroup, HbgiSvgfSettingsBindGroup, InstanceStorageBindGroup, LightsBindGroup,
+    PostProcessingBindGroup, SunShadowMatrixBindGroup,
 };
 use crate::host::renderer::world::external::MaterialBindGroup;
 use crate::host::wgpu_context::WgpuContext;

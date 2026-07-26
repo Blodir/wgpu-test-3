@@ -29,7 +29,13 @@ use crate::{
     },
 };
 
+pub(crate) struct External {
+    pub(crate) brdf_lut: TextureRenderId,
+    pub(crate) blue_noise: TextureRenderId,
+}
+
 pub(crate) struct WorldGpuContext {
+    pub(crate) external: External,
     pub(crate) resources: Resources,
     pub(crate) descriptors: Descriptors,
     pub(crate) pipelines: Pipelines,
@@ -40,7 +46,7 @@ impl WorldGpuContext {
         shader_cache: &mut ShaderCache,
         render_resources: &RenderAssetStore,
         placeholders: &PlaceholderTextureIds,
-        brdf_lut: TextureRenderId,
+        external: External,
         hbgi_options: Option<&HbgiOptions>,
     ) -> Self {
         let hbgi_settings =
@@ -56,7 +62,8 @@ impl WorldGpuContext {
         let textures = &render_resources.textures;
         let prefiltered = textures.get(placeholders.prefiltered.into()).unwrap();
         let di = textures.get(placeholders.di.into()).unwrap();
-        let brdf = textures.get(brdf_lut.into()).unwrap();
+        let brdf = textures.get(external.brdf_lut.into()).unwrap();
+        let blue_noise = textures.get(external.blue_noise.into()).unwrap();
 
         let bind_groups = BindGroups {
             bones: BonesBindGroups::new(
@@ -77,6 +84,7 @@ impl WorldGpuContext {
                 &texture_views.pyramids,
                 &resources.samplers.hbgi_pyramid_downsample,
                 &resources.samplers.hbgi_pyramid_downsample,
+                &blue_noise.texture_view,
                 &bind_group_layouts.hbgi_inputs,
                 device,
             ),
@@ -192,19 +200,25 @@ impl WorldGpuContext {
         let pipelines = Pipelines::new(wgpu_context, shader_cache, &descriptors.bind_group_layouts);
 
         Self {
+            external,
             resources,
             descriptors,
             pipelines,
         }
     }
 
-    fn rebuild_surface_bind_groups(&mut self, device: &wgpu::Device) {
+    fn rebuild_surface_bind_groups(
+        &mut self,
+        blue_noise_view: &wgpu::TextureView,
+        device: &wgpu::Device,
+    ) {
         self.descriptors.bind_groups.hbgi = HbgiBindGroups::new(
             &self.resources.buffers.hbgi_settings,
             &self.descriptors.bind_group_layouts.hbgi_settings,
             &self.descriptors.texture_views.pyramids,
             &self.resources.samplers.hbgi_pyramid_downsample,
             &self.resources.samplers.hbgi_pyramid_downsample,
+            blue_noise_view,
             &self.descriptors.bind_group_layouts.hbgi_inputs,
             device,
         );
@@ -218,7 +232,11 @@ impl WorldGpuContext {
             &self.descriptors.texture_views.gbuffer.depth,
             &self.descriptors.texture_views.hbgi_svgf.bent_ao_a,
             &self.resources.samplers.linear,
-            &self.descriptors.texture_views.hbgi_svgf.irradiance_variance_a,
+            &self
+                .descriptors
+                .texture_views
+                .hbgi_svgf
+                .irradiance_variance_a,
             &self.resources.samplers.linear,
             &self.descriptors.bind_group_layouts,
             device,
@@ -326,7 +344,6 @@ impl WorldGpuContext {
         environment_map: Option<(TextureRenderId, TextureRenderId)>,
         render_resources: &RenderAssetStore,
         placeholders: &PlaceholderTextureIds,
-        brdf_lut: TextureRenderId,
         wgpu_context: &WgpuContext,
     ) {
         self.resources
@@ -347,7 +364,7 @@ impl WorldGpuContext {
         let textures = &render_resources.textures;
         let prefiltered = textures.get(prefiltered_id.into()).unwrap();
         let di = textures.get(di_id.into()).unwrap();
-        let brdf = textures.get(brdf_lut.into()).unwrap();
+        let brdf = textures.get(self.external.brdf_lut.into()).unwrap();
         self.descriptors.bind_groups.lights = LightsBindGroup::new(
             &self.resources.buffers.lights,
             &prefiltered.texture_view,
@@ -381,9 +398,17 @@ impl WorldGpuContext {
                 .depth_history
                 .get_write_view(&self.resources.textures.reproject.depth_history),
             &self.descriptors.texture_views.hbgi_svgf.bent_ao_a,
-            &self.descriptors.texture_views.hbgi_svgf.irradiance_variance_a,
+            &self
+                .descriptors
+                .texture_views
+                .hbgi_svgf
+                .irradiance_variance_a,
             &self.descriptors.texture_views.hbgi_svgf.bent_ao_b,
-            &self.descriptors.texture_views.hbgi_svgf.irradiance_variance_b,
+            &self
+                .descriptors
+                .texture_views
+                .hbgi_svgf
+                .irradiance_variance_b,
             &self.descriptors.texture_views.gbuffer.normal_roughness,
             &self.resources.buffers.hbgi_svgf_settings,
             &self.descriptors.bind_group_layouts,
@@ -433,7 +458,11 @@ impl WorldGpuContext {
         self.refresh_temporal_bind_groups(device);
     }
 
-    pub(crate) fn resize(&mut self, wgpu_context: &WgpuContext) {
+    pub(crate) fn resize(
+        &mut self,
+        wgpu_context: &WgpuContext,
+        render_resources: &RenderAssetStore,
+    ) {
         let new_textures = Textures::new(wgpu_context, &wgpu_context.surface_config);
         self.resources.textures.gbuffer = new_textures.gbuffer;
         self.resources.textures.hbgi = new_textures.hbgi;
@@ -444,6 +473,10 @@ impl WorldGpuContext {
         self.resources.textures.lighting_target = new_textures.lighting_target;
 
         self.descriptors.texture_views = TextureViews::new(&self.resources.textures);
-        self.rebuild_surface_bind_groups(&wgpu_context.device);
+        let blue_noise = render_resources
+            .textures
+            .get(self.external.blue_noise.into())
+            .unwrap();
+        self.rebuild_surface_bind_groups(&blue_noise.texture_view, &wgpu_context.device);
     }
 }

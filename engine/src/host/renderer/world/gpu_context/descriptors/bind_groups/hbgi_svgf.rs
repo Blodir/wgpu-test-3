@@ -189,11 +189,8 @@ impl HbgiSvgfBindGroups {
             &layouts.hbgi_svgf_inputs,
             device,
         );
-        let settings = HbgiSvgfSettingsBindGroup::new(
-            settings_buffer,
-            &layouts.hbgi_svgf_settings,
-            device,
-        );
+        let settings =
+            HbgiSvgfSettingsBindGroup::new(settings_buffer, &layouts.hbgi_svgf_settings, device);
         Self {
             initial,
             history_a,

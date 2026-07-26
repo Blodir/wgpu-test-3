@@ -6,7 +6,7 @@ use super::super::sampler_cache::SamplerCache;
 use super::super::shader_cache::ShaderCache;
 use super::anim_pose_store::AnimPoseStore;
 use super::external::MaterialBindGroup;
-use super::gpu_context::WorldGpuContext;
+use super::gpu_context::{External, WorldGpuContext};
 use super::instance_links::SnapshotInstanceLinks;
 use super::prepare::camera::prepare_camera;
 use super::prepare::mesh::{resolve_skinned_draw, PassDrawContext};
@@ -15,10 +15,10 @@ use super::{
     gpu_context::HbgiSettingsUniform,
     passes::{
         render_deferred_lighting_pass, render_gbuffer_skinned_opaque_pass,
-        render_gbuffer_static_opaque_pass, render_hbgi_pass,
-        render_hbgi_pyramid_pass, render_hbgi_reproject_pass, render_post_processing_pass,
-        render_hbgi_svgf_pass, render_skinned_transparent_pass, render_skybox_pass,
-        render_static_transparent_pass, render_sun_shadow_pass,
+        render_gbuffer_static_opaque_pass, render_hbgi_pass, render_hbgi_pyramid_pass,
+        render_hbgi_reproject_pass, render_hbgi_svgf_pass, render_post_processing_pass,
+        render_skinned_transparent_pass, render_skybox_pass, render_static_transparent_pass,
+        render_sun_shadow_pass,
     },
 };
 
@@ -43,7 +43,6 @@ pub struct WorldRenderer {
     hbgi_options: Option<HbgiOptions>,
     hbgi_reproject_valid: bool,
     placeholders: PlaceholderTextureIds,
-    brdf_lut: TextureRenderId,
     skinned_instance_links: SnapshotInstanceLinks,
     static_instance_links: SnapshotInstanceLinks,
     pose_storage: AnimPoseStore,
@@ -202,7 +201,6 @@ impl WorldRenderer {
             environment_map,
             render_resources,
             &self.placeholders,
-            self.brdf_lut,
             wgpu_context,
         );
         if !self.hbgi_reproject_valid {
@@ -253,7 +251,12 @@ impl WorldRenderer {
                         },
                     }),
                     Some(wgpu::RenderPassColorAttachment {
-                        view: &self.gpu_context.descriptors.texture_views.hbgi_svgf.bent_ao_a,
+                        view: &self
+                            .gpu_context
+                            .descriptors
+                            .texture_views
+                            .hbgi_svgf
+                            .bent_ao_a,
                         resolve_target: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Clear(wgpu::Color {
@@ -293,6 +296,7 @@ impl WorldRenderer {
         wgpu_context: &WgpuContext,
         placeholders: PlaceholderTextureIds,
         brdf_lut: TextureRenderId,
+        blue_noise: TextureRenderId,
         shader_cache: &mut ShaderCache,
         render_resources: &RenderAssetStore,
         options: RendererOptions,
@@ -305,7 +309,10 @@ impl WorldRenderer {
             shader_cache,
             render_resources,
             &placeholders,
-            brdf_lut,
+            External {
+                brdf_lut,
+                blue_noise,
+            },
             hbgi_options.as_ref(),
         );
         let pose_storage = AnimPoseStore::new();
@@ -317,7 +324,6 @@ impl WorldRenderer {
             skinned_instance_links,
             static_instance_links,
             placeholders,
-            brdf_lut,
             pose_storage,
             prev_motion_view_proj: None,
         }
@@ -484,8 +490,8 @@ impl WorldRenderer {
         self.prev_motion_view_proj = Some(prepared_camera.view_proj);
     }
 
-    pub fn resize(&mut self, wgpu_context: &WgpuContext) {
-        self.gpu_context.resize(wgpu_context);
+    pub fn resize(&mut self, wgpu_context: &WgpuContext, render_resources: &RenderAssetStore) {
+        self.gpu_context.resize(wgpu_context, render_resources);
         self.hbgi_reproject_valid = false;
         self.prev_motion_view_proj = None;
     }

@@ -17,8 +17,14 @@ impl HbgiSvgfTextureViews {
         };
 
         Self {
-            bent_ao_a: make_view(&textures.bent_ao_a, "HBGI SVGF: Bent Normal + AO Texture View A"),
-            bent_ao_b: make_view(&textures.bent_ao_b, "HBGI SVGF: Bent Normal + AO Texture View B"),
+            bent_ao_a: make_view(
+                &textures.bent_ao_a,
+                "HBGI SVGF: Bent Normal + AO Texture View A",
+            ),
+            bent_ao_b: make_view(
+                &textures.bent_ao_b,
+                "HBGI SVGF: Bent Normal + AO Texture View B",
+            ),
             irradiance_variance_a: make_view(
                 &textures.irradiance_variance_a,
                 "HBGI SVGF: Irradiance + Variance Texture View A",

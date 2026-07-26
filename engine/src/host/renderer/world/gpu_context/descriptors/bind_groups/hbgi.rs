@@ -12,6 +12,7 @@ impl HbgiBindGroups {
         mip_texture_views: &MipPyramidTextureViews,
         hbgi_sampler: &wgpu::Sampler,
         normal_sampler: &wgpu::Sampler,
+        blue_noise_view: &wgpu::TextureView,
         hbgi_inputs_layout: &wgpu::BindGroupLayout,
         device: &wgpu::Device,
     ) -> Self {
@@ -21,6 +22,7 @@ impl HbgiBindGroups {
             mip_texture_views,
             hbgi_sampler,
             normal_sampler,
+            blue_noise_view,
             hbgi_inputs_layout,
             device,
         );

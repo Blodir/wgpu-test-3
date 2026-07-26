@@ -32,6 +32,7 @@ fn resize<S, C>(
     physical_size: PhysicalSize<u32>,
     wgpu_context: &mut WgpuContext,
     renderer: &mut Renderer<S, C>,
+    render_resources: &RenderAssetStore,
 ) {
     if physical_size.width > 0 && physical_size.height > 0 {
         wgpu_context.surface_config.width = physical_size.width;
@@ -39,7 +40,7 @@ fn resize<S, C>(
         wgpu_context
             .surface
             .configure(&wgpu_context.device, &wgpu_context.surface_config);
-        renderer.resize(wgpu_context);
+        renderer.resize(wgpu_context, render_resources);
     }
 }
 
@@ -107,10 +108,12 @@ where
         let mut render_resources = RenderAssetStore::new();
         let placeholders = render_resources.initialize_placeholders(&wgpu_context);
         let brdf_lut = render_resources.initialize_brdf_lut(&wgpu_context);
+        let blue_noise = render_resources.initialize_blue_noise(&wgpu_context);
         let renderer = Renderer::new(
             &wgpu_context,
             placeholders,
             brdf_lut,
+            blue_noise,
             &render_resources,
             wgpu_context.renderer_options,
             self.build_ui_fn,
@@ -192,7 +195,12 @@ where
             WindowEvent::Resized(physical_size) => {
                 if let Some(ref mut render_context) = self.render_context {
                     let wgpu_context = &mut render_context.wgpu_context;
-                    resize(physical_size, wgpu_context, &mut render_context.renderer);
+                    resize(
+                        physical_size,
+                        wgpu_context,
+                        &mut render_context.renderer,
+                        &render_context.render_resources,
+                    );
                     let aspect = wgpu_context.surface_config.width as f32
                         / wgpu_context.surface_config.height as f32;
                     self.sim_inputs.push(InputEvent::AspectChange(aspect));
@@ -202,7 +210,12 @@ where
                 if let Some(ref mut render_context) = self.render_context {
                     let wgpu_context = &mut render_context.wgpu_context;
                     let new_size = wgpu_context.window.inner_size();
-                    resize(new_size, wgpu_context, &mut render_context.renderer);
+                    resize(
+                        new_size,
+                        wgpu_context,
+                        &mut render_context.renderer,
+                        &render_context.render_resources,
+                    );
                     let aspect = wgpu_context.surface_config.width as f32
                         / wgpu_context.surface_config.height as f32;
                     self.sim_inputs.push(InputEvent::AspectChange(aspect));

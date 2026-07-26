@@ -7,6 +7,7 @@
 @group(1) @binding(2) var hbgi_depth_pyramid_texture: texture_2d<f32>;
 @group(1) @binding(3) var hbgi_normal_pyramid_texture: texture_2d<f32>;
 @group(1) @binding(4) var hbgi_normal_pyramid_sampler: sampler;
+@group(1) @binding(5) var hbgi_blue_noise_texture: texture_2d<f32>;
 
 struct HbgiSettingsUniform {
     params0: vec4<f32>,
@@ -86,6 +87,15 @@ fn sanitize_rgb(v: vec3f) -> vec3f {
 // https://blog.demofox.org/2022/01/01/interleaved-gradient-noise-a-different-kind-of-low-discrepancy-sequence
 fn gradient_noise(position: vec2f) -> f32 {
     return fract(52.9829189 * fract(dot(position, vec2f(0.06711056, 0.00583715))));
+}
+
+fn sample_blue_noise(pixel_coords: vec2u) -> vec2f {
+    let noise_dims = textureDimensions(hbgi_blue_noise_texture, 0);
+    let noise_coord = vec2u(
+        pixel_coords.x % noise_dims.x,
+        pixel_coords.y % noise_dims.y
+    );
+    return textureLoad(hbgi_blue_noise_texture, vec2i(noise_coord), 0).rg;
 }
 
 fn fast_acos(x: f32) -> f32 {
@@ -204,11 +214,18 @@ fn shbgi(in: VertexOutput) -> FragmentOutput {
     let dims = vec2<f32>(dims_u);
     let max_hbgi_pyramid_lod = f32(textureNumLevels(hbgi_pyramid_texture) - 1u);
 
+    let pixel_coords = vec2u(floor(uv * dims));
+    let spatial_noise = sample_blue_noise(pixel_coords);
+    let rotation_jitter = fract(temporal_rotation + spatial_noise.x);
+    let offset_jitter = fract(temporal_offset + spatial_noise.y);
+
+    /*
     let spatial_noise = gradient_noise(uv * dims);
     let spatial_rotation = spatial_noise;
     let spatial_offset = spatial_noise;
     let rotation_jitter = fract(temporal_rotation + spatial_rotation);
     let offset_jitter = fract(temporal_offset + spatial_offset);
+    */
 
     let max_step_dist = radius_pixels / dims;
 

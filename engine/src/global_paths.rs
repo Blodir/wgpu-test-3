@@ -30,3 +30,4 @@ pub const SHADER_HBGI_REPROJECT_WGSL: &str =
 pub const ENV_MAP_PREFILTERED_DDS: &str = "assets/kloofendal_overcast_puresky_8k.prefiltered.dds";
 pub const ENV_MAP_DI_DDS: &str = "assets/kloofendal_overcast_puresky_8k.di.dds";
 pub const BRDF_LUT_PNG: &str = "assets/brdf_lut.png";
+pub const BLUE_NOISE_PNG: &str = "assets/LDR_RG01_0.png";

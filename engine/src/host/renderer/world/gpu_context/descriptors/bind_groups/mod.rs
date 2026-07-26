@@ -11,8 +11,8 @@ pub mod hbgi_pyramid;
 pub mod hbgi_reproject;
 pub mod hbgi_reproject_inputs;
 pub mod hbgi_reproject_settings;
-pub mod hbgi_svgf;
 pub mod hbgi_settings;
+pub mod hbgi_svgf;
 pub mod instance_storage;
 pub mod lights;
 pub mod post_processing;
@@ -29,8 +29,10 @@ pub(crate) use hbgi_pyramid::HbgiPyramidBindGroups;
 pub(crate) use hbgi_reproject::HbgiReprojectBindGroups;
 pub(crate) use hbgi_reproject_inputs::HbgiReprojectInputsBindGroup;
 pub(crate) use hbgi_reproject_settings::HbgiReprojectSettingsBindGroup;
-pub(crate) use hbgi_svgf::{HbgiSvgfBindGroups, HbgiSvgfInputsBindGroup, HbgiSvgfSettingsBindGroup};
 pub(crate) use hbgi_settings::{HbgiSettingsBindGroup, HbgiSettingsUniform};
+pub(crate) use hbgi_svgf::{
+    HbgiSvgfBindGroups, HbgiSvgfInputsBindGroup, HbgiSvgfSettingsBindGroup,
+};
 pub(crate) use instance_storage::InstanceStorageBindGroup;
 pub(crate) use lights::LightsBindGroup;
 pub(crate) use post_processing::PostProcessingBindGroup;

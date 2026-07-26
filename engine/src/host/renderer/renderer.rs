@@ -96,6 +96,7 @@ impl<S, C> Renderer<S, C> {
         wgpu_context: &WgpuContext,
         placeholders: PlaceholderTextureIds,
         brdf_lut: TextureRenderId,
+        blue_noise: TextureRenderId,
         render_resources: &RenderAssetStore,
         options: RendererOptions,
         build_ui_fn: BuildUiFn<S, C>,
@@ -106,6 +107,7 @@ impl<S, C> Renderer<S, C> {
             wgpu_context,
             placeholders,
             brdf_lut,
+            blue_noise,
             &mut shader_cache,
             render_resources,
             options,
@@ -196,8 +198,8 @@ impl<S, C> Renderer<S, C> {
         Ok(())
     }
 
-    pub fn resize(&mut self, wgpu_context: &WgpuContext) {
-        self.world_renderer.resize(wgpu_context);
+    pub fn resize(&mut self, wgpu_context: &WgpuContext, render_resources: &RenderAssetStore) {
+        self.world_renderer.resize(wgpu_context, render_resources);
         self.gui_renderer.resize(wgpu_context);
     }
 

@@ -47,6 +47,16 @@ impl HbgiInputsBindGroup {
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 5,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
             ],
             label: Some("HBGI Inputs Bind Group Layout"),
         }
@@ -56,6 +66,7 @@ impl HbgiInputsBindGroup {
         texture_views: &MipPyramidTextureViews,
         hbgi_sampler: &wgpu::Sampler,
         normal_sampler: &wgpu::Sampler,
+        blue_noise_view: &wgpu::TextureView,
         layout: &wgpu::BindGroupLayout,
         device: &wgpu::Device,
     ) -> wgpu::BindGroup {
@@ -84,6 +95,10 @@ impl HbgiInputsBindGroup {
                     binding: 4,
                     resource: wgpu::BindingResource::Sampler(normal_sampler),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: wgpu::BindingResource::TextureView(blue_noise_view),
+                },
             ],
             label: Some("HBGI Inputs Bind Group"),
         })
@@ -93,6 +108,7 @@ impl HbgiInputsBindGroup {
         texture_views: &MipPyramidTextureViews,
         hbgi_sampler: &wgpu::Sampler,
         normal_sampler: &wgpu::Sampler,
+        blue_noise_view: &wgpu::TextureView,
         layout: &wgpu::BindGroupLayout,
         device: &wgpu::Device,
     ) -> Self {
@@ -100,6 +116,7 @@ impl HbgiInputsBindGroup {
             texture_views,
             hbgi_sampler,
             normal_sampler,
+            blue_noise_view,
             layout,
             device,
         ))

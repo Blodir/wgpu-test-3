@@ -1,7 +1,7 @@
 use std::ops::Range;
 use std::sync::Arc;
 
-use crate::global_paths::BRDF_LUT_PNG;
+use crate::global_paths::{BLUE_NOISE_PNG, BRDF_LUT_PNG};
 use crate::host::{
     assets::{io::asset_formats::rigfile::Rig, texture::TextureLoadData},
     renderer::world::external::MaterialBindGroup,
@@ -375,10 +375,27 @@ impl RenderAssetStore {
     }
 
     pub fn initialize_brdf_lut(&mut self, wgpu_context: &WgpuContext) -> TextureRenderId {
-        let bytes = std::fs::read(BRDF_LUT_PNG)
-            .unwrap_or_else(|_| panic!("Failed to read BRDF LUT at path: {}", BRDF_LUT_PNG));
+        self.initialize_png_texture(BRDF_LUT_PNG, wgpu::TextureFormat::Rgba8Unorm, wgpu_context)
+    }
+
+    pub fn initialize_blue_noise(&mut self, wgpu_context: &WgpuContext) -> TextureRenderId {
+        self.initialize_png_texture(
+            BLUE_NOISE_PNG,
+            wgpu::TextureFormat::Rgba8Unorm,
+            wgpu_context,
+        )
+    }
+
+    fn initialize_png_texture(
+        &mut self,
+        path: &str,
+        format: wgpu::TextureFormat,
+        wgpu_context: &WgpuContext,
+    ) -> TextureRenderId {
+        let bytes = std::fs::read(path)
+            .unwrap_or_else(|_| panic!("Failed to read texture at path: {path}"));
         let img = image::load_from_memory(&bytes)
-            .unwrap_or_else(|_| panic!("Failed to decode BRDF LUT at path: {}", BRDF_LUT_PNG))
+            .unwrap_or_else(|_| panic!("Failed to decode texture at path: {path}"))
             .to_rgba8();
         let (width, height) = img.dimensions();
         let texture = upload_texture(
@@ -388,7 +405,7 @@ impl RenderAssetStore {
                 base_height: height,
                 mips: 1,
                 layers: 1,
-                format: wgpu::TextureFormat::Rgba8Unorm,
+                format,
             },
             wgpu_context,
         );

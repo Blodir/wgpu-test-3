@@ -26,9 +26,9 @@ struct FragmentOutput {
 const MIN_VARIANCE: f32 = 1e-4;
 const KERNEL: array<f32, 5> = array<f32, 5>(1.0 / 16.0, 1.0 / 4.0, 3.0 / 8.0, 1.0 / 4.0, 1.0 / 16.0);
 const GAUSSIAN_3X3: array<f32, 3> = array<f32, 3>(1.0 / 4.0, 1.0 / 2.0, 1.0 / 4.0);
-const SIGMA_Z: f32 = 1.0;
-const SIGMA_N: f32 = 128.0;
-const SIGMA_L: f32 = 4.0;
+const SIGMA_Z: f32 = 0.5; // Paper: 1.0
+const SIGMA_N: f32 = 128.0; // Paper: 128.0
+const SIGMA_L: f32 = 4.0; // Paper: 4.0
 
 fn safe_normalize3(v: vec3f) -> vec3f {
     let len = length(v);
@@ -83,10 +83,10 @@ fn prefiltered_variance_3x3(
     center_coords: vec2i,
     center_linear_depth: f32,
     center_normal: vec3f,
-    history_dims_u: vec2u,
-    history_max_coord: vec2i,
+    half_dims_u: vec2u,
+    half_max_coords: vec2i,
     full_dims: vec2f,
-    full_max_coord: vec2i,
+    full_max_coords: vec2i,
     first_pass: bool,
 ) -> f32 {
     var variance_acc = 0.0;
@@ -94,7 +94,7 @@ fn prefiltered_variance_3x3(
 
     for (var y: i32 = -1; y <= 1; y += 1) {
         for (var x: i32 = -1; x <= 1; x += 1) {
-            let neighbor_coords = clamp_coord(center_coords + vec2i(x, y), history_max_coord);
+            let neighbor_coords = clamp_coord(center_coords + vec2i(x, y), half_max_coords);
             let neighbor_depth_moments = textureLoad(depth_history_texture, neighbor_coords, 0);
             if (neighbor_depth_moments.x <= 0.0) {
                 continue;
@@ -105,12 +105,12 @@ fn prefiltered_variance_3x3(
                 neighbor_coords,
                 0
             );
-            let neighbor_uv = sample_half_res_uv(neighbor_coords, vec2i(history_dims_u));
-            let neighbor_full_coord = clamp_coord(
+            let neighbor_uv = sample_half_res_uv(neighbor_coords, vec2i(half_dims_u));
+            let neighbor_full_coords = clamp_coord(
                 vec2i(neighbor_uv * full_dims),
-                full_max_coord
+                full_max_coords
             );
-            let neighbor_normal = textureLoad(current_normal_texture, neighbor_full_coord, 0).xyz;
+            let neighbor_normal = textureLoad(current_normal_texture, neighbor_full_coords, 0).xyz;
             let neighbor_world_position = reconstruct_world_position_from_depth(
                 neighbor_uv,
                 neighbor_depth_moments.x
@@ -159,43 +159,44 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
 
 @fragment
 fn fs_main(in: VertexOutput) -> FragmentOutput {
+    let center_uv = in.tex_coords;
+
     let full_dims_u = textureDimensions(current_normal_texture);
     let full_dims = vec2f(full_dims_u);
-    let full_max_coord = vec2i(full_dims_u) - vec2i(1);
-    let full_coord = clamp_coord(vec2i(in.tex_coords * full_dims), full_max_coord);
+    let full_max_coords = vec2i(full_dims_u) - vec2i(1);
+    let center_full_coords = min(vec2i(center_uv * full_dims), full_max_coords);
 
-    let history_dims_u = textureDimensions(depth_history_texture);
-    let history_dims = vec2f(history_dims_u);
-    let history_max_coord = vec2i(history_dims_u) - vec2i(1);
-    let coords = clamp_coord(vec2i(in.tex_coords * history_dims), history_max_coord);
+    let half_dims_u = textureDimensions(depth_history_texture);
+    let half_dims = vec2f(half_dims_u);
+    let half_max_coords = vec2i(half_dims_u) - vec2i(1);
+    let center_half_coords = min(vec2i(center_uv * half_dims), half_max_coords);
 
     let first_pass = hbgi_svgf_settings.params.y != 0u;
     let step = i32(hbgi_svgf_settings.params.x);
 
-    let center_depth_moments = textureLoad(depth_history_texture, coords, 0);
-    let center_irradiance_variance = textureLoad(input_irradiance_variance_texture, coords, 0);
-    let center_bent_ao = textureLoad(input_bent_ao_texture, coords, 0);
+    let center_depth_moments = textureLoad(depth_history_texture, center_half_coords, 0);
+    let center_irradiance_variance = textureLoad(input_irradiance_variance_texture, center_half_coords, 0);
+    let center_bent_ao = textureLoad(input_bent_ao_texture, center_half_coords, 0);
     if (center_depth_moments.x <= 0.0) {
         return FragmentOutput(center_bent_ao, center_irradiance_variance);
     }
 
-    let center_uv = sample_half_res_uv(coords, vec2i(history_dims_u));
     let center_world_position = reconstruct_world_position_from_depth(center_uv, center_depth_moments.x);
     let center_linear_depth = linear_view_depth_from_world_position(center_world_position);
-    let center_normal = textureLoad(current_normal_texture, full_coord, 0).xyz;
+    let center_normal = textureLoad(current_normal_texture, center_full_coords, 0).xyz;
     let center_variance = current_variance(
         center_depth_moments,
         center_irradiance_variance,
         first_pass
     );
     let center_prefiltered_variance = max(prefiltered_variance_3x3(
-        coords,
+        center_half_coords,
         center_linear_depth,
         center_normal,
-        history_dims_u,
-        history_max_coord,
+        half_dims_u,
+        half_max_coords,
         full_dims,
-        full_max_coord,
+        full_max_coords,
         first_pass
     ), center_variance);
 
@@ -214,24 +215,24 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
 
     for (var y: i32 = -2; y <= 2; y += 1) {
         for (var x: i32 = -2; x <= 2; x += 1) {
-            let neighbor_coords = clamp_coord(
-                vec2i(coords.x + x * step, coords.y + y * step),
-                history_max_coord
+            let neighbor_half_coords = clamp_coord(
+                vec2i(center_half_coords.x + x * step, center_half_coords.y + y * step),
+                half_max_coords
             );
-            let neighbor_uv = sample_half_res_uv(neighbor_coords, vec2i(history_dims_u));
-            let neighbor_full_coord = clamp_coord(
+            let neighbor_uv = sample_half_res_uv(neighbor_half_coords, vec2i(half_dims_u));
+            let neighbor_full_coords = clamp_coord(
                 vec2i(neighbor_uv * full_dims),
-                full_max_coord
+                full_max_coords
             );
-            let depth_moments = textureLoad(depth_history_texture, neighbor_coords, 0);
+            let depth_moments = textureLoad(depth_history_texture, neighbor_half_coords, 0);
             if (depth_moments.r <= 0.0) {
                 continue;
             }
-            let irradiance_variance = textureLoad(input_irradiance_variance_texture, neighbor_coords, 0);
-            let normal = textureLoad(current_normal_texture, neighbor_full_coord, 0).xyz;
+            let irradiance_variance = textureLoad(input_irradiance_variance_texture, neighbor_half_coords, 0);
+            let normal = textureLoad(current_normal_texture, neighbor_full_coords, 0).xyz;
             let neighbor_world_position = reconstruct_world_position_from_depth(neighbor_uv, depth_moments.x);
             let neighbor_linear_depth = linear_view_depth_from_world_position(neighbor_world_position);
-            let bent_ao = textureLoad(input_bent_ao_texture, neighbor_coords, 0);
+            let bent_ao = textureLoad(input_bent_ao_texture, neighbor_half_coords, 0);
 
             let c_q = irradiance_variance.rgb;
             let var_c_q = irradiance_variance.a;
@@ -241,16 +242,16 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
 
             // 4.4 eq. 3
             let w_z_nom = abs(center_linear_depth - neighbor_linear_depth);
-            let p_minus_q = vec2f(coords - neighbor_coords);
+            let p_minus_q = vec2f(center_half_coords - neighbor_half_coords);
             let w_z_denom = SIGMA_Z * abs(dot(center_depth_gradient, p_minus_q)) + 0.000001;
             let w_z = exp(-1.0 * w_z_nom / w_z_denom);
 
             // 4.4 eq. 4
-            let w_n = pow(max(0.0, dot(center_normal,  normal)), SIGMA_N);
+            let w_n = pow(max(0.0, dot(center_normal, normal)), SIGMA_N);
 
             // 4.4 eq. 5
             let w_l_nom = abs(l_p - l_q);
-            let w_l_denom = SIGMA_L * sqrt(max(center_prefiltered_variance, MIN_VARIANCE)) + 0.000001;
+            let w_l_denom = SIGMA_L * sqrt(max(center_prefiltered_variance, MIN_VARIANCE));
             let w_l = exp(-1.0 * w_l_nom / w_l_denom);
 
             // 4.3 eq. 2

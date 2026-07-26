@@ -30,10 +30,10 @@ struct FragmentOutput {
     @location(3) hbgi_irradiance_reproject: vec4<f32>,
 }
 
-const TEMPORAL_RESPONSE: f32 = 0.2;
+const TEMPORAL_RESPONSE: f32 = 0.1;
 const HISTORY_CLAMP_WEIGHT: f32 = 0.25;
-const SVGF_NORMAL_REJECTION_DOT_THRESHOLD: f32 = 0.95;
-const SVGF_WORLD_DISTANCE_REJECTION_THRESHOLD: f32 = 0.01;
+const SVGF_NORMAL_REJECTION_DOT_THRESHOLD: f32 = 0.9;
+const SVGF_PLANE_DISTANCE_REJECTION_THRESHOLD: f32 = 0.3;
 
 fn safe_normalize3(v: vec3f) -> vec3f {
     let len = length(v);
@@ -117,23 +117,25 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
 */
 @fragment
 fn fs_main(in: VertexOutput) -> FragmentOutput {
+    let curr_uv = in.tex_coords;
+
     // Full resolution texture coordinates
     let full_dims_u = textureDimensions(current_depth_texture);
     let full_dims = vec2f(full_dims_u);
-    let full_max_coord = vec2i(full_dims_u) - vec2i(1);
-    let full_coord = clamp_coord(vec2i(in.tex_coords * full_dims), full_max_coord);
+    let full_max_coords = vec2i(full_dims_u) - vec2i(1);
+    let curr_full_coords = min(vec2i(curr_uv * full_dims), full_max_coords);
 
     // Reduced resolution history texture coordinates
-    let history_dims_u = textureDimensions(curr_bent_ao_texture);
-    let history_dims = vec2f(history_dims_u);
-    let history_max_coord = vec2i(history_dims_u) - vec2i(1);
-    let history_coord = clamp_coord(vec2i(in.tex_coords * history_dims), history_max_coord);
+    let half_dims_u = textureDimensions(curr_bent_ao_texture);
+    let half_dims = vec2f(half_dims_u);
+    let half_max_coords = vec2i(half_dims_u) - vec2i(1);
+    let curr_half_coords = min(vec2i(curr_uv * half_dims), half_max_coords);
 
     // Load current frame textures
-    let curr_depth = textureLoad(current_depth_texture, full_coord, 0);
-    let curr_normal_sample = textureLoad(current_normal_texture, full_coord, 0);
-    let curr_bent_ao = textureLoad(curr_bent_ao_texture, history_coord, 0);
-    let curr_hbgi_irradiance = textureLoad(curr_hbgi_irradiance_texture, history_coord, 0);
+    let curr_depth = textureLoad(current_depth_texture, curr_full_coords, 0);
+    let curr_normal_sample = textureLoad(current_normal_texture, curr_full_coords, 0);
+    let curr_bent_ao = textureLoad(curr_bent_ao_texture, curr_half_coords, 0);
+    let curr_hbgi_irradiance = textureLoad(curr_hbgi_irradiance_texture, curr_half_coords, 0);
 
     // depth gets cleared to zero -> zero indicates an invalid value
     if (curr_depth <= 0.0) {
@@ -146,14 +148,14 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
     }
 
     let curr_world_position = reconstruct_world_position_from_depth(
-        in.tex_coords,
+        curr_uv,
         curr_depth,
         inverse_view_proj
     );
     let curr_normal = normalize(curr_normal_sample.xyz);
 
-    let motion = textureLoad(motion_vectors_texture, full_coord, 0).xy;
-    let prev_uv = in.tex_coords - motion;
+    let motion = textureLoad(motion_vectors_texture, curr_full_coords, 0).xy;
+    let prev_uv = curr_uv - motion;
     if (any(prev_uv < vec2f(0.0)) || any(prev_uv > vec2f(1.0))) {
         return current_frame_output(
             curr_bent_ao,
@@ -162,9 +164,51 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
             curr_normal_sample
         );
     }
-    let prev_coord = clamp_coordf(prev_uv * history_dims, vec2f(history_max_coord));
+
+    // uv points to the middle of a pixel
+    // shift by -0.5 such that we point to the top left of the pixel instead
+    // after motion vectors we land somewhere within some pixel
+    // and we can take the 4 corner points (rather than the centers of pixels as we would if we didn't shift by -0.5)
+    let prev_coord = clamp_coordf(prev_uv * half_dims - vec2f(0.5), vec2f(half_max_coords));
     let prev_coord_floor = floor(prev_coord);
     let prev_coord_frac = fract(prev_coord);
+
+    // -------------------------------- //
+    // TEST: PLANE AND NORMAL REJECTION TESTS APPEAR TO BE WORKING CORRECTLY
+    /*
+    let prev_depth_history = textureLoad(prev_depth_history_texture, vec2i(prev_coord), 0);
+    let prev_depth = prev_depth_history.x;
+    let prev_world_position = reconstruct_world_position_from_depth(
+        prev_uv,
+        prev_depth,
+        hbgi_reproject_settings.prev_inverse_view_proj
+    );
+    let prev_normal = normalize(textureLoad(prev_normal_history_texture, vec2i(prev_coord), 0).xyz);
+
+    let dist_test = distance(prev_world_position, curr_world_position) <= 1.0;
+
+    let delta = prev_world_position - curr_world_position;
+    let plane_distance = abs(dot(curr_normal, delta));
+    let plane_test = plane_distance <= 0.3;
+    let normal_test = dot(curr_normal, prev_normal) >= 0.90;
+
+    if normal_test {
+        return current_frame_output(
+            vec4f(1.0),
+            curr_hbgi_irradiance,
+            curr_depth,
+            curr_normal_sample
+        );
+    } else {
+        return current_frame_output(
+            vec4f(0.0),
+            curr_hbgi_irradiance,
+            curr_depth,
+            curr_normal_sample
+        );
+    }
+    */
+    // -------------------------------- //
 
     // Color clamping (not originally in SVGF)
     var min_curr_hbgi_irradiance = curr_hbgi_irradiance.rgb;
@@ -173,7 +217,7 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
         let offset = array<vec2i, 3>(vec2i(1, 0), vec2i(0, 1), vec2i(1, 1))[sample_idx];
         let curr_hbgi_irradiance_sample = textureLoad(
             curr_hbgi_irradiance_texture,
-            clamp_coord(history_coord + offset, history_max_coord),
+            clamp_coord(curr_half_coords + offset, half_max_coords),
             0
         ).rgb;
         min_curr_hbgi_irradiance = min(min_curr_hbgi_irradiance, curr_hbgi_irradiance_sample);
@@ -184,14 +228,15 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
     // 2x2 tap bilinear filter described by the SVGF paper
     let taps = array(
         vec2i(prev_coord_floor),
-        vec2i(prev_coord_floor) + vec2i(0, 1),
         vec2i(prev_coord_floor) + vec2i(1, 0),
+        vec2i(prev_coord_floor) + vec2i(0, 1),
         vec2i(prev_coord_floor) + vec2i(1, 1),
     );
+
     let tap_weights = array(
         (1.0 - prev_coord_frac.x) * (1.0 - prev_coord_frac.y),
-        (1.0 - prev_coord_frac.x) * prev_coord_frac.y,
         prev_coord_frac.x * (1.0 - prev_coord_frac.y),
+        (1.0 - prev_coord_frac.x) * prev_coord_frac.y,
         prev_coord_frac.x * prev_coord_frac.y,
     );
 
@@ -202,8 +247,9 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
     var prev_second_moment_acc = 0.0;
     var valid_weight_sum = 0.0;
     for (var i = 0; i < 4; i++) {
-        let coords = clamp_coord(taps[i], history_max_coord);
-        let tap_uv = (vec2f(coords) + vec2f(0.5)) / history_dims;
+        let coords = clamp_coord(taps[i], half_max_coords);
+        // again, we want uv to point to the middle of a pixel, so we need to re-add the 0.5 we shifted by earlier
+        let tap_uv = (vec2f(coords) + vec2f(0.5)) / half_dims;
         let tap_weight = tap_weights[i];
 
         let prev_depth_history = textureLoad(prev_depth_history_texture, coords, 0);
@@ -220,10 +266,11 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
 
         // TODO add (sub)Mesh ID
         // Temporal rejection
+        let delta = prev_world_position - curr_world_position;
+        let plane_distance = abs(dot(curr_normal, delta));
         if (
             dot(curr_normal, prev_normal) <= SVGF_NORMAL_REJECTION_DOT_THRESHOLD
-            || distance(curr_world_position, prev_world_position)
-                >= SVGF_WORLD_DISTANCE_REJECTION_THRESHOLD
+            || plane_distance >= SVGF_PLANE_DISTANCE_REJECTION_THRESHOLD
         ) {
             continue;
         }
@@ -252,6 +299,7 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
         prev_second_moment_acc += prev_depth_history.z * tap_weight;
         valid_weight_sum += tap_weight;
     }
+
     if (valid_weight_sum <= 0.0) {
         // TODO SVGF paper describes fallback to 3x3 filter
         return current_frame_output(
@@ -261,6 +309,7 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
             curr_normal_sample
         );
     }
+
     prev_irradiance_acc /= valid_weight_sum;
     prev_bent_normal_acc /= valid_weight_sum;
     prev_ao_acc /= valid_weight_sum;
@@ -277,6 +326,11 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
     let second_moment = mix(prev_second_moment_acc, curr_lum * curr_lum, TEMPORAL_RESPONSE);
 
     // TODO add history length and variance estimate in limited history cases (last paragraph of 4.2)
+
+    /*
+    let prev_ao = textureLoad(prev_bent_ao_reproject_texture, curr_half_coords, 0).a;
+    let test_ao = mix(prev_ao, curr_bent_ao.a, TEMPORAL_RESPONSE);
+    */
 
     return FragmentOutput(
         vec4f(final_bent_normal, final_ao),

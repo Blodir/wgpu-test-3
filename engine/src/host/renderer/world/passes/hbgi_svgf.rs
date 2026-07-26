@@ -19,17 +19,29 @@ pub(crate) fn render_hbgi_svgf_pass(
             0 => (
                 &context.descriptors.bind_groups.hbgi_svgf.initial.0,
                 &context.descriptors.texture_views.hbgi_svgf.bent_ao_a,
-                &context.descriptors.texture_views.hbgi_svgf.irradiance_variance_a,
+                &context
+                    .descriptors
+                    .texture_views
+                    .hbgi_svgf
+                    .irradiance_variance_a,
             ),
             _ if pass_idx % 2 == 1 => (
                 &context.descriptors.bind_groups.hbgi_svgf.history_a.0,
                 &context.descriptors.texture_views.hbgi_svgf.bent_ao_b,
-                &context.descriptors.texture_views.hbgi_svgf.irradiance_variance_b,
+                &context
+                    .descriptors
+                    .texture_views
+                    .hbgi_svgf
+                    .irradiance_variance_b,
             ),
             _ => (
                 &context.descriptors.bind_groups.hbgi_svgf.history_b.0,
                 &context.descriptors.texture_views.hbgi_svgf.bent_ao_a,
-                &context.descriptors.texture_views.hbgi_svgf.irradiance_variance_a,
+                &context
+                    .descriptors
+                    .texture_views
+                    .hbgi_svgf
+                    .irradiance_variance_a,
             ),
         };
 
@@ -66,7 +78,11 @@ pub(crate) fn render_hbgi_svgf_pass(
         render_pass.set_pipeline(&context.pipelines.hbgi_svgf.render_pipeline);
         render_pass.set_bind_group(0, input_bind_group, &[]);
         render_pass.set_bind_group(1, &context.descriptors.bind_groups.camera.0, &[]);
-        render_pass.set_bind_group(2, &context.descriptors.bind_groups.hbgi_svgf.settings.0, &[]);
+        render_pass.set_bind_group(
+            2,
+            &context.descriptors.bind_groups.hbgi_svgf.settings.0,
+            &[],
+        );
         render_pass.set_index_buffer(
             context.resources.buffers.fullscreen_quad_indices.slice(..),
             wgpu::IndexFormat::Uint16,
