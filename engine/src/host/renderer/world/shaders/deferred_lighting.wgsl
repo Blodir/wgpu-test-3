@@ -344,9 +344,9 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
     );
     //return FragmentOutput(vec4f(E_near, 1.0), gi_source);
     //return FragmentOutput(vec4f(vec3f(hbgi_irradiance.w), 1.0), gi_source);
-    //return FragmentOutput(final_color, gi_source);
+    return FragmentOutput(final_color, gi_source);
     //return FragmentOutput(vec4f(hbgi_irradiance.xyz, 1.0), gi_source);
-    return FragmentOutput(vec4f(vec3f(hbgi.w), 1.0), gi_source);
+    //return FragmentOutput(vec4f(vec3f(hbgi.w), 1.0), gi_source);
     //return FragmentOutput(vec4f(hbgi.xyz, 1.0), gi_source);
     //return FragmentOutput(vec4f((hbgi.xyz + 1.0) / 2.0, 1.0), gi_source);
 }

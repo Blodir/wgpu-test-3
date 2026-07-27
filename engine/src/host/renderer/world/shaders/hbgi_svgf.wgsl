@@ -26,9 +26,9 @@ struct FragmentOutput {
 const MIN_VARIANCE: f32 = 1e-4;
 const KERNEL: array<f32, 5> = array<f32, 5>(1.0 / 16.0, 1.0 / 4.0, 3.0 / 8.0, 1.0 / 4.0, 1.0 / 16.0);
 const GAUSSIAN_3X3: array<f32, 3> = array<f32, 3>(1.0 / 4.0, 1.0 / 2.0, 1.0 / 4.0);
-const SIGMA_Z: f32 = 0.5; // Paper: 1.0
-const SIGMA_N: f32 = 128.0; // Paper: 128.0
-const SIGMA_L: f32 = 4.0; // Paper: 4.0
+const SIGMA_Z: f32 = 1.0; // Paper: 1.0
+const SIGMA_N: f32 = 64.0; // Paper: 128.0
+const SIGMA_L: f32 = 32.0; // Paper: 4.0
 
 fn safe_normalize3(v: vec3f) -> vec3f {
     let len = length(v);
@@ -40,6 +40,10 @@ fn safe_normalize3(v: vec3f) -> vec3f {
 
 fn clamp_coord(coord: vec2i, max_coord: vec2i) -> vec2i {
     return clamp(coord, vec2i(0), max_coord);
+}
+
+fn is_offscreen_coord(coord: vec2i, max_coord: vec2i) -> bool {
+    return any(coord < vec2i(0)) || any(coord > max_coord);
 }
 
 fn luminance(rgb: vec3f) -> f32 {
@@ -94,7 +98,11 @@ fn prefiltered_variance_3x3(
 
     for (var y: i32 = -1; y <= 1; y += 1) {
         for (var x: i32 = -1; x <= 1; x += 1) {
-            let neighbor_coords = clamp_coord(center_coords + vec2i(x, y), half_max_coords);
+            let raw_neighbor_coords = center_coords + vec2i(x, y);
+            if (is_offscreen_coord(raw_neighbor_coords, half_max_coords)) {
+                continue;
+            }
+            let neighbor_coords = raw_neighbor_coords;
             let neighbor_depth_moments = textureLoad(depth_history_texture, neighbor_coords, 0);
             if (neighbor_depth_moments.x <= 0.0) {
                 continue;
@@ -159,17 +167,21 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
 
 @fragment
 fn fs_main(in: VertexOutput) -> FragmentOutput {
-    let center_uv = in.tex_coords;
-
-    let full_dims_u = textureDimensions(current_normal_texture);
-    let full_dims = vec2f(full_dims_u);
-    let full_max_coords = vec2i(full_dims_u) - vec2i(1);
-    let center_full_coords = min(vec2i(center_uv * full_dims), full_max_coords);
+    let center_half_uv = in.tex_coords;
 
     let half_dims_u = textureDimensions(depth_history_texture);
     let half_dims = vec2f(half_dims_u);
     let half_max_coords = vec2i(half_dims_u) - vec2i(1);
-    let center_half_coords = min(vec2i(center_uv * half_dims), half_max_coords);
+    let center_half_coords = min(vec2i(center_half_uv * half_dims), half_max_coords);
+
+    let full_dims_u = textureDimensions(current_normal_texture);
+    let full_dims = vec2f(full_dims_u);
+    let full_max_coords = vec2i(full_dims_u) - vec2i(1);
+    let center_full_coords = min(vec2i(center_half_uv * full_dims), full_max_coords);
+
+    // uv points to the center of the pixel ->
+    // the half-uvs and full-uvs refer to slightly different pixel centers
+    let center_full_uv = (vec2f(center_full_coords) + vec2f(0.5)) / full_dims;
 
     let first_pass = hbgi_svgf_settings.params.y != 0u;
     let step = i32(hbgi_svgf_settings.params.x);
@@ -181,7 +193,7 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
         return FragmentOutput(center_bent_ao, center_irradiance_variance);
     }
 
-    let center_world_position = reconstruct_world_position_from_depth(center_uv, center_depth_moments.x);
+    let center_world_position = reconstruct_world_position_from_depth(center_half_uv, center_depth_moments.x);
     let center_linear_depth = linear_view_depth_from_world_position(center_world_position);
     let center_normal = textureLoad(current_normal_texture, center_full_coords, 0).xyz;
     let center_variance = current_variance(
@@ -215,10 +227,14 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
 
     for (var y: i32 = -2; y <= 2; y += 1) {
         for (var x: i32 = -2; x <= 2; x += 1) {
-            let neighbor_half_coords = clamp_coord(
-                vec2i(center_half_coords.x + x * step, center_half_coords.y + y * step),
-                half_max_coords
+            let raw_neighbor_half_coords = vec2i(
+                center_half_coords.x + x * step,
+                center_half_coords.y + y * step
             );
+            if (is_offscreen_coord(raw_neighbor_half_coords, half_max_coords)) {
+                continue;
+            }
+            let neighbor_half_coords = raw_neighbor_half_coords;
             let neighbor_uv = sample_half_res_uv(neighbor_half_coords, vec2i(half_dims_u));
             let neighbor_full_coords = clamp_coord(
                 vec2i(neighbor_uv * full_dims),
@@ -243,7 +259,7 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
             // 4.4 eq. 3
             let w_z_nom = abs(center_linear_depth - neighbor_linear_depth);
             let p_minus_q = vec2f(center_half_coords - neighbor_half_coords);
-            let w_z_denom = SIGMA_Z * abs(dot(center_depth_gradient, p_minus_q)) + 0.000001;
+            let w_z_denom = max(SIGMA_Z * abs(dot(center_depth_gradient, p_minus_q)), 1e-3);
             let w_z = exp(-1.0 * w_z_nom / w_z_denom);
 
             // 4.4 eq. 4
