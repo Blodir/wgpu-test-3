@@ -1,3 +1,5 @@
+use crate::host::renderer::world::gpu_context::resources::buffers::HBGI_SVGF_PASS_COUNT;
+
 pub(crate) struct HbgiSvgfInputsBindGroup(pub(crate) wgpu::BindGroup);
 impl HbgiSvgfInputsBindGroup {
     pub fn desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
@@ -147,7 +149,7 @@ pub(crate) struct HbgiSvgfBindGroups {
     pub(crate) initial: HbgiSvgfInputsBindGroup,
     pub(crate) history_a: HbgiSvgfInputsBindGroup,
     pub(crate) history_b: HbgiSvgfInputsBindGroup,
-    pub(crate) settings: HbgiSvgfSettingsBindGroup,
+    pub(crate) settings: [HbgiSvgfSettingsBindGroup; HBGI_SVGF_PASS_COUNT],
 }
 
 impl HbgiSvgfBindGroups {
@@ -161,7 +163,7 @@ impl HbgiSvgfBindGroups {
         svgf_bent_ao_b_view: &wgpu::TextureView,
         svgf_irradiance_variance_b_view: &wgpu::TextureView,
         current_normal_view: &wgpu::TextureView,
-        settings_buffer: &wgpu::Buffer,
+        settings_buffers: &[wgpu::Buffer; HBGI_SVGF_PASS_COUNT],
         layouts: &BGLayouts,
         device: &wgpu::Device,
     ) -> Self {
@@ -189,8 +191,13 @@ impl HbgiSvgfBindGroups {
             &layouts.hbgi_svgf_inputs,
             device,
         );
-        let settings =
-            HbgiSvgfSettingsBindGroup::new(settings_buffer, &layouts.hbgi_svgf_settings, device);
+        let settings = std::array::from_fn(|pass_index| {
+            HbgiSvgfSettingsBindGroup::new(
+                &settings_buffers[pass_index],
+                &layouts.hbgi_svgf_settings,
+                device,
+            )
+        });
         Self {
             initial,
             history_a,

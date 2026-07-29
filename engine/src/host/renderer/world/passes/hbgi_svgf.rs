@@ -1,20 +1,11 @@
-use crate::host::{renderer::world::gpu_context::WorldGpuContext, wgpu_context::WgpuContext};
+use crate::host::renderer::world::gpu_context::{
+    resources::buffers::HBGI_SVGF_PASS_COUNT, WorldGpuContext,
+};
 
 use super::FULLSCREEN_QUAD_INDEX_COUNT;
 
-const HBGI_SVGF_PASS_COUNT: u32 = 5;
-
-pub(crate) fn render_hbgi_svgf_pass(
-    encoder: &mut wgpu::CommandEncoder,
-    context: &WorldGpuContext,
-    wgpu_context: &WgpuContext,
-) {
+pub(crate) fn render_hbgi_svgf_pass(encoder: &mut wgpu::CommandEncoder, context: &WorldGpuContext) {
     for pass_idx in 0..HBGI_SVGF_PASS_COUNT {
-        context
-            .resources
-            .buffers
-            .update_hbgi_svgf_settings(pass_idx, &wgpu_context.queue);
-
         let (input_bind_group, output_bent_ao, output_irradiance_variance) = match pass_idx {
             0 => (
                 &context.descriptors.bind_groups.hbgi_svgf.initial.0,
@@ -80,7 +71,7 @@ pub(crate) fn render_hbgi_svgf_pass(
         render_pass.set_bind_group(1, &context.descriptors.bind_groups.camera.0, &[]);
         render_pass.set_bind_group(
             2,
-            &context.descriptors.bind_groups.hbgi_svgf.settings.0,
+            &context.descriptors.bind_groups.hbgi_svgf.settings[pass_idx].0,
             &[],
         );
         render_pass.set_index_buffer(

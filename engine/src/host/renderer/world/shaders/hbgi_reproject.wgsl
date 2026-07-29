@@ -52,7 +52,7 @@ fn current_frame_output(
     let curr_lum = luminance(hbgi_irradiance.rgb);
     return FragmentOutput(
         hbgi,
-        vec4f(depth, curr_lum, curr_lum * curr_lum, 1.0),
+        vec4f(depth, curr_lum, curr_lum * curr_lum, 0.0),
         normal,
         hbgi_irradiance
     );
@@ -245,6 +245,7 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
     var prev_ao_acc = 0.0;
     var prev_first_moment_acc = 0.0;
     var prev_second_moment_acc = 0.0;
+    var prev_history_length_acc = 0.0;
     var valid_weight_sum = 0.0;
     for (var i = 0; i < 4; i++) {
         let coords = clamp_coord(taps[i], half_max_coords);
@@ -297,6 +298,7 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
         prev_ao_acc += prev_bent_ao.w * tap_weight;
         prev_first_moment_acc += prev_depth_history.y * tap_weight;
         prev_second_moment_acc += prev_depth_history.z * tap_weight;
+        prev_history_length_acc += prev_depth_history.w * tap_weight;
         valid_weight_sum += tap_weight;
     }
 
@@ -315,6 +317,7 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
     prev_ao_acc /= valid_weight_sum;
     prev_first_moment_acc /= valid_weight_sum;
     prev_second_moment_acc /= valid_weight_sum;
+    prev_history_length_acc /= valid_weight_sum;
 
     let final_bent_normal = mix(normalize(prev_bent_normal_acc), curr_bent_ao.xyz, TEMPORAL_RESPONSE);
     let final_ao = mix(prev_ao_acc, curr_bent_ao.w, TEMPORAL_RESPONSE);
@@ -334,7 +337,7 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
 
     return FragmentOutput(
         vec4f(final_bent_normal, final_ao),
-        vec4f(curr_depth, first_moment, second_moment, 1.0),
+        vec4f(curr_depth, first_moment, second_moment, prev_history_length_acc + 1.0),
         curr_normal_sample,
         vec4f(final_irradiance, curr_hbgi_irradiance.a),
     );

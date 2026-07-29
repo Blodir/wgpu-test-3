@@ -218,7 +218,7 @@ impl WorldRenderer {
                 .buffers
                 .update_hbgi_reproject_settings(prev_inverse_view_proj, queue);
             render_hbgi_reproject_pass(encoder, &self.gpu_context);
-            render_hbgi_svgf_pass(encoder, &self.gpu_context, wgpu_context);
+            render_hbgi_svgf_pass(encoder, &self.gpu_context);
             self.hbgi_reproject_valid = true;
         } else {
             let _clear_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {

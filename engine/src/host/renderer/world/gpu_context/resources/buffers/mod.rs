@@ -21,6 +21,7 @@ use crate::host::{
 };
 
 const FULLSCREEN_QUAD_INDICES: &[u16] = &[0, 2, 1, 3, 2, 0];
+pub(crate) const HBGI_SVGF_PASS_COUNT: usize = 5;
 
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
@@ -39,7 +40,7 @@ pub(crate) struct Buffers {
     pub camera: CameraBuffers,
     pub hbgi_settings: wgpu::Buffer,
     pub hbgi_reproject_settings: wgpu::Buffer,
-    pub hbgi_svgf_settings: wgpu::Buffer,
+    pub hbgi_svgf_settings: [wgpu::Buffer; HBGI_SVGF_PASS_COUNT],
     pub fullscreen_quad_indices: wgpu::Buffer,
     pub skinned_instances: RWBuffer,
     pub static_instances: wgpu::Buffer,
@@ -84,12 +85,14 @@ impl Buffers {
                 }),
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             });
-        let hbgi_svgf_settings = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("HBGI SVGF Settings Buffer"),
-            contents: bytemuck::bytes_of(&HbgiSvgfUniform {
-                params: [1, 1, 0, 0],
-            }),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        let hbgi_svgf_settings = std::array::from_fn(|pass_index| {
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("HBGI SVGF Settings Buffer"),
+                contents: bytemuck::bytes_of(&HbgiSvgfUniform {
+                    params: [1u32 << pass_index, u32::from(pass_index == 0), 0, 0],
+                }),
+                usage: wgpu::BufferUsages::UNIFORM,
+            })
         });
         let fullscreen_quad_indices =
             device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -150,12 +153,5 @@ impl Buffers {
             0,
             bytemuck::bytes_of(&uniform),
         );
-    }
-
-    pub fn update_hbgi_svgf_settings(&self, pass_index: u32, queue: &wgpu::Queue) {
-        let uniform = HbgiSvgfUniform {
-            params: [1u32 << pass_index, u32::from(pass_index == 0), 0, 0],
-        };
-        queue.write_buffer(&self.hbgi_svgf_settings, 0, bytemuck::bytes_of(&uniform));
     }
 }

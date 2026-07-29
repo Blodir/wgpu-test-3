@@ -1,8 +1,7 @@
 use aabb::{calculate_aabb, fold_aabb};
 use animations::bake_animation;
 use engine::host::assets::io::asset_formats::modelfile::{self, Deformation};
-use engine::host::world::buffers::skinned_vertex::SkinnedVertex;
-use engine::host::world::buffers::static_vertex::StaticVertex;
+use engine::host::renderer::world::external::{SkinnedVertex, StaticVertex};
 use gltf::Document;
 use gltf_utils::{
     accumulate_primitive_instances, filename_without_extension, read_base_color_texcoord_buffer,
