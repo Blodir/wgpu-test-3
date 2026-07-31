@@ -24,7 +24,7 @@ struct FragmentOutput {
 }
 
 const MIN_VARIANCE: f32 = 1e-4;
-const HISTORY_VARIANCE_BIAS: f32 = 8.0;
+const HISTORY_VARIANCE_BIAS: f32 = 16.0;
 const KERNEL: array<f32, 5> = array<f32, 5>(1.0 / 16.0, 1.0 / 4.0, 3.0 / 8.0, 1.0 / 4.0, 1.0 / 16.0);
 const GAUSSIAN_3X3: array<f32, 3> = array<f32, 3>(1.0 / 4.0, 1.0 / 2.0, 1.0 / 4.0);
 const SIGMA_Z: f32 = 1.0; // Paper: 1.0
@@ -265,7 +265,8 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
             let w_l = exp(-1.0 * w_l_nom / w_l_denom);
 
             // 4.3 eq. 2
-            let w_pq = w_z * w_n * w_l;
+            var w_pq = w_z * w_n * w_l;
+            //w_pq = mix(1.0, w_pq, min(1.0, (center_depth_moments.w + depth_moments.w) / 32.0));
 
             // 4.3 eq. 1
             let hw = h_q * w_pq;

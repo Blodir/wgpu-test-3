@@ -30,8 +30,7 @@ struct FragmentOutput {
     @location(3) hbgi_irradiance_reproject: vec4<f32>,
 }
 
-const TEMPORAL_RESPONSE: f32 = 0.1;
-const HISTORY_CLAMP_WEIGHT: f32 = 0.25;
+const MAX_HISTORY_LENGTH: f32 = 32.0;
 const SVGF_NORMAL_REJECTION_DOT_THRESHOLD: f32 = 0.9;
 const SVGF_PLANE_DISTANCE_REJECTION_THRESHOLD: f32 = 0.3;
 
@@ -210,20 +209,6 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
     */
     // -------------------------------- //
 
-    // Color clamping (not originally in SVGF)
-    var min_curr_hbgi_irradiance = curr_hbgi_irradiance.rgb;
-    var max_curr_hbgi_irradiance = curr_hbgi_irradiance.rgb;
-    for (var sample_idx: i32 = 0; sample_idx < 3; sample_idx += 1) {
-        let offset = array<vec2i, 3>(vec2i(1, 0), vec2i(0, 1), vec2i(1, 1))[sample_idx];
-        let curr_hbgi_irradiance_sample = textureLoad(
-            curr_hbgi_irradiance_texture,
-            clamp_coord(curr_half_coords + offset, half_max_coords),
-            0
-        ).rgb;
-        min_curr_hbgi_irradiance = min(min_curr_hbgi_irradiance, curr_hbgi_irradiance_sample);
-        max_curr_hbgi_irradiance = max(max_curr_hbgi_irradiance, curr_hbgi_irradiance_sample);
-    }
-
     // 4.1 Temporal filtering
     // 2x2 tap bilinear filter described by the SVGF paper
     let taps = array(
@@ -239,6 +224,9 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
         (1.0 - prev_coord_frac.x) * prev_coord_frac.y,
         prev_coord_frac.x * prev_coord_frac.y,
     );
+
+    var min_curr_hbgi_irradiance = curr_hbgi_irradiance.rgb;
+    var max_curr_hbgi_irradiance = curr_hbgi_irradiance.rgb;
 
     var prev_irradiance_acc = vec3f(0.0);
     var prev_bent_normal_acc = vec3f(0.0);
@@ -282,18 +270,11 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
             coords,
             0
         ).rgb;
-        let clamped_prev_irradiance = clamp(
-            prev_irradiance,
-            min_curr_hbgi_irradiance,
-            max_curr_hbgi_irradiance
-        );
-        let filtered_prev_irradiance = mix(
-            prev_irradiance,
-            clamped_prev_irradiance,
-            HISTORY_CLAMP_WEIGHT
-        );
 
-        prev_irradiance_acc += filtered_prev_irradiance * tap_weight;
+        min_curr_hbgi_irradiance = min(min_curr_hbgi_irradiance, prev_irradiance);
+        max_curr_hbgi_irradiance = max(max_curr_hbgi_irradiance, prev_irradiance);
+
+        prev_irradiance_acc += prev_irradiance * tap_weight;
         prev_bent_normal_acc += prev_bent_ao.xyz * tap_weight;
         prev_ao_acc += prev_bent_ao.w * tap_weight;
         prev_first_moment_acc += prev_depth_history.y * tap_weight;
@@ -319,14 +300,27 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
     prev_second_moment_acc /= valid_weight_sum;
     prev_history_length_acc /= valid_weight_sum;
 
-    let final_bent_normal = mix(normalize(prev_bent_normal_acc), curr_bent_ao.xyz, TEMPORAL_RESPONSE);
-    let final_ao = mix(prev_ao_acc, curr_bent_ao.w, TEMPORAL_RESPONSE);
-    let final_irradiance = mix(prev_irradiance_acc, curr_hbgi_irradiance.rgb, TEMPORAL_RESPONSE);
+    let clamped_curr_irradiance = clamp(
+        curr_hbgi_irradiance.rgb,
+        min_curr_hbgi_irradiance,
+        max_curr_hbgi_irradiance
+    );
+    let filtered_curr_irradiance = mix(
+        curr_hbgi_irradiance.rgb,
+        clamped_curr_irradiance,
+        HISTORY_CLAMP_WEIGHT
+    );
+
+    let blend_factor = 1.0 / (1.0 + min(prev_history_length_acc, MAX_HISTORY_LENGTH));
+
+    let final_bent_normal = mix(normalize(prev_bent_normal_acc), curr_bent_ao.xyz, blend_factor);
+    let final_ao = mix(prev_ao_acc, curr_bent_ao.w, blend_factor);
+    let final_irradiance = mix(prev_irradiance_acc, curr_hbgi_irradiance.rgb, blend_factor);
 
     // 4.2 Variance estimation
     let curr_lum = luminance(curr_hbgi_irradiance.rgb);
-    let first_moment = mix(prev_first_moment_acc, curr_lum, TEMPORAL_RESPONSE);
-    let second_moment = mix(prev_second_moment_acc, curr_lum * curr_lum, TEMPORAL_RESPONSE);
+    let first_moment = mix(prev_first_moment_acc, curr_lum, blend_factor);
+    let second_moment = mix(prev_second_moment_acc, curr_lum * curr_lum, blend_factor);
 
     // TODO add history length and variance estimate in limited history cases (last paragraph of 4.2)
 
