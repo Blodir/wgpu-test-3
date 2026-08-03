@@ -142,11 +142,14 @@ impl WorldGpuContext {
                     .reproject
                     .depth_history
                     .get_write_view(&resources.textures.reproject.depth_history),
+                texture_views
+                    .reproject
+                    .normal_history
+                    .get_write_view(&resources.textures.reproject.normal_history),
                 &texture_views.hbgi_svgf.bent_ao_a,
                 &texture_views.hbgi_svgf.irradiance_variance_a,
                 &texture_views.hbgi_svgf.bent_ao_b,
                 &texture_views.hbgi_svgf.irradiance_variance_b,
-                &texture_views.gbuffer.normal_roughness,
                 &resources.buffers.hbgi_svgf_settings,
                 &bind_group_layouts,
                 device,
@@ -397,6 +400,11 @@ impl WorldGpuContext {
                 .reproject
                 .depth_history
                 .get_write_view(&self.resources.textures.reproject.depth_history),
+            self.descriptors
+                .texture_views
+                .reproject
+                .normal_history
+                .get_write_view(&self.resources.textures.reproject.normal_history),
             &self.descriptors.texture_views.hbgi_svgf.bent_ao_a,
             &self
                 .descriptors
@@ -409,7 +417,6 @@ impl WorldGpuContext {
                 .texture_views
                 .hbgi_svgf
                 .irradiance_variance_b,
-            &self.descriptors.texture_views.gbuffer.normal_roughness,
             &self.resources.buffers.hbgi_svgf_settings,
             &self.descriptors.bind_group_layouts,
             device,

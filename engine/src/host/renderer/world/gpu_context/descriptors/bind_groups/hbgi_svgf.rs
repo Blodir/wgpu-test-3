@@ -146,7 +146,7 @@ impl HbgiSvgfSettingsBindGroup {
 use crate::host::renderer::world::gpu_context::BGLayouts;
 
 pub(crate) struct HbgiSvgfBindGroups {
-    pub(crate) initial: HbgiSvgfInputsBindGroup,
+    pub(crate) history_fix: HbgiSvgfInputsBindGroup,
     pub(crate) history_a: HbgiSvgfInputsBindGroup,
     pub(crate) history_b: HbgiSvgfInputsBindGroup,
     pub(crate) settings: [HbgiSvgfSettingsBindGroup; HBGI_SVGF_PASS_COUNT],
@@ -158,19 +158,19 @@ impl HbgiSvgfBindGroups {
         reproject_bent_ao_view: &wgpu::TextureView,
         reproject_irradiance_view: &wgpu::TextureView,
         reproject_depth_history_view: &wgpu::TextureView,
+        reproject_normal_history_view: &wgpu::TextureView,
         svgf_bent_ao_a_view: &wgpu::TextureView,
         svgf_irradiance_variance_a_view: &wgpu::TextureView,
         svgf_bent_ao_b_view: &wgpu::TextureView,
         svgf_irradiance_variance_b_view: &wgpu::TextureView,
-        current_normal_view: &wgpu::TextureView,
         settings_buffers: &[wgpu::Buffer; HBGI_SVGF_PASS_COUNT],
         layouts: &BGLayouts,
         device: &wgpu::Device,
     ) -> Self {
-        let initial = HbgiSvgfInputsBindGroup::new(
+        let history_fix = HbgiSvgfInputsBindGroup::new(
             reproject_bent_ao_view,
             reproject_irradiance_view,
-            current_normal_view,
+            reproject_normal_history_view,
             reproject_depth_history_view,
             &layouts.hbgi_svgf_inputs,
             device,
@@ -178,7 +178,7 @@ impl HbgiSvgfBindGroups {
         let history_a = HbgiSvgfInputsBindGroup::new(
             svgf_bent_ao_a_view,
             svgf_irradiance_variance_a_view,
-            current_normal_view,
+            reproject_normal_history_view,
             reproject_depth_history_view,
             &layouts.hbgi_svgf_inputs,
             device,
@@ -186,7 +186,7 @@ impl HbgiSvgfBindGroups {
         let history_b = HbgiSvgfInputsBindGroup::new(
             svgf_bent_ao_b_view,
             svgf_irradiance_variance_b_view,
-            current_normal_view,
+            reproject_normal_history_view,
             reproject_depth_history_view,
             &layouts.hbgi_svgf_inputs,
             device,
@@ -199,7 +199,7 @@ impl HbgiSvgfBindGroups {
             )
         });
         Self {
-            initial,
+            history_fix,
             history_a,
             history_b,
             settings,

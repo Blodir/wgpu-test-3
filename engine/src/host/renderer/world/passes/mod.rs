@@ -1,6 +1,7 @@
 mod deferred_lighting;
 mod g_buffer;
 mod hbgi;
+mod hbgi_history_fix;
 mod hbgi_pyramid;
 mod hbgi_reproject;
 mod hbgi_svgf;
@@ -15,6 +16,7 @@ const FULLSCREEN_QUAD_INDEX_COUNT: u32 = 6;
 pub(crate) use deferred_lighting::render_deferred_lighting_pass;
 pub(crate) use g_buffer::{render_gbuffer_skinned_opaque_pass, render_gbuffer_static_opaque_pass};
 pub(crate) use hbgi::render_hbgi_pass;
+pub(crate) use hbgi_history_fix::render_hbgi_history_fix_pass;
 pub(crate) use hbgi_pyramid::render_hbgi_pyramid_pass;
 pub(crate) use hbgi_reproject::render_hbgi_reproject_pass;
 pub(crate) use hbgi_svgf::render_hbgi_svgf_pass;

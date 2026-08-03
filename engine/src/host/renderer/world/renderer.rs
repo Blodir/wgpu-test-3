@@ -15,10 +15,10 @@ use super::{
     gpu_context::HbgiSettingsUniform,
     passes::{
         render_deferred_lighting_pass, render_gbuffer_skinned_opaque_pass,
-        render_gbuffer_static_opaque_pass, render_hbgi_pass, render_hbgi_pyramid_pass,
-        render_hbgi_reproject_pass, render_hbgi_svgf_pass, render_post_processing_pass,
-        render_skinned_transparent_pass, render_skybox_pass, render_static_transparent_pass,
-        render_sun_shadow_pass,
+        render_gbuffer_static_opaque_pass, render_hbgi_history_fix_pass, render_hbgi_pass,
+        render_hbgi_pyramid_pass, render_hbgi_reproject_pass, render_hbgi_svgf_pass,
+        render_post_processing_pass, render_skinned_transparent_pass, render_skybox_pass,
+        render_static_transparent_pass, render_sun_shadow_pass,
     },
 };
 
@@ -218,6 +218,7 @@ impl WorldRenderer {
                 .buffers
                 .update_hbgi_reproject_settings(prev_inverse_view_proj, queue);
             render_hbgi_reproject_pass(encoder, &self.gpu_context);
+            render_hbgi_history_fix_pass(encoder, &self.gpu_context);
             render_hbgi_svgf_pass(encoder, &self.gpu_context);
             self.hbgi_reproject_valid = true;
         } else {

@@ -1,6 +1,6 @@
 @group(0) @binding(0) var input_bent_ao_texture: texture_2d<f32>;
 @group(0) @binding(1) var input_irradiance_variance_texture: texture_2d<f32>;
-@group(0) @binding(2) var current_normal_texture: texture_2d<f32>;
+@group(0) @binding(2) var normal_history_texture: texture_2d<f32>;
 @group(0) @binding(3) var depth_history_texture: texture_2d<f32>;
 
 @group(1) @binding(1) var<uniform> camera_position: vec3<f32>;
@@ -24,9 +24,7 @@ struct FragmentOutput {
 }
 
 const MIN_VARIANCE: f32 = 1e-4;
-const HISTORY_VARIANCE_BIAS: f32 = 16.0;
 const KERNEL: array<f32, 5> = array<f32, 5>(1.0 / 16.0, 1.0 / 4.0, 3.0 / 8.0, 1.0 / 4.0, 1.0 / 16.0);
-const GAUSSIAN_3X3: array<f32, 3> = array<f32, 3>(1.0 / 4.0, 1.0 / 2.0, 1.0 / 4.0);
 const SIGMA_Z: f32 = 1.0; // Paper: 1.0
 const SIGMA_N: f32 = 64.0; // Paper: 128.0
 const SIGMA_L: f32 = 32.0; // Paper: 4.0
@@ -73,59 +71,6 @@ fn linear_view_depth_from_world_position(world_position: vec3f) -> f32 {
     return max(dot(world_position - camera_position, camera_view_rotation[2]), 0.0);
 }
 
-fn prefiltered_variance_3x3(
-    center_coords: vec2i,
-    center_linear_depth: f32,
-    center_normal: vec3f,
-    half_dims_u: vec2u,
-    half_max_coords: vec2i,
-    full_dims: vec2f,
-    full_max_coords: vec2i,
-) -> f32 {
-    var variance_acc = 0.0;
-    var weight_acc = 0.0;
-
-    for (var y: i32 = -1; y <= 1; y += 1) {
-        for (var x: i32 = -1; x <= 1; x += 1) {
-            let raw_neighbor_coords = center_coords + vec2i(x, y);
-            if (is_offscreen_coord(raw_neighbor_coords, half_max_coords)) {
-                continue;
-            }
-            let neighbor_coords = raw_neighbor_coords;
-            let neighbor_depth_moments = textureLoad(depth_history_texture, neighbor_coords, 0);
-            if (neighbor_depth_moments.x <= 0.0) {
-                continue;
-            }
-
-            let neighbor_uv = sample_half_res_uv(neighbor_coords, vec2i(half_dims_u));
-            let neighbor_full_coords = clamp_coord(
-                vec2i(neighbor_uv * full_dims),
-                full_max_coords
-            );
-            let neighbor_normal = textureLoad(current_normal_texture, neighbor_full_coords, 0).xyz;
-            let neighbor_world_position = reconstruct_world_position_from_depth(
-                neighbor_uv,
-                neighbor_depth_moments.x
-            );
-            let neighbor_linear_depth = linear_view_depth_from_world_position(neighbor_world_position);
-
-            let gaussian_weight = GAUSSIAN_3X3[x + 1] * GAUSSIAN_3X3[y + 1];
-            let depth_weight = exp(-abs(center_linear_depth - neighbor_linear_depth) / SIGMA_Z);
-            let normal_weight = pow(max(0.0, dot(center_normal, neighbor_normal)), SIGMA_N);
-            let weight = gaussian_weight * depth_weight * normal_weight;
-            let vari = max(neighbor_depth_moments.z - neighbor_depth_moments.y * neighbor_depth_moments.y, 0.0);
-
-            variance_acc += weight * vari;
-            weight_acc += weight;
-        }
-    }
-
-    if (weight_acc <= 1e-6) {
-        return 0.0;
-    }
-    return variance_acc / weight_acc;
-}
-
 @vertex
 fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
     var out: VertexOutput;
@@ -155,11 +100,6 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
     let half_max_coords = vec2i(half_dims_u) - vec2i(1);
     let center_half_coords = min(vec2i(center_uv * half_dims), half_max_coords);
 
-    let full_dims_u = textureDimensions(current_normal_texture);
-    let full_dims = vec2f(full_dims_u);
-    let full_max_coords = vec2i(full_dims_u) - vec2i(1);
-    let center_full_coords = min(vec2i(center_uv * full_dims), full_max_coords);
-
     let first_pass = hbgi_svgf_settings.params.y != 0u;
     let step = i32(hbgi_svgf_settings.params.x);
 
@@ -167,44 +107,17 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
     let center_irradiance_variance = textureLoad(input_irradiance_variance_texture, center_half_coords, 0);
     let center_bent_ao = textureLoad(input_bent_ao_texture, center_half_coords, 0);
     if (center_depth_moments.x <= 0.0) {
-        if (first_pass) {
-            return FragmentOutput(
-                center_bent_ao,
-                vec4f(
-                    center_irradiance_variance.rgb,
-                    max(center_depth_moments.z - center_depth_moments.y * center_depth_moments.y, 0.0)
-                )
-            );
-        } else {
-            return FragmentOutput(
-                center_bent_ao,
-                center_irradiance_variance
-            );
-        }
+        return FragmentOutput(
+            center_bent_ao,
+            center_irradiance_variance
+        );
     }
 
     let center_world_position = reconstruct_world_position_from_depth(center_uv, center_depth_moments.x);
     let center_linear_depth = linear_view_depth_from_world_position(center_world_position);
-    let center_normal = textureLoad(current_normal_texture, center_full_coords, 0).xyz;
+    let center_normal = textureLoad(normal_history_texture, center_half_coords, 0).xyz;
     let center_history_length = center_depth_moments.w;
-
-    var center_variance: f32;
-    if (first_pass) {
-        let variance = max(center_depth_moments.z - center_depth_moments.y * center_depth_moments.y, 0.0);
-        let prefiltered_variance = max(prefiltered_variance_3x3(
-            center_half_coords,
-            center_linear_depth,
-            center_normal,
-            half_dims_u,
-            half_max_coords,
-            full_dims,
-            full_max_coords
-        ), variance);
-        let history_biased_variance = max(HISTORY_VARIANCE_BIAS / (center_history_length + 1.0), 1.0) * max(prefiltered_variance, MIN_VARIANCE);
-        center_variance = history_biased_variance;
-    } else {
-        center_variance = center_irradiance_variance.w;
-    }
+    var center_variance = center_irradiance_variance.w;
 
     let center_depth_gradient = vec2f(
         dpdx(center_linear_depth),
@@ -230,16 +143,12 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
             }
             let neighbor_half_coords = raw_neighbor_half_coords;
             let neighbor_uv = sample_half_res_uv(neighbor_half_coords, vec2i(half_dims_u));
-            let neighbor_full_coords = clamp_coord(
-                vec2i(neighbor_uv * full_dims),
-                full_max_coords
-            );
             let depth_moments = textureLoad(depth_history_texture, neighbor_half_coords, 0);
             if (depth_moments.r <= 0.0) {
                 continue;
             }
             let irradiance_variance = textureLoad(input_irradiance_variance_texture, neighbor_half_coords, 0);
-            let normal = textureLoad(current_normal_texture, neighbor_full_coords, 0).xyz;
+            let normal = textureLoad(normal_history_texture, neighbor_half_coords, 0).xyz;
             let neighbor_world_position = reconstruct_world_position_from_depth(neighbor_uv, depth_moments.x);
             let neighbor_linear_depth = linear_view_depth_from_world_position(neighbor_world_position);
             let bent_ao = textureLoad(input_bent_ao_texture, neighbor_half_coords, 0);
@@ -261,7 +170,7 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
 
             // 4.4 eq. 5
             let w_l_nom = abs(l_p - l_q);
-            let w_l_denom = SIGMA_L * sqrt(center_variance);
+            let w_l_denom = max(SIGMA_L * sqrt(center_variance), 1e-3);
             let w_l = exp(-1.0 * w_l_nom / w_l_denom);
 
             // 4.3 eq. 2
@@ -289,14 +198,7 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
     let filtered_bent_normal = safe_normalize3(bent_acc);
     let filtered_ao = ao_acc / denom_acc;
     let filtered_irradiance = irradiance_acc / denom_acc;
-
-    // We are diverging from SVGF here
-    var filtered_variance: f32;
-    if (first_pass) {
-        filtered_variance = center_variance;
-    } else {
-        filtered_variance = variance_acc / (denom_acc * denom_acc);
-    }
+    var filtered_variance = variance_acc / (denom_acc * denom_acc);
 
     return FragmentOutput(
         vec4f(filtered_bent_normal, filtered_ao),

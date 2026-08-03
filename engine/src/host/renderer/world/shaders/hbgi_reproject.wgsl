@@ -42,21 +42,6 @@ fn safe_normalize3(v: vec3f) -> vec3f {
     return vec3f(0.0);
 }
 
-fn current_frame_output(
-    hbgi: vec4f,
-    hbgi_irradiance: vec4f,
-    depth: f32,
-    normal: vec4f,
-) -> FragmentOutput {
-    let curr_lum = luminance(hbgi_irradiance.rgb);
-    return FragmentOutput(
-        hbgi,
-        vec4f(depth, curr_lum, curr_lum * curr_lum, 0.0),
-        normal,
-        hbgi_irradiance
-    );
-}
-
 fn saturate(value: f32) -> f32 {
     return clamp(value, 0.0, 1.0);
 }
@@ -138,11 +123,12 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
 
     // depth gets cleared to zero -> zero indicates an invalid value
     if (curr_depth <= 0.0) {
-        return current_frame_output(
+        let curr_lum = luminance(curr_hbgi_irradiance.rgb);
+        return FragmentOutput(
             curr_bent_ao,
-            curr_hbgi_irradiance,
-            curr_depth,
-            curr_normal_sample
+            vec4f(curr_depth, curr_lum, curr_lum * curr_lum, 1.0),
+            curr_normal_sample,
+            curr_hbgi_irradiance
         );
     }
 
@@ -156,11 +142,12 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
     let motion = textureLoad(motion_vectors_texture, curr_full_coords, 0).xy;
     let prev_uv = curr_uv - motion;
     if (any(prev_uv < vec2f(0.0)) || any(prev_uv > vec2f(1.0))) {
-        return current_frame_output(
+        let curr_lum = luminance(curr_hbgi_irradiance.rgb);
+        return FragmentOutput(
             curr_bent_ao,
-            curr_hbgi_irradiance,
-            curr_depth,
-            curr_normal_sample
+            vec4f(curr_depth, curr_lum, curr_lum * curr_lum, 1.0),
+            curr_normal_sample,
+            curr_hbgi_irradiance
         );
     }
 
@@ -225,9 +212,6 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
         prev_coord_frac.x * prev_coord_frac.y,
     );
 
-    var min_curr_hbgi_irradiance = curr_hbgi_irradiance.rgb;
-    var max_curr_hbgi_irradiance = curr_hbgi_irradiance.rgb;
-
     var prev_irradiance_acc = vec3f(0.0);
     var prev_bent_normal_acc = vec3f(0.0);
     var prev_ao_acc = 0.0;
@@ -271,9 +255,6 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
             0
         ).rgb;
 
-        min_curr_hbgi_irradiance = min(min_curr_hbgi_irradiance, prev_irradiance);
-        max_curr_hbgi_irradiance = max(max_curr_hbgi_irradiance, prev_irradiance);
-
         prev_irradiance_acc += prev_irradiance * tap_weight;
         prev_bent_normal_acc += prev_bent_ao.xyz * tap_weight;
         prev_ao_acc += prev_bent_ao.w * tap_weight;
@@ -285,11 +266,12 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
 
     if (valid_weight_sum <= 0.0) {
         // TODO SVGF paper describes fallback to 3x3 filter
-        return current_frame_output(
+        let curr_lum = luminance(curr_hbgi_irradiance.rgb);
+        return FragmentOutput(
             curr_bent_ao,
-            curr_hbgi_irradiance,
-            curr_depth,
-            curr_normal_sample
+            vec4f(curr_depth, curr_lum, curr_lum * curr_lum, 1.0),
+            curr_normal_sample,
+            curr_hbgi_irradiance
         );
     }
 
@@ -299,17 +281,6 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
     prev_first_moment_acc /= valid_weight_sum;
     prev_second_moment_acc /= valid_weight_sum;
     prev_history_length_acc /= valid_weight_sum;
-
-    let clamped_curr_irradiance = clamp(
-        curr_hbgi_irradiance.rgb,
-        min_curr_hbgi_irradiance,
-        max_curr_hbgi_irradiance
-    );
-    let filtered_curr_irradiance = mix(
-        curr_hbgi_irradiance.rgb,
-        clamped_curr_irradiance,
-        HISTORY_CLAMP_WEIGHT
-    );
 
     let blend_factor = 1.0 / (1.0 + min(prev_history_length_acc, MAX_HISTORY_LENGTH));
 
@@ -321,13 +292,6 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
     let curr_lum = luminance(curr_hbgi_irradiance.rgb);
     let first_moment = mix(prev_first_moment_acc, curr_lum, blend_factor);
     let second_moment = mix(prev_second_moment_acc, curr_lum * curr_lum, blend_factor);
-
-    // TODO add history length and variance estimate in limited history cases (last paragraph of 4.2)
-
-    /*
-    let prev_ao = textureLoad(prev_bent_ao_reproject_texture, curr_half_coords, 0).a;
-    let test_ao = mix(prev_ao, curr_bent_ao.a, TEMPORAL_RESPONSE);
-    */
 
     return FragmentOutput(
         vec4f(final_bent_normal, final_ao),

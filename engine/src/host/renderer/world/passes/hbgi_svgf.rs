@@ -7,15 +7,6 @@ use super::FULLSCREEN_QUAD_INDEX_COUNT;
 pub(crate) fn render_hbgi_svgf_pass(encoder: &mut wgpu::CommandEncoder, context: &WorldGpuContext) {
     for pass_idx in 0..HBGI_SVGF_PASS_COUNT {
         let (input_bind_group, output_bent_ao, output_irradiance_variance) = match pass_idx {
-            0 => (
-                &context.descriptors.bind_groups.hbgi_svgf.initial.0,
-                &context.descriptors.texture_views.hbgi_svgf.bent_ao_a,
-                &context
-                    .descriptors
-                    .texture_views
-                    .hbgi_svgf
-                    .irradiance_variance_a,
-            ),
             _ if pass_idx % 2 == 1 => (
                 &context.descriptors.bind_groups.hbgi_svgf.history_a.0,
                 &context.descriptors.texture_views.hbgi_svgf.bent_ao_b,
