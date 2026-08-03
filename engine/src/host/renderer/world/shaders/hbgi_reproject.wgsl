@@ -30,7 +30,7 @@ struct FragmentOutput {
     @location(3) hbgi_irradiance_reproject: vec4<f32>,
 }
 
-const MAX_HISTORY_LENGTH: f32 = 32.0;
+const MAX_HISTORY_LENGTH: f32 = 8.0;
 const SVGF_NORMAL_REJECTION_DOT_THRESHOLD: f32 = 0.9;
 const SVGF_PLANE_DISTANCE_REJECTION_THRESHOLD: f32 = 0.3;
 
