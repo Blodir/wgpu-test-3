@@ -419,7 +419,8 @@ fn shbgi(in: VertexOutput) -> FragmentOutput {
     }
 
     let S = f32(DIRECTIONS);
-    let ao = (1.0 / S) * visibility_acc;
+    //let ao = (1.0 / S) * visibility_acc;
+    let ao = clamp((1.0 / S) * visibility_acc, 0.0, 1.0);
     let bent_n_w = safe_normalize3(bent_acc_w);
 
     let far_field_sample = textureSample(
