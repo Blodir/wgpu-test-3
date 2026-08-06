@@ -24,6 +24,9 @@ pub const SHADER_HBGI_HISTORY_FIX_WGSL: &str =
     "engine/src/host/renderer/world/shaders/hbgi_history_fix.wgsl";
 pub const SHADER_DEFERRED_LIGHTING_WGSL: &str =
     "engine/src/host/renderer/world/shaders/deferred_lighting.wgsl";
+pub const SHADER_SSR_WGSL: &str = "engine/src/host/renderer/world/shaders/ssr.wgsl";
+pub const SHADER_SSR_COMPOSITE_WGSL: &str =
+    "engine/src/host/renderer/world/shaders/ssr_composite.wgsl";
 pub const SHADER_SKYBOX_WGSL: &str = "engine/src/host/renderer/world/shaders/skybox.wgsl";
 pub const SHADER_MIPMAP_WGSL: &str = "engine/src/host/renderer/world/shaders/mipmap.wgsl";
 pub const SHADER_HBGI_REPROJECT_WGSL: &str =

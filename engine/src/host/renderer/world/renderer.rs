@@ -18,7 +18,8 @@ use super::{
         render_gbuffer_static_opaque_pass, render_hbgi_history_fix_pass, render_hbgi_pass,
         render_hbgi_pyramid_pass, render_hbgi_reproject_pass, render_hbgi_svgf_pass,
         render_post_processing_pass, render_skinned_transparent_pass, render_skybox_pass,
-        render_static_transparent_pass, render_sun_shadow_pass,
+        render_ssr_composite_pass, render_ssr_pass, render_static_transparent_pass,
+        render_sun_shadow_pass,
     },
 };
 
@@ -290,6 +291,8 @@ impl WorldRenderer {
             self.hbgi_reproject_valid = false;
         }
         render_deferred_lighting_pass(encoder, &self.gpu_context);
+        render_ssr_pass(encoder, &self.gpu_context);
+        render_ssr_composite_pass(encoder, &self.gpu_context);
         self.rotate_temporal_buffers(device);
     }
 

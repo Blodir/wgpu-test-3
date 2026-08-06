@@ -8,6 +8,8 @@ mod hbgi_svgf;
 mod post_processing;
 mod skinned_transparent;
 mod skybox;
+mod ssr;
+mod ssr_composite;
 mod static_transparent;
 mod sun_shadow;
 
@@ -21,6 +23,8 @@ pub(crate) use hbgi_svgf::HbgiSvgfPipeline;
 pub(crate) use post_processing::PostProcessingPipeline;
 pub(crate) use skinned_transparent::SkinnedTransparentPipeline;
 pub(crate) use skybox::SkyboxPipeline;
+pub(crate) use ssr::SsrPipeline;
+pub(crate) use ssr_composite::SsrCompositePipeline;
 pub(crate) use static_transparent::StaticTransparentPipeline;
 pub(crate) use sun_shadow::SunShadowPipeline;
 
@@ -38,6 +42,8 @@ pub(crate) struct Pipelines {
     pub(crate) hbgi_reproject: HbgiReprojectPipeline,
     pub(crate) skybox: SkyboxPipeline,
     pub(crate) sun_shadow: SunShadowPipeline,
+    pub(crate) ssr: SsrPipeline,
+    pub(crate) ssr_composite: SsrCompositePipeline,
     pub(crate) skinned_transparent: SkinnedTransparentPipeline,
     pub(crate) static_transparent: StaticTransparentPipeline,
     pub(crate) post: PostProcessingPipeline,
@@ -58,6 +64,8 @@ impl Pipelines {
         let hbgi_reproject = HbgiReprojectPipeline::new(wgpu_context, shader_cache, layouts);
         let skybox = SkyboxPipeline::new(wgpu_context, shader_cache, layouts);
         let sun_shadow = SunShadowPipeline::new(wgpu_context, shader_cache, layouts);
+        let ssr = SsrPipeline::new(wgpu_context, shader_cache, layouts);
+        let ssr_composite = SsrCompositePipeline::new(wgpu_context, shader_cache, layouts);
         let skinned_transparent =
             SkinnedTransparentPipeline::new(wgpu_context, shader_cache, layouts);
         let static_transparent =
@@ -74,6 +82,8 @@ impl Pipelines {
             hbgi_reproject,
             skybox,
             sun_shadow,
+            ssr,
+            ssr_composite,
             skinned_transparent,
             static_transparent,
             post,

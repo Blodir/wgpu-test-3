@@ -3,7 +3,7 @@ use super::bind_groups::{
     DeferredLightingHbgiBindGroup, HbgiInputsBindGroup, HbgiPyramidBindGroups,
     HbgiReprojectInputsBindGroup, HbgiReprojectSettingsBindGroup, HbgiSettingsBindGroup,
     HbgiSvgfInputsBindGroup, HbgiSvgfSettingsBindGroup, InstanceStorageBindGroup, LightsBindGroup,
-    PostProcessingBindGroup, SunShadowMatrixBindGroup,
+    PostProcessingBindGroup, SsrBindGroup, SsrCompositeBindGroup, SunShadowMatrixBindGroup,
 };
 use crate::host::renderer::world::external::MaterialBindGroup;
 use crate::host::wgpu_context::WgpuContext;
@@ -28,6 +28,8 @@ pub struct BGLayouts {
     pub hbgi_pyramid_base: wgpu::BindGroupLayout,
     pub hbgi_pyramid_downsample: wgpu::BindGroupLayout,
     pub post_processing: wgpu::BindGroupLayout,
+    pub ssr_inputs: wgpu::BindGroupLayout,
+    pub ssr_composite_inputs: wgpu::BindGroupLayout,
 }
 impl BGLayouts {
     pub fn new(wgpu_context: &WgpuContext) -> Self {
@@ -88,6 +90,12 @@ impl BGLayouts {
         let post_processing = wgpu_context
             .device
             .create_bind_group_layout(&PostProcessingBindGroup::desc());
+        let ssr_inputs = wgpu_context
+            .device
+            .create_bind_group_layout(&SsrBindGroup::desc());
+        let ssr_composite_inputs = wgpu_context
+            .device
+            .create_bind_group_layout(&SsrCompositeBindGroup::desc());
 
         Self {
             camera,
@@ -109,6 +117,8 @@ impl BGLayouts {
             hbgi_pyramid_base,
             hbgi_pyramid_downsample,
             post_processing,
+            ssr_inputs,
+            ssr_composite_inputs,
         }
     }
 }

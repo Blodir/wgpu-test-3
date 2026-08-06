@@ -6,7 +6,7 @@ pub(crate) use buffers::{Buffers, CameraBuffers, LightsBuffers, SunBuffers, SunS
 pub(crate) use samplers::Samplers;
 pub(crate) use textures::{
     GBufferTextures, HbgiSvgfTextures, HbgiTextures, LightingTextures, MipPyramidTextures,
-    ReprojectTextures, SunShadowTexture2, Textures,
+    ReprojectTextures, SsrTextures, SunShadowTexture2, Textures,
 };
 
 pub(crate) struct Resources {

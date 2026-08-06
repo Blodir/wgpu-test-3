@@ -8,6 +8,8 @@ mod hbgi_svgf;
 mod post_processing;
 mod skinned_transparent;
 mod skybox;
+mod ssr;
+mod ssr_composite;
 mod static_transparent;
 mod sun_shadow;
 
@@ -23,5 +25,7 @@ pub(crate) use hbgi_svgf::render_hbgi_svgf_pass;
 pub(crate) use post_processing::render_post_processing_pass;
 pub(crate) use skinned_transparent::render_skinned_transparent_pass;
 pub(crate) use skybox::render_skybox_pass;
+pub(crate) use ssr::render_ssr_pass;
+pub(crate) use ssr_composite::render_ssr_composite_pass;
 pub(crate) use static_transparent::render_static_transparent_pass;
 pub(crate) use sun_shadow::render_sun_shadow_pass;

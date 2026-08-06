@@ -7,7 +7,8 @@ use super::{
         bg_layouts::BGLayouts, BindGroups, BonesBindGroups, CameraBindGroup,
         DeferredLightingBindGroups, Descriptors, HbgiBindGroups, HbgiPyramidBindGroups,
         HbgiReprojectBindGroups, HbgiSvgfBindGroups, InstanceStorageBindGroup, LightsBindGroup,
-        PostProcessingBindGroup, SunShadowMatrixBindGroup, TextureViews,
+        PostProcessingBindGroup, SsrBindGroup, SsrCompositeBindGroup, SunShadowMatrixBindGroup,
+        TextureViews,
     },
     pipelines::Pipelines,
     resources::{Buffers, Resources, Samplers, Textures},
@@ -181,9 +182,34 @@ impl WorldGpuContext {
             post_processing: PostProcessingBindGroup::new(
                 &texture_views.sky,
                 &resources.samplers.linear,
-                &texture_views.lighting_target.lit_hdr,
+                &texture_views.ssr.scene_color,
                 &resources.samplers.nearest,
                 &bind_group_layouts.post_processing,
+                device,
+            ),
+            ssr: SsrBindGroup::new(
+                &texture_views.pyramids.depth_pyramid,
+                &texture_views.gbuffer.normal_roughness,
+                &resources.samplers.nearest,
+                &texture_views.lighting_target.lit_hdr,
+                &resources.samplers.linear,
+                &resources.buffers.lights.environment_map_intensity,
+                &bind_group_layouts.ssr_inputs,
+                device,
+            ),
+            ssr_composite: SsrCompositeBindGroup::new(
+                &texture_views.gbuffer.albedo_ao,
+                &resources.samplers.nearest,
+                &texture_views.gbuffer.normal_roughness,
+                &resources.samplers.nearest,
+                &texture_views.gbuffer.emissive_metallic,
+                &resources.samplers.nearest,
+                &texture_views.gbuffer.depth,
+                &texture_views.ssr.reflections,
+                &resources.samplers.linear,
+                &texture_views.lighting_target.lit_hdr,
+                &resources.samplers.nearest,
+                &bind_group_layouts.ssr_composite_inputs,
                 device,
             ),
             static_instances: InstanceStorageBindGroup::new(
@@ -262,9 +288,34 @@ impl WorldGpuContext {
         self.descriptors.bind_groups.post_processing = PostProcessingBindGroup::new(
             &self.descriptors.texture_views.sky,
             &self.resources.samplers.linear,
-            &self.descriptors.texture_views.lighting_target.lit_hdr,
+            &self.descriptors.texture_views.ssr.scene_color,
             &self.resources.samplers.nearest,
             &self.descriptors.bind_group_layouts.post_processing,
+            device,
+        );
+        self.descriptors.bind_groups.ssr = SsrBindGroup::new(
+            &self.descriptors.texture_views.pyramids.depth_pyramid,
+            &self.descriptors.texture_views.gbuffer.normal_roughness,
+            &self.resources.samplers.nearest,
+            &self.descriptors.texture_views.lighting_target.lit_hdr,
+            &self.resources.samplers.linear,
+            &self.resources.buffers.lights.environment_map_intensity,
+            &self.descriptors.bind_group_layouts.ssr_inputs,
+            device,
+        );
+        self.descriptors.bind_groups.ssr_composite = SsrCompositeBindGroup::new(
+            &self.descriptors.texture_views.gbuffer.albedo_ao,
+            &self.resources.samplers.nearest,
+            &self.descriptors.texture_views.gbuffer.normal_roughness,
+            &self.resources.samplers.nearest,
+            &self.descriptors.texture_views.gbuffer.emissive_metallic,
+            &self.resources.samplers.nearest,
+            &self.descriptors.texture_views.gbuffer.depth,
+            &self.descriptors.texture_views.ssr.reflections,
+            &self.resources.samplers.linear,
+            &self.descriptors.texture_views.lighting_target.lit_hdr,
+            &self.resources.samplers.nearest,
+            &self.descriptors.bind_group_layouts.ssr_composite_inputs,
             device,
         );
         self.refresh_temporal_bind_groups(device);
@@ -476,6 +527,7 @@ impl WorldGpuContext {
         self.resources.textures.hbgi_svgf = new_textures.hbgi_svgf;
         self.resources.textures.reproject = new_textures.reproject;
         self.resources.textures.pyramids = new_textures.pyramids;
+        self.resources.textures.ssr = new_textures.ssr;
         self.resources.textures.sky = new_textures.sky;
         self.resources.textures.lighting_target = new_textures.lighting_target;
 

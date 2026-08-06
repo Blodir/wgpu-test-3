@@ -248,7 +248,6 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
 
     let V = normalize(camera_position - world_position);
     let R = reflect(-V, N);
-    let prefiltered_color = textureSampleLevel(environment_texture, environment_texture_sampler, R, surface_roughness * MAX_REFLECTION_LOD).rgb;
     let F0 = mix(vec3f(0.04), surface_color, surface_metallic);
 
     var direct_diffuse = vec3f(0.0);
@@ -324,13 +323,11 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
         brdf_lut_sampler,
         vec2(max(dot(bent_n_w, V), 0.0), 1.0 - surface_roughness)
     ).rg;
-    let specular_ao = diffuse_ao; // TODO figure out a realistic ao function for specular?
-    let far_specular = prefiltered_color * (F_env * brdf_specular_lut.x + brdf_specular_lut.y) * specular_ao * environment_map_intensity;
 
     let indirect_diffuse = hbgi_irradiance.rgb * k_d2 * surface_color / PI;
 
     let final_diffuse = indirect_diffuse + direct_diffuse;
-    let final_specular = direct_specular + far_specular;
+    let final_specular = direct_specular;
 
     let final_color = vec4f(
         final_diffuse +

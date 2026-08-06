@@ -4,6 +4,7 @@ mod hbgi_svgf;
 mod lighting;
 mod mip_pyramid;
 mod reproject;
+mod ssr;
 mod sun_shadow;
 
 pub(crate) use g_buffer::GBufferTextures;
@@ -12,6 +13,7 @@ pub(crate) use hbgi_svgf::HbgiSvgfTextures;
 pub(crate) use lighting::LightingTextures;
 pub(crate) use mip_pyramid::MipPyramidTextures;
 pub(crate) use reproject::ReprojectTextures;
+pub(crate) use ssr::SsrTextures;
 pub(crate) use sun_shadow::SunShadowTexture2;
 
 use crate::host::wgpu_context::WgpuContext;
@@ -22,6 +24,7 @@ pub(crate) struct Textures {
     pub(crate) hbgi_svgf: HbgiSvgfTextures,
     pub(crate) reproject: ReprojectTextures,
     pub(crate) pyramids: MipPyramidTextures,
+    pub(crate) ssr: SsrTextures,
     pub(crate) sky: wgpu::Texture,
     pub(crate) sun_shadow: SunShadowTexture2,
     pub(crate) lighting_target: LightingTextures,
@@ -34,6 +37,7 @@ impl Textures {
         let hbgi_svgf = HbgiSvgfTextures::new(wgpu_context, surface_config);
         let reproject = ReprojectTextures::new(wgpu_context, surface_config);
         let pyramids = MipPyramidTextures::new(wgpu_context, surface_config);
+        let ssr = SsrTextures::new(wgpu_context, surface_config);
         let sun_shadow = SunShadowTexture2::new(wgpu_context);
         let lighting_target = LightingTextures::new(wgpu_context, surface_config);
 
@@ -61,6 +65,7 @@ impl Textures {
             hbgi_svgf,
             reproject,
             pyramids,
+            ssr,
             sky,
             sun_shadow,
             lighting_target,

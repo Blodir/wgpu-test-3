@@ -48,7 +48,7 @@ pub(crate) fn render_skinned_transparent_pass<'a>(
     let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
         label: Some("Skinned Transparent Render Pass"),
         color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-            view: &context.descriptors.texture_views.lighting_target.lit_hdr,
+            view: &context.descriptors.texture_views.ssr.scene_color,
             resolve_target: None,
             ops: wgpu::Operations {
                 load: wgpu::LoadOp::Load,
