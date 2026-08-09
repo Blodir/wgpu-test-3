@@ -5,6 +5,7 @@ mod hbgi_history_fix;
 mod hbgi_pyramid;
 mod hbgi_reproject;
 mod hbgi_svgf;
+mod mipmap;
 mod post_processing;
 mod skinned_transparent;
 mod skybox;
@@ -20,6 +21,7 @@ pub(crate) use hbgi_history_fix::HbgiHistoryFixPipeline;
 pub(crate) use hbgi_pyramid::HbgiPyramidPipelines;
 pub(crate) use hbgi_reproject::HbgiReprojectPipeline;
 pub(crate) use hbgi_svgf::HbgiSvgfPipeline;
+pub(crate) use mipmap::MipmapPipeline;
 pub(crate) use post_processing::PostProcessingPipeline;
 pub(crate) use skinned_transparent::SkinnedTransparentPipeline;
 pub(crate) use skybox::SkyboxPipeline;
@@ -40,6 +42,7 @@ pub(crate) struct Pipelines {
     pub(crate) hbgi_svgf: HbgiSvgfPipeline,
     pub(crate) deferred_lighting: DeferredLightingPipeline,
     pub(crate) hbgi_reproject: HbgiReprojectPipeline,
+    pub(crate) mipmap: MipmapPipeline,
     pub(crate) skybox: SkyboxPipeline,
     pub(crate) sun_shadow: SunShadowPipeline,
     pub(crate) ssr: SsrPipeline,
@@ -62,6 +65,7 @@ impl Pipelines {
         let hbgi_svgf = HbgiSvgfPipeline::new(wgpu_context, shader_cache, layouts);
         let deferred_lighting = DeferredLightingPipeline::new(wgpu_context, shader_cache, layouts);
         let hbgi_reproject = HbgiReprojectPipeline::new(wgpu_context, shader_cache, layouts);
+        let mipmap = MipmapPipeline::new(wgpu_context, shader_cache, layouts);
         let skybox = SkyboxPipeline::new(wgpu_context, shader_cache, layouts);
         let sun_shadow = SunShadowPipeline::new(wgpu_context, shader_cache, layouts);
         let ssr = SsrPipeline::new(wgpu_context, shader_cache, layouts);
@@ -80,6 +84,7 @@ impl Pipelines {
             hbgi_svgf,
             deferred_lighting,
             hbgi_reproject,
+            mipmap,
             skybox,
             sun_shadow,
             ssr,

@@ -3,7 +3,8 @@ use super::bind_groups::{
     DeferredLightingHbgiBindGroup, HbgiInputsBindGroup, HbgiPyramidBindGroups,
     HbgiReprojectInputsBindGroup, HbgiReprojectSettingsBindGroup, HbgiSettingsBindGroup,
     HbgiSvgfInputsBindGroup, HbgiSvgfSettingsBindGroup, InstanceStorageBindGroup, LightsBindGroup,
-    PostProcessingBindGroup, SsrBindGroup, SsrCompositeBindGroup, SunShadowMatrixBindGroup,
+    MipmapBindGroups, PostProcessingBindGroup, SsrBindGroup, SsrCompositeBindGroup,
+    SunShadowMatrixBindGroup,
 };
 use crate::host::renderer::world::external::MaterialBindGroup;
 use crate::host::wgpu_context::WgpuContext;
@@ -27,6 +28,7 @@ pub struct BGLayouts {
     pub hbgi_svgf_settings: wgpu::BindGroupLayout,
     pub hbgi_pyramid_base: wgpu::BindGroupLayout,
     pub hbgi_pyramid_downsample: wgpu::BindGroupLayout,
+    pub mipmap: wgpu::BindGroupLayout,
     pub post_processing: wgpu::BindGroupLayout,
     pub ssr_inputs: wgpu::BindGroupLayout,
     pub ssr_composite_inputs: wgpu::BindGroupLayout,
@@ -87,6 +89,9 @@ impl BGLayouts {
         let hbgi_pyramid_downsample = wgpu_context
             .device
             .create_bind_group_layout(&HbgiPyramidBindGroups::downsample_desc());
+        let mipmap = wgpu_context
+            .device
+            .create_bind_group_layout(&MipmapBindGroups::desc());
         let post_processing = wgpu_context
             .device
             .create_bind_group_layout(&PostProcessingBindGroup::desc());
@@ -116,6 +121,7 @@ impl BGLayouts {
             hbgi_svgf_settings,
             hbgi_pyramid_base,
             hbgi_pyramid_downsample,
+            mipmap,
             post_processing,
             ssr_inputs,
             ssr_composite_inputs,

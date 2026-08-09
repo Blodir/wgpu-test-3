@@ -13,7 +13,7 @@ impl HbgiPyramidBindGroups {
                     binding: 0,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        sample_type: wgpu::TextureSampleType::Depth,
                         view_dimension: wgpu::TextureViewDimension::D2,
                         multisampled: false,
                     },
@@ -22,22 +22,6 @@ impl HbgiPyramidBindGroups {
                 wgpu::BindGroupLayoutEntry {
                     binding: 1,
                     visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Depth,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 3,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Texture {
                         sample_type: wgpu::TextureSampleType::Float { filterable: true },
                         view_dimension: wgpu::TextureViewDimension::D2,
@@ -46,7 +30,7 @@ impl HbgiPyramidBindGroups {
                     count: None,
                 },
                 wgpu::BindGroupLayoutEntry {
-                    binding: 4,
+                    binding: 2,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
@@ -63,7 +47,7 @@ impl HbgiPyramidBindGroups {
                     binding: 5,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
                         view_dimension: wgpu::TextureViewDimension::D2,
                         multisampled: false,
                     },
@@ -73,16 +57,6 @@ impl HbgiPyramidBindGroups {
                     binding: 6,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 7,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
                         sample_type: wgpu::TextureSampleType::Float { filterable: true },
                         view_dimension: wgpu::TextureViewDimension::D2,
                         multisampled: false,
@@ -90,7 +64,7 @@ impl HbgiPyramidBindGroups {
                     count: None,
                 },
                 wgpu::BindGroupLayoutEntry {
-                    binding: 8,
+                    binding: 7,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
@@ -103,8 +77,6 @@ impl HbgiPyramidBindGroups {
     fn create_base_bind_group(
         device: &wgpu::Device,
         layout: &wgpu::BindGroupLayout,
-        source_hbgi_view: &wgpu::TextureView,
-        source_hbgi_sampler: &wgpu::Sampler,
         source_depth_view: &wgpu::TextureView,
         source_normal_view: &wgpu::TextureView,
         source_normal_sampler: &wgpu::Sampler,
@@ -114,22 +86,14 @@ impl HbgiPyramidBindGroups {
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::TextureView(source_hbgi_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(source_hbgi_sampler),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
                     resource: wgpu::BindingResource::TextureView(source_depth_view),
                 },
                 wgpu::BindGroupEntry {
-                    binding: 3,
+                    binding: 1,
                     resource: wgpu::BindingResource::TextureView(source_normal_view),
                 },
                 wgpu::BindGroupEntry {
-                    binding: 4,
+                    binding: 2,
                     resource: wgpu::BindingResource::Sampler(source_normal_sampler),
                 },
             ],
@@ -143,7 +107,7 @@ impl HbgiPyramidBindGroups {
         downsample_sampler: &wgpu::Sampler,
         pyramids: &MipPyramidTextureViews,
     ) -> Vec<wgpu::BindGroup> {
-        (1..pyramids.diffuse_radiance_ao_mips.len())
+        (1..pyramids.depth_mips.len())
             .map(|dst_mip| {
                 device.create_bind_group(&wgpu::BindGroupDescriptor {
                     layout,
@@ -151,23 +115,17 @@ impl HbgiPyramidBindGroups {
                         wgpu::BindGroupEntry {
                             binding: 5,
                             resource: wgpu::BindingResource::TextureView(
-                                &pyramids.diffuse_radiance_ao_mips[dst_mip - 1],
+                                &pyramids.depth_mips[dst_mip - 1],
                             ),
                         },
                         wgpu::BindGroupEntry {
                             binding: 6,
                             resource: wgpu::BindingResource::TextureView(
-                                &pyramids.depth_mips[dst_mip - 1],
-                            ),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 7,
-                            resource: wgpu::BindingResource::TextureView(
                                 &pyramids.normal_mips[dst_mip - 1],
                             ),
                         },
                         wgpu::BindGroupEntry {
-                            binding: 8,
+                            binding: 7,
                             resource: wgpu::BindingResource::Sampler(downsample_sampler),
                         },
                     ],
@@ -181,8 +139,6 @@ impl HbgiPyramidBindGroups {
         device: &wgpu::Device,
         layouts: &BGLayouts,
         downsample_sampler: &wgpu::Sampler,
-        source_hbgi_view: &wgpu::TextureView,
-        source_hbgi_sampler: &wgpu::Sampler,
         source_depth_view: &wgpu::TextureView,
         source_normal_view: &wgpu::TextureView,
         source_normal_sampler: &wgpu::Sampler,
@@ -191,8 +147,6 @@ impl HbgiPyramidBindGroups {
         let base = Self::create_base_bind_group(
             device,
             &layouts.hbgi_pyramid_base,
-            source_hbgi_view,
-            source_hbgi_sampler,
             source_depth_view,
             source_normal_view,
             source_normal_sampler,

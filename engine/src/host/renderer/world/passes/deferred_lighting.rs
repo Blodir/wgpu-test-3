@@ -22,7 +22,7 @@ pub(crate) fn render_deferred_lighting_pass(
                     .descriptors
                     .texture_views
                     .lighting_target
-                    .diffuse_radiance_ao,
+                    .diffuse_radiance_ao_mips[0],
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),

@@ -17,6 +17,7 @@ use super::{
         render_deferred_lighting_pass, render_gbuffer_skinned_opaque_pass,
         render_gbuffer_static_opaque_pass, render_hbgi_history_fix_pass, render_hbgi_pass,
         render_hbgi_pyramid_pass, render_hbgi_reproject_pass, render_hbgi_svgf_pass,
+        render_mipmap_pass,
         render_post_processing_pass, render_skinned_transparent_pass, render_skybox_pass,
         render_ssr_composite_pass, render_ssr_pass, render_static_transparent_pass,
         render_sun_shadow_pass,
@@ -51,17 +52,30 @@ pub struct WorldRenderer {
 }
 impl WorldRenderer {
     fn clear_temporal_inputs(&self, encoder: &mut wgpu::CommandEncoder) {
+        for view in &self
+            .gpu_context
+            .descriptors
+            .texture_views
+            .lighting_target
+            .diffuse_radiance_ao_mips
+        {
+            let _clear_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Lighting Target > Diffuse Radiance AO - Clear Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                occlusion_query_set: None,
+                timestamp_writes: None,
+            });
+        }
+
         for (label, view, clear_color) in [
-            (
-                "Lighting Target > Diffuse Radiance AO - Clear Pass",
-                &self
-                    .gpu_context
-                    .descriptors
-                    .texture_views
-                    .lighting_target
-                    .diffuse_radiance_ao,
-                wgpu::Color::TRANSPARENT,
-            ),
             (
                 "Reproject > Bent AO - Clear Pass",
                 self.gpu_context
@@ -146,7 +160,6 @@ impl WorldRenderer {
             "HBGI Pyramid Base Pass",
             &context.pipelines.hbgi_pyramid.base_pipeline,
             &bind_groups.base,
-            &pyramids.diffuse_radiance_ao_mips[0],
             &pyramids.depth_mips[0],
             &pyramids.normal_mips[0],
             context,
@@ -159,9 +172,26 @@ impl WorldRenderer {
                 "HBGI Pyramid Downsample Pass",
                 &context.pipelines.hbgi_pyramid.downsample_pipeline,
                 bind_group,
-                &pyramids.diffuse_radiance_ao_mips[mip_level],
                 &pyramids.depth_mips[mip_level],
                 &pyramids.normal_mips[mip_level],
+                context,
+            );
+        }
+    }
+
+    fn render_gi_source_mips(&self, encoder: &mut wgpu::CommandEncoder) {
+        let context = &self.gpu_context;
+        let texture_views = &context.descriptors.texture_views.lighting_target;
+        let bind_groups = &context.descriptors.bind_groups.mipmap;
+
+        for (idx, bind_group) in bind_groups.downsample.iter().enumerate() {
+            let mip_level = idx + 1;
+            render_mipmap_pass(
+                encoder,
+                "GI Source Mipmap Pass",
+                &context.pipelines.mipmap.render_pipeline,
+                bind_group,
+                &texture_views.diffuse_radiance_ao_mips[mip_level],
                 context,
             );
         }
@@ -291,6 +321,7 @@ impl WorldRenderer {
             self.hbgi_reproject_valid = false;
         }
         render_deferred_lighting_pass(encoder, &self.gpu_context);
+        self.render_gi_source_mips(encoder);
         render_ssr_pass(encoder, &self.gpu_context);
         render_ssr_composite_pass(encoder, &self.gpu_context);
         self.rotate_temporal_buffers(device);

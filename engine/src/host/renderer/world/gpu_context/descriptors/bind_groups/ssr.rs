@@ -63,8 +63,8 @@ impl SsrBindGroup {
 
     fn create_bind_group(
         depth_pyramid_view: &wgpu::TextureView,
-        normal_roughness_view: &wgpu::TextureView,
-        normal_roughness_sampler: &wgpu::Sampler,
+        normal_roughness_pyramid_view: &wgpu::TextureView,
+        normal_roughness_pyramid_sampler: &wgpu::Sampler,
         lighting_view: &wgpu::TextureView,
         lighting_sampler: &wgpu::Sampler,
         environment_map_intensity: &wgpu::Buffer,
@@ -80,11 +80,11 @@ impl SsrBindGroup {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::TextureView(normal_roughness_view),
+                    resource: wgpu::BindingResource::TextureView(normal_roughness_pyramid_view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: wgpu::BindingResource::Sampler(normal_roughness_sampler),
+                    resource: wgpu::BindingResource::Sampler(normal_roughness_pyramid_sampler),
                 },
                 wgpu::BindGroupEntry {
                     binding: 3,
@@ -105,8 +105,8 @@ impl SsrBindGroup {
 
     pub(crate) fn new(
         depth_pyramid_view: &wgpu::TextureView,
-        normal_roughness_view: &wgpu::TextureView,
-        normal_roughness_sampler: &wgpu::Sampler,
+        normal_roughness_pyramid_view: &wgpu::TextureView,
+        normal_roughness_pyramid_sampler: &wgpu::Sampler,
         lighting_view: &wgpu::TextureView,
         lighting_sampler: &wgpu::Sampler,
         environment_map_intensity: &wgpu::Buffer,
@@ -115,8 +115,8 @@ impl SsrBindGroup {
     ) -> Self {
         Self(Self::create_bind_group(
             depth_pyramid_view,
-            normal_roughness_view,
-            normal_roughness_sampler,
+            normal_roughness_pyramid_view,
+            normal_roughness_pyramid_sampler,
             lighting_view,
             lighting_sampler,
             environment_map_intensity,

@@ -6,8 +6,8 @@ use crate::{
     },
 };
 
-const HBGI_PYRAMID_COLOR_TARGET_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 const HBGI_PYRAMID_DEPTH_TARGET_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::R32Float;
+const HBGI_PYRAMID_NORMAL_TARGET_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 
 pub(crate) struct HbgiPyramidPipelines {
     pub(crate) base_pipeline: wgpu::RenderPipeline,
@@ -39,17 +39,12 @@ impl HbgiPyramidPipelines {
                 });
         let color_targets = &[
             Some(wgpu::ColorTargetState {
-                format: HBGI_PYRAMID_COLOR_TARGET_FORMAT,
-                blend: None,
-                write_mask: wgpu::ColorWrites::ALL,
-            }),
-            Some(wgpu::ColorTargetState {
                 format: HBGI_PYRAMID_DEPTH_TARGET_FORMAT,
                 blend: None,
                 write_mask: wgpu::ColorWrites::ALL,
             }),
             Some(wgpu::ColorTargetState {
-                format: HBGI_PYRAMID_COLOR_TARGET_FORMAT,
+                format: HBGI_PYRAMID_NORMAL_TARGET_FORMAT,
                 blend: None,
                 write_mask: wgpu::ColorWrites::ALL,
             }),

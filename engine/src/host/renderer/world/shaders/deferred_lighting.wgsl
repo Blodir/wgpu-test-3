@@ -211,11 +211,12 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
         gbuffer_albedo_ao_sampler,
         uv
     );
-    let normal_roughness = textureSample(
+    var normal_roughness = textureSample(
         gbuffer_normal_roughness,
         gbuffer_normal_roughness_sampler,
         uv
     );
+    //normal_roughness.w = 0.0;
     let emissive_metallic = textureSample(
         gbuffer_emissive_metallic,
         gbuffer_emissive_metallic_sampler,
@@ -333,7 +334,7 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
         final_diffuse +
         final_specular +
         surface_emissive,
-        1.0
+        hbgi.w
     );
     let gi_source = vec4f(
         final_diffuse + surface_emissive,

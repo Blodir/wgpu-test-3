@@ -15,6 +15,7 @@ pub mod hbgi_settings;
 pub mod hbgi_svgf;
 pub mod instance_storage;
 pub mod lights;
+pub mod mipmap;
 pub mod post_processing;
 pub mod ssr;
 pub mod ssr_composite;
@@ -37,6 +38,7 @@ pub(crate) use hbgi_svgf::{
 };
 pub(crate) use instance_storage::InstanceStorageBindGroup;
 pub(crate) use lights::LightsBindGroup;
+pub(crate) use mipmap::MipmapBindGroups;
 pub(crate) use post_processing::PostProcessingBindGroup;
 pub(crate) use ssr::SsrBindGroup;
 pub(crate) use ssr_composite::SsrCompositeBindGroup;
@@ -51,6 +53,7 @@ pub(crate) struct BindGroups {
     pub(crate) hbgi_svgf: HbgiSvgfBindGroups,
     pub(crate) hbgi_pyramid: HbgiPyramidBindGroups,
     pub(crate) lights: LightsBindGroup,
+    pub(crate) mipmap: MipmapBindGroups,
     pub(crate) post_processing: PostProcessingBindGroup,
     pub(crate) ssr: SsrBindGroup,
     pub(crate) ssr_composite: SsrCompositeBindGroup,

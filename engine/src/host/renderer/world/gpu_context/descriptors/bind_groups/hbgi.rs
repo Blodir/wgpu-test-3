@@ -9,6 +9,7 @@ impl HbgiBindGroups {
     pub fn new(
         hbgi_settings_buffer: &wgpu::Buffer,
         hbgi_settings_layout: &wgpu::BindGroupLayout,
+        diffuse_radiance_ao_view: &wgpu::TextureView,
         mip_texture_views: &MipPyramidTextureViews,
         hbgi_sampler: &wgpu::Sampler,
         normal_sampler: &wgpu::Sampler,
@@ -19,6 +20,7 @@ impl HbgiBindGroups {
         let settings =
             HbgiSettingsBindGroup::new(hbgi_settings_buffer, hbgi_settings_layout, device);
         let inputs = HbgiInputsBindGroup::new(
+            diffuse_radiance_ao_view,
             mip_texture_views,
             hbgi_sampler,
             normal_sampler,

@@ -4,21 +4,17 @@ struct VertexOutput {
 }
 
 struct FragmentOutput {
-    @location(0) hbgi: vec4<f32>,
-    @location(1) depth: vec4<f32>,
-    @location(2) normal: vec4<f32>,
+    @location(0) depth: vec4<f32>,
+    @location(1) normal: vec4<f32>,
 }
 
-@group(0) @binding(0) var source_hbgi_texture: texture_2d<f32>;
-@group(0) @binding(1) var source_hbgi_sampler: sampler;
-@group(0) @binding(2) var source_depth_texture: texture_depth_2d;
-@group(0) @binding(3) var source_normal_texture: texture_2d<f32>;
-@group(0) @binding(4) var source_normal_sampler: sampler;
+@group(0) @binding(0) var source_depth_texture: texture_depth_2d;
+@group(0) @binding(1) var source_normal_texture: texture_2d<f32>;
+@group(0) @binding(2) var source_normal_sampler: sampler;
 
-@group(0) @binding(5) var downsample_hbgi_texture: texture_2d<f32>;
-@group(0) @binding(6) var downsample_depth_texture: texture_2d<f32>;
-@group(0) @binding(7) var downsample_normal_texture: texture_2d<f32>;
-@group(0) @binding(8) var downsample_sampler: sampler;
+@group(0) @binding(5) var downsample_depth_texture: texture_2d<f32>;
+@group(0) @binding(6) var downsample_normal_texture: texture_2d<f32>;
+@group(0) @binding(7) var downsample_sampler: sampler;
 
 @vertex
 fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
@@ -67,7 +63,6 @@ fn fs_copy_base(in: VertexOutput) -> FragmentOutput {
     let dims = textureDimensions(source_depth_texture);
     let max_coord = vec2f(dims) - vec2f(1.0);
     let coord = vec2i(clamp(in.tex_coords * vec2f(dims), vec2f(0.0), max_coord));
-    let hbgi = textureSampleLevel(source_hbgi_texture, source_hbgi_sampler, in.tex_coords, 0.0);
     let depth = textureLoad(source_depth_texture, coord, 0);
     let normal = textureSampleLevel(
         source_normal_texture,
@@ -76,7 +71,6 @@ fn fs_copy_base(in: VertexOutput) -> FragmentOutput {
         0.0
     );
     return FragmentOutput(
-        hbgi,
         vec4f(depth, 0.0, 0.0, 1.0),
         normal
     );
@@ -86,7 +80,6 @@ fn fs_copy_base(in: VertexOutput) -> FragmentOutput {
 fn fs_downsample(in: VertexOutput) -> FragmentOutput {
     let dst_coord = vec2u(in.clip_position.xy);
     let depth = sample_depth_hiz_2x2(dst_coord * 2u);
-    let hbgi = textureSampleLevel(downsample_hbgi_texture, downsample_sampler, in.tex_coords, 0.0);
     let normal = textureSampleLevel(
         downsample_normal_texture,
         downsample_sampler,
@@ -94,7 +87,6 @@ fn fs_downsample(in: VertexOutput) -> FragmentOutput {
         0.0
     );
     return FragmentOutput(
-        hbgi,
         vec4f(depth, 0.0, 0.0, 1.0),
         vec4f(safe_normalize3(normal.xyz), normal.w)
     );

@@ -63,6 +63,7 @@ impl HbgiInputsBindGroup {
     }
 
     fn create_bind_group(
+        diffuse_radiance_ao_view: &wgpu::TextureView,
         texture_views: &MipPyramidTextureViews,
         hbgi_sampler: &wgpu::Sampler,
         normal_sampler: &wgpu::Sampler,
@@ -75,9 +76,7 @@ impl HbgiInputsBindGroup {
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::TextureView(
-                        &texture_views.diffuse_radiance_ao_pyramid,
-                    ),
+                    resource: wgpu::BindingResource::TextureView(diffuse_radiance_ao_view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
@@ -105,6 +104,7 @@ impl HbgiInputsBindGroup {
     }
 
     pub fn new(
+        diffuse_radiance_ao_view: &wgpu::TextureView,
         texture_views: &MipPyramidTextureViews,
         hbgi_sampler: &wgpu::Sampler,
         normal_sampler: &wgpu::Sampler,
@@ -113,6 +113,7 @@ impl HbgiInputsBindGroup {
         device: &wgpu::Device,
     ) -> Self {
         Self(Self::create_bind_group(
+            diffuse_radiance_ao_view,
             texture_views,
             hbgi_sampler,
             normal_sampler,

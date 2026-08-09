@@ -7,8 +7,8 @@ use super::{
         bg_layouts::BGLayouts, BindGroups, BonesBindGroups, CameraBindGroup,
         DeferredLightingBindGroups, Descriptors, HbgiBindGroups, HbgiPyramidBindGroups,
         HbgiReprojectBindGroups, HbgiSvgfBindGroups, InstanceStorageBindGroup, LightsBindGroup,
-        PostProcessingBindGroup, SsrBindGroup, SsrCompositeBindGroup, SunShadowMatrixBindGroup,
-        TextureViews,
+        MipmapBindGroups, PostProcessingBindGroup, SsrBindGroup, SsrCompositeBindGroup,
+        SunShadowMatrixBindGroup, TextureViews,
     },
     pipelines::Pipelines,
     resources::{Buffers, Resources, Samplers, Textures},
@@ -82,6 +82,7 @@ impl WorldGpuContext {
             hbgi: HbgiBindGroups::new(
                 &resources.buffers.hbgi_settings,
                 &bind_group_layouts.hbgi_settings,
+                &texture_views.lighting_target.diffuse_radiance_ao,
                 &texture_views.pyramids,
                 &resources.samplers.hbgi_pyramid_downsample,
                 &resources.samplers.hbgi_pyramid_downsample,
@@ -159,8 +160,6 @@ impl WorldGpuContext {
                 device,
                 &bind_group_layouts,
                 &resources.samplers.hbgi_pyramid_downsample,
-                &texture_views.lighting_target.diffuse_radiance_ao,
-                &resources.samplers.nearest,
                 &texture_views.gbuffer.depth,
                 &texture_views.gbuffer.normal_roughness,
                 &resources.samplers.nearest,
@@ -179,6 +178,12 @@ impl WorldGpuContext {
                 &bind_group_layouts.lights,
                 device,
             ),
+            mipmap: MipmapBindGroups::new(
+                &texture_views.lighting_target.diffuse_radiance_ao_mips,
+                &resources.samplers.hbgi_pyramid_downsample,
+                &bind_group_layouts.mipmap,
+                device,
+            ),
             post_processing: PostProcessingBindGroup::new(
                 &texture_views.sky,
                 &resources.samplers.linear,
@@ -189,9 +194,9 @@ impl WorldGpuContext {
             ),
             ssr: SsrBindGroup::new(
                 &texture_views.pyramids.depth_pyramid,
-                &texture_views.gbuffer.normal_roughness,
-                &resources.samplers.nearest,
-                &texture_views.lighting_target.lit_hdr,
+                &texture_views.pyramids.normal_pyramid,
+                &resources.samplers.hbgi_pyramid_downsample,
+                &texture_views.lighting_target.diffuse_radiance_ao,
                 &resources.samplers.linear,
                 &resources.buffers.lights.environment_map_intensity,
                 &bind_group_layouts.ssr_inputs,
@@ -244,6 +249,7 @@ impl WorldGpuContext {
         self.descriptors.bind_groups.hbgi = HbgiBindGroups::new(
             &self.resources.buffers.hbgi_settings,
             &self.descriptors.bind_group_layouts.hbgi_settings,
+            &self.descriptors.texture_views.lighting_target.diffuse_radiance_ao,
             &self.descriptors.texture_views.pyramids,
             &self.resources.samplers.hbgi_pyramid_downsample,
             &self.resources.samplers.hbgi_pyramid_downsample,
@@ -274,16 +280,16 @@ impl WorldGpuContext {
             device,
             &self.descriptors.bind_group_layouts,
             &self.resources.samplers.hbgi_pyramid_downsample,
-            &self
-                .descriptors
-                .texture_views
-                .lighting_target
-                .diffuse_radiance_ao,
-            &self.resources.samplers.nearest,
             &self.descriptors.texture_views.gbuffer.depth,
             &self.descriptors.texture_views.gbuffer.normal_roughness,
             &self.resources.samplers.nearest,
             &self.descriptors.texture_views.pyramids,
+        );
+        self.descriptors.bind_groups.mipmap = MipmapBindGroups::new(
+            &self.descriptors.texture_views.lighting_target.diffuse_radiance_ao_mips,
+            &self.resources.samplers.hbgi_pyramid_downsample,
+            &self.descriptors.bind_group_layouts.mipmap,
+            device,
         );
         self.descriptors.bind_groups.post_processing = PostProcessingBindGroup::new(
             &self.descriptors.texture_views.sky,
@@ -295,9 +301,9 @@ impl WorldGpuContext {
         );
         self.descriptors.bind_groups.ssr = SsrBindGroup::new(
             &self.descriptors.texture_views.pyramids.depth_pyramid,
-            &self.descriptors.texture_views.gbuffer.normal_roughness,
-            &self.resources.samplers.nearest,
-            &self.descriptors.texture_views.lighting_target.lit_hdr,
+            &self.descriptors.texture_views.pyramids.normal_pyramid,
+            &self.resources.samplers.hbgi_pyramid_downsample,
+            &self.descriptors.texture_views.lighting_target.diffuse_radiance_ao,
             &self.resources.samplers.linear,
             &self.resources.buffers.lights.environment_map_intensity,
             &self.descriptors.bind_group_layouts.ssr_inputs,

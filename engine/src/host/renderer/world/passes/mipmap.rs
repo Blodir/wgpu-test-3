@@ -2,35 +2,24 @@ use crate::host::renderer::world::gpu_context::WorldGpuContext;
 
 use super::FULLSCREEN_QUAD_INDEX_COUNT;
 
-pub(crate) fn render_hbgi_pyramid_pass(
+pub(crate) fn render_mipmap_pass(
     encoder: &mut wgpu::CommandEncoder,
     label: &'static str,
     pipeline: &wgpu::RenderPipeline,
     bind_group: &wgpu::BindGroup,
-    depth_view: &wgpu::TextureView,
-    normal_view: &wgpu::TextureView,
+    dst_view: &wgpu::TextureView,
     context: &WorldGpuContext,
 ) {
     let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
         label: Some(label),
-        color_attachments: &[
-            Some(wgpu::RenderPassColorAttachment {
-                view: depth_view,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
-                    store: wgpu::StoreOp::Store,
-                },
-            }),
-            Some(wgpu::RenderPassColorAttachment {
-                view: normal_view,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
-                    store: wgpu::StoreOp::Store,
-                },
-            }),
-        ],
+        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+            view: dst_view,
+            resolve_target: None,
+            ops: wgpu::Operations {
+                load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                store: wgpu::StoreOp::Store,
+            },
+        })],
         depth_stencil_attachment: None,
         occlusion_query_set: None,
         timestamp_writes: None,

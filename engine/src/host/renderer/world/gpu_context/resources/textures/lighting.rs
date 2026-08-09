@@ -3,6 +3,7 @@ use crate::host::wgpu_context::WgpuContext;
 pub(crate) struct LightingTextures {
     pub(crate) lit_hdr: wgpu::Texture,
     pub(crate) diffuse_radiance_ao: wgpu::Texture,
+    pub(crate) mip_level_count: u32,
 }
 
 impl LightingTextures {
@@ -12,6 +13,7 @@ impl LightingTextures {
             height: surface_config.height,
             depth_or_array_layers: 1,
         };
+        let mip_level_count = surface_config.width.max(surface_config.height).ilog2() + 1;
         let lit_hdr = wgpu_context
             .device
             .create_texture(&wgpu::TextureDescriptor {
@@ -30,7 +32,7 @@ impl LightingTextures {
             .create_texture(&wgpu::TextureDescriptor {
                 label: Some("Lighting: Diffuse Radiance + AO Texture"),
                 size,
-                mip_level_count: 1,
+                mip_level_count,
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
                 format: wgpu::TextureFormat::Rgba16Float,
@@ -42,6 +44,7 @@ impl LightingTextures {
         Self {
             lit_hdr,
             diffuse_radiance_ao,
+            mip_level_count,
         }
     }
 }
