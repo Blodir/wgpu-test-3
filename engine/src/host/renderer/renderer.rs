@@ -27,7 +27,7 @@ impl Default for HbgiOptions {
     fn default() -> Self {
         Self {
             radius_pixels: 2000.0,
-            radius_world: 1000.0,
+            radius_world: 20.0,
             step_size_exponent: 2.0,
             gi_intensity: 1.0,
         }
