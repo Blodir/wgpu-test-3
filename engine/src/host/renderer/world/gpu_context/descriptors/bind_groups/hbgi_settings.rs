@@ -41,7 +41,7 @@ const PRECOMPUTED_R2_SAMPLES: [[f32; 2]; 8] = [
 ];
 
 // https://extremelearning.com.au/unreasonable-effectiveness-of-quasirandom-sequences
-fn r2_quasirandom_sequence(n: u32) -> (f32, f32) {
+pub(crate) fn r2_quasirandom_sequence(n: u32) -> (f32, f32) {
     let g = 1.6180339887498948482;
     let a1 = 1.0 / g;
     let a2 = 1.0 / (g * g);

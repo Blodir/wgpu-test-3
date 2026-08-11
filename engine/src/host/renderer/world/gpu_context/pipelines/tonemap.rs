@@ -1,36 +1,36 @@
 use crate::{
-    global_paths::SHADER_POST_PROCESSING_WGSL,
+    global_paths::SHADER_TONEMAP_WGSL,
     host::{
         renderer::world::gpu_context::BGLayouts, shader_cache::ShaderCache,
         wgpu_context::WgpuContext,
     },
 };
 
-pub(crate) struct PostProcessingPipeline {
+pub(crate) struct TonemapPipeline {
     pub(crate) render_pipeline: wgpu::RenderPipeline,
 }
 
-impl PostProcessingPipeline {
+impl TonemapPipeline {
     pub(crate) fn new(
         wgpu_context: &WgpuContext,
         shader_cache: &mut ShaderCache,
         layouts: &BGLayouts,
     ) -> Self {
-        let bind_group_layouts = &[&layouts.post_processing];
+        let bind_group_layouts = &[&layouts.tonemap];
         let render_pipeline_layout =
             wgpu_context
                 .device
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                    label: Some("Post Processing Pipeline Layout"),
+                    label: Some("Tonemap Pipeline Layout"),
                     bind_group_layouts,
                     push_constant_ranges: &[],
                 });
-        let shader_module = shader_cache.get(SHADER_POST_PROCESSING_WGSL.to_string(), wgpu_context);
+        let shader_module = shader_cache.get(SHADER_TONEMAP_WGSL.to_string(), wgpu_context);
         let render_pipeline =
             wgpu_context
                 .device
                 .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                    label: Some("Post Processing Render Pipeline"),
+                    label: Some("Tonemap Render Pipeline"),
                     layout: Some(&render_pipeline_layout),
                     vertex: wgpu::VertexState {
                         module: &shader_module,

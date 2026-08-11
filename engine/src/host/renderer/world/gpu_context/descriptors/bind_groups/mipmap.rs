@@ -33,25 +33,24 @@ impl MipmapBindGroups {
         layout: &wgpu::BindGroupLayout,
         device: &wgpu::Device,
     ) -> Self {
-        let downsample =
-            (1..source_mips.len())
-                .map(|dst_mip| {
-                    device.create_bind_group(&wgpu::BindGroupDescriptor {
-                        layout,
-                        entries: &[
-                            wgpu::BindGroupEntry {
-                                binding: 0,
-                                resource: wgpu::BindingResource::TextureView(&source_mips[dst_mip - 1]),
-                            },
-                            wgpu::BindGroupEntry {
-                                binding: 1,
-                                resource: wgpu::BindingResource::Sampler(sampler),
-                            },
-                        ],
-                        label: Some("Mipmap Bind Group"),
-                    })
+        let downsample = (1..source_mips.len())
+            .map(|dst_mip| {
+                device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    layout,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: wgpu::BindingResource::TextureView(&source_mips[dst_mip - 1]),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: wgpu::BindingResource::Sampler(sampler),
+                        },
+                    ],
+                    label: Some("Mipmap Bind Group"),
                 })
-                .collect();
+            })
+            .collect();
 
         Self { downsample }
     }

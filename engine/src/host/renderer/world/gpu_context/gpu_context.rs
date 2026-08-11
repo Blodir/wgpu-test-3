@@ -7,8 +7,8 @@ use super::{
         bg_layouts::BGLayouts, BindGroups, BonesBindGroups, CameraBindGroup,
         DeferredLightingBindGroups, Descriptors, HbgiBindGroups, HbgiPyramidBindGroups,
         HbgiReprojectBindGroups, HbgiSvgfBindGroups, InstanceStorageBindGroup, LightsBindGroup,
-        MipmapBindGroups, PostProcessingBindGroup, SsrBindGroup, SsrCompositeBindGroup,
-        SunShadowMatrixBindGroup, TextureViews,
+        MipmapBindGroups, SsrBindGroup, SsrCompositeBindGroup, SunShadowMatrixBindGroup,
+        TaaResolveBindGroup, TextureViews, TonemapBindGroup,
     },
     pipelines::Pipelines,
     resources::{Buffers, Resources, Samplers, Textures},
@@ -57,14 +57,15 @@ impl WorldGpuContext {
             buffers: Buffers::new(wgpu_context, hbgi_settings.as_ref()),
             samplers: Samplers::new(&wgpu_context.device),
         };
-        let texture_views = TextureViews::new(&resources.textures);
+        let texture_views = TextureViews::new(
+            &resources.textures,
+            render_resources,
+            placeholders,
+            external.brdf_lut,
+            external.blue_noise,
+        );
         let bind_group_layouts = BGLayouts::new(wgpu_context);
         let device = &wgpu_context.device;
-        let textures = &render_resources.textures;
-        let prefiltered = textures.get(placeholders.prefiltered.into()).unwrap();
-        let di = textures.get(placeholders.di.into()).unwrap();
-        let brdf = textures.get(external.brdf_lut.into()).unwrap();
-        let blue_noise = textures.get(external.blue_noise.into()).unwrap();
 
         let bind_groups = BindGroups {
             bones: BonesBindGroups::new(
@@ -83,10 +84,14 @@ impl WorldGpuContext {
                 &resources.buffers.hbgi_settings,
                 &bind_group_layouts.hbgi_settings,
                 &texture_views.lighting_target.diffuse_radiance_ao,
-                &texture_views.pyramids,
+                texture_views
+                    .pyramids
+                    .depth_pyramid
+                    .get_write_view(&resources.textures.pyramids.depth_pyramid),
+                &texture_views.pyramids.normal_pyramid,
                 &resources.samplers.hbgi_pyramid_downsample,
                 &resources.samplers.hbgi_pyramid_downsample,
-                &blue_noise.texture_view,
+                &texture_views.external.blue_noise,
                 &bind_group_layouts.hbgi_inputs,
                 device,
             ),
@@ -164,14 +169,15 @@ impl WorldGpuContext {
                 &texture_views.gbuffer.normal_roughness,
                 &resources.samplers.nearest,
                 &texture_views.pyramids,
+                &resources.textures.pyramids.depth_pyramid,
             ),
             lights: LightsBindGroup::new(
                 &resources.buffers.lights,
-                &prefiltered.texture_view,
+                &texture_views.external.placeholder_prefiltered,
                 &resources.samplers.linear,
-                &di.texture_view,
+                &texture_views.external.placeholder_di,
                 &resources.samplers.linear,
-                &brdf.texture_view,
+                &texture_views.external.brdf_lut,
                 &resources.samplers.linear,
                 &texture_views.sun_shadow.array,
                 &resources.samplers.comparison,
@@ -184,16 +190,40 @@ impl WorldGpuContext {
                 &bind_group_layouts.mipmap,
                 device,
             ),
-            post_processing: PostProcessingBindGroup::new(
+            taa_resolve: TaaResolveBindGroup::new(
                 &texture_views.sky,
                 &resources.samplers.linear,
                 &texture_views.ssr.scene_color,
                 &resources.samplers.nearest,
-                &bind_group_layouts.post_processing,
+                texture_views
+                    .taa_resolve
+                    .history
+                    .get_read_view(&resources.textures.taa_resolve.history),
+                texture_views
+                    .pyramids
+                    .depth_pyramid
+                    .get_write_view(&resources.textures.pyramids.depth_pyramid),
+                texture_views
+                    .pyramids
+                    .depth_pyramid
+                    .get_read_view(&resources.textures.pyramids.depth_pyramid),
+                &texture_views.gbuffer.motion_vectors,
+                &bind_group_layouts.taa_resolve,
+                device,
+            ),
+            tonemap: TonemapBindGroup::new(
+                texture_views
+                    .taa_resolve
+                    .history
+                    .get_write_view(&resources.textures.taa_resolve.history),
+                &bind_group_layouts.tonemap,
                 device,
             ),
             ssr: SsrBindGroup::new(
-                &texture_views.pyramids.depth_pyramid,
+                texture_views
+                    .pyramids
+                    .depth_pyramid
+                    .get_write_view(&resources.textures.pyramids.depth_pyramid),
                 &texture_views.pyramids.normal_pyramid,
                 &resources.samplers.hbgi_pyramid_downsample,
                 &texture_views.lighting_target.diffuse_radiance_ao,
@@ -241,19 +271,24 @@ impl WorldGpuContext {
         }
     }
 
-    fn rebuild_surface_bind_groups(
-        &mut self,
-        blue_noise_view: &wgpu::TextureView,
-        device: &wgpu::Device,
-    ) {
+    fn rebuild_surface_bind_groups(&mut self, device: &wgpu::Device) {
         self.descriptors.bind_groups.hbgi = HbgiBindGroups::new(
             &self.resources.buffers.hbgi_settings,
             &self.descriptors.bind_group_layouts.hbgi_settings,
-            &self.descriptors.texture_views.lighting_target.diffuse_radiance_ao,
-            &self.descriptors.texture_views.pyramids,
+            &self
+                .descriptors
+                .texture_views
+                .lighting_target
+                .diffuse_radiance_ao,
+            self.descriptors
+                .texture_views
+                .pyramids
+                .depth_pyramid
+                .get_write_view(&self.resources.textures.pyramids.depth_pyramid),
+            &self.descriptors.texture_views.pyramids.normal_pyramid,
             &self.resources.samplers.hbgi_pyramid_downsample,
             &self.resources.samplers.hbgi_pyramid_downsample,
-            blue_noise_view,
+            &self.descriptors.texture_views.external.blue_noise,
             &self.descriptors.bind_group_layouts.hbgi_inputs,
             device,
         );
@@ -284,26 +319,64 @@ impl WorldGpuContext {
             &self.descriptors.texture_views.gbuffer.normal_roughness,
             &self.resources.samplers.nearest,
             &self.descriptors.texture_views.pyramids,
+            &self.resources.textures.pyramids.depth_pyramid,
         );
         self.descriptors.bind_groups.mipmap = MipmapBindGroups::new(
-            &self.descriptors.texture_views.lighting_target.diffuse_radiance_ao_mips,
+            &self
+                .descriptors
+                .texture_views
+                .lighting_target
+                .diffuse_radiance_ao_mips,
             &self.resources.samplers.hbgi_pyramid_downsample,
             &self.descriptors.bind_group_layouts.mipmap,
             device,
         );
-        self.descriptors.bind_groups.post_processing = PostProcessingBindGroup::new(
+        self.descriptors.bind_groups.taa_resolve = TaaResolveBindGroup::new(
             &self.descriptors.texture_views.sky,
             &self.resources.samplers.linear,
             &self.descriptors.texture_views.ssr.scene_color,
             &self.resources.samplers.nearest,
-            &self.descriptors.bind_group_layouts.post_processing,
+            self.descriptors
+                .texture_views
+                .taa_resolve
+                .history
+                .get_read_view(&self.resources.textures.taa_resolve.history),
+            self.descriptors
+                .texture_views
+                .pyramids
+                .depth_pyramid
+                .get_write_view(&self.resources.textures.pyramids.depth_pyramid),
+            self.descriptors
+                .texture_views
+                .pyramids
+                .depth_pyramid
+                .get_read_view(&self.resources.textures.pyramids.depth_pyramid),
+            &self.descriptors.texture_views.gbuffer.motion_vectors,
+            &self.descriptors.bind_group_layouts.taa_resolve,
+            device,
+        );
+        self.descriptors.bind_groups.tonemap = TonemapBindGroup::new(
+            self.descriptors
+                .texture_views
+                .taa_resolve
+                .history
+                .get_write_view(&self.resources.textures.taa_resolve.history),
+            &self.descriptors.bind_group_layouts.tonemap,
             device,
         );
         self.descriptors.bind_groups.ssr = SsrBindGroup::new(
-            &self.descriptors.texture_views.pyramids.depth_pyramid,
+            self.descriptors
+                .texture_views
+                .pyramids
+                .depth_pyramid
+                .get_write_view(&self.resources.textures.pyramids.depth_pyramid),
             &self.descriptors.texture_views.pyramids.normal_pyramid,
             &self.resources.samplers.hbgi_pyramid_downsample,
-            &self.descriptors.texture_views.lighting_target.diffuse_radiance_ao,
+            &self
+                .descriptors
+                .texture_views
+                .lighting_target
+                .diffuse_radiance_ao,
             &self.resources.samplers.linear,
             &self.resources.buffers.lights.environment_map_intensity,
             &self.descriptors.bind_group_layouts.ssr_inputs,
@@ -403,7 +476,6 @@ impl WorldGpuContext {
         point_lights: &[PointLightSnapshot],
         environment_map: Option<(TextureRenderId, TextureRenderId)>,
         render_resources: &RenderAssetStore,
-        placeholders: &PlaceholderTextureIds,
         wgpu_context: &WgpuContext,
     ) {
         self.resources
@@ -419,19 +491,18 @@ impl WorldGpuContext {
             .lights
             .update_point_lights(point_lights, &wgpu_context.queue);
 
-        let (prefiltered_id, di_id) =
-            environment_map.unwrap_or((placeholders.prefiltered, placeholders.di));
-        let textures = &render_resources.textures;
-        let prefiltered = textures.get(prefiltered_id.into()).unwrap();
-        let di = textures.get(di_id.into()).unwrap();
-        let brdf = textures.get(self.external.brdf_lut.into()).unwrap();
+        let (prefiltered, di) = self
+            .descriptors
+            .texture_views
+            .external
+            .resolve_environment_views(render_resources, environment_map);
         self.descriptors.bind_groups.lights = LightsBindGroup::new(
             &self.resources.buffers.lights,
-            &prefiltered.texture_view,
+            prefiltered,
             &self.resources.samplers.linear,
-            &di.texture_view,
+            di,
             &self.resources.samplers.linear,
-            &brdf.texture_view,
+            &self.descriptors.texture_views.external.brdf_lut,
             &self.resources.samplers.linear,
             &self.descriptors.texture_views.sun_shadow.array,
             &self.resources.samplers.comparison,
@@ -441,6 +512,36 @@ impl WorldGpuContext {
     }
 
     pub(crate) fn refresh_temporal_bind_groups(&mut self, device: &wgpu::Device) {
+        self.descriptors.bind_groups.hbgi = HbgiBindGroups::new(
+            &self.resources.buffers.hbgi_settings,
+            &self.descriptors.bind_group_layouts.hbgi_settings,
+            &self
+                .descriptors
+                .texture_views
+                .lighting_target
+                .diffuse_radiance_ao,
+            self.descriptors
+                .texture_views
+                .pyramids
+                .depth_pyramid
+                .get_write_view(&self.resources.textures.pyramids.depth_pyramid),
+            &self.descriptors.texture_views.pyramids.normal_pyramid,
+            &self.resources.samplers.hbgi_pyramid_downsample,
+            &self.resources.samplers.hbgi_pyramid_downsample,
+            &self.descriptors.texture_views.external.blue_noise,
+            &self.descriptors.bind_group_layouts.hbgi_inputs,
+            device,
+        );
+        self.descriptors.bind_groups.hbgi_pyramid = HbgiPyramidBindGroups::new(
+            device,
+            &self.descriptors.bind_group_layouts,
+            &self.resources.samplers.hbgi_pyramid_downsample,
+            &self.descriptors.texture_views.gbuffer.depth,
+            &self.descriptors.texture_views.gbuffer.normal_roughness,
+            &self.resources.samplers.nearest,
+            &self.descriptors.texture_views.pyramids,
+            &self.resources.textures.pyramids.depth_pyramid,
+        );
         self.descriptors.bind_groups.hbgi_svgf = HbgiSvgfBindGroups::new(
             self.descriptors
                 .texture_views
@@ -508,6 +609,57 @@ impl WorldGpuContext {
             &self.descriptors.bind_group_layouts,
             device,
         );
+        self.descriptors.bind_groups.taa_resolve = TaaResolveBindGroup::new(
+            &self.descriptors.texture_views.sky,
+            &self.resources.samplers.linear,
+            &self.descriptors.texture_views.ssr.scene_color,
+            &self.resources.samplers.nearest,
+            self.descriptors
+                .texture_views
+                .taa_resolve
+                .history
+                .get_read_view(&self.resources.textures.taa_resolve.history),
+            self.descriptors
+                .texture_views
+                .pyramids
+                .depth_pyramid
+                .get_write_view(&self.resources.textures.pyramids.depth_pyramid),
+            self.descriptors
+                .texture_views
+                .pyramids
+                .depth_pyramid
+                .get_read_view(&self.resources.textures.pyramids.depth_pyramid),
+            &self.descriptors.texture_views.gbuffer.motion_vectors,
+            &self.descriptors.bind_group_layouts.taa_resolve,
+            device,
+        );
+        self.descriptors.bind_groups.tonemap = TonemapBindGroup::new(
+            self.descriptors
+                .texture_views
+                .taa_resolve
+                .history
+                .get_write_view(&self.resources.textures.taa_resolve.history),
+            &self.descriptors.bind_group_layouts.tonemap,
+            device,
+        );
+        self.descriptors.bind_groups.ssr = SsrBindGroup::new(
+            self.descriptors
+                .texture_views
+                .pyramids
+                .depth_pyramid
+                .get_write_view(&self.resources.textures.pyramids.depth_pyramid),
+            &self.descriptors.texture_views.pyramids.normal_pyramid,
+            &self.resources.samplers.hbgi_pyramid_downsample,
+            &self
+                .descriptors
+                .texture_views
+                .lighting_target
+                .diffuse_radiance_ao,
+            &self.resources.samplers.linear,
+            &self.resources.buffers.lights.environment_map_intensity,
+            &self.descriptors.bind_group_layouts.ssr_inputs,
+            device,
+        );
     }
 
     pub(crate) fn rotate_temporal_resources(&mut self, device: &wgpu::Device) {
@@ -519,6 +671,8 @@ impl WorldGpuContext {
             .swap();
         self.resources.textures.reproject.depth_history.swap();
         self.resources.textures.reproject.normal_history.swap();
+        self.resources.textures.taa_resolve.history.swap();
+        self.resources.textures.pyramids.depth_pyramid.swap();
         self.refresh_temporal_bind_groups(device);
     }
 
@@ -526,6 +680,7 @@ impl WorldGpuContext {
         &mut self,
         wgpu_context: &WgpuContext,
         render_resources: &RenderAssetStore,
+        placeholders: &PlaceholderTextureIds,
     ) {
         let new_textures = Textures::new(wgpu_context, &wgpu_context.surface_config);
         self.resources.textures.gbuffer = new_textures.gbuffer;
@@ -533,15 +688,18 @@ impl WorldGpuContext {
         self.resources.textures.hbgi_svgf = new_textures.hbgi_svgf;
         self.resources.textures.reproject = new_textures.reproject;
         self.resources.textures.pyramids = new_textures.pyramids;
+        self.resources.textures.taa_resolve = new_textures.taa_resolve;
         self.resources.textures.ssr = new_textures.ssr;
         self.resources.textures.sky = new_textures.sky;
         self.resources.textures.lighting_target = new_textures.lighting_target;
 
-        self.descriptors.texture_views = TextureViews::new(&self.resources.textures);
-        let blue_noise = render_resources
-            .textures
-            .get(self.external.blue_noise.into())
-            .unwrap();
-        self.rebuild_surface_bind_groups(&blue_noise.texture_view, &wgpu_context.device);
+        self.descriptors.texture_views = TextureViews::new(
+            &self.resources.textures,
+            render_resources,
+            placeholders,
+            self.external.brdf_lut,
+            self.external.blue_noise,
+        );
+        self.rebuild_surface_bind_groups(&wgpu_context.device);
     }
 }

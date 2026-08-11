@@ -6,7 +6,8 @@ pub struct CameraBuffers {
     pub position: wgpu::Buffer,
     pub inverse_view_proj: wgpu::Buffer,
     pub view_rotation: wgpu::Buffer,
-    pub prev_view_proj: wgpu::Buffer,
+    pub unjittered_view_proj: wgpu::Buffer,
+    pub prev_unjittered_view_proj: wgpu::Buffer,
 }
 
 impl CameraBuffers {
@@ -39,17 +40,24 @@ impl CameraBuffers {
             contents: bytemuck::cast_slice(&Self::padded_view_rotation(Vec3::X, Vec3::Y, -Vec3::Z)),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
-        let prev_view_proj = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Previous View Projection Buffer"),
+        let unjittered_view_proj = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Unjittered View Projection Buffer"),
             contents: bytemuck::cast_slice(&Mat4::IDENTITY.to_cols_array()),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
+        let prev_unjittered_view_proj =
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Previous Unjittered View Projection Buffer"),
+                contents: bytemuck::cast_slice(&Mat4::IDENTITY.to_cols_array()),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            });
         Self {
             view_proj,
             position,
             inverse_view_proj,
             view_rotation,
-            prev_view_proj,
+            unjittered_view_proj,
+            prev_unjittered_view_proj,
         }
     }
 
@@ -59,7 +67,8 @@ impl CameraBuffers {
         position: &[f32; 3],
         inverse_view_proj: &[f32; 16],
         view_rotation: &[[f32; 4]; 3],
-        prev_view_proj: &[f32; 16],
+        unjittered_view_proj: &[f32; 16],
+        prev_unjittered_view_proj: &[f32; 16],
         queue: &wgpu::Queue,
     ) {
         queue.write_buffer(&self.view_proj, 0, bytemuck::cast_slice(view_proj));
@@ -71,9 +80,14 @@ impl CameraBuffers {
         );
         queue.write_buffer(&self.view_rotation, 0, bytemuck::cast_slice(view_rotation));
         queue.write_buffer(
-            &self.prev_view_proj,
+            &self.unjittered_view_proj,
             0,
-            bytemuck::cast_slice(prev_view_proj),
+            bytemuck::cast_slice(unjittered_view_proj),
+        );
+        queue.write_buffer(
+            &self.prev_unjittered_view_proj,
+            0,
+            bytemuck::cast_slice(prev_unjittered_view_proj),
         );
     }
 }

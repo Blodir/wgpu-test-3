@@ -1,5 +1,6 @@
 use super::super::bg_layouts::BGLayouts;
 use super::super::texture_views::MipPyramidTextureViews;
+use crate::host::renderer::rw_texture::RWTexture;
 
 pub(crate) struct HbgiPyramidBindGroups {
     pub base: wgpu::BindGroup,
@@ -106,6 +107,7 @@ impl HbgiPyramidBindGroups {
         layout: &wgpu::BindGroupLayout,
         downsample_sampler: &wgpu::Sampler,
         pyramids: &MipPyramidTextureViews,
+        depth_pyramid: &RWTexture,
     ) -> Vec<wgpu::BindGroup> {
         (1..pyramids.depth_mips.len())
             .map(|dst_mip| {
@@ -115,7 +117,7 @@ impl HbgiPyramidBindGroups {
                         wgpu::BindGroupEntry {
                             binding: 5,
                             resource: wgpu::BindingResource::TextureView(
-                                &pyramids.depth_mips[dst_mip - 1],
+                                pyramids.depth_mips[dst_mip - 1].get_write_view(depth_pyramid),
                             ),
                         },
                         wgpu::BindGroupEntry {
@@ -143,6 +145,7 @@ impl HbgiPyramidBindGroups {
         source_normal_view: &wgpu::TextureView,
         source_normal_sampler: &wgpu::Sampler,
         pyramids: &MipPyramidTextureViews,
+        depth_pyramid: &RWTexture,
     ) -> Self {
         let base = Self::create_base_bind_group(
             device,
@@ -156,6 +159,7 @@ impl HbgiPyramidBindGroups {
             &layouts.hbgi_pyramid_downsample,
             downsample_sampler,
             pyramids,
+            depth_pyramid,
         );
 
         Self { base, downsample }

@@ -3,8 +3,8 @@ use super::bind_groups::{
     DeferredLightingHbgiBindGroup, HbgiInputsBindGroup, HbgiPyramidBindGroups,
     HbgiReprojectInputsBindGroup, HbgiReprojectSettingsBindGroup, HbgiSettingsBindGroup,
     HbgiSvgfInputsBindGroup, HbgiSvgfSettingsBindGroup, InstanceStorageBindGroup, LightsBindGroup,
-    MipmapBindGroups, PostProcessingBindGroup, SsrBindGroup, SsrCompositeBindGroup,
-    SunShadowMatrixBindGroup,
+    MipmapBindGroups, SsrBindGroup, SsrCompositeBindGroup, SunShadowMatrixBindGroup,
+    TaaResolveBindGroup, TonemapBindGroup,
 };
 use crate::host::renderer::world::external::MaterialBindGroup;
 use crate::host::wgpu_context::WgpuContext;
@@ -29,7 +29,8 @@ pub struct BGLayouts {
     pub hbgi_pyramid_base: wgpu::BindGroupLayout,
     pub hbgi_pyramid_downsample: wgpu::BindGroupLayout,
     pub mipmap: wgpu::BindGroupLayout,
-    pub post_processing: wgpu::BindGroupLayout,
+    pub taa_resolve: wgpu::BindGroupLayout,
+    pub tonemap: wgpu::BindGroupLayout,
     pub ssr_inputs: wgpu::BindGroupLayout,
     pub ssr_composite_inputs: wgpu::BindGroupLayout,
 }
@@ -92,9 +93,12 @@ impl BGLayouts {
         let mipmap = wgpu_context
             .device
             .create_bind_group_layout(&MipmapBindGroups::desc());
-        let post_processing = wgpu_context
+        let taa_resolve = wgpu_context
             .device
-            .create_bind_group_layout(&PostProcessingBindGroup::desc());
+            .create_bind_group_layout(&TaaResolveBindGroup::desc());
+        let tonemap = wgpu_context
+            .device
+            .create_bind_group_layout(&TonemapBindGroup::desc());
         let ssr_inputs = wgpu_context
             .device
             .create_bind_group_layout(&SsrBindGroup::desc());
@@ -122,7 +126,8 @@ impl BGLayouts {
             hbgi_pyramid_base,
             hbgi_pyramid_downsample,
             mipmap,
-            post_processing,
+            taa_resolve,
+            tonemap,
             ssr_inputs,
             ssr_composite_inputs,
         }

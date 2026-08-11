@@ -16,10 +16,11 @@ pub mod hbgi_svgf;
 pub mod instance_storage;
 pub mod lights;
 pub mod mipmap;
-pub mod post_processing;
 pub mod ssr;
 pub mod ssr_composite;
 pub mod sun_shadow_matrix;
+pub mod taa_resolve;
+pub mod tonemap;
 
 pub(crate) use bones::BonesBindGroups;
 pub(crate) use camera::CameraBindGroup;
@@ -32,17 +33,20 @@ pub(crate) use hbgi_pyramid::HbgiPyramidBindGroups;
 pub(crate) use hbgi_reproject::HbgiReprojectBindGroups;
 pub(crate) use hbgi_reproject_inputs::HbgiReprojectInputsBindGroup;
 pub(crate) use hbgi_reproject_settings::HbgiReprojectSettingsBindGroup;
-pub(crate) use hbgi_settings::{HbgiSettingsBindGroup, HbgiSettingsUniform};
+pub(crate) use hbgi_settings::{
+    r2_quasirandom_sequence, HbgiSettingsBindGroup, HbgiSettingsUniform,
+};
 pub(crate) use hbgi_svgf::{
     HbgiSvgfBindGroups, HbgiSvgfInputsBindGroup, HbgiSvgfSettingsBindGroup,
 };
 pub(crate) use instance_storage::InstanceStorageBindGroup;
 pub(crate) use lights::LightsBindGroup;
 pub(crate) use mipmap::MipmapBindGroups;
-pub(crate) use post_processing::PostProcessingBindGroup;
 pub(crate) use ssr::SsrBindGroup;
 pub(crate) use ssr_composite::SsrCompositeBindGroup;
 pub(crate) use sun_shadow_matrix::SunShadowMatrixBindGroup;
+pub(crate) use taa_resolve::TaaResolveBindGroup;
+pub(crate) use tonemap::TonemapBindGroup;
 
 pub(crate) struct BindGroups {
     pub(crate) bones: BonesBindGroups,
@@ -54,9 +58,10 @@ pub(crate) struct BindGroups {
     pub(crate) hbgi_pyramid: HbgiPyramidBindGroups,
     pub(crate) lights: LightsBindGroup,
     pub(crate) mipmap: MipmapBindGroups,
-    pub(crate) post_processing: PostProcessingBindGroup,
     pub(crate) ssr: SsrBindGroup,
     pub(crate) ssr_composite: SsrCompositeBindGroup,
     pub(crate) static_instances: InstanceStorageBindGroup,
     pub(crate) sun_shadow_matrices: [SunShadowMatrixBindGroup; SUN_SHADOW_MAX_CASCADE_COUNT],
+    pub(crate) taa_resolve: TaaResolveBindGroup,
+    pub(crate) tonemap: TonemapBindGroup,
 }

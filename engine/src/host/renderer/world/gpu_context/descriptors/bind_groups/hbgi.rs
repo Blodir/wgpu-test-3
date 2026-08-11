@@ -1,4 +1,3 @@
-use super::super::texture_views::MipPyramidTextureViews;
 use super::{hbgi_inputs::HbgiInputsBindGroup, hbgi_settings::HbgiSettingsBindGroup};
 
 pub(crate) struct HbgiBindGroups {
@@ -10,7 +9,8 @@ impl HbgiBindGroups {
         hbgi_settings_buffer: &wgpu::Buffer,
         hbgi_settings_layout: &wgpu::BindGroupLayout,
         diffuse_radiance_ao_view: &wgpu::TextureView,
-        mip_texture_views: &MipPyramidTextureViews,
+        depth_pyramid_view: &wgpu::TextureView,
+        normal_pyramid_view: &wgpu::TextureView,
         hbgi_sampler: &wgpu::Sampler,
         normal_sampler: &wgpu::Sampler,
         blue_noise_view: &wgpu::TextureView,
@@ -21,7 +21,8 @@ impl HbgiBindGroups {
             HbgiSettingsBindGroup::new(hbgi_settings_buffer, hbgi_settings_layout, device);
         let inputs = HbgiInputsBindGroup::new(
             diffuse_radiance_ao_view,
-            mip_texture_views,
+            depth_pyramid_view,
+            normal_pyramid_view,
             hbgi_sampler,
             normal_sampler,
             blue_noise_view,

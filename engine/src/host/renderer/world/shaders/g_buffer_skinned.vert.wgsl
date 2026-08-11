@@ -1,5 +1,6 @@
 @group(0) @binding(0) var<uniform> view_proj: mat4x4<f32>;
-@group(0) @binding(5) var<uniform> prev_view_proj: mat4x4<f32>;
+@group(0) @binding(5) var<uniform> unjittered_view_proj: mat4x4<f32>;
+@group(0) @binding(6) var<uniform> prev_unjittered_view_proj: mat4x4<f32>;
 
 struct BoneMat34 {
     r0: vec4<f32>,
@@ -170,10 +171,12 @@ fn vs_main(
         );
     }
 
-    let curr_clip = view_proj * curr_transform * vec4<f32>(curr_pos, 1.0);
-    var prev_clip = curr_clip;
+    let curr_world_position = curr_transform * vec4<f32>(curr_pos, 1.0);
+    let curr_clip = view_proj * curr_world_position;
+    let curr_motion_clip = unjittered_view_proj * curr_world_position;
+    var prev_clip = curr_motion_clip;
     if (has_prev_pose) {
-        prev_clip = prev_view_proj * prev_transform * vec4<f32>(prev_pos, 1.0);
+        prev_clip = prev_unjittered_view_proj * prev_transform * vec4<f32>(prev_pos, 1.0);
     }
 
     var out: VertexOutput;
@@ -186,7 +189,7 @@ fn vs_main(
     out.tangent = T;
     out.bitangent = B;
 
-    out.world_position = curr_transform * vec4f(curr_pos, 1.0);
+    out.world_position = curr_world_position;
 
     out.normal_tex_coords = model.normal_tex_coords.xy;
     out.occlusion_tex_coords = model.normal_tex_coords.zw;
@@ -194,7 +197,7 @@ fn vs_main(
     out.emissive_tex_coords = model.emissive_base_color_tex_coords.xy;
     out.base_color_tex_coords = model.emissive_base_color_tex_coords.zw;
     out.metallic_roughness_tex_coords = model.metallic_roughness_tex_coords;
-    out.curr_clip = curr_clip;
+    out.curr_clip = curr_motion_clip;
     out.prev_clip = prev_clip;
 
     return out;

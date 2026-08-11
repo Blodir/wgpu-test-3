@@ -1,5 +1,3 @@
-use super::super::texture_views::MipPyramidTextureViews;
-
 pub(crate) struct HbgiInputsBindGroup(pub(crate) wgpu::BindGroup);
 impl HbgiInputsBindGroup {
     pub fn desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
@@ -64,7 +62,8 @@ impl HbgiInputsBindGroup {
 
     fn create_bind_group(
         diffuse_radiance_ao_view: &wgpu::TextureView,
-        texture_views: &MipPyramidTextureViews,
+        depth_pyramid_view: &wgpu::TextureView,
+        normal_pyramid_view: &wgpu::TextureView,
         hbgi_sampler: &wgpu::Sampler,
         normal_sampler: &wgpu::Sampler,
         blue_noise_view: &wgpu::TextureView,
@@ -84,11 +83,11 @@ impl HbgiInputsBindGroup {
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: wgpu::BindingResource::TextureView(&texture_views.depth_pyramid),
+                    resource: wgpu::BindingResource::TextureView(depth_pyramid_view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 3,
-                    resource: wgpu::BindingResource::TextureView(&texture_views.normal_pyramid),
+                    resource: wgpu::BindingResource::TextureView(normal_pyramid_view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 4,
@@ -105,7 +104,8 @@ impl HbgiInputsBindGroup {
 
     pub fn new(
         diffuse_radiance_ao_view: &wgpu::TextureView,
-        texture_views: &MipPyramidTextureViews,
+        depth_pyramid_view: &wgpu::TextureView,
+        normal_pyramid_view: &wgpu::TextureView,
         hbgi_sampler: &wgpu::Sampler,
         normal_sampler: &wgpu::Sampler,
         blue_noise_view: &wgpu::TextureView,
@@ -114,7 +114,8 @@ impl HbgiInputsBindGroup {
     ) -> Self {
         Self(Self::create_bind_group(
             diffuse_radiance_ao_view,
-            texture_views,
+            depth_pyramid_view,
+            normal_pyramid_view,
             hbgi_sampler,
             normal_sampler,
             blue_noise_view,

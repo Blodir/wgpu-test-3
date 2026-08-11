@@ -1,6 +1,6 @@
 pub const SHADER_FALLBACK_WGSL: &str = "engine/src/host/renderer/world/shaders/fallback.wgsl";
-pub const SHADER_POST_PROCESSING_WGSL: &str =
-    "engine/src/host/renderer/world/shaders/post_processing.wgsl";
+pub const SHADER_TAA_RESOLVE_WGSL: &str = "engine/src/host/renderer/world/shaders/taa_resolve.wgsl";
+pub const SHADER_TONEMAP_WGSL: &str = "engine/src/host/renderer/world/shaders/tonemap.wgsl";
 pub const SHADER_SKINNED_TRANSPARENT_VERT_WGSL: &str =
     "engine/src/host/renderer/world/shaders/skinned_transparent.vert.wgsl";
 pub const SHADER_STATIC_TRANSPARENT_VERT_WGSL: &str =

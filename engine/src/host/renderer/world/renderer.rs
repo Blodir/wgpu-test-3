@@ -17,10 +17,9 @@ use super::{
         render_deferred_lighting_pass, render_gbuffer_skinned_opaque_pass,
         render_gbuffer_static_opaque_pass, render_hbgi_history_fix_pass, render_hbgi_pass,
         render_hbgi_pyramid_pass, render_hbgi_reproject_pass, render_hbgi_svgf_pass,
-        render_mipmap_pass,
-        render_post_processing_pass, render_skinned_transparent_pass, render_skybox_pass,
+        render_mipmap_pass, render_skinned_transparent_pass, render_skybox_pass,
         render_ssr_composite_pass, render_ssr_pass, render_static_transparent_pass,
-        render_sun_shadow_pass,
+        render_sun_shadow_pass, render_taa_resolve_pass, render_tonemap_pass,
     },
 };
 
@@ -49,6 +48,7 @@ pub struct WorldRenderer {
     static_instance_links: SnapshotInstanceLinks,
     pose_storage: AnimPoseStore,
     prev_motion_view_proj: Option<Mat4>,
+    prev_motion_unjittered_view_proj: Option<Mat4>,
 }
 impl WorldRenderer {
     fn clear_temporal_inputs(&self, encoder: &mut wgpu::CommandEncoder) {
@@ -160,7 +160,8 @@ impl WorldRenderer {
             "HBGI Pyramid Base Pass",
             &context.pipelines.hbgi_pyramid.base_pipeline,
             &bind_groups.base,
-            &pyramids.depth_mips[0],
+            pyramids.depth_mips[0]
+                .get_write_view(&context.resources.textures.pyramids.depth_pyramid),
             &pyramids.normal_mips[0],
             context,
         );
@@ -172,7 +173,8 @@ impl WorldRenderer {
                 "HBGI Pyramid Downsample Pass",
                 &context.pipelines.hbgi_pyramid.downsample_pipeline,
                 bind_group,
-                &pyramids.depth_mips[mip_level],
+                pyramids.depth_mips[mip_level]
+                    .get_write_view(&context.resources.textures.pyramids.depth_pyramid),
                 &pyramids.normal_mips[mip_level],
                 context,
             );
@@ -203,7 +205,6 @@ impl WorldRenderer {
         static_opaque_pass: &'a PassDrawContext<'a>,
         encoder: &mut wgpu::CommandEncoder,
         render_resources: &'a RenderAssetStore,
-        device: &wgpu::Device,
         queue: &wgpu::Queue,
         prev_inverse_view_proj: &Mat4,
         frame_idx: u32,
@@ -231,7 +232,6 @@ impl WorldRenderer {
             point_lights,
             environment_map,
             render_resources,
-            &self.placeholders,
             wgpu_context,
         );
         if !self.hbgi_reproject_valid {
@@ -324,7 +324,6 @@ impl WorldRenderer {
         self.render_gi_source_mips(encoder);
         render_ssr_pass(encoder, &self.gpu_context);
         render_ssr_composite_pass(encoder, &self.gpu_context);
-        self.rotate_temporal_buffers(device);
     }
 
     pub fn new(
@@ -361,6 +360,7 @@ impl WorldRenderer {
             placeholders,
             pose_storage,
             prev_motion_view_proj: None,
+            prev_motion_unjittered_view_proj: None,
         }
     }
 
@@ -411,7 +411,8 @@ impl WorldRenderer {
             &self.gpu_context.resources.buffers.camera,
             camera_pair,
             now,
-            self.prev_motion_view_proj.as_ref(),
+            frame_idx,
+            self.prev_motion_unjittered_view_proj.as_ref(),
             &wgpu_context,
         );
         let prev_motion_view_proj = self
@@ -491,7 +492,6 @@ impl WorldRenderer {
             &static_draw.opaque,
             encoder,
             render_resources,
-            &wgpu_context.device,
             &wgpu_context.queue,
             &prev_inverse_view_proj,
             frame_idx,
@@ -521,14 +521,19 @@ impl WorldRenderer {
             &self.gpu_context,
         );
 
-        render_post_processing_pass(encoder, output_view, &self.gpu_context);
+        render_taa_resolve_pass(encoder, &self.gpu_context);
+        render_tonemap_pass(encoder, output_view, &self.gpu_context);
+        self.rotate_temporal_buffers(&wgpu_context.device);
         self.prev_motion_view_proj = Some(prepared_camera.view_proj);
+        self.prev_motion_unjittered_view_proj = Some(prepared_camera.unjittered_view_proj);
     }
 
     pub fn resize(&mut self, wgpu_context: &WgpuContext, render_resources: &RenderAssetStore) {
-        self.gpu_context.resize(wgpu_context, render_resources);
+        self.gpu_context
+            .resize(wgpu_context, render_resources, &self.placeholders);
         self.hbgi_reproject_valid = false;
         self.prev_motion_view_proj = None;
+        self.prev_motion_unjittered_view_proj = None;
     }
 
     pub fn upload_material(

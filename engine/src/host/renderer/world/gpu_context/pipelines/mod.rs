@@ -6,13 +6,14 @@ mod hbgi_pyramid;
 mod hbgi_reproject;
 mod hbgi_svgf;
 mod mipmap;
-mod post_processing;
 mod skinned_transparent;
 mod skybox;
 mod ssr;
 mod ssr_composite;
 mod static_transparent;
 mod sun_shadow;
+mod taa_resolve;
+mod tonemap;
 
 pub(crate) use deferred_lighting::DeferredLightingPipeline;
 pub(crate) use g_buffer::GBufferPipeline;
@@ -22,13 +23,14 @@ pub(crate) use hbgi_pyramid::HbgiPyramidPipelines;
 pub(crate) use hbgi_reproject::HbgiReprojectPipeline;
 pub(crate) use hbgi_svgf::HbgiSvgfPipeline;
 pub(crate) use mipmap::MipmapPipeline;
-pub(crate) use post_processing::PostProcessingPipeline;
 pub(crate) use skinned_transparent::SkinnedTransparentPipeline;
 pub(crate) use skybox::SkyboxPipeline;
 pub(crate) use ssr::SsrPipeline;
 pub(crate) use ssr_composite::SsrCompositePipeline;
 pub(crate) use static_transparent::StaticTransparentPipeline;
 pub(crate) use sun_shadow::SunShadowPipeline;
+pub(crate) use taa_resolve::TaaResolvePipeline;
+pub(crate) use tonemap::TonemapPipeline;
 
 use crate::host::{
     renderer::world::gpu_context::BGLayouts, shader_cache::ShaderCache, wgpu_context::WgpuContext,
@@ -49,7 +51,8 @@ pub(crate) struct Pipelines {
     pub(crate) ssr_composite: SsrCompositePipeline,
     pub(crate) skinned_transparent: SkinnedTransparentPipeline,
     pub(crate) static_transparent: StaticTransparentPipeline,
-    pub(crate) post: PostProcessingPipeline,
+    pub(crate) taa_resolve: TaaResolvePipeline,
+    pub(crate) tonemap: TonemapPipeline,
 }
 
 impl Pipelines {
@@ -74,7 +77,8 @@ impl Pipelines {
             SkinnedTransparentPipeline::new(wgpu_context, shader_cache, layouts);
         let static_transparent =
             StaticTransparentPipeline::new(wgpu_context, shader_cache, layouts);
-        let post = PostProcessingPipeline::new(wgpu_context, shader_cache, layouts);
+        let taa_resolve = TaaResolvePipeline::new(wgpu_context, shader_cache, layouts);
+        let tonemap = TonemapPipeline::new(wgpu_context, shader_cache, layouts);
 
         Self {
             g_buffer,
@@ -91,7 +95,8 @@ impl Pipelines {
             ssr_composite,
             skinned_transparent,
             static_transparent,
-            post,
+            taa_resolve,
+            tonemap,
         }
     }
 }

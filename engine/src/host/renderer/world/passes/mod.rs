@@ -6,13 +6,14 @@ mod hbgi_pyramid;
 mod hbgi_reproject;
 mod hbgi_svgf;
 mod mipmap;
-mod post_processing;
 mod skinned_transparent;
 mod skybox;
 mod ssr;
 mod ssr_composite;
 mod static_transparent;
 mod sun_shadow;
+mod taa_resolve;
+mod tonemap;
 
 const FULLSCREEN_QUAD_INDEX_COUNT: u32 = 6;
 
@@ -24,10 +25,11 @@ pub(crate) use hbgi_pyramid::render_hbgi_pyramid_pass;
 pub(crate) use hbgi_reproject::render_hbgi_reproject_pass;
 pub(crate) use hbgi_svgf::render_hbgi_svgf_pass;
 pub(crate) use mipmap::render_mipmap_pass;
-pub(crate) use post_processing::render_post_processing_pass;
 pub(crate) use skinned_transparent::render_skinned_transparent_pass;
 pub(crate) use skybox::render_skybox_pass;
 pub(crate) use ssr::render_ssr_pass;
 pub(crate) use ssr_composite::render_ssr_composite_pass;
 pub(crate) use static_transparent::render_static_transparent_pass;
 pub(crate) use sun_shadow::render_sun_shadow_pass;
+pub(crate) use taa_resolve::render_taa_resolve_pass;
+pub(crate) use tonemap::render_tonemap_pass;

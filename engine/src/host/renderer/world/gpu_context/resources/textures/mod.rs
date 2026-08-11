@@ -6,6 +6,7 @@ mod mip_pyramid;
 mod reproject;
 mod ssr;
 mod sun_shadow;
+mod taa_resolve;
 
 pub(crate) use g_buffer::GBufferTextures;
 pub(crate) use hbgi::HbgiTextures;
@@ -15,6 +16,7 @@ pub(crate) use mip_pyramid::MipPyramidTextures;
 pub(crate) use reproject::ReprojectTextures;
 pub(crate) use ssr::SsrTextures;
 pub(crate) use sun_shadow::SunShadowTexture2;
+pub(crate) use taa_resolve::TaaResolveTextures;
 
 use crate::host::wgpu_context::WgpuContext;
 
@@ -27,6 +29,7 @@ pub(crate) struct Textures {
     pub(crate) ssr: SsrTextures,
     pub(crate) sky: wgpu::Texture,
     pub(crate) sun_shadow: SunShadowTexture2,
+    pub(crate) taa_resolve: TaaResolveTextures,
     pub(crate) lighting_target: LightingTextures,
 }
 
@@ -39,6 +42,7 @@ impl Textures {
         let pyramids = MipPyramidTextures::new(wgpu_context, surface_config);
         let ssr = SsrTextures::new(wgpu_context, surface_config);
         let sun_shadow = SunShadowTexture2::new(wgpu_context);
+        let taa_resolve = TaaResolveTextures::new(wgpu_context, surface_config);
         let lighting_target = LightingTextures::new(wgpu_context, surface_config);
 
         let size = wgpu::Extent3d {
@@ -68,6 +72,7 @@ impl Textures {
             ssr,
             sky,
             sun_shadow,
+            taa_resolve,
             lighting_target,
         }
     }

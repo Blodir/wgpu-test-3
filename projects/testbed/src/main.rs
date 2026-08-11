@@ -164,7 +164,7 @@ impl Game {
             orbit_yaw_deg: 0.0,
             orbit_pitch_deg: 0.0,
             sun_tint: [1.0, 1.0, 1.0],
-            sun_intensity: 10.0,
+            sun_intensity: 80.0,
             environment_map_intensity: 1.0,
             sun_altitude_deg: 260.0,
             sun_direction_deg: 45.0,
@@ -521,10 +521,6 @@ impl GameTrait for Game {
         };
         self.rebuild_scene_nodes(&mut scene);
 
-        let (sun_tint, sun_intensity) = Self::split_tint_intensity(scene.environment.sun.color);
-        self.sun_tint = sun_tint;
-        self.sun_intensity = sun_intensity;
-        self.environment_map_intensity = scene.environment.environment_map_intensity;
         self.apply_sun_settings(&mut scene);
         self.apply_environment_map_selection(&mut scene);
         self.apply_orbit_camera(&mut scene);
@@ -962,7 +958,7 @@ impl UiTrait for Game {
                     });
                 sun_changed |= ui
                     .add(
-                        egui::Slider::new(&mut intensity, 0.0..=100.0)
+                        egui::Slider::new(&mut intensity, 0.0..=400.0)
                             .text("Intensity")
                             .clamping(egui::SliderClamping::Always),
                     )

@@ -1,4 +1,4 @@
-use crate::host::renderer::world::gpu_context::resources::SsrTextures;
+use crate::host::world::gpu_context::resources::SsrTextures;
 
 pub(crate) struct SsrTextureViews {
     pub(crate) reflections: wgpu::TextureView,

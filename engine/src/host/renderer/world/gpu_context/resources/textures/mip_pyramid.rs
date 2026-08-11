@@ -1,7 +1,7 @@
-use crate::host::wgpu_context::WgpuContext;
+use crate::host::{renderer::rw_texture::RWTexture, wgpu_context::WgpuContext};
 
 pub struct MipPyramidTextures {
-    pub depth_pyramid: wgpu::Texture,
+    pub depth_pyramid: RWTexture,
     pub normal_pyramid: wgpu::Texture,
     pub mip_level_count: u32,
 }
@@ -14,9 +14,8 @@ impl MipPyramidTextures {
             depth_or_array_layers: 1,
         };
         let mip_level_count = surface_config.width.max(surface_config.height).ilog2() + 1;
-        let depth_pyramid = wgpu_context
-            .device
-            .create_texture(&wgpu::wgt::TextureDescriptor {
+        let depth_pyramid = RWTexture::new(
+            wgpu::wgt::TextureDescriptor {
                 label: Some("Depth Pyramid Texture"),
                 size,
                 mip_level_count,
@@ -26,7 +25,9 @@ impl MipPyramidTextures {
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT
                     | wgpu::TextureUsages::TEXTURE_BINDING,
                 view_formats: &[],
-            });
+            },
+            wgpu_context,
+        );
         let normal_pyramid = wgpu_context
             .device
             .create_texture(&wgpu::wgt::TextureDescriptor {
