@@ -147,8 +147,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     let blend_corrected_clamped_prev_color = mix(color_acc, clamped_prev_color, blend_factor);
     let resolved_color = mix(blend_corrected_clamped_prev_color, curr_color, blend_factor);
-    return vec4f(resolved_color, history_length_acc + 1.0);
+    return vec4f(resolved_color, min(history_length_acc + 1.0, MAX_HISTORY_LENGTH));
     //return vec4f(select(vec3f(0.0), vec3f(1.0), blend_factor < 0.5), history_length_acc + 1.0);
+    //return vec4f(select(vec3f(0.0), vec3f(1.0), history_length_acc < 0.0), history_length_acc + 1.0);
     //return vec4f(vec3f(blend_factor), history_length_acc + 1.0);
     //return vec4f(vec3f(history_length_acc / 8.0), history_length_acc + 1.0);
     //return vec4f(curr_color, 1.0);

@@ -22,7 +22,6 @@ struct VertexOutput {
 }
 
 const MIN_FILTER_WEIGHT: f32 = 1e-6;
-const CONFIDENCE_WEIGHT: f32 = 2.0;
 
 fn reconstruct_world_position_from_depth(uv: vec2f, depth: f32) -> vec3f {
     let clip = vec4f(
@@ -167,7 +166,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
             let roughness_delta = abs(center_roughness - neighbor_normal_roughness.w);
             let w_roughness = clamp(1.0 - roughness_delta, MIN_FILTER_WEIGHT, 1.0);
 
-            let w = w_plane * w_normal * w_roughness * pow(1.0 - center_ssr.w, CONFIDENCE_WEIGHT);
+            let confidence = max(0.0, 1.0 - center_ssr.w);
+            let w = w_plane * w_normal * w_roughness * (confidence * confidence);
 
             radiance_acc += w * neighbor_ssr.rgb;
             weight_acc += w;
@@ -180,6 +180,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let ssr_specular = ssr_radiance * (F_env * brdf_specular_lut.x + brdf_specular_lut.y) * ao;
 
     return vec4f(lighting.rgb + ssr_specular, 1.0);
+    //return vec4f(lighting.rgb, 1.0);
     //return vec4f(ssr_radiance, lighting.a);
     //return vec4f(textureLoad(ssr_texture, ssr_center_coords, 0).rgb, 1.0);
 }
