@@ -7,7 +7,8 @@ use crate::{
 };
 
 pub(crate) struct SsrCompositePipeline {
-    pub(crate) render_pipeline: wgpu::RenderPipeline,
+    pub(crate) history_pipeline: wgpu::RenderPipeline,
+    pub(crate) scene_pipeline: wgpu::RenderPipeline,
 }
 
 impl SsrCompositePipeline {
@@ -30,11 +31,11 @@ impl SsrCompositePipeline {
                     push_constant_ranges: &[],
                 });
         let shader_module = shader_cache.get(SHADER_SSR_COMPOSITE_WGSL.to_string(), wgpu_context);
-        let render_pipeline =
+        let history_pipeline =
             wgpu_context
                 .device
                 .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                    label: Some("SSR Composite Pipeline"),
+                    label: Some("SSR Composite History Pipeline"),
                     layout: Some(&render_pipeline_layout),
                     vertex: wgpu::VertexState {
                         module: &shader_module,
@@ -44,7 +45,41 @@ impl SsrCompositePipeline {
                     },
                     fragment: Some(wgpu::FragmentState {
                         module: &shader_module,
-                        entry_point: Some("fs_main"),
+                        entry_point: Some("fs_history"),
+                        targets: &[Some(wgpu::ColorTargetState {
+                            format: wgpu::TextureFormat::Rgba16Float,
+                            blend: Some(wgpu::BlendState::REPLACE),
+                            write_mask: wgpu::ColorWrites::ALL,
+                        })],
+                        compilation_options: wgpu::PipelineCompilationOptions::default(),
+                    }),
+                    primitive: wgpu::PrimitiveState {
+                        topology: wgpu::PrimitiveTopology::TriangleList,
+                        strip_index_format: None,
+                        front_face: wgpu::FrontFace::Ccw,
+                        cull_mode: Some(wgpu::Face::Back),
+                        ..Default::default()
+                    },
+                    depth_stencil: None,
+                    multisample: wgpu::MultisampleState::default(),
+                    multiview: None,
+                    cache: None,
+                });
+        let scene_pipeline =
+            wgpu_context
+                .device
+                .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                    label: Some("SSR Composite Scene Pipeline"),
+                    layout: Some(&render_pipeline_layout),
+                    vertex: wgpu::VertexState {
+                        module: &shader_module,
+                        entry_point: Some("vs_main"),
+                        buffers: &[],
+                        compilation_options: wgpu::PipelineCompilationOptions::default(),
+                    },
+                    fragment: Some(wgpu::FragmentState {
+                        module: &shader_module,
+                        entry_point: Some("fs_scene"),
                         targets: &[Some(wgpu::ColorTargetState {
                             format: wgpu::TextureFormat::Rgba16Float,
                             blend: Some(wgpu::BlendState::REPLACE),
@@ -65,6 +100,9 @@ impl SsrCompositePipeline {
                     cache: None,
                 });
 
-        Self { render_pipeline }
+        Self {
+            history_pipeline,
+            scene_pipeline,
+        }
     }
 }

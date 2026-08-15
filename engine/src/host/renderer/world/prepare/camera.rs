@@ -150,6 +150,7 @@ pub fn prepare_camera(
     camera_pair: &CameraSnapshotPair,
     now: Instant,
     frame_idx: u32,
+    prev_view_proj: Option<&Mat4>,
     prev_unjittered_view_proj: Option<&Mat4>,
     wgpu_context: &WgpuContext,
 ) -> PreparedCamera {
@@ -174,12 +175,14 @@ pub fn prepare_camera(
         [forward.x, forward.y, forward.z, 0.0],
     ];
     let inverse_view_proj = view_proj.inverse();
+    let prev_inverse_view_proj = prev_view_proj.copied().unwrap_or(view_proj).inverse();
     let prev_unjittered_view_proj = prev_unjittered_view_proj.unwrap_or(&unjittered_view_proj);
 
     camera.update(
         &view_proj.to_cols_array(),
         &state.position.to_array(),
         &inverse_view_proj.to_cols_array(),
+        &prev_inverse_view_proj.to_cols_array(),
         &view_rotation,
         &unjittered_view_proj.to_cols_array(),
         &prev_unjittered_view_proj.to_cols_array(),

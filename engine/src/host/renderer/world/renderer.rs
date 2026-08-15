@@ -412,6 +412,7 @@ impl WorldRenderer {
             camera_pair,
             now,
             frame_idx,
+            self.prev_motion_view_proj.as_ref(),
             self.prev_motion_unjittered_view_proj.as_ref(),
             &wgpu_context,
         );

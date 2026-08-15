@@ -5,6 +5,7 @@ pub struct CameraBuffers {
     pub view_proj: wgpu::Buffer,
     pub position: wgpu::Buffer,
     pub inverse_view_proj: wgpu::Buffer,
+    pub prev_inverse_view_proj: wgpu::Buffer,
     pub view_rotation: wgpu::Buffer,
     pub unjittered_view_proj: wgpu::Buffer,
     pub prev_unjittered_view_proj: wgpu::Buffer,
@@ -35,6 +36,11 @@ impl CameraBuffers {
             contents: bytemuck::cast_slice(&Mat4::IDENTITY.to_cols_array()),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
+        let prev_inverse_view_proj = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Previous Inverse View Projection Buffer"),
+            contents: bytemuck::cast_slice(&Mat4::IDENTITY.to_cols_array()),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
         let view_rotation = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Camera View Rotation Buffer"),
             contents: bytemuck::cast_slice(&Self::padded_view_rotation(Vec3::X, Vec3::Y, -Vec3::Z)),
@@ -55,6 +61,7 @@ impl CameraBuffers {
             view_proj,
             position,
             inverse_view_proj,
+            prev_inverse_view_proj,
             view_rotation,
             unjittered_view_proj,
             prev_unjittered_view_proj,
@@ -66,6 +73,7 @@ impl CameraBuffers {
         view_proj: &[f32; 16],
         position: &[f32; 3],
         inverse_view_proj: &[f32; 16],
+        prev_inverse_view_proj: &[f32; 16],
         view_rotation: &[[f32; 4]; 3],
         unjittered_view_proj: &[f32; 16],
         prev_unjittered_view_proj: &[f32; 16],
@@ -77,6 +85,11 @@ impl CameraBuffers {
             &self.inverse_view_proj,
             0,
             bytemuck::cast_slice(inverse_view_proj),
+        );
+        queue.write_buffer(
+            &self.prev_inverse_view_proj,
+            0,
+            bytemuck::cast_slice(prev_inverse_view_proj),
         );
         queue.write_buffer(&self.view_rotation, 0, bytemuck::cast_slice(view_rotation));
         queue.write_buffer(

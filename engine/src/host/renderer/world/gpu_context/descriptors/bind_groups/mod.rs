@@ -60,6 +60,7 @@ pub(crate) struct BindGroups {
     pub(crate) mipmap: MipmapBindGroups,
     pub(crate) ssr: SsrBindGroup,
     pub(crate) ssr_composite: SsrCompositeBindGroup,
+    pub(crate) ssr_composite_scene: SsrCompositeBindGroup,
     pub(crate) static_instances: InstanceStorageBindGroup,
     pub(crate) sun_shadow_matrices: [SunShadowMatrixBindGroup; SUN_SHADOW_MAX_CASCADE_COUNT],
     pub(crate) taa_resolve: TaaResolveBindGroup,

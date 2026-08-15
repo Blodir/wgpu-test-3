@@ -1,8 +1,9 @@
-use crate::host::wgpu_context::WgpuContext;
+use crate::host::{renderer::rw_texture::RWTexture, wgpu_context::WgpuContext};
 
 pub(crate) struct SsrTextures {
     pub(crate) reflections: wgpu::Texture,
     pub(crate) scene_color: wgpu::Texture,
+    pub(crate) ssr_history: RWTexture,
 }
 
 impl SsrTextures {
@@ -48,10 +49,27 @@ impl SsrTextures {
                     | wgpu::TextureUsages::TEXTURE_BINDING,
                 view_formats: &[],
             });
+        let ssr_history = RWTexture::new(
+            wgpu::TextureDescriptor {
+                label: Some("SSR: History Texture"),
+                // Reuses the reduced SSR domain; keep this aligned with any reused
+                // reproject history inputs until SSR owns dedicated previous depth/normal.
+                size: reflections_size,
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba16Float,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            },
+            wgpu_context,
+        );
 
         Self {
             reflections,
             scene_color,
+            ssr_history,
         }
     }
 }

@@ -244,6 +244,47 @@ impl WorldGpuContext {
                 &resources.samplers.linear,
                 &texture_views.lighting_target.lit_hdr,
                 &resources.samplers.nearest,
+                texture_views
+                    .ssr
+                    .ssr_history
+                    .get_read_view(&resources.textures.ssr.ssr_history),
+                &texture_views.gbuffer.motion_vectors,
+                texture_views
+                    .reproject
+                    .depth_history
+                    .get_read_view(&resources.textures.reproject.depth_history),
+                texture_views
+                    .reproject
+                    .normal_history
+                    .get_read_view(&resources.textures.reproject.normal_history),
+                &bind_group_layouts.ssr_composite_inputs,
+                device,
+            ),
+            ssr_composite_scene: SsrCompositeBindGroup::new(
+                &texture_views.gbuffer.albedo_ao,
+                &resources.samplers.nearest,
+                &texture_views.gbuffer.normal_roughness,
+                &resources.samplers.nearest,
+                &texture_views.gbuffer.emissive_metallic,
+                &resources.samplers.nearest,
+                &texture_views.gbuffer.depth,
+                &texture_views.ssr.reflections,
+                &resources.samplers.linear,
+                &texture_views.lighting_target.lit_hdr,
+                &resources.samplers.nearest,
+                texture_views
+                    .ssr
+                    .ssr_history
+                    .get_write_view(&resources.textures.ssr.ssr_history),
+                &texture_views.gbuffer.motion_vectors,
+                texture_views
+                    .reproject
+                    .depth_history
+                    .get_read_view(&resources.textures.reproject.depth_history),
+                texture_views
+                    .reproject
+                    .normal_history
+                    .get_read_view(&resources.textures.reproject.normal_history),
                 &bind_group_layouts.ssr_composite_inputs,
                 device,
             ),
@@ -394,6 +435,53 @@ impl WorldGpuContext {
             &self.resources.samplers.linear,
             &self.descriptors.texture_views.lighting_target.lit_hdr,
             &self.resources.samplers.nearest,
+            self.descriptors
+                .texture_views
+                .ssr
+                .ssr_history
+                .get_read_view(&self.resources.textures.ssr.ssr_history),
+            &self.descriptors.texture_views.gbuffer.motion_vectors,
+            self.descriptors
+                .texture_views
+                .reproject
+                .depth_history
+                .get_read_view(&self.resources.textures.reproject.depth_history),
+            self.descriptors
+                .texture_views
+                .reproject
+                .normal_history
+                .get_read_view(&self.resources.textures.reproject.normal_history),
+            &self.descriptors.bind_group_layouts.ssr_composite_inputs,
+            device,
+        );
+        self.descriptors.bind_groups.ssr_composite_scene = SsrCompositeBindGroup::new(
+            &self.descriptors.texture_views.gbuffer.albedo_ao,
+            &self.resources.samplers.nearest,
+            &self.descriptors.texture_views.gbuffer.normal_roughness,
+            &self.resources.samplers.nearest,
+            &self.descriptors.texture_views.gbuffer.emissive_metallic,
+            &self.resources.samplers.nearest,
+            &self.descriptors.texture_views.gbuffer.depth,
+            &self.descriptors.texture_views.ssr.reflections,
+            &self.resources.samplers.linear,
+            &self.descriptors.texture_views.lighting_target.lit_hdr,
+            &self.resources.samplers.nearest,
+            self.descriptors
+                .texture_views
+                .ssr
+                .ssr_history
+                .get_write_view(&self.resources.textures.ssr.ssr_history),
+            &self.descriptors.texture_views.gbuffer.motion_vectors,
+            self.descriptors
+                .texture_views
+                .reproject
+                .depth_history
+                .get_read_view(&self.resources.textures.reproject.depth_history),
+            self.descriptors
+                .texture_views
+                .reproject
+                .normal_history
+                .get_read_view(&self.resources.textures.reproject.normal_history),
             &self.descriptors.bind_group_layouts.ssr_composite_inputs,
             device,
         );
@@ -660,6 +748,68 @@ impl WorldGpuContext {
             &self.descriptors.bind_group_layouts.ssr_inputs,
             device,
         );
+        self.descriptors.bind_groups.ssr_composite = SsrCompositeBindGroup::new(
+            &self.descriptors.texture_views.gbuffer.albedo_ao,
+            &self.resources.samplers.nearest,
+            &self.descriptors.texture_views.gbuffer.normal_roughness,
+            &self.resources.samplers.nearest,
+            &self.descriptors.texture_views.gbuffer.emissive_metallic,
+            &self.resources.samplers.nearest,
+            &self.descriptors.texture_views.gbuffer.depth,
+            &self.descriptors.texture_views.ssr.reflections,
+            &self.resources.samplers.linear,
+            &self.descriptors.texture_views.lighting_target.lit_hdr,
+            &self.resources.samplers.nearest,
+            self.descriptors
+                .texture_views
+                .ssr
+                .ssr_history
+                .get_read_view(&self.resources.textures.ssr.ssr_history),
+            &self.descriptors.texture_views.gbuffer.motion_vectors,
+            self.descriptors
+                .texture_views
+                .reproject
+                .depth_history
+                .get_read_view(&self.resources.textures.reproject.depth_history),
+            self.descriptors
+                .texture_views
+                .reproject
+                .normal_history
+                .get_read_view(&self.resources.textures.reproject.normal_history),
+            &self.descriptors.bind_group_layouts.ssr_composite_inputs,
+            device,
+        );
+        self.descriptors.bind_groups.ssr_composite_scene = SsrCompositeBindGroup::new(
+            &self.descriptors.texture_views.gbuffer.albedo_ao,
+            &self.resources.samplers.nearest,
+            &self.descriptors.texture_views.gbuffer.normal_roughness,
+            &self.resources.samplers.nearest,
+            &self.descriptors.texture_views.gbuffer.emissive_metallic,
+            &self.resources.samplers.nearest,
+            &self.descriptors.texture_views.gbuffer.depth,
+            &self.descriptors.texture_views.ssr.reflections,
+            &self.resources.samplers.linear,
+            &self.descriptors.texture_views.lighting_target.lit_hdr,
+            &self.resources.samplers.nearest,
+            self.descriptors
+                .texture_views
+                .ssr
+                .ssr_history
+                .get_write_view(&self.resources.textures.ssr.ssr_history),
+            &self.descriptors.texture_views.gbuffer.motion_vectors,
+            self.descriptors
+                .texture_views
+                .reproject
+                .depth_history
+                .get_read_view(&self.resources.textures.reproject.depth_history),
+            self.descriptors
+                .texture_views
+                .reproject
+                .normal_history
+                .get_read_view(&self.resources.textures.reproject.normal_history),
+            &self.descriptors.bind_group_layouts.ssr_composite_inputs,
+            device,
+        );
     }
 
     pub(crate) fn rotate_temporal_resources(&mut self, device: &wgpu::Device) {
@@ -671,6 +821,7 @@ impl WorldGpuContext {
             .swap();
         self.resources.textures.reproject.depth_history.swap();
         self.resources.textures.reproject.normal_history.swap();
+        self.resources.textures.ssr.ssr_history.swap();
         self.resources.textures.taa_resolve.history.swap();
         self.resources.textures.pyramids.depth_pyramid.swap();
         self.refresh_temporal_bind_groups(device);

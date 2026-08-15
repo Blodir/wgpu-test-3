@@ -94,6 +94,46 @@ impl SsrCompositeBindGroup {
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 11,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 12,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 13,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 14,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
             ],
             label: Some("SSR Composite Inputs Bind Group Layout"),
         }
@@ -112,6 +152,10 @@ impl SsrCompositeBindGroup {
         ssr_sampler: &wgpu::Sampler,
         lighting_view: &wgpu::TextureView,
         lighting_sampler: &wgpu::Sampler,
+        ssr_history_view: &wgpu::TextureView,
+        motion_vectors_view: &wgpu::TextureView,
+        prev_depth_history_view: &wgpu::TextureView,
+        prev_normal_history_view: &wgpu::TextureView,
         layout: &wgpu::BindGroupLayout,
         device: &wgpu::Device,
     ) -> Self {
@@ -161,6 +205,22 @@ impl SsrCompositeBindGroup {
                 wgpu::BindGroupEntry {
                     binding: 10,
                     resource: wgpu::BindingResource::Sampler(lighting_sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 11,
+                    resource: wgpu::BindingResource::TextureView(ssr_history_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 12,
+                    resource: wgpu::BindingResource::TextureView(motion_vectors_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 13,
+                    resource: wgpu::BindingResource::TextureView(prev_depth_history_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 14,
+                    resource: wgpu::BindingResource::TextureView(prev_normal_history_view),
                 },
             ],
             label: Some("SSR Composite Inputs Bind Group"),

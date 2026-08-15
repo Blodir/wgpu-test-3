@@ -191,6 +191,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
             let delta = neighbor_world_position - P_w;
             let plane_distance = pow(abs(dot(original_normal, delta)), PLANE_HEURISTIC_WEIGHT);
+            //let max_plane_distance = 1.0;
+            //let w_plane = max(1.0 - (plane_distance / max_plane_distance), MIN_FILTER_WEIGHT);
             let w_plane = 1.0 / max(plane_distance, MIN_FILTER_WEIGHT);
             var w = w_plane;
 
