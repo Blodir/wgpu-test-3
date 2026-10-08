@@ -32,6 +32,6 @@ pub(crate) use skybox::render_skybox_pass;
 pub(crate) use ssr::render_ssr_pass;
 pub(crate) use ssr_composite::render_ssr_composite_pass;
 pub(crate) use static_transparent::render_static_transparent_pass;
-pub(crate) use sun_shadow::render_sun_shadow_pass;
+pub(crate) use sun_shadow::render_sun_shadow_passes;
 pub(crate) use taa_resolve::render_taa_resolve_pass;
 pub(crate) use tonemap::render_tonemap_pass;

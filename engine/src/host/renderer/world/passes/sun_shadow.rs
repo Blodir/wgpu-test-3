@@ -69,7 +69,7 @@ pub(crate) fn draw_sun_shadow_static<'a>(
     }
 }
 
-pub(crate) fn render_sun_shadow_pass<'a>(
+fn render_sun_shadow_pass<'a>(
     encoder: &mut wgpu::CommandEncoder,
     skinned_opaque_pass: &'a PassDrawContext<'a>,
     static_opaque_pass: &'a PassDrawContext<'a>,
@@ -121,4 +121,39 @@ pub(crate) fn render_sun_shadow_pass<'a>(
     static_pass.set_bind_group(0, sun_shadow_matrix_bind_group, &[]);
     static_pass.set_bind_group(1, &context.descriptors.bind_groups.static_instances.0, &[]);
     draw_sun_shadow_static(static_opaque_pass, &mut static_pass, render_resources);
+}
+
+pub(crate) fn render_sun_shadow_passes<'a>(
+    encoder: &mut wgpu::CommandEncoder,
+    skinned_opaque_pass: &'a PassDrawContext<'a>,
+    static_opaque_pass: &'a PassDrawContext<'a>,
+    cascade_count: usize,
+    render_resources: &'a RenderAssetStore,
+    context: &WorldGpuContext,
+) {
+    for (cascade_view, cascade_bind_group) in context
+        .descriptors
+        .texture_views
+        .sun_shadow
+        .cascades
+        .iter()
+        .take(cascade_count)
+        .zip(
+            context
+                .descriptors
+                .bind_groups
+                .sun_shadow_matrices
+                .iter(),
+        )
+    {
+        render_sun_shadow_pass(
+            encoder,
+            skinned_opaque_pass,
+            static_opaque_pass,
+            cascade_view,
+            &cascade_bind_group.bind_group,
+            render_resources,
+            context,
+        );
+    }
 }

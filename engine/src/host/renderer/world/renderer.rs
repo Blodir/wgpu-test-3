@@ -17,7 +17,7 @@ use super::{
         render_hbgi_pyramid_passes, render_hbgi_reproject_pass, render_hbgi_svgf_pass,
         render_gi_source_mips, render_skinned_transparent_pass, render_skybox_pass,
         render_ssr_composite_pass, render_ssr_pass, render_static_transparent_pass,
-        render_sun_shadow_pass, render_taa_resolve_pass, render_tonemap_pass,
+        render_sun_shadow_passes, render_taa_resolve_pass, render_tonemap_pass,
     },
 };
 
@@ -266,32 +266,14 @@ impl WorldRenderer {
 
         render_skybox_pass(encoder, &self.gpu_context);
 
-        for (cascade_view, cascade_bind_group) in self
-            .gpu_context
-            .descriptors
-            .texture_views
-            .sun_shadow
-            .cascades
-            .iter()
-            .take(prepared_sun_shadow.prepared.cascade_count)
-            .zip(
-                self.gpu_context
-                    .descriptors
-                    .bind_groups
-                    .sun_shadow_matrices
-                    .iter(),
-            )
-        {
-            render_sun_shadow_pass(
-                encoder,
-                &skinned_draw.opaque,
-                &static_draw.opaque,
-                cascade_view,
-                &cascade_bind_group.bind_group,
-                render_resources,
-                &self.gpu_context,
-            );
-        }
+        render_sun_shadow_passes(
+            encoder,
+            &skinned_draw.opaque,
+            &static_draw.opaque,
+            prepared_sun_shadow.prepared.cascade_count,
+            render_resources,
+            &self.gpu_context,
+        );
 
         render_gbuffer_skinned_opaque_pass(
             encoder,
