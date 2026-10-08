@@ -1,6 +1,8 @@
 use glam::{Mat4, Vec3};
 use wgpu::util::DeviceExt as _;
 
+use crate::host::world::prepare::camera::PreparedCamera;
+
 pub struct CameraBuffers {
     pub view_proj: wgpu::Buffer,
     pub position: wgpu::Buffer,
@@ -70,37 +72,44 @@ impl CameraBuffers {
 
     pub fn update(
         &self,
-        view_proj: &[f32; 16],
-        position: &[f32; 3],
-        inverse_view_proj: &[f32; 16],
-        prev_inverse_view_proj: &[f32; 16],
-        view_rotation: &[[f32; 4]; 3],
-        unjittered_view_proj: &[f32; 16],
-        prev_unjittered_view_proj: &[f32; 16],
+        camera: &PreparedCamera,
+        prev_camera: &PreparedCamera,
         queue: &wgpu::Queue,
     ) {
-        queue.write_buffer(&self.view_proj, 0, bytemuck::cast_slice(view_proj));
-        queue.write_buffer(&self.position, 0, bytemuck::cast_slice(position));
+        queue.write_buffer(
+            &self.view_proj,
+            0,
+            bytemuck::cast_slice(&camera.view_proj.to_cols_array()),
+        );
+        queue.write_buffer(
+            &self.position,
+            0,
+            bytemuck::cast_slice(&camera.state.position.to_array()),
+        );
         queue.write_buffer(
             &self.inverse_view_proj,
             0,
-            bytemuck::cast_slice(inverse_view_proj),
+            bytemuck::cast_slice(&camera.inverse_view_proj.to_cols_array()),
         );
         queue.write_buffer(
             &self.prev_inverse_view_proj,
             0,
-            bytemuck::cast_slice(prev_inverse_view_proj),
+            bytemuck::cast_slice(&prev_camera.inverse_view_proj.to_cols_array()),
         );
-        queue.write_buffer(&self.view_rotation, 0, bytemuck::cast_slice(view_rotation));
+        queue.write_buffer(
+            &self.view_rotation,
+            0,
+            bytemuck::cast_slice(&camera.view_rotation),
+        );
         queue.write_buffer(
             &self.unjittered_view_proj,
             0,
-            bytemuck::cast_slice(unjittered_view_proj),
+            bytemuck::cast_slice(&camera.unjittered_view_proj.to_cols_array()),
         );
         queue.write_buffer(
             &self.prev_unjittered_view_proj,
             0,
-            bytemuck::cast_slice(prev_unjittered_view_proj),
+            bytemuck::cast_slice(&prev_camera.unjittered_view_proj.to_cols_array()),
         );
     }
 }

@@ -4,7 +4,7 @@ use glam::{Mat4, Vec3};
 
 use crate::host::world::{
     gpu_context::SunShadowUniform,
-    prepare::camera::{build_camera_frustum_corners, PreparedCamera},
+    prepare::camera::PreparedCamera,
 };
 
 pub const SUN_SHADOW_MAX_CASCADE_COUNT: usize = 4;
@@ -43,6 +43,45 @@ fn select_light_up_axis(sun_direction: Vec3) -> Vec3 {
     }
 }
 
+fn build_camera_frustum_corners(
+    camera: &PreparedCamera,
+    slice_near: f32,
+    slice_far: f32,
+) -> [Vec3; 8] {
+    let camera = &camera.state;
+    let forward = camera.rotation * -Vec3::Z;
+    let right = camera.rotation * Vec3::X;
+    let up = camera.rotation * Vec3::Y;
+
+    let near = slice_near.clamp(camera.znear, camera.zfar);
+    let far = slice_far.clamp(camera.znear, camera.zfar);
+    let (near, far) = if near <= far {
+        (near, far)
+    } else {
+        (far, near)
+    };
+    let tan_half_fovy = (camera.fovy * 0.5).tan();
+
+    let near_h = tan_half_fovy * near;
+    let near_w = near_h * camera.aspect;
+    let far_h = tan_half_fovy * far;
+    let far_w = far_h * camera.aspect;
+
+    let near_center = camera.position + forward * near;
+    let far_center = camera.position + forward * far;
+
+    [
+        near_center - right * near_w - up * near_h,
+        near_center + right * near_w - up * near_h,
+        near_center + right * near_w + up * near_h,
+        near_center - right * near_w + up * near_h,
+        far_center - right * far_w - up * far_h,
+        far_center + right * far_w - up * far_h,
+        far_center + right * far_w + up * far_h,
+        far_center - right * far_w + up * far_h,
+    ]
+}
+
 fn build_sun_shadow_light_view_proj(
     camera: &PreparedCamera,
     sun_direction: Vec3,
@@ -57,7 +96,7 @@ fn build_sun_shadow_light_view_proj(
     );
 
     // calculate camera frustum bounds relative to sun dir
-    let frustum_corners_ws = build_camera_frustum_corners(&camera.state, slice_near, slice_far);
+    let frustum_corners_ws = build_camera_frustum_corners(camera, slice_near, slice_far);
 
     // transform bounds with light_rot and get the center of the AABB (not the centroid of the actual bounding box)
     let mut min = Vec3::splat(f32::INFINITY);

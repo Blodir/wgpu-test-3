@@ -1,13 +1,10 @@
-use std::time::Instant;
-
 use glam::{Mat4, Quat, Vec2, Vec3};
 
 use crate::{
     host::{
         utils::lerpf32,
-        wgpu_context::WgpuContext,
         world::{
-            gpu_context::{r2_quasirandom_sequence, CameraBuffers},
+            gpu_context::r2_quasirandom_sequence,
             prepare::sun_shadow::SUN_SHADOW_MAX_CASCADE_COUNT,
         },
     },
@@ -30,6 +27,8 @@ pub struct InterpolatedCameraState {
 pub struct PreparedCamera {
     pub state: InterpolatedCameraState,
     pub view_proj: Mat4,
+    pub inverse_view_proj: Mat4,
+    pub view_rotation: [[f32; 4]; 3],
     pub unjittered_view_proj: Mat4,
 }
 
@@ -72,22 +71,13 @@ fn camera_jitter_ndc(frame_idx: u32, surface_config: &wgpu::SurfaceConfiguration
     jitter * (2.0 / resolution)
 }
 
-pub fn interpolate_camera_state(
+fn interpolate_camera_state(
     camera_pair: &CameraSnapshotPair,
-    now: Instant,
+    t: f32,
     surface_config: &wgpu::SurfaceConfiguration,
 ) -> InterpolatedCameraState {
     let prev = &camera_pair.prev;
     let curr = &camera_pair.curr;
-    let elapsed = now.saturating_duration_since(camera_pair.curr_timestamp);
-    let interval = camera_pair
-        .curr_timestamp
-        .saturating_duration_since(camera_pair.prev_timestamp);
-    let t = if interval.is_zero() {
-        1.0
-    } else {
-        (elapsed.as_secs_f32() / interval.as_secs_f32()).clamp(0.0, 1.0)
-    };
 
     let aspect = if surface_config.height > 0 {
         surface_config.width as f32 / surface_config.height as f32
@@ -107,54 +97,13 @@ pub fn interpolate_camera_state(
     }
 }
 
-pub fn build_camera_frustum_corners(
-    camera: &InterpolatedCameraState,
-    slice_near: f32,
-    slice_far: f32,
-) -> [Vec3; 8] {
-    let forward = camera.rotation * -Vec3::Z;
-    let right = camera.rotation * Vec3::X;
-    let up = camera.rotation * Vec3::Y;
-
-    let near = slice_near.clamp(camera.znear, camera.zfar);
-    let far = slice_far.clamp(camera.znear, camera.zfar);
-    let (near, far) = if near <= far {
-        (near, far)
-    } else {
-        (far, near)
-    };
-    let tan_half_fovy = (camera.fovy * 0.5).tan();
-
-    let near_h = tan_half_fovy * near;
-    let near_w = near_h * camera.aspect;
-    let far_h = tan_half_fovy * far;
-    let far_w = far_h * camera.aspect;
-
-    let near_center = camera.position + forward * near;
-    let far_center = camera.position + forward * far;
-
-    [
-        near_center - right * near_w - up * near_h,
-        near_center + right * near_w - up * near_h,
-        near_center + right * near_w + up * near_h,
-        near_center - right * near_w + up * near_h,
-        far_center - right * far_w - up * far_h,
-        far_center + right * far_w - up * far_h,
-        far_center + right * far_w + up * far_h,
-        far_center - right * far_w + up * far_h,
-    ]
-}
-
 pub fn prepare_camera(
-    camera: &CameraBuffers,
     camera_pair: &CameraSnapshotPair,
-    now: Instant,
+    t: f32,
     frame_idx: u32,
-    prev_view_proj: Option<&Mat4>,
-    prev_unjittered_view_proj: Option<&Mat4>,
-    wgpu_context: &WgpuContext,
+    surface_config: &wgpu::SurfaceConfiguration,
 ) -> PreparedCamera {
-    let state = interpolate_camera_state(camera_pair, now, &wgpu_context.surface_config);
+    let state = interpolate_camera_state(camera_pair, t, surface_config);
 
     let rot_inv = state.rotation.conjugate();
     let view = Mat4::from_rotation_translation(rot_inv, -(rot_inv * state.position));
@@ -162,7 +111,7 @@ pub fn prepare_camera(
         reverse_z_perspective_rh(state.fovy, state.aspect, state.znear, state.zfar);
     let unjittered_view_proj = unjittered_proj * view;
     let mut proj = unjittered_proj;
-    let jitter_ndc = camera_jitter_ndc(frame_idx, &wgpu_context.surface_config);
+    let jitter_ndc = camera_jitter_ndc(frame_idx, surface_config);
     proj.z_axis.x -= jitter_ndc.x;
     proj.z_axis.y -= jitter_ndc.y;
     let view_proj: Mat4 = proj * view;
@@ -175,23 +124,12 @@ pub fn prepare_camera(
         [forward.x, forward.y, forward.z, 0.0],
     ];
     let inverse_view_proj = view_proj.inverse();
-    let prev_inverse_view_proj = prev_view_proj.copied().unwrap_or(view_proj).inverse();
-    let prev_unjittered_view_proj = prev_unjittered_view_proj.unwrap_or(&unjittered_view_proj);
-
-    camera.update(
-        &view_proj.to_cols_array(),
-        &state.position.to_array(),
-        &inverse_view_proj.to_cols_array(),
-        &prev_inverse_view_proj.to_cols_array(),
-        &view_rotation,
-        &unjittered_view_proj.to_cols_array(),
-        &prev_unjittered_view_proj.to_cols_array(),
-        &wgpu_context.queue,
-    );
 
     PreparedCamera {
         state,
         view_proj,
+        inverse_view_proj,
+        view_rotation,
         unjittered_view_proj,
     }
 }

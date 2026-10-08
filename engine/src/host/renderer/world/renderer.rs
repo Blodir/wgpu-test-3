@@ -8,7 +8,7 @@ use super::anim_pose_store::AnimPoseStore;
 use super::external::MaterialBindGroup;
 use super::gpu_context::{External, WorldGpuContext};
 use super::instance_links::SnapshotInstanceLinks;
-use super::prepare::camera::prepare_camera;
+use super::prepare::camera::{prepare_camera, PreparedCamera};
 use super::prepare::mesh::{resolve_skinned_draw, PassDrawContext};
 use super::prepare::sun_shadow::prepare_sun_shadow;
 use super::{
@@ -30,6 +30,16 @@ use crate::host::wgpu_context::WgpuContext;
 use crate::host::world::prepare::mesh::resolve_static_draw;
 use crate::{fixed_snapshot::FixedSnapshotGuard, var_snapshot::CameraSnapshotPair};
 
+fn compute_t(now: Instant, prev_timestamp: Instant, curr_timestamp: Instant) -> f32 {
+    let elapsed = now.saturating_duration_since(curr_timestamp);
+    let interval = curr_timestamp.saturating_duration_since(prev_timestamp);
+    if interval.is_zero() {
+        1.0
+    } else {
+        (elapsed.as_secs_f32() / interval.as_secs_f32()).clamp(0.0, 1.0)
+    }
+}
+
 pub struct UploadMaterialRequest<'a> {
     pub manifest: &'a materialfile::Material,
     pub normal_texture: &'a Option<TextureRenderId>,
@@ -47,8 +57,7 @@ pub struct WorldRenderer {
     skinned_instance_links: SnapshotInstanceLinks,
     static_instance_links: SnapshotInstanceLinks,
     pose_storage: AnimPoseStore,
-    prev_motion_view_proj: Option<Mat4>,
-    prev_motion_unjittered_view_proj: Option<Mat4>,
+    prev_camera: Option<PreparedCamera>,
 }
 impl WorldRenderer {
     fn clear_temporal_inputs(&self, encoder: &mut wgpu::CommandEncoder) {
@@ -359,8 +368,7 @@ impl WorldRenderer {
             static_instance_links,
             placeholders,
             pose_storage,
-            prev_motion_view_proj: None,
-            prev_motion_unjittered_view_proj: None,
+            prev_camera: None,
         }
     }
 
@@ -398,28 +406,21 @@ impl WorldRenderer {
         camera_pair: &CameraSnapshotPair,
     ) {
         let now = Instant::now();
-        let elapsed = now.saturating_duration_since(snaps.curr_timestamp);
-        let interval = snaps
-            .curr_timestamp
-            .saturating_duration_since(snaps.prev_timestamp);
-        let t = if interval.is_zero() {
-            1.0
-        } else {
-            (elapsed.as_secs_f32() / interval.as_secs_f32()).clamp(0.0, 1.0)
-        };
+        let fixed_ss_t = compute_t(now, snaps.prev_timestamp, snaps.curr_timestamp);
+        let var_ss_t = compute_t(now, camera_pair.prev_timestamp, camera_pair.curr_timestamp);
         let prepared_camera = prepare_camera(
-            &self.gpu_context.resources.buffers.camera,
             camera_pair,
-            now,
+            var_ss_t,
             frame_idx,
-            self.prev_motion_view_proj.as_ref(),
-            self.prev_motion_unjittered_view_proj.as_ref(),
-            &wgpu_context,
+            &wgpu_context.surface_config,
         );
-        let prev_motion_view_proj = self
-            .prev_motion_view_proj
-            .unwrap_or(prepared_camera.view_proj);
-        let prev_inverse_view_proj = prev_motion_view_proj.inverse();
+        let prev_camera = self.prev_camera.as_ref().unwrap_or(&prepared_camera);
+        let prev_inverse_view_proj = prev_camera.inverse_view_proj;
+        self.gpu_context
+            .resources
+            .buffers
+            .camera
+            .update(&prepared_camera, prev_camera, &wgpu_context.queue);
         let prepared_sun_shadow =
             prepare_sun_shadow(&prepared_camera, snaps.curr.lights.sun.direction);
         self.gpu_context
@@ -435,7 +436,7 @@ impl WorldRenderer {
             &mut self.skinned_instance_links,
             render_resources,
             &snaps,
-            t,
+            fixed_ss_t,
             &mut self.pose_storage,
             frame_idx,
         );
@@ -443,7 +444,7 @@ impl WorldRenderer {
             &mut self.static_instance_links,
             render_resources,
             &snaps,
-            t,
+            fixed_ss_t,
             &mut self.pose_storage,
             frame_idx,
         );
@@ -525,16 +526,14 @@ impl WorldRenderer {
         render_taa_resolve_pass(encoder, &self.gpu_context);
         render_tonemap_pass(encoder, output_view, &self.gpu_context);
         self.rotate_temporal_buffers(&wgpu_context.device);
-        self.prev_motion_view_proj = Some(prepared_camera.view_proj);
-        self.prev_motion_unjittered_view_proj = Some(prepared_camera.unjittered_view_proj);
+        self.prev_camera = Some(prepared_camera);
     }
 
     pub fn resize(&mut self, wgpu_context: &WgpuContext, render_resources: &RenderAssetStore) {
         self.gpu_context
             .resize(wgpu_context, render_resources, &self.placeholders);
         self.hbgi_reproject_valid = false;
-        self.prev_motion_view_proj = None;
-        self.prev_motion_unjittered_view_proj = None;
+        self.prev_camera = None;
     }
 
     pub fn upload_material(
