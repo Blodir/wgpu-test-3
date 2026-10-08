@@ -59,13 +59,13 @@ impl Default for WorldRendererSettings {
     }
 }
 
-struct PreviousRenderData {
+struct RetainedRenderData {
     camera: PreparedCamera,
     lights_environment_map: Option<(TextureRenderId, TextureRenderId)>,
 }
 
-struct PreparedRender<'a> {
-    render_data: PreviousRenderData,
+struct PreparedRenderData<'a> {
+    retained: RetainedRenderData,
     prepared_sun_shadow: PreparedSunShadowResult,
     skinned_draw: ResolvedSkinnedDraw<'a>,
     static_draw: ResolvedStaticDraw<'a>,
@@ -79,7 +79,7 @@ pub struct WorldRenderer {
     skinned_instance_links: SnapshotInstanceLinks,
     static_instance_links: SnapshotInstanceLinks,
     pose_storage: AnimPoseStore,
-    previous_render_data: Option<PreviousRenderData>,
+    previous_render_data: Option<RetainedRenderData>,
 }
 impl WorldRenderer {
     fn rotate_temporal_buffers(&mut self, device: &wgpu::Device) {
@@ -129,7 +129,7 @@ impl WorldRenderer {
         render_resources: &RenderAssetStore,
         frame_idx: u32,
         camera_pair: &CameraSnapshotPair,
-    ) -> PreparedRender<'a> {
+    ) -> PreparedRenderData<'a> {
         let now = Instant::now();
         let fixed_ss_t = compute_t(now, snaps.prev_timestamp, snaps.curr_timestamp);
         let var_ss_t = compute_t(now, camera_pair.prev_timestamp, camera_pair.curr_timestamp);
@@ -230,8 +230,8 @@ impl WorldRenderer {
             .buffers
             .update_hbgi_reproject_settings(&prev_inverse_view_proj, &wgpu_context.queue);
 
-        PreparedRender {
-            render_data: PreviousRenderData {
+        PreparedRenderData {
+            retained: RetainedRenderData {
                 camera: prepared_camera,
                 lights_environment_map: environment_map,
             },
@@ -251,8 +251,8 @@ impl WorldRenderer {
         output_view: &wgpu::TextureView,
         camera_pair: &CameraSnapshotPair,
     ) {
-        let PreparedRender {
-            render_data,
+        let PreparedRenderData {
+            retained: render_data,
             prepared_sun_shadow,
             skinned_draw,
             static_draw,
