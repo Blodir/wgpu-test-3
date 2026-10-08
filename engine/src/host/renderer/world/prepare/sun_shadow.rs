@@ -156,15 +156,13 @@ fn build_sun_shadow_light_view_proj(
 pub fn prepare_sun_shadow(
     camera: &PreparedCamera,
     sun_direction: [f32; 3],
+    cascade_count: usize,
+    split_ratios: [f32; SUN_SHADOW_MAX_CASCADE_COUNT],
 ) -> PreparedSunShadowResult {
     let sun_direction = Vec3::from_slice(&sun_direction);
     let shadow_distance = camera.state.zfar.min(SUN_SHADOW_MAX_DISTANCE);
     let near = camera.state.znear.min(shadow_distance);
-    let cascade_count = camera
-        .state
-        .sun_shadow_cascade_count
-        .clamp(1, SUN_SHADOW_MAX_CASCADE_COUNT);
-    let split_ratios = camera.state.sun_shadow_cascade_split_ratios;
+    let cascade_count = cascade_count.clamp(1, SUN_SHADOW_MAX_CASCADE_COUNT);
     let cascades = array::from_fn(|idx| {
         let active_idx = idx.min(cascade_count - 1);
         let prev_ratio = if active_idx == 0 {

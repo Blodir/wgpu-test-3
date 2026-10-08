@@ -421,8 +421,12 @@ impl WorldRenderer {
             .buffers
             .camera
             .update(&prepared_camera, prev_camera, &wgpu_context.queue);
-        let prepared_sun_shadow =
-            prepare_sun_shadow(&prepared_camera, snaps.curr.lights.sun.direction);
+        let prepared_sun_shadow = prepare_sun_shadow(
+            &prepared_camera,
+            snaps.curr.lights.sun.direction,
+            camera_pair.curr.sun_shadow_cascade_count,
+            camera_pair.curr.sun_shadow_cascade_split_ratios,
+        );
         self.gpu_context
             .resources
             .buffers

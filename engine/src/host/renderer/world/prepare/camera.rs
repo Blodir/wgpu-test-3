@@ -3,10 +3,7 @@ use glam::{Mat4, Quat, Vec2, Vec3};
 use crate::{
     host::{
         utils::lerpf32,
-        world::{
-            gpu_context::r2_quasirandom_sequence,
-            prepare::sun_shadow::SUN_SHADOW_MAX_CASCADE_COUNT,
-        },
+        world::gpu_context::r2_quasirandom_sequence,
     },
     var_snapshot::CameraSnapshotPair,
 };
@@ -18,8 +15,6 @@ pub struct InterpolatedCameraState {
     pub fovy: f32,
     pub znear: f32,
     pub zfar: f32,
-    pub sun_shadow_cascade_count: usize,
-    pub sun_shadow_cascade_split_ratios: [f32; SUN_SHADOW_MAX_CASCADE_COUNT],
     pub aspect: f32,
 }
 
@@ -91,8 +86,6 @@ fn interpolate_camera_state(
         fovy: lerpf32(prev.fovy, curr.fovy, t),
         znear: lerpf32(prev.znear, curr.znear, t),
         zfar: lerpf32(prev.zfar, curr.zfar, t),
-        sun_shadow_cascade_count: curr.sun_shadow_cascade_count,
-        sun_shadow_cascade_split_ratios: curr.sun_shadow_cascade_split_ratios,
         aspect,
     }
 }
