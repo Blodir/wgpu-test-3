@@ -205,7 +205,7 @@ impl<S, C> Renderer<S, C> {
     }
 
     pub fn receive_poses(&mut self, anim_pose_task_results: PoseJobResult) {
-        self.world_renderer.receive_poses(anim_pose_task_results);
+        self.world_renderer.store_anim_poses(anim_pose_task_results);
     }
 
     pub fn upload_material(

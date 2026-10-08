@@ -2,7 +2,7 @@ use crate::host::renderer::world::gpu_context::WorldGpuContext;
 
 use super::FULLSCREEN_QUAD_INDEX_COUNT;
 
-pub(crate) fn render_mipmap_pass(
+fn render_mipmap_pass(
     encoder: &mut wgpu::CommandEncoder,
     label: &'static str,
     pipeline: &wgpu::RenderPipeline,
@@ -32,4 +32,24 @@ pub(crate) fn render_mipmap_pass(
         wgpu::IndexFormat::Uint16,
     );
     render_pass.draw_indexed(0..FULLSCREEN_QUAD_INDEX_COUNT, 0, 0..1);
+}
+
+pub(crate) fn render_gi_source_mips(
+    encoder: &mut wgpu::CommandEncoder,
+    context: &WorldGpuContext,
+) {
+    let texture_views = &context.descriptors.texture_views.lighting_target;
+    let bind_groups = &context.descriptors.bind_groups.mipmap;
+
+    for (idx, bind_group) in bind_groups.downsample.iter().enumerate() {
+        let mip_level = idx + 1;
+        render_mipmap_pass(
+            encoder,
+            "GI Source Mipmap Pass",
+            &context.pipelines.mipmap.render_pipeline,
+            bind_group,
+            &texture_views.diffuse_radiance_ao_mips[mip_level],
+            context,
+        );
+    }
 }

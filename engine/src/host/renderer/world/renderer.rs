@@ -14,8 +14,8 @@ use super::{
     passes::{
         render_clear_temporal_inputs_passes, render_deferred_lighting_pass, render_gbuffer_skinned_opaque_pass,
         render_gbuffer_static_opaque_pass, render_hbgi_history_fix_pass, render_hbgi_pass,
-        render_hbgi_pyramid_pass, render_hbgi_reproject_pass, render_hbgi_svgf_pass,
-        render_mipmap_pass, render_skinned_transparent_pass, render_skybox_pass,
+        render_hbgi_pyramid_passes, render_hbgi_reproject_pass, render_hbgi_svgf_pass,
+        render_gi_source_mips, render_skinned_transparent_pass, render_skybox_pass,
         render_ssr_composite_pass, render_ssr_pass, render_static_transparent_pass,
         render_sun_shadow_pass, render_taa_resolve_pass, render_tonemap_pass,
     },
@@ -86,55 +86,6 @@ impl WorldRenderer {
         self.gpu_context.rotate_temporal_resources(device);
     }
 
-    fn render_hbgi_pyramid(&self, encoder: &mut wgpu::CommandEncoder) {
-        let context = &self.gpu_context;
-        let pyramids = &context.descriptors.texture_views.pyramids;
-        let bind_groups = &context.descriptors.bind_groups.hbgi_pyramid;
-
-        render_hbgi_pyramid_pass(
-            encoder,
-            "HBGI Pyramid Base Pass",
-            &context.pipelines.hbgi_pyramid.base_pipeline,
-            &bind_groups.base,
-            pyramids.depth_mips[0]
-                .get_write_view(&context.resources.textures.pyramids.depth_pyramid),
-            &pyramids.normal_mips[0],
-            context,
-        );
-
-        for (idx, bind_group) in bind_groups.downsample.iter().enumerate() {
-            let mip_level = idx + 1;
-            render_hbgi_pyramid_pass(
-                encoder,
-                "HBGI Pyramid Downsample Pass",
-                &context.pipelines.hbgi_pyramid.downsample_pipeline,
-                bind_group,
-                pyramids.depth_mips[mip_level]
-                    .get_write_view(&context.resources.textures.pyramids.depth_pyramid),
-                &pyramids.normal_mips[mip_level],
-                context,
-            );
-        }
-    }
-
-    fn render_gi_source_mips(&self, encoder: &mut wgpu::CommandEncoder) {
-        let context = &self.gpu_context;
-        let texture_views = &context.descriptors.texture_views.lighting_target;
-        let bind_groups = &context.descriptors.bind_groups.mipmap;
-
-        for (idx, bind_group) in bind_groups.downsample.iter().enumerate() {
-            let mip_level = idx + 1;
-            render_mipmap_pass(
-                encoder,
-                "GI Source Mipmap Pass",
-                &context.pipelines.mipmap.render_pipeline,
-                bind_group,
-                &texture_views.diffuse_radiance_ao_mips[mip_level],
-                context,
-            );
-        }
-    }
-
     pub fn new(
         wgpu_context: &WgpuContext,
         placeholders: PlaceholderTextureIds,
@@ -169,13 +120,6 @@ impl WorldRenderer {
             pose_storage,
             previous_render_data: None,
         }
-    }
-
-    pub fn receive_poses(
-        &mut self,
-        anim_pose_task_results: crate::workers::anim_pose::PoseJobResult,
-    ) {
-        self.pose_storage.receive_poses(anim_pose_task_results);
     }
 
     fn prepare_render<'a>(
@@ -364,14 +308,14 @@ impl WorldRenderer {
         if !self.hbgi_reproject_valid {
             render_clear_temporal_inputs_passes(encoder, &self.gpu_context);
         }
-        self.render_hbgi_pyramid(encoder);
+        render_hbgi_pyramid_passes(encoder, &self.gpu_context);
         render_hbgi_pass(encoder, &self.gpu_context);
         render_hbgi_reproject_pass(encoder, &self.gpu_context);
         render_hbgi_history_fix_pass(encoder, &self.gpu_context);
         render_hbgi_svgf_pass(encoder, &self.gpu_context);
         self.hbgi_reproject_valid = true;
         render_deferred_lighting_pass(encoder, &self.gpu_context);
-        self.render_gi_source_mips(encoder);
+        render_gi_source_mips(encoder, &self.gpu_context);
         render_ssr_pass(encoder, &self.gpu_context);
         render_ssr_composite_pass(encoder, &self.gpu_context);
 
@@ -480,5 +424,12 @@ impl WorldRenderer {
             wgpu_context,
             sampler_cache,
         ))
+    }
+
+    pub fn store_anim_poses(
+        &mut self,
+        anim_pose_task_results: crate::workers::anim_pose::PoseJobResult,
+    ) {
+        self.pose_storage.receive_poses(anim_pose_task_results);
     }
 }
