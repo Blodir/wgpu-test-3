@@ -12,7 +12,7 @@ use engine::{
         },
         sim::InputEvent,
     },
-    host::renderer::{RenderCommand, RendererOptions, UiFrameInfo},
+    host::renderer::{RenderCommand, UiFrameInfo},
     host::world::prepare::sun_shadow::SUN_SHADOW_MAX_CASCADE_COUNT,
     run,
 };
@@ -861,7 +861,7 @@ impl UiTrait for Game {
         );
         let line5 = format!(
             "hbgi: {}",
-            if ui_frame_info.settings.renderer_options.hbgi.is_some() {
+            if ui_frame_info.settings.renderer_settings.world.hbgi.is_some() {
                 "enabled"
             } else {
                 "disabled"
@@ -1099,7 +1099,7 @@ impl UiTrait for Game {
             }));
         }
 
-        let mut renderer_options = ui_frame_info.settings.renderer_options;
+        let mut renderer_settings = ui_frame_info.settings.renderer_settings;
         let mut render_settings_changed = false;
 
         ui_windows_y += UI_WINDOWS_Y_GAP;
@@ -1110,21 +1110,21 @@ impl UiTrait for Game {
             .show(ctx, |ui| {
                 ui.label("Opaque Path: Deferred");
 
-                let mut hbgi = renderer_options.hbgi;
+                let mut hbgi = renderer_settings.world.hbgi;
                 let mut hbgi_enabled = hbgi.is_some();
                 render_settings_changed |= ui.checkbox(&mut hbgi_enabled, "Enable HBGI").changed();
                 if hbgi_enabled {
-                    let mut hbgi_options = hbgi.unwrap_or_default();
+                    let mut hbgi_settings = hbgi.unwrap_or_default();
                     render_settings_changed |= ui
                         .add(
-                            egui::Slider::new(&mut hbgi_options.radius_pixels, 1.0..=2000.0)
+                            egui::Slider::new(&mut hbgi_settings.radius_pixels, 1.0..=2000.0)
                                 .text("HBGI Radius Pixels")
                                 .clamping(egui::SliderClamping::Always),
                         )
                         .changed();
                     render_settings_changed |= ui
                         .add(
-                            egui::Slider::new(&mut hbgi_options.radius_world, 0.05..=1000.0)
+                            egui::Slider::new(&mut hbgi_settings.radius_world, 0.05..=1000.0)
                                 .text("HBGI World Radius")
                                 .logarithmic(true)
                                 .clamping(egui::SliderClamping::Always),
@@ -1132,29 +1132,29 @@ impl UiTrait for Game {
                         .changed();
                     render_settings_changed |= ui
                         .add(
-                            egui::Slider::new(&mut hbgi_options.step_size_exponent, 0.1..=8.0)
+                            egui::Slider::new(&mut hbgi_settings.step_size_exponent, 0.1..=8.0)
                                 .text("HBGI Step Size Exponent")
                                 .clamping(egui::SliderClamping::Always),
                         )
                         .changed();
                     render_settings_changed |= ui
                         .add(
-                            egui::Slider::new(&mut hbgi_options.gi_intensity, 0.05..=16.0)
+                            egui::Slider::new(&mut hbgi_settings.gi_intensity, 0.05..=16.0)
                                 .text("HBGI GI Intensity")
                                 .logarithmic(true)
                                 .clamping(egui::SliderClamping::Always),
                         )
                         .changed();
-                    hbgi = Some(hbgi_options);
+                    hbgi = Some(hbgi_settings);
                 } else {
                     hbgi = None;
                 }
 
-                renderer_options = RendererOptions { hbgi };
+                renderer_settings.world.hbgi = hbgi;
             });
         if render_settings_changed {
-            emit(EngineUiCommand::Render(RenderCommand::SetRendererOptions(
-                renderer_options,
+            emit(EngineUiCommand::Render(RenderCommand::SetRendererSettings(
+                renderer_settings,
             )));
         }
     }

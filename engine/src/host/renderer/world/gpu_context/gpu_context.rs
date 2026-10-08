@@ -23,7 +23,7 @@ use crate::{
                 gpu_context::HbgiSettingsUniform,
                 prepare::mesh::{BoneMat34, SkinnedInstance, StaticInstance},
             },
-            HbgiOptions,
+            HbgiSettings,
         },
         shader_cache::ShaderCache,
         wgpu_context::WgpuContext,
@@ -48,10 +48,10 @@ impl WorldGpuContext {
         render_resources: &RenderAssetStore,
         placeholders: &PlaceholderTextureIds,
         external: External,
-        hbgi_options: Option<&HbgiOptions>,
+        hbgi_settings: Option<&HbgiSettings>,
     ) -> Self {
         let hbgi_settings =
-            hbgi_options.map(|options| HbgiSettingsUniform::from_options(options, 0));
+            hbgi_settings.map(|settings| HbgiSettingsUniform::from_settings(settings, 0));
         let resources = Resources {
             textures: Textures::new(wgpu_context, &wgpu_context.surface_config),
             buffers: Buffers::new(wgpu_context, hbgi_settings.as_ref()),
@@ -563,6 +563,7 @@ impl WorldGpuContext {
         environment_map_intensity: f32,
         point_lights: &[PointLightSnapshot],
         environment_map: Option<(TextureRenderId, TextureRenderId)>,
+        environment_map_changed: bool,
         render_resources: &RenderAssetStore,
         wgpu_context: &WgpuContext,
     ) {
@@ -579,6 +580,9 @@ impl WorldGpuContext {
             .lights
             .update_point_lights(point_lights, &wgpu_context.queue);
 
+        if !environment_map_changed {
+            return;
+        }
         let (prefiltered, di) = self
             .descriptors
             .texture_views

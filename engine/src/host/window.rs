@@ -20,7 +20,10 @@ use crate::{
     },
     game::sim::InputEvent,
     host::assets::{manager::HostAssetManager, store::RenderAssetStore},
-    host::{renderer::Renderer, wgpu_context::WgpuContext},
+    host::{
+        renderer::{Renderer, RendererSettings},
+        wgpu_context::WgpuContext,
+    },
     var_snapshot::VarSnapshotHandoff,
     workers::worker_pool::RenderResponse,
 };
@@ -115,7 +118,7 @@ where
             brdf_lut,
             blue_noise,
             &render_resources,
-            wgpu_context.renderer_options,
+            RendererSettings::default(),
             self.build_ui_fn,
         );
         self.render_context = Some(RenderContext {

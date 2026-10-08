@@ -6,7 +6,7 @@ use super::gui::GuiRenderer;
 use super::sampler_cache::SamplerCache;
 use super::shader_cache::ShaderCache;
 use super::world::external::MaterialBindGroup;
-use super::world::WorldRenderer;
+use super::world::{WorldRenderer, WorldRendererSettings};
 use crate::api::{BuildUiFn, UiCommand};
 use crate::fixed_snapshot::FixedSnapshotGuard;
 use crate::game::sim::SimDebugInfo;
@@ -17,13 +17,13 @@ use crate::var_snapshot::CameraSnapshotPair;
 use crate::workers::anim_pose::PoseJobResult;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct HbgiOptions {
+pub struct HbgiSettings {
     pub radius_pixels: f32,
     pub radius_world: f32,
     pub step_size_exponent: f32,
     pub gi_intensity: f32,
 }
-impl Default for HbgiOptions {
+impl Default for HbgiSettings {
     fn default() -> Self {
         Self {
             radius_pixels: 2000.0,
@@ -35,25 +35,19 @@ impl Default for HbgiOptions {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct RendererOptions {
-    pub hbgi: Option<HbgiOptions>,
+pub struct RendererSettings {
+    pub world: WorldRendererSettings,
 }
-impl Default for RendererOptions {
+impl Default for RendererSettings {
     fn default() -> Self {
         Self {
-            hbgi: Some(HbgiOptions::default()),
+            world: WorldRendererSettings::default(),
         }
     }
 }
-impl RendererOptions {
-    pub fn from_limits(_limits: &wgpu::Limits) -> Self {
-        Self::default()
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum RenderCommand {
-    SetRendererOptions(RendererOptions),
+    SetRendererSettings(RendererSettings),
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -71,7 +65,7 @@ pub struct DiagnosticsInfo {
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct RuntimeSettings {
-    pub renderer_options: RendererOptions,
+    pub renderer_settings: RendererSettings,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -84,8 +78,7 @@ pub struct Renderer<S, C> {
     world_renderer: WorldRenderer,
     gui_renderer: GuiRenderer<S, C>,
     sampler_cache: SamplerCache,
-    shader_cache: ShaderCache,
-    options: RendererOptions,
+    settings: RendererSettings,
     last_frame_instant: Option<Instant>,
     frame_fps_smoothed: f32,
     render_debug: RenderDebugInfo,
@@ -98,7 +91,7 @@ impl<S, C> Renderer<S, C> {
         brdf_lut: TextureRenderId,
         blue_noise: TextureRenderId,
         render_resources: &RenderAssetStore,
-        options: RendererOptions,
+        settings: RendererSettings,
         build_ui_fn: BuildUiFn<S, C>,
     ) -> Self {
         let mut sampler_cache = SamplerCache::new();
@@ -110,15 +103,14 @@ impl<S, C> Renderer<S, C> {
             blue_noise,
             &mut shader_cache,
             render_resources,
-            options,
+            settings.world,
         );
         let gui_renderer = GuiRenderer::new(wgpu_context, build_ui_fn);
         Self {
             world_renderer,
             gui_renderer,
             sampler_cache,
-            shader_cache,
-            options,
+            settings,
             last_frame_instant: None,
             frame_fps_smoothed: 0.0,
             render_debug: RenderDebugInfo::default(),
@@ -137,7 +129,7 @@ impl<S, C> Renderer<S, C> {
                 sim: *sim_debug,
             },
             settings: RuntimeSettings {
-                renderer_options: self.options,
+                renderer_settings: self.settings,
             },
         };
         self.gui_renderer
@@ -146,13 +138,13 @@ impl<S, C> Renderer<S, C> {
 
     pub fn apply_render_command(&mut self, command: RenderCommand, wgpu_context: &WgpuContext) {
         match command {
-            RenderCommand::SetRendererOptions(options) => {
-                if options == self.options {
+            RenderCommand::SetRendererSettings(settings) => {
+                if settings == self.settings {
                     return;
                 }
-                self.options = options;
+                self.settings = settings;
                 self.world_renderer
-                    .apply_options(options, wgpu_context, &mut self.shader_cache);
+                    .upload_settings(settings.world, wgpu_context);
             }
         }
     }

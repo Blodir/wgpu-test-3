@@ -2,15 +2,12 @@ use std::sync::Arc;
 
 use winit::window::Window;
 
-use crate::host::renderer::RendererOptions;
-
 pub struct WgpuContext<'surface> {
     pub window: Arc<Window>,
     pub surface: wgpu::Surface<'surface>,
     pub surface_config: wgpu::SurfaceConfiguration,
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
-    pub renderer_options: RendererOptions,
 }
 
 impl WgpuContext<'_> {
@@ -33,7 +30,6 @@ impl WgpuContext<'_> {
             .await
             .unwrap();
         let adapter_limits = adapter.limits();
-        let renderer_options = RendererOptions::from_limits(&adapter_limits);
 
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
@@ -75,7 +71,6 @@ impl WgpuContext<'_> {
             device,
             queue,
             surface_config,
-            renderer_options,
         }
     }
 }

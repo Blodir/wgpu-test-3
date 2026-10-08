@@ -1,4 +1,4 @@
-use crate::host::renderer::HbgiOptions;
+use crate::host::renderer::HbgiSettings;
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
@@ -9,20 +9,20 @@ pub struct HbgiSettingsUniform {
 
 impl Default for HbgiSettingsUniform {
     fn default() -> Self {
-        Self::from_options(&HbgiOptions::default(), 0)
+        Self::from_settings(&HbgiSettings::default(), 0)
     }
 }
 
 impl HbgiSettingsUniform {
-    pub fn from_options(hbgi_options: &HbgiOptions, frame_index: u32) -> Self {
+    pub fn from_settings(hbgi_settings: &HbgiSettings, frame_index: u32) -> Self {
         let (temporal_rotation, temporal_offset) = r2_quasirandom_sequence(frame_index);
         //let [temporal_rotation, temporal_offset] = PRECOMPUTED_R2_SAMPLES[(frame_index as usize) % PRECOMPUTED_R2_SAMPLES.len()];
         Self {
             params0: [
-                hbgi_options.radius_pixels,
-                hbgi_options.radius_world,
-                hbgi_options.step_size_exponent,
-                hbgi_options.gi_intensity,
+                hbgi_settings.radius_pixels,
+                hbgi_settings.radius_world,
+                hbgi_settings.step_size_exponent,
+                hbgi_settings.gi_intensity,
             ],
             params1: [temporal_rotation, temporal_offset, 0.0, 0.0],
         }
