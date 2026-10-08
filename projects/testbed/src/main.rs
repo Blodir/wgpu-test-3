@@ -859,14 +859,6 @@ impl UiTrait for Game {
             "sim frame: {:.2} ms",
             ui_frame_info.diagnostics.sim.frame_time_ms
         );
-        let line5 = format!(
-            "hbgi: {}",
-            if ui_frame_info.settings.renderer_settings.world.hbgi.is_some() {
-                "enabled"
-            } else {
-                "disabled"
-            }
-        );
         let text_color = egui::Color32::WHITE;
         let font = egui::FontId::proportional(22.0);
         let padding = egui::vec2(10.0, 8.0);
@@ -880,23 +872,20 @@ impl UiTrait for Game {
         let galley1 = painter.layout_no_wrap(line1, font.clone(), text_color);
         let galley2 = painter.layout_no_wrap(line2, font.clone(), text_color);
         let galley3 = painter.layout_no_wrap(line3, font.clone(), text_color);
-        let galley4 = painter.layout_no_wrap(line4, font.clone(), text_color);
-        let galley5 = painter.layout_no_wrap(line5, font, text_color);
+        let galley4 = painter.layout_no_wrap(line4, font, text_color);
         let line1_h = galley1.size().y;
         let line2_h = galley2.size().y;
         let line3_h = galley3.size().y;
         let line4_h = galley4.size().y;
-        let line5_h = galley5.size().y;
         let width = galley1
             .size()
             .x
             .max(galley2.size().x)
             .max(galley3.size().x)
             .max(galley4.size().x)
-            .max(galley5.size().x)
             + (padding.x * 2.0);
         let height =
-            line1_h + line2_h + line3_h + line4_h + line5_h + (line_gap * 4.0) + (padding.y * 2.0);
+            line1_h + line2_h + line3_h + line4_h + (line_gap * 3.0) + (padding.y * 2.0);
         let rect = egui::Rect::from_min_size(origin, egui::vec2(width, height));
 
         painter.rect_filled(rect, 0.0, egui::Color32::from_black_alpha(160));
@@ -914,16 +903,6 @@ impl UiTrait for Game {
         painter.galley(
             rect.min + padding + egui::vec2(0.0, line1_h + line2_h + line3_h + (line_gap * 3.0)),
             galley4,
-            text_color,
-        );
-        painter.galley(
-            rect.min
-                + padding
-                + egui::vec2(
-                    0.0,
-                    line1_h + line2_h + line3_h + line4_h + (line_gap * 4.0),
-                ),
-            galley5,
             text_color,
         );
 
@@ -1110,47 +1089,37 @@ impl UiTrait for Game {
             .show(ctx, |ui| {
                 ui.label("Opaque Path: Deferred");
 
-                let mut hbgi = renderer_settings.world.hbgi;
-                let mut hbgi_enabled = hbgi.is_some();
-                render_settings_changed |= ui.checkbox(&mut hbgi_enabled, "Enable HBGI").changed();
-                if hbgi_enabled {
-                    let mut hbgi_settings = hbgi.unwrap_or_default();
-                    render_settings_changed |= ui
-                        .add(
-                            egui::Slider::new(&mut hbgi_settings.radius_pixels, 1.0..=2000.0)
-                                .text("HBGI Radius Pixels")
-                                .clamping(egui::SliderClamping::Always),
-                        )
-                        .changed();
-                    render_settings_changed |= ui
-                        .add(
-                            egui::Slider::new(&mut hbgi_settings.radius_world, 0.05..=1000.0)
-                                .text("HBGI World Radius")
-                                .logarithmic(true)
-                                .clamping(egui::SliderClamping::Always),
-                        )
-                        .changed();
-                    render_settings_changed |= ui
-                        .add(
-                            egui::Slider::new(&mut hbgi_settings.step_size_exponent, 0.1..=8.0)
-                                .text("HBGI Step Size Exponent")
-                                .clamping(egui::SliderClamping::Always),
-                        )
-                        .changed();
-                    render_settings_changed |= ui
-                        .add(
-                            egui::Slider::new(&mut hbgi_settings.gi_intensity, 0.05..=16.0)
-                                .text("HBGI GI Intensity")
-                                .logarithmic(true)
-                                .clamping(egui::SliderClamping::Always),
-                        )
-                        .changed();
-                    hbgi = Some(hbgi_settings);
-                } else {
-                    hbgi = None;
-                }
-
-                renderer_settings.world.hbgi = hbgi;
+                let hbgi_settings = &mut renderer_settings.world.hbgi;
+                render_settings_changed |= ui
+                    .add(
+                        egui::Slider::new(&mut hbgi_settings.radius_pixels, 1.0..=2000.0)
+                            .text("HBGI Radius Pixels")
+                            .clamping(egui::SliderClamping::Always),
+                    )
+                    .changed();
+                render_settings_changed |= ui
+                    .add(
+                        egui::Slider::new(&mut hbgi_settings.radius_world, 0.05..=1000.0)
+                            .text("HBGI World Radius")
+                            .logarithmic(true)
+                            .clamping(egui::SliderClamping::Always),
+                    )
+                    .changed();
+                render_settings_changed |= ui
+                    .add(
+                        egui::Slider::new(&mut hbgi_settings.step_size_exponent, 0.1..=8.0)
+                            .text("HBGI Step Size Exponent")
+                            .clamping(egui::SliderClamping::Always),
+                    )
+                    .changed();
+                render_settings_changed |= ui
+                    .add(
+                        egui::Slider::new(&mut hbgi_settings.gi_intensity, 0.05..=16.0)
+                            .text("HBGI GI Intensity")
+                            .logarithmic(true)
+                            .clamping(egui::SliderClamping::Always),
+                    )
+                    .changed();
             });
         if render_settings_changed {
             emit(EngineUiCommand::Render(RenderCommand::SetRendererSettings(

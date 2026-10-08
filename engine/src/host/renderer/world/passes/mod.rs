@@ -1,3 +1,4 @@
+mod clear_temporal;
 mod deferred_lighting;
 mod g_buffer;
 mod hbgi;
@@ -17,6 +18,7 @@ mod tonemap;
 
 const FULLSCREEN_QUAD_INDEX_COUNT: u32 = 6;
 
+pub(crate) use clear_temporal::render_clear_temporal_inputs_passes;
 pub(crate) use deferred_lighting::render_deferred_lighting_pass;
 pub(crate) use g_buffer::{render_gbuffer_skinned_opaque_pass, render_gbuffer_static_opaque_pass};
 pub(crate) use hbgi::render_hbgi_pass;

@@ -48,13 +48,12 @@ impl WorldGpuContext {
         render_resources: &RenderAssetStore,
         placeholders: &PlaceholderTextureIds,
         external: External,
-        hbgi_settings: Option<&HbgiSettings>,
+        hbgi_settings: &HbgiSettings,
     ) -> Self {
-        let hbgi_settings =
-            hbgi_settings.map(|settings| HbgiSettingsUniform::from_settings(settings, 0));
+        let hbgi_settings = HbgiSettingsUniform::from_settings(hbgi_settings, 0);
         let resources = Resources {
             textures: Textures::new(wgpu_context, &wgpu_context.surface_config),
-            buffers: Buffers::new(wgpu_context, hbgi_settings.as_ref()),
+            buffers: Buffers::new(wgpu_context, &hbgi_settings),
             samplers: Samplers::new(&wgpu_context.device),
         };
         let texture_views = TextureViews::new(

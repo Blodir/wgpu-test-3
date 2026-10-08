@@ -12,7 +12,7 @@ use super::prepare::sun_shadow::{prepare_sun_shadow, PreparedSunShadowResult};
 use super::{
     gpu_context::HbgiSettingsUniform,
     passes::{
-        render_deferred_lighting_pass, render_gbuffer_skinned_opaque_pass,
+        render_clear_temporal_inputs_passes, render_deferred_lighting_pass, render_gbuffer_skinned_opaque_pass,
         render_gbuffer_static_opaque_pass, render_hbgi_history_fix_pass, render_hbgi_pass,
         render_hbgi_pyramid_pass, render_hbgi_reproject_pass, render_hbgi_svgf_pass,
         render_mipmap_pass, render_skinned_transparent_pass, render_skybox_pass,
@@ -49,12 +49,12 @@ pub struct UploadMaterialRequest<'a> {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct WorldRendererSettings {
-    pub hbgi: Option<HbgiSettings>,
+    pub hbgi: HbgiSettings,
 }
 impl Default for WorldRendererSettings {
     fn default() -> Self {
         Self {
-            hbgi: Some(HbgiSettings::default()),
+            hbgi: HbgiSettings::default(),
         }
     }
 }
@@ -82,101 +82,6 @@ pub struct WorldRenderer {
     previous_render_data: Option<PreviousRenderData>,
 }
 impl WorldRenderer {
-    fn clear_temporal_inputs(&self, encoder: &mut wgpu::CommandEncoder) {
-        for view in &self
-            .gpu_context
-            .descriptors
-            .texture_views
-            .lighting_target
-            .diffuse_radiance_ao_mips
-        {
-            let _clear_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Lighting Target > Diffuse Radiance AO - Clear Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                occlusion_query_set: None,
-                timestamp_writes: None,
-            });
-        }
-
-        for (label, view, clear_color) in [
-            (
-                "Reproject > Bent AO - Clear Pass",
-                self.gpu_context
-                    .descriptors
-                    .texture_views
-                    .reproject
-                    .bent_ao
-                    .get_read_view(&self.gpu_context.resources.textures.reproject.bent_ao),
-                wgpu::Color::TRANSPARENT,
-            ),
-            (
-                "Reproject > Near Field Irradiance - Clear Pass",
-                self.gpu_context
-                    .descriptors
-                    .texture_views
-                    .reproject
-                    .near_field_irradiance
-                    .get_read_view(
-                        &self
-                            .gpu_context
-                            .resources
-                            .textures
-                            .reproject
-                            .near_field_irradiance,
-                    ),
-                wgpu::Color::TRANSPARENT,
-            ),
-            (
-                "Reproject > Depth History - Clear Pass",
-                self.gpu_context
-                    .descriptors
-                    .texture_views
-                    .reproject
-                    .depth_history
-                    .get_read_view(&self.gpu_context.resources.textures.reproject.depth_history),
-                wgpu::Color {
-                    r: 0.0,
-                    g: 0.0,
-                    b: 0.0,
-                    a: 1.0,
-                },
-            ),
-            (
-                "Reproject > Normal History - Clear Pass",
-                self.gpu_context
-                    .descriptors
-                    .texture_views
-                    .reproject
-                    .normal_history
-                    .get_read_view(&self.gpu_context.resources.textures.reproject.normal_history),
-                wgpu::Color::TRANSPARENT,
-            ),
-        ] {
-            let _clear_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some(label),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(clear_color),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                occlusion_query_set: None,
-                timestamp_writes: None,
-            });
-        }
-    }
-
     fn rotate_temporal_buffers(&mut self, device: &wgpu::Device) {
         self.gpu_context.rotate_temporal_resources(device);
     }
@@ -250,7 +155,7 @@ impl WorldRenderer {
                 brdf_lut,
                 blue_noise,
             },
-            settings.hbgi.as_ref(),
+            &settings.hbgi,
         );
         let pose_storage = AnimPoseStore::new();
 
@@ -372,16 +277,14 @@ impl WorldRenderer {
             render_resources,
             wgpu_context,
         );
-        if let Some(hbgi_settings) = &self.settings.hbgi {
-            self.gpu_context.resources.buffers.update_hbgi_settings(
-                &HbgiSettingsUniform::from_settings(hbgi_settings, frame_idx),
-                &wgpu_context.queue,
-            );
-            self.gpu_context
-                .resources
-                .buffers
-                .update_hbgi_reproject_settings(&prev_inverse_view_proj, &wgpu_context.queue);
-        }
+        self.gpu_context.resources.buffers.update_hbgi_settings(
+            &HbgiSettingsUniform::from_settings(&self.settings.hbgi, frame_idx),
+            &wgpu_context.queue,
+        );
+        self.gpu_context
+            .resources
+            .buffers
+            .update_hbgi_reproject_settings(&prev_inverse_view_proj, &wgpu_context.queue);
 
         PreparedRender {
             render_data: PreviousRenderData {
@@ -459,83 +362,14 @@ impl WorldRenderer {
             &self.gpu_context,
         );
         if !self.hbgi_reproject_valid {
-            self.clear_temporal_inputs(encoder);
+            render_clear_temporal_inputs_passes(encoder, &self.gpu_context);
         }
-        if self.settings.hbgi.is_some() {
-            self.render_hbgi_pyramid(encoder);
-            render_hbgi_pass(encoder, &self.gpu_context);
-            render_hbgi_reproject_pass(encoder, &self.gpu_context);
-            render_hbgi_history_fix_pass(encoder, &self.gpu_context);
-            render_hbgi_svgf_pass(encoder, &self.gpu_context);
-            self.hbgi_reproject_valid = true;
-        } else {
-            let _clear_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("HBGI Disabled Clear Pass"),
-                color_attachments: &[
-                    Some(wgpu::RenderPassColorAttachment {
-                        view: &self.gpu_context.descriptors.texture_views.hbgi.bent_ao,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color {
-                                r: 0.0,
-                                g: 0.0,
-                                b: 0.0,
-                                a: 1.0,
-                            }),
-                            store: wgpu::StoreOp::Store,
-                        },
-                    }),
-                    Some(wgpu::RenderPassColorAttachment {
-                        view: &self
-                            .gpu_context
-                            .descriptors
-                            .texture_views
-                            .hbgi
-                            .near_field_irradiance,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
-                            store: wgpu::StoreOp::Store,
-                        },
-                    }),
-                    Some(wgpu::RenderPassColorAttachment {
-                        view: &self
-                            .gpu_context
-                            .descriptors
-                            .texture_views
-                            .hbgi_svgf
-                            .bent_ao_a,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color {
-                                r: 0.0,
-                                g: 0.0,
-                                b: 1.0,
-                                a: 1.0,
-                            }),
-                            store: wgpu::StoreOp::Store,
-                        },
-                    }),
-                    Some(wgpu::RenderPassColorAttachment {
-                        view: &self
-                            .gpu_context
-                            .descriptors
-                            .texture_views
-                            .hbgi_svgf
-                            .irradiance_variance_a,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
-                            store: wgpu::StoreOp::Store,
-                        },
-                    }),
-                ],
-                depth_stencil_attachment: None,
-                occlusion_query_set: None,
-                timestamp_writes: None,
-            });
-            self.hbgi_reproject_valid = false;
-        }
+        self.render_hbgi_pyramid(encoder);
+        render_hbgi_pass(encoder, &self.gpu_context);
+        render_hbgi_reproject_pass(encoder, &self.gpu_context);
+        render_hbgi_history_fix_pass(encoder, &self.gpu_context);
+        render_hbgi_svgf_pass(encoder, &self.gpu_context);
+        self.hbgi_reproject_valid = true;
         render_deferred_lighting_pass(encoder, &self.gpu_context);
         self.render_gi_source_mips(encoder);
         render_ssr_pass(encoder, &self.gpu_context);
@@ -574,12 +408,10 @@ impl WorldRenderer {
         wgpu_context: &WgpuContext,
     ) {
         self.settings = settings;
-        if let Some(hbgi_settings) = &self.settings.hbgi {
-            self.gpu_context.resources.buffers.update_hbgi_settings(
-                &HbgiSettingsUniform::from_settings(hbgi_settings, 0),
-                &wgpu_context.queue,
-            );
-        }
+        self.gpu_context.resources.buffers.update_hbgi_settings(
+            &HbgiSettingsUniform::from_settings(&self.settings.hbgi, 0),
+            &wgpu_context.queue,
+        );
         self.hbgi_reproject_valid = false;
     }
 

@@ -48,7 +48,7 @@ pub(crate) struct Buffers {
 }
 
 impl Buffers {
-    pub fn new(wgpu_context: &WgpuContext, hbgi_settings: Option<&HbgiSettingsUniform>) -> Self {
+    pub fn new(wgpu_context: &WgpuContext, hbgi_settings: &HbgiSettingsUniform) -> Self {
         let device = &wgpu_context.device;
         let storage_usage = wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST;
 
@@ -70,11 +70,7 @@ impl Buffers {
 
         let hbgi_settings = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("HBGI Settings Buffer"),
-            contents: bytemuck::bytes_of(
-                &hbgi_settings
-                    .copied()
-                    .unwrap_or_else(HbgiSettingsUniform::default),
-            ),
+            contents: bytemuck::bytes_of(hbgi_settings),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
         let hbgi_reproject_settings =
