@@ -5,6 +5,8 @@
 @group(0) @binding(4) var depth_history: texture_2d<f32>;
 @group(0) @binding(5) var motion_vectors_texture: texture_2d<f32>;
 
+@group(1) @binding(7) var<uniform> camera_jitter: vec4<f32>;
+
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
     @location(0) tex_coords: vec2<f32>,
@@ -61,6 +63,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     }
 
     let motion = textureLoad(motion_vectors_texture, coords, 0).xy;
+    //let prev_uv = uv - motion + camera_jitter.zw - camera_jitter.xy;
     let prev_uv = uv - motion;
     if (any(prev_uv < vec2f(0.0)) || any(prev_uv > vec2f(1.0))) {
         return vec4f(curr_color, 1.0);

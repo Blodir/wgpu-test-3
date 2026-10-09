@@ -305,7 +305,7 @@ impl WorldRenderer {
 
         render_taa_pass(encoder, &self.gpu_context);
         render_tonemap_pass(encoder, output_view, &self.gpu_context);
-        render_debug_copy_normal_history_pass(encoder, output_view, &self.gpu_context);
+        //render_debug_copy_normal_history_pass(encoder, output_view, &self.gpu_context);
         self.gpu_context.rotate_temporal_resources();
         self.temporal_history_valid = true;
         self.previous_render_data = Some(render_data);

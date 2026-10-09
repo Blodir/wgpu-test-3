@@ -1,5 +1,6 @@
 @group(1) @binding(2) var<uniform> inverse_view_proj: mat4x4<f32>;
 @group(1) @binding(3) var<uniform> prev_inverse_view_proj: mat4x4<f32>;
+@group(1) @binding(7) var<uniform> camera_jitter: vec4<f32>;
 
 @group(0) @binding(0) var gbuffer_normal_roughness: texture_2d<f32>;
 @group(0) @binding(1) var diffuse_history: texture_2d<f32>;
@@ -21,6 +22,14 @@ struct FragmentOutput {
 const MAX_HISTORY_LENGTH: f32 = 8.0;
 const SVGF_NORMAL_REJECTION_DOT_THRESHOLD: f32 = 0.5;
 const SVGF_PLANE_DISTANCE_REJECTION_THRESHOLD: f32 = 1e0;
+
+fn safe_normalize3(value: vec3f, fallback: vec3f) -> vec3f {
+    let len = length(value);
+    if (len > 1e-8 && len < 1e20) {
+        return value / len;
+    }
+    return fallback;
+}
 
 fn reconstruct_world_position_from_depth(
     uv: vec2f,
@@ -57,6 +66,15 @@ fn sample_2x2(source: texture_2d<f32>, coord: vec2i) -> vec4f {
     return (sample00 + sample10 + sample01 + sample11) * 0.25;
 }
 
+fn sample_depth_2x2(source: texture_depth_2d, coord: vec2i) -> f32 {
+    let max_coord = vec2i(textureDimensions(source)) - vec2i(1);
+    let sample00 = textureLoad(source, clamp_coord(coord, max_coord), 0);
+    let sample10 = textureLoad(source, clamp_coord(coord + vec2i(1, 0), max_coord), 0);
+    let sample01 = textureLoad(source, clamp_coord(coord + vec2i(0, 1), max_coord), 0);
+    let sample11 = textureLoad(source, clamp_coord(coord + vec2i(1, 1), max_coord), 0);
+    return max(max(sample00, sample10), max(sample01, sample11));
+}
+
 @vertex
 fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
     var out: VertexOutput;
@@ -88,29 +106,29 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
     let half_dims_u = textureDimensions(prev_normal_roughness_history_texture);
     let half_dims = vec2f(half_dims_u);
     let half_max_coords = vec2i(half_dims_u) - vec2i(1);
+    let prev_depth_mip = i32(min(1u, textureNumLevels(prev_depth_history_texture) - 1u));
 
     let curr_half_coords = vec2i(in.clip_position.xy);
     var normal_roughness = sample_2x2(gbuffer_normal_roughness, curr_half_coords * 2);
     let normal_length = length(normal_roughness.xyz);
-    if (normal_length > 1e-8) {
-        normal_roughness = vec4f(normal_roughness.xyz / normal_length, normal_roughness.w);
-    }
-    let curr_depth = textureLoad(depth_texture, curr_full_coords, 0);
+    let curr_depth = sample_depth_2x2(depth_texture, curr_half_coords * 2);
     if (curr_depth <= 0.0 || normal_length <= 1e-8) {
         return FragmentOutput(normal_roughness, vec4f(0.0));
     }
+    let N = normalize(normal_roughness.xyz);
+    let roughness = normal_roughness.w;
 
     let world_position = reconstruct_world_position_from_depth(
         uv,
         curr_depth,
         inverse_view_proj
     );
-    let N = normalize(normal_roughness.xyz);
 
     let motion = textureLoad(motion_vectors_texture, curr_full_coords, 0).xy;
+    //let prev_uv = uv - motion + camera_jitter.zw - camera_jitter.xy;
     let prev_uv = uv - motion;
     if (any(prev_uv < vec2f(0.0)) || any(prev_uv > vec2f(1.0))) {
-        return FragmentOutput(normal_roughness, vec4f(0.0, 0.0, 0.0, 1.0));
+        return FragmentOutput(vec4f(N, roughness), vec4f(0.0, 0.0, 0.0, 1.0));
     }
 
     let prev_coord = clamp_coordf(prev_uv * half_dims - vec2f(0.5), vec2f(half_max_coords));
@@ -140,18 +158,16 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
         let tap_uv = (vec2f(tap_coords) + vec2f(0.5)) / half_dims;
         let tap_weight = tap_weights[i];
 
-        let prev_depth_dims = vec2i(textureDimensions(prev_depth_history_texture));
-        let prev_depth_coords = clamp_coord(vec2i(tap_uv * vec2f(prev_depth_dims)), prev_depth_dims - vec2i(1));
-        let prev_depth_history = textureLoad(prev_depth_history_texture, prev_depth_coords, 0);
-        let prev_depth = prev_depth_history.x;
+        let prev_depth = textureLoad(prev_depth_history_texture, tap_coords, prev_depth_mip).x;
         if (prev_depth <= 0.0) {
             continue;
         }
         let prev_normal_sample = textureLoad(prev_normal_roughness_history_texture, tap_coords, 0).xyz;
-        if (length(prev_normal_sample) <= 1e-8) {
+        let prev_normal_length = length(prev_normal_sample);
+        if (!(prev_normal_length > 1e-8 && prev_normal_length < 1e20)) {
             continue;
         }
-        let prev_normal = normalize(prev_normal_sample);
+        let prev_normal = prev_normal_sample / prev_normal_length;
         let prev_world_position = reconstruct_world_position_from_depth(
             tap_uv,
             prev_depth,
@@ -164,8 +180,8 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
         //let normal_weight = clamp((normal_similarity - SVGF_NORMAL_REJECTION_DOT_THRESHOLD) / (1.0 - SVGF_NORMAL_REJECTION_DOT_THRESHOLD), 0.0, 1.0);
         let normal_weight = smoothstep(0.5, 0.95, normal_similarity);
         let plane_weight = clamp(1.0 - (plane_distance / SVGF_PLANE_DISTANCE_REJECTION_THRESHOLD), 0.0, 1.0);
-        let history_weight = tap_weight * normal_weight * plane_weight;
-        //let history_weight = tap_weight * plane_weight;
+        //let history_weight = tap_weight * normal_weight * plane_weight;
+        let history_weight = tap_weight;
         if (history_weight <= 0.0) {
             continue;
         }
@@ -182,7 +198,7 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
     }
 
     if (prev_weight_acc <= 0.0) {
-        return FragmentOutput(normal_roughness, vec4f(0.0, 0.0, 0.0, 1.0));
+        return FragmentOutput(vec4f(N, roughness), vec4f(0.0, 0.0, 0.0, 1.0));
     }
 
     prev_color_acc /= prev_weight_acc;
@@ -190,12 +206,20 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
     prev_history_length_acc /= prev_weight_acc;
 
     let blend_factor = 1.0 / (1.0 + min(prev_history_length_acc, MAX_HISTORY_LENGTH - 1.0));
+    //let blend_factor = 0.01;
 
-    let final_normal = normalize(mix(normalize(prev_normal_acc), normal_roughness.xyz, blend_factor));
+    let prev_normal = safe_normalize3(prev_normal_acc, N);
+    let final_normal = safe_normalize3(mix(prev_normal, N, blend_factor), N);
     let final_history_length = min(prev_history_length_acc + 1.0, MAX_HISTORY_LENGTH);
 
+    /*
     return FragmentOutput(
-        vec4f(final_normal, normal_roughness.w),
+        vec4f(final_normal, final_history_length),
+        vec4f(prev_color_acc, final_history_length)
+    );
+    */
+    return FragmentOutput(
+        vec4f(final_normal, roughness),
         vec4f(prev_color_acc, final_history_length)
     );
 }

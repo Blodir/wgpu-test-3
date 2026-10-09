@@ -239,7 +239,7 @@ impl SsrtPipelines {
                     Float,
                 ],
                 &[color],
-                &[],
+                &[&layouts.camera],
             ),
             tonemap: create(
                 "Tonemap",

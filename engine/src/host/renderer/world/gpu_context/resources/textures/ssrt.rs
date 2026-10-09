@@ -69,6 +69,7 @@ impl SsrtTextures {
             final_hdr_history: create_rw_texture("Final HDR History"),
             depth_history: RWTexture::new(
                 wgpu::TextureDescriptor {
+                    mip_level_count: (full_size.width.max(full_size.height).ilog2() + 1).min(2),
                     format: wgpu::TextureFormat::R32Float,
                     usage: wgpu::TextureUsages::RENDER_ATTACHMENT
                         | wgpu::TextureUsages::TEXTURE_BINDING

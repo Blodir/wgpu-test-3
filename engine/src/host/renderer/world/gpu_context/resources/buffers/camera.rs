@@ -11,6 +11,7 @@ pub struct CameraBuffers {
     pub view_rotation: wgpu::Buffer,
     pub unjittered_view_proj: wgpu::Buffer,
     pub prev_unjittered_view_proj: wgpu::Buffer,
+    pub jitter: wgpu::Buffer,
 }
 
 impl CameraBuffers {
@@ -59,6 +60,11 @@ impl CameraBuffers {
                 contents: bytemuck::cast_slice(&Mat4::IDENTITY.to_cols_array()),
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             });
+        let jitter = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Camera Jitter Buffer"),
+            contents: bytemuck::cast_slice(&[0.0f32; 4]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
         Self {
             view_proj,
             position,
@@ -67,6 +73,7 @@ impl CameraBuffers {
             view_rotation,
             unjittered_view_proj,
             prev_unjittered_view_proj,
+            jitter,
         }
     }
 
@@ -110,6 +117,16 @@ impl CameraBuffers {
             &self.prev_unjittered_view_proj,
             0,
             bytemuck::cast_slice(&prev_camera.unjittered_view_proj.to_cols_array()),
+        );
+        queue.write_buffer(
+            &self.jitter,
+            0,
+            bytemuck::cast_slice(&[
+                camera.jitter_uv.x,
+                camera.jitter_uv.y,
+                prev_camera.jitter_uv.x,
+                prev_camera.jitter_uv.y,
+            ]),
         );
     }
 }

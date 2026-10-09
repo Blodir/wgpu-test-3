@@ -17,6 +17,7 @@ pub(crate) struct SsrtTextureViews {
     pub final_hdr: wgpu::TextureView,
     pub final_hdr_history: RWTextureView,
     pub depth_history: RWTextureView,
+    pub depth_history_mips: Vec<RWTextureView>,
 }
 
 impl SsrtTextureViews {
@@ -40,6 +41,19 @@ impl SsrtTextureViews {
             final_hdr: create_view(&textures.final_hdr),
             final_hdr_history: create_rw_view(&textures.final_hdr_history),
             depth_history: create_rw_view(&textures.depth_history),
+            depth_history_mips: (0..textures.depth_history.get_write_tex().mip_level_count())
+                .map(|mip_level| {
+                    RWTextureView::new(
+                        &textures.depth_history,
+                        &wgpu::TextureViewDescriptor {
+                            label: Some("Depth History Mip"),
+                            base_mip_level: mip_level,
+                            mip_level_count: Some(1),
+                            ..Default::default()
+                        },
+                    )
+                })
+                .collect(),
         }
     }
 }

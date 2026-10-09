@@ -235,6 +235,11 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
         ssgi_denoise_sampler,
         uv
     ).rgba;
+
+    let half_max_coords = vec2i(textureDimensions(reprojected_diffuse)) - vec2i(1);
+    let half_coords = min(vec2i(in.clip_position.xy) / 2, half_max_coords);
+    let history_length = textureLoad(reprojected_diffuse, half_coords, 0).a;
+
     if (depth <= 0.0) {
         let rd = normalize(in.world_direction);
 
@@ -246,7 +251,11 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
                 0.0
             );
 
-        return FragmentOutput(sample.rgba, vec4f(0.0, 0.0, 0.0, 0.0));
+        let gi_source = vec4f(
+            sample.rgb,
+            history_length
+        );
+        return FragmentOutput(sample.rgba, gi_source);
     }
     let world_position = reconstruct_world_position_from_depth(uv, depth);
 
@@ -347,9 +356,6 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
         surface_emissive,
         1.0
     );
-    let half_max_coords = vec2i(textureDimensions(reprojected_diffuse)) - vec2i(1);
-    let half_coords = min(vec2i(in.clip_position.xy) / 2, half_max_coords);
-    let history_length = textureLoad(reprojected_diffuse, half_coords, 0).a;
     let gi_source = vec4f(
         final_diffuse + surface_emissive,
         history_length

@@ -33,9 +33,12 @@ pub(crate) fn render_clear_temporal_inputs_passes(
         (&views.ssr_history, &textures.ssr_history),
         (&views.moments_history, &textures.moments_history),
         (&views.final_hdr_history, &textures.final_hdr_history),
-        (&views.depth_history, &textures.depth_history),
     ] {
         render_clear_pass(encoder, history.get_read_view(texture));
         render_clear_pass(encoder, history.get_write_view(texture));
+    }
+    for mip in &views.depth_history_mips {
+        render_clear_pass(encoder, mip.get_read_view(&textures.depth_history));
+        render_clear_pass(encoder, mip.get_write_view(&textures.depth_history));
     }
 }

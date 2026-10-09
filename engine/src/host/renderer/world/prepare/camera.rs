@@ -1,10 +1,7 @@
 use glam::{Mat4, Quat, Vec2, Vec3};
 
 use crate::{
-    host::{
-        utils::lerpf32,
-        world::gpu_context::r2_quasirandom_sequence,
-    },
+    host::{utils::lerpf32, world::gpu_context::r2_quasirandom_sequence},
     var_snapshot::CameraSnapshotPair,
 };
 
@@ -25,6 +22,7 @@ pub struct PreparedCamera {
     pub inverse_view_proj: Mat4,
     pub view_rotation: [[f32; 4]; 3],
     pub unjittered_view_proj: Mat4,
+    pub jitter_uv: Vec2,
 }
 
 fn reverse_z_perspective_rh(fovy: f32, aspect: f32, znear: f32, zfar: f32) -> Mat4 {
@@ -124,5 +122,7 @@ pub fn prepare_camera(
         inverse_view_proj,
         view_rotation,
         unjittered_view_proj,
+        // flip y because tex coords are down-positive
+        jitter_uv: jitter_ndc * Vec2::new(0.5, -0.5),
     }
 }

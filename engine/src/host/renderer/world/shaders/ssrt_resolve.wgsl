@@ -2,6 +2,7 @@
 
 @group(1) @binding(2) var<uniform> inverse_view_proj: mat4x4<f32>;
 @group(1) @binding(3) var<uniform> prev_inverse_view_proj: mat4x4<f32>;
+@group(1) @binding(7) var<uniform> camera_jitter: vec4<f32>;
 
 @group(0) @binding(0) var ssgi_trace: texture_2d<f32>;
 @group(0) @binding(1) var previous_ssgi_history: texture_2d<f32>;
@@ -135,7 +136,9 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
     let curr_normal = normalize(curr_normal_sample.xyz);
 
     let motion = textureLoad(motion_vectors_texture, curr_full_coords, 0).xy;
+    //let prev_uv = curr_uv - motion + camera_jitter.zw - camera_jitter.xy;
     let prev_uv = curr_uv - motion;
+
     if (any(prev_uv < vec2f(0.0)) || any(prev_uv > vec2f(1.0))) {
         let curr_lum = luminance(curr_ssgi.rgb);
         let curr_ssr_lum = luminance(curr_ssr.rgb);

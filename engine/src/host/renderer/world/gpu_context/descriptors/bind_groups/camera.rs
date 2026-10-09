@@ -75,6 +75,16 @@ impl CameraBindGroup {
                     },
                     count: None,
                 },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 7,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
             ],
             label: Some("Camera Bind Group Layout"),
         }
@@ -115,6 +125,10 @@ impl CameraBindGroup {
                 wgpu::BindGroupEntry {
                     binding: 6,
                     resource: buffers.prev_unjittered_view_proj.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 7,
+                    resource: buffers.jitter.as_entire_binding(),
                 },
             ],
             label: Some("Camera Bind Group"),
