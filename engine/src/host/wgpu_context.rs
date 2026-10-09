@@ -15,7 +15,8 @@ impl WgpuContext<'_> {
         let size = window.inner_size();
 
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::VULKAN,
+            backends: wgpu::Backends::VULKAN.with_env(),
+            flags: wgpu::InstanceFlags::default() | wgpu::InstanceFlags::DEBUG,
             ..Default::default()
         });
 

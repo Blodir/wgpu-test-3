@@ -1,17 +1,14 @@
-use std::array;
-
 use wgpu::util::DeviceExt as _;
 
 use super::{
     descriptors::{
-        bg_layouts::BGLayouts, BindGroups, BonesBindGroups, CameraBindGroup,
-        DeferredLightingBindGroups, Descriptors, HbgiBindGroups, HbgiPyramidBindGroups,
-        HbgiReprojectBindGroups, HbgiSvgfBindGroups, InstanceStorageBindGroup, LightsBindGroup,
-        MipmapBindGroups, SsrBindGroup, SsrCompositeBindGroup, SunShadowMatrixBindGroup,
-        TaaResolveBindGroup, TextureViews, TonemapBindGroup,
+        bg_layouts::BGLayouts, BindGroups, BonesBindGroups, CameraBindGroup, Descriptors,
+        InstanceStorageBindGroup, LightsBindGroup, SsrtBindGroups, SunShadowMatrixBindGroup,
+        TextureViews,
     },
     pipelines::Pipelines,
     resources::{Buffers, Resources, Samplers, Textures},
+    SsrtSettingsUniform,
 };
 use crate::{
     fixed_snapshot::PointLightSnapshot,
@@ -19,10 +16,7 @@ use crate::{
     host::{
         assets::store::{PlaceholderTextureIds, RenderAssetStore, TextureRenderId},
         renderer::{
-            world::{
-                gpu_context::HbgiSettingsUniform,
-                prepare::mesh::{BoneMat34, SkinnedInstance, StaticInstance},
-            },
+            world::prepare::mesh::{BoneMat34, SkinnedInstance, StaticInstance},
             HbgiSettings,
         },
         shader_cache::ShaderCache,
@@ -34,7 +28,6 @@ pub(crate) struct External {
     pub(crate) brdf_lut: TextureRenderId,
     pub(crate) blue_noise: TextureRenderId,
 }
-
 pub(crate) struct WorldGpuContext {
     pub(crate) external: External,
     pub(crate) resources: Resources,
@@ -48,14 +41,19 @@ impl WorldGpuContext {
         render_resources: &RenderAssetStore,
         placeholders: &PlaceholderTextureIds,
         external: External,
-        hbgi_settings: &HbgiSettings,
+        settings: &HbgiSettings,
     ) -> Self {
-        let hbgi_settings = HbgiSettingsUniform::from_settings(hbgi_settings, 0);
-        let resources = Resources {
+        let device = &wgpu_context.device;
+        let mut resources = Resources {
             textures: Textures::new(wgpu_context, &wgpu_context.surface_config),
-            buffers: Buffers::new(wgpu_context, &hbgi_settings),
-            samplers: Samplers::new(&wgpu_context.device),
+            buffers: Buffers::new(
+                wgpu_context,
+                &SsrtSettingsUniform::from_settings(settings, 0),
+            ),
+            samplers: Samplers::new(device),
         };
+        let bind_group_layouts = BGLayouts::new(wgpu_context);
+        let pipelines = Pipelines::new(wgpu_context, shader_cache, &bind_group_layouts);
         let texture_views = TextureViews::new(
             &resources.textures,
             render_resources,
@@ -63,9 +61,6 @@ impl WorldGpuContext {
             external.brdf_lut,
             external.blue_noise,
         );
-        let bind_group_layouts = BGLayouts::new(wgpu_context);
-        let device = &wgpu_context.device;
-
         let bind_groups = BindGroups {
             bones: BonesBindGroups::new(
                 &resources.buffers.bones,
@@ -78,97 +73,6 @@ impl WorldGpuContext {
                 &resources.buffers.camera,
                 &bind_group_layouts.camera,
                 device,
-            ),
-            hbgi: HbgiBindGroups::new(
-                &resources.buffers.hbgi_settings,
-                &bind_group_layouts.hbgi_settings,
-                &texture_views.lighting_target.diffuse_radiance_ao,
-                texture_views
-                    .pyramids
-                    .depth_pyramid
-                    .get_write_view(&resources.textures.pyramids.depth_pyramid),
-                &texture_views.pyramids.normal_pyramid,
-                &resources.samplers.hbgi_pyramid_downsample,
-                &resources.samplers.hbgi_pyramid_downsample,
-                &texture_views.external.blue_noise,
-                &bind_group_layouts.hbgi_inputs,
-                device,
-            ),
-            deferred_lighting: DeferredLightingBindGroups::new(
-                &texture_views.gbuffer.albedo_ao,
-                &resources.samplers.nearest,
-                &texture_views.gbuffer.normal_roughness,
-                &resources.samplers.nearest,
-                &texture_views.gbuffer.emissive_metallic,
-                &resources.samplers.nearest,
-                &texture_views.gbuffer.depth,
-                &texture_views.hbgi_svgf.bent_ao_a,
-                &resources.samplers.linear,
-                &texture_views.hbgi_svgf.irradiance_variance_a,
-                &resources.samplers.linear,
-                &bind_group_layouts,
-                device,
-            ),
-            hbgi_reproject: HbgiReprojectBindGroups::new(
-                &texture_views.gbuffer.motion_vectors,
-                &texture_views.hbgi.bent_ao,
-                texture_views
-                    .reproject
-                    .bent_ao
-                    .get_read_view(&resources.textures.reproject.bent_ao),
-                &texture_views.gbuffer.depth,
-                &texture_views.gbuffer.normal_roughness,
-                texture_views
-                    .reproject
-                    .depth_history
-                    .get_read_view(&resources.textures.reproject.depth_history),
-                texture_views
-                    .reproject
-                    .normal_history
-                    .get_read_view(&resources.textures.reproject.normal_history),
-                &texture_views.hbgi.near_field_irradiance,
-                texture_views
-                    .reproject
-                    .near_field_irradiance
-                    .get_read_view(&resources.textures.reproject.near_field_irradiance),
-                &resources.buffers.hbgi_reproject_settings,
-                &bind_group_layouts,
-                device,
-            ),
-            hbgi_svgf: HbgiSvgfBindGroups::new(
-                texture_views
-                    .reproject
-                    .bent_ao
-                    .get_write_view(&resources.textures.reproject.bent_ao),
-                texture_views
-                    .reproject
-                    .near_field_irradiance
-                    .get_write_view(&resources.textures.reproject.near_field_irradiance),
-                texture_views
-                    .reproject
-                    .depth_history
-                    .get_write_view(&resources.textures.reproject.depth_history),
-                texture_views
-                    .reproject
-                    .normal_history
-                    .get_write_view(&resources.textures.reproject.normal_history),
-                &texture_views.hbgi_svgf.bent_ao_a,
-                &texture_views.hbgi_svgf.irradiance_variance_a,
-                &texture_views.hbgi_svgf.bent_ao_b,
-                &texture_views.hbgi_svgf.irradiance_variance_b,
-                &resources.buffers.hbgi_svgf_settings,
-                &bind_group_layouts,
-                device,
-            ),
-            hbgi_pyramid: HbgiPyramidBindGroups::new(
-                device,
-                &bind_group_layouts,
-                &resources.samplers.hbgi_pyramid_downsample,
-                &texture_views.gbuffer.depth,
-                &texture_views.gbuffer.normal_roughness,
-                &resources.samplers.nearest,
-                &texture_views.pyramids,
-                &resources.textures.pyramids.depth_pyramid,
             ),
             lights: LightsBindGroup::new(
                 &resources.buffers.lights,
@@ -183,116 +87,21 @@ impl WorldGpuContext {
                 &bind_group_layouts.lights,
                 device,
             ),
-            mipmap: MipmapBindGroups::new(
-                &texture_views.lighting_target.diffuse_radiance_ao_mips,
-                &resources.samplers.hbgi_pyramid_downsample,
-                &bind_group_layouts.mipmap,
+            ssrt: SsrtBindGroups::new(
                 device,
-            ),
-            taa_resolve: TaaResolveBindGroup::new(
-                &texture_views.sky,
-                &resources.samplers.linear,
-                &texture_views.ssr.scene_color,
-                &resources.samplers.nearest,
-                texture_views
-                    .taa_resolve
-                    .history
-                    .get_read_view(&resources.textures.taa_resolve.history),
-                texture_views
-                    .pyramids
-                    .depth_pyramid
-                    .get_write_view(&resources.textures.pyramids.depth_pyramid),
-                texture_views
-                    .pyramids
-                    .depth_pyramid
-                    .get_read_view(&resources.textures.pyramids.depth_pyramid),
-                &texture_views.gbuffer.motion_vectors,
-                &bind_group_layouts.taa_resolve,
-                device,
-            ),
-            tonemap: TonemapBindGroup::new(
-                texture_views
-                    .taa_resolve
-                    .history
-                    .get_write_view(&resources.textures.taa_resolve.history),
-                &bind_group_layouts.tonemap,
-                device,
-            ),
-            ssr: SsrBindGroup::new(
-                texture_views
-                    .pyramids
-                    .depth_pyramid
-                    .get_write_view(&resources.textures.pyramids.depth_pyramid),
-                &texture_views.pyramids.normal_pyramid,
-                &resources.samplers.hbgi_pyramid_downsample,
-                &texture_views.lighting_target.diffuse_radiance_ao,
-                &resources.samplers.linear,
-                &resources.buffers.lights.environment_map_intensity,
-                &bind_group_layouts.ssr_inputs,
-                device,
-            ),
-            ssr_composite: SsrCompositeBindGroup::new(
-                &texture_views.gbuffer.albedo_ao,
-                &resources.samplers.nearest,
-                &texture_views.gbuffer.normal_roughness,
-                &resources.samplers.nearest,
-                &texture_views.gbuffer.emissive_metallic,
-                &resources.samplers.nearest,
-                &texture_views.gbuffer.depth,
-                &texture_views.ssr.reflections,
-                &resources.samplers.linear,
-                &texture_views.lighting_target.lit_hdr,
-                &resources.samplers.nearest,
-                texture_views
-                    .ssr
-                    .ssr_history
-                    .get_read_view(&resources.textures.ssr.ssr_history),
-                &texture_views.gbuffer.motion_vectors,
-                texture_views
-                    .reproject
-                    .depth_history
-                    .get_read_view(&resources.textures.reproject.depth_history),
-                texture_views
-                    .reproject
-                    .normal_history
-                    .get_read_view(&resources.textures.reproject.normal_history),
-                &bind_group_layouts.ssr_composite_inputs,
-                device,
-            ),
-            ssr_composite_scene: SsrCompositeBindGroup::new(
-                &texture_views.gbuffer.albedo_ao,
-                &resources.samplers.nearest,
-                &texture_views.gbuffer.normal_roughness,
-                &resources.samplers.nearest,
-                &texture_views.gbuffer.emissive_metallic,
-                &resources.samplers.nearest,
-                &texture_views.gbuffer.depth,
-                &texture_views.ssr.reflections,
-                &resources.samplers.linear,
-                &texture_views.lighting_target.lit_hdr,
-                &resources.samplers.nearest,
-                texture_views
-                    .ssr
-                    .ssr_history
-                    .get_write_view(&resources.textures.ssr.ssr_history),
-                &texture_views.gbuffer.motion_vectors,
-                texture_views
-                    .reproject
-                    .depth_history
-                    .get_read_view(&resources.textures.reproject.depth_history),
-                texture_views
-                    .reproject
-                    .normal_history
-                    .get_read_view(&resources.textures.reproject.normal_history),
-                &bind_group_layouts.ssr_composite_inputs,
-                device,
+                &texture_views,
+                &mut resources.textures.ssrt,
+                &resources.buffers,
+                &resources.samplers,
+                &bind_group_layouts,
+                &pipelines.ssrt,
             ),
             static_instances: InstanceStorageBindGroup::new(
                 &resources.buffers.static_instances,
                 &bind_group_layouts.instance_storage,
                 device,
             ),
-            sun_shadow_matrices: array::from_fn(|_| {
+            sun_shadow_matrices: std::array::from_fn(|_| {
                 SunShadowMatrixBindGroup::new(device, &bind_group_layouts.sun_shadow_matrix)
             }),
         };
@@ -301,190 +110,12 @@ impl WorldGpuContext {
             bind_group_layouts,
             texture_views,
         };
-        let pipelines = Pipelines::new(wgpu_context, shader_cache, &descriptors.bind_group_layouts);
-
         Self {
             external,
             resources,
             descriptors,
             pipelines,
         }
-    }
-
-    fn rebuild_surface_bind_groups(&mut self, device: &wgpu::Device) {
-        self.descriptors.bind_groups.hbgi = HbgiBindGroups::new(
-            &self.resources.buffers.hbgi_settings,
-            &self.descriptors.bind_group_layouts.hbgi_settings,
-            &self
-                .descriptors
-                .texture_views
-                .lighting_target
-                .diffuse_radiance_ao,
-            self.descriptors
-                .texture_views
-                .pyramids
-                .depth_pyramid
-                .get_write_view(&self.resources.textures.pyramids.depth_pyramid),
-            &self.descriptors.texture_views.pyramids.normal_pyramid,
-            &self.resources.samplers.hbgi_pyramid_downsample,
-            &self.resources.samplers.hbgi_pyramid_downsample,
-            &self.descriptors.texture_views.external.blue_noise,
-            &self.descriptors.bind_group_layouts.hbgi_inputs,
-            device,
-        );
-        self.descriptors.bind_groups.deferred_lighting = DeferredLightingBindGroups::new(
-            &self.descriptors.texture_views.gbuffer.albedo_ao,
-            &self.resources.samplers.nearest,
-            &self.descriptors.texture_views.gbuffer.normal_roughness,
-            &self.resources.samplers.nearest,
-            &self.descriptors.texture_views.gbuffer.emissive_metallic,
-            &self.resources.samplers.nearest,
-            &self.descriptors.texture_views.gbuffer.depth,
-            &self.descriptors.texture_views.hbgi_svgf.bent_ao_a,
-            &self.resources.samplers.linear,
-            &self
-                .descriptors
-                .texture_views
-                .hbgi_svgf
-                .irradiance_variance_a,
-            &self.resources.samplers.linear,
-            &self.descriptors.bind_group_layouts,
-            device,
-        );
-        self.descriptors.bind_groups.hbgi_pyramid = HbgiPyramidBindGroups::new(
-            device,
-            &self.descriptors.bind_group_layouts,
-            &self.resources.samplers.hbgi_pyramid_downsample,
-            &self.descriptors.texture_views.gbuffer.depth,
-            &self.descriptors.texture_views.gbuffer.normal_roughness,
-            &self.resources.samplers.nearest,
-            &self.descriptors.texture_views.pyramids,
-            &self.resources.textures.pyramids.depth_pyramid,
-        );
-        self.descriptors.bind_groups.mipmap = MipmapBindGroups::new(
-            &self
-                .descriptors
-                .texture_views
-                .lighting_target
-                .diffuse_radiance_ao_mips,
-            &self.resources.samplers.hbgi_pyramid_downsample,
-            &self.descriptors.bind_group_layouts.mipmap,
-            device,
-        );
-        self.descriptors.bind_groups.taa_resolve = TaaResolveBindGroup::new(
-            &self.descriptors.texture_views.sky,
-            &self.resources.samplers.linear,
-            &self.descriptors.texture_views.ssr.scene_color,
-            &self.resources.samplers.nearest,
-            self.descriptors
-                .texture_views
-                .taa_resolve
-                .history
-                .get_read_view(&self.resources.textures.taa_resolve.history),
-            self.descriptors
-                .texture_views
-                .pyramids
-                .depth_pyramid
-                .get_write_view(&self.resources.textures.pyramids.depth_pyramid),
-            self.descriptors
-                .texture_views
-                .pyramids
-                .depth_pyramid
-                .get_read_view(&self.resources.textures.pyramids.depth_pyramid),
-            &self.descriptors.texture_views.gbuffer.motion_vectors,
-            &self.descriptors.bind_group_layouts.taa_resolve,
-            device,
-        );
-        self.descriptors.bind_groups.tonemap = TonemapBindGroup::new(
-            self.descriptors
-                .texture_views
-                .taa_resolve
-                .history
-                .get_write_view(&self.resources.textures.taa_resolve.history),
-            &self.descriptors.bind_group_layouts.tonemap,
-            device,
-        );
-        self.descriptors.bind_groups.ssr = SsrBindGroup::new(
-            self.descriptors
-                .texture_views
-                .pyramids
-                .depth_pyramid
-                .get_write_view(&self.resources.textures.pyramids.depth_pyramid),
-            &self.descriptors.texture_views.pyramids.normal_pyramid,
-            &self.resources.samplers.hbgi_pyramid_downsample,
-            &self
-                .descriptors
-                .texture_views
-                .lighting_target
-                .diffuse_radiance_ao,
-            &self.resources.samplers.linear,
-            &self.resources.buffers.lights.environment_map_intensity,
-            &self.descriptors.bind_group_layouts.ssr_inputs,
-            device,
-        );
-        self.descriptors.bind_groups.ssr_composite = SsrCompositeBindGroup::new(
-            &self.descriptors.texture_views.gbuffer.albedo_ao,
-            &self.resources.samplers.nearest,
-            &self.descriptors.texture_views.gbuffer.normal_roughness,
-            &self.resources.samplers.nearest,
-            &self.descriptors.texture_views.gbuffer.emissive_metallic,
-            &self.resources.samplers.nearest,
-            &self.descriptors.texture_views.gbuffer.depth,
-            &self.descriptors.texture_views.ssr.reflections,
-            &self.resources.samplers.linear,
-            &self.descriptors.texture_views.lighting_target.lit_hdr,
-            &self.resources.samplers.nearest,
-            self.descriptors
-                .texture_views
-                .ssr
-                .ssr_history
-                .get_read_view(&self.resources.textures.ssr.ssr_history),
-            &self.descriptors.texture_views.gbuffer.motion_vectors,
-            self.descriptors
-                .texture_views
-                .reproject
-                .depth_history
-                .get_read_view(&self.resources.textures.reproject.depth_history),
-            self.descriptors
-                .texture_views
-                .reproject
-                .normal_history
-                .get_read_view(&self.resources.textures.reproject.normal_history),
-            &self.descriptors.bind_group_layouts.ssr_composite_inputs,
-            device,
-        );
-        self.descriptors.bind_groups.ssr_composite_scene = SsrCompositeBindGroup::new(
-            &self.descriptors.texture_views.gbuffer.albedo_ao,
-            &self.resources.samplers.nearest,
-            &self.descriptors.texture_views.gbuffer.normal_roughness,
-            &self.resources.samplers.nearest,
-            &self.descriptors.texture_views.gbuffer.emissive_metallic,
-            &self.resources.samplers.nearest,
-            &self.descriptors.texture_views.gbuffer.depth,
-            &self.descriptors.texture_views.ssr.reflections,
-            &self.resources.samplers.linear,
-            &self.descriptors.texture_views.lighting_target.lit_hdr,
-            &self.resources.samplers.nearest,
-            self.descriptors
-                .texture_views
-                .ssr
-                .ssr_history
-                .get_write_view(&self.resources.textures.ssr.ssr_history),
-            &self.descriptors.texture_views.gbuffer.motion_vectors,
-            self.descriptors
-                .texture_views
-                .reproject
-                .depth_history
-                .get_read_view(&self.resources.textures.reproject.depth_history),
-            self.descriptors
-                .texture_views
-                .reproject
-                .normal_history
-                .get_read_view(&self.resources.textures.reproject.normal_history),
-            &self.descriptors.bind_group_layouts.ssr_composite_inputs,
-            device,
-        );
-        self.refresh_temporal_bind_groups(device);
     }
 
     pub(crate) fn upload_skinned_draw(
@@ -602,232 +233,8 @@ impl WorldGpuContext {
         );
     }
 
-    pub(crate) fn refresh_temporal_bind_groups(&mut self, device: &wgpu::Device) {
-        self.descriptors.bind_groups.hbgi = HbgiBindGroups::new(
-            &self.resources.buffers.hbgi_settings,
-            &self.descriptors.bind_group_layouts.hbgi_settings,
-            &self
-                .descriptors
-                .texture_views
-                .lighting_target
-                .diffuse_radiance_ao,
-            self.descriptors
-                .texture_views
-                .pyramids
-                .depth_pyramid
-                .get_write_view(&self.resources.textures.pyramids.depth_pyramid),
-            &self.descriptors.texture_views.pyramids.normal_pyramid,
-            &self.resources.samplers.hbgi_pyramid_downsample,
-            &self.resources.samplers.hbgi_pyramid_downsample,
-            &self.descriptors.texture_views.external.blue_noise,
-            &self.descriptors.bind_group_layouts.hbgi_inputs,
-            device,
-        );
-        self.descriptors.bind_groups.hbgi_pyramid = HbgiPyramidBindGroups::new(
-            device,
-            &self.descriptors.bind_group_layouts,
-            &self.resources.samplers.hbgi_pyramid_downsample,
-            &self.descriptors.texture_views.gbuffer.depth,
-            &self.descriptors.texture_views.gbuffer.normal_roughness,
-            &self.resources.samplers.nearest,
-            &self.descriptors.texture_views.pyramids,
-            &self.resources.textures.pyramids.depth_pyramid,
-        );
-        self.descriptors.bind_groups.hbgi_svgf = HbgiSvgfBindGroups::new(
-            self.descriptors
-                .texture_views
-                .reproject
-                .bent_ao
-                .get_write_view(&self.resources.textures.reproject.bent_ao),
-            self.descriptors
-                .texture_views
-                .reproject
-                .near_field_irradiance
-                .get_write_view(&self.resources.textures.reproject.near_field_irradiance),
-            self.descriptors
-                .texture_views
-                .reproject
-                .depth_history
-                .get_write_view(&self.resources.textures.reproject.depth_history),
-            self.descriptors
-                .texture_views
-                .reproject
-                .normal_history
-                .get_write_view(&self.resources.textures.reproject.normal_history),
-            &self.descriptors.texture_views.hbgi_svgf.bent_ao_a,
-            &self
-                .descriptors
-                .texture_views
-                .hbgi_svgf
-                .irradiance_variance_a,
-            &self.descriptors.texture_views.hbgi_svgf.bent_ao_b,
-            &self
-                .descriptors
-                .texture_views
-                .hbgi_svgf
-                .irradiance_variance_b,
-            &self.resources.buffers.hbgi_svgf_settings,
-            &self.descriptors.bind_group_layouts,
-            device,
-        );
-        self.descriptors.bind_groups.hbgi_reproject = HbgiReprojectBindGroups::new(
-            &self.descriptors.texture_views.gbuffer.motion_vectors,
-            &self.descriptors.texture_views.hbgi.bent_ao,
-            self.descriptors
-                .texture_views
-                .reproject
-                .bent_ao
-                .get_read_view(&self.resources.textures.reproject.bent_ao),
-            &self.descriptors.texture_views.gbuffer.depth,
-            &self.descriptors.texture_views.gbuffer.normal_roughness,
-            self.descriptors
-                .texture_views
-                .reproject
-                .depth_history
-                .get_read_view(&self.resources.textures.reproject.depth_history),
-            self.descriptors
-                .texture_views
-                .reproject
-                .normal_history
-                .get_read_view(&self.resources.textures.reproject.normal_history),
-            &self.descriptors.texture_views.hbgi.near_field_irradiance,
-            self.descriptors
-                .texture_views
-                .reproject
-                .near_field_irradiance
-                .get_read_view(&self.resources.textures.reproject.near_field_irradiance),
-            &self.resources.buffers.hbgi_reproject_settings,
-            &self.descriptors.bind_group_layouts,
-            device,
-        );
-        self.descriptors.bind_groups.taa_resolve = TaaResolveBindGroup::new(
-            &self.descriptors.texture_views.sky,
-            &self.resources.samplers.linear,
-            &self.descriptors.texture_views.ssr.scene_color,
-            &self.resources.samplers.nearest,
-            self.descriptors
-                .texture_views
-                .taa_resolve
-                .history
-                .get_read_view(&self.resources.textures.taa_resolve.history),
-            self.descriptors
-                .texture_views
-                .pyramids
-                .depth_pyramid
-                .get_write_view(&self.resources.textures.pyramids.depth_pyramid),
-            self.descriptors
-                .texture_views
-                .pyramids
-                .depth_pyramid
-                .get_read_view(&self.resources.textures.pyramids.depth_pyramid),
-            &self.descriptors.texture_views.gbuffer.motion_vectors,
-            &self.descriptors.bind_group_layouts.taa_resolve,
-            device,
-        );
-        self.descriptors.bind_groups.tonemap = TonemapBindGroup::new(
-            self.descriptors
-                .texture_views
-                .taa_resolve
-                .history
-                .get_write_view(&self.resources.textures.taa_resolve.history),
-            &self.descriptors.bind_group_layouts.tonemap,
-            device,
-        );
-        self.descriptors.bind_groups.ssr = SsrBindGroup::new(
-            self.descriptors
-                .texture_views
-                .pyramids
-                .depth_pyramid
-                .get_write_view(&self.resources.textures.pyramids.depth_pyramid),
-            &self.descriptors.texture_views.pyramids.normal_pyramid,
-            &self.resources.samplers.hbgi_pyramid_downsample,
-            &self
-                .descriptors
-                .texture_views
-                .lighting_target
-                .diffuse_radiance_ao,
-            &self.resources.samplers.linear,
-            &self.resources.buffers.lights.environment_map_intensity,
-            &self.descriptors.bind_group_layouts.ssr_inputs,
-            device,
-        );
-        self.descriptors.bind_groups.ssr_composite = SsrCompositeBindGroup::new(
-            &self.descriptors.texture_views.gbuffer.albedo_ao,
-            &self.resources.samplers.nearest,
-            &self.descriptors.texture_views.gbuffer.normal_roughness,
-            &self.resources.samplers.nearest,
-            &self.descriptors.texture_views.gbuffer.emissive_metallic,
-            &self.resources.samplers.nearest,
-            &self.descriptors.texture_views.gbuffer.depth,
-            &self.descriptors.texture_views.ssr.reflections,
-            &self.resources.samplers.linear,
-            &self.descriptors.texture_views.lighting_target.lit_hdr,
-            &self.resources.samplers.nearest,
-            self.descriptors
-                .texture_views
-                .ssr
-                .ssr_history
-                .get_read_view(&self.resources.textures.ssr.ssr_history),
-            &self.descriptors.texture_views.gbuffer.motion_vectors,
-            self.descriptors
-                .texture_views
-                .reproject
-                .depth_history
-                .get_read_view(&self.resources.textures.reproject.depth_history),
-            self.descriptors
-                .texture_views
-                .reproject
-                .normal_history
-                .get_read_view(&self.resources.textures.reproject.normal_history),
-            &self.descriptors.bind_group_layouts.ssr_composite_inputs,
-            device,
-        );
-        self.descriptors.bind_groups.ssr_composite_scene = SsrCompositeBindGroup::new(
-            &self.descriptors.texture_views.gbuffer.albedo_ao,
-            &self.resources.samplers.nearest,
-            &self.descriptors.texture_views.gbuffer.normal_roughness,
-            &self.resources.samplers.nearest,
-            &self.descriptors.texture_views.gbuffer.emissive_metallic,
-            &self.resources.samplers.nearest,
-            &self.descriptors.texture_views.gbuffer.depth,
-            &self.descriptors.texture_views.ssr.reflections,
-            &self.resources.samplers.linear,
-            &self.descriptors.texture_views.lighting_target.lit_hdr,
-            &self.resources.samplers.nearest,
-            self.descriptors
-                .texture_views
-                .ssr
-                .ssr_history
-                .get_write_view(&self.resources.textures.ssr.ssr_history),
-            &self.descriptors.texture_views.gbuffer.motion_vectors,
-            self.descriptors
-                .texture_views
-                .reproject
-                .depth_history
-                .get_read_view(&self.resources.textures.reproject.depth_history),
-            self.descriptors
-                .texture_views
-                .reproject
-                .normal_history
-                .get_read_view(&self.resources.textures.reproject.normal_history),
-            &self.descriptors.bind_group_layouts.ssr_composite_inputs,
-            device,
-        );
-    }
-
-    pub(crate) fn rotate_temporal_resources(&mut self, device: &wgpu::Device) {
-        self.resources.textures.reproject.bent_ao.swap();
-        self.resources
-            .textures
-            .reproject
-            .near_field_irradiance
-            .swap();
-        self.resources.textures.reproject.depth_history.swap();
-        self.resources.textures.reproject.normal_history.swap();
-        self.resources.textures.ssr.ssr_history.swap();
-        self.resources.textures.taa_resolve.history.swap();
-        self.resources.textures.pyramids.depth_pyramid.swap();
-        self.refresh_temporal_bind_groups(device);
+    pub(crate) fn rotate_temporal_resources(&mut self) {
+        self.resources.textures.ssrt.rotate();
     }
 
     pub(crate) fn resize(
@@ -836,17 +243,19 @@ impl WorldGpuContext {
         render_resources: &RenderAssetStore,
         placeholders: &PlaceholderTextureIds,
     ) {
-        let new_textures = Textures::new(wgpu_context, &wgpu_context.surface_config);
-        self.resources.textures.gbuffer = new_textures.gbuffer;
-        self.resources.textures.hbgi = new_textures.hbgi;
-        self.resources.textures.hbgi_svgf = new_textures.hbgi_svgf;
-        self.resources.textures.reproject = new_textures.reproject;
-        self.resources.textures.pyramids = new_textures.pyramids;
-        self.resources.textures.taa_resolve = new_textures.taa_resolve;
-        self.resources.textures.ssr = new_textures.ssr;
-        self.resources.textures.sky = new_textures.sky;
-        self.resources.textures.lighting_target = new_textures.lighting_target;
-
+        self.resources.textures.gbuffer = super::resources::textures::GBufferTextures::new(
+            wgpu_context,
+            &wgpu_context.surface_config,
+        );
+        self.resources.textures.depth_pyramid =
+            super::resources::textures::DepthPyramidTextures::new(
+                wgpu_context,
+                &wgpu_context.surface_config,
+            );
+        self.resources.textures.ssrt = super::resources::textures::SsrtTextures::new(
+            wgpu_context,
+            &wgpu_context.surface_config,
+        );
         self.descriptors.texture_views = TextureViews::new(
             &self.resources.textures,
             render_resources,
@@ -854,6 +263,14 @@ impl WorldGpuContext {
             self.external.brdf_lut,
             self.external.blue_noise,
         );
-        self.rebuild_surface_bind_groups(&wgpu_context.device);
+        self.descriptors.bind_groups.ssrt = SsrtBindGroups::new(
+            &wgpu_context.device,
+            &self.descriptors.texture_views,
+            &mut self.resources.textures.ssrt,
+            &self.resources.buffers,
+            &self.resources.samplers,
+            &self.descriptors.bind_group_layouts,
+            &self.pipelines.ssrt,
+        );
     }
 }

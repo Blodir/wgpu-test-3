@@ -1,79 +1,29 @@
+mod depth_pyramid;
 mod g_buffer;
-mod hbgi;
-mod hbgi_svgf;
-mod lighting;
-mod mip_pyramid;
-mod reproject;
-mod ssr;
+mod ssrt;
 mod sun_shadow;
-mod taa_resolve;
 
+pub(crate) use depth_pyramid::DepthPyramidTextures;
 pub(crate) use g_buffer::GBufferTextures;
-pub(crate) use hbgi::HbgiTextures;
-pub(crate) use hbgi_svgf::HbgiSvgfTextures;
-pub(crate) use lighting::LightingTextures;
-pub(crate) use mip_pyramid::MipPyramidTextures;
-pub(crate) use reproject::ReprojectTextures;
-pub(crate) use ssr::SsrTextures;
+pub(crate) use ssrt::{SsrtTextures, SSRT_A_TROUS_PASS_COUNT};
 pub(crate) use sun_shadow::SunShadowTexture2;
-pub(crate) use taa_resolve::TaaResolveTextures;
 
 use crate::host::wgpu_context::WgpuContext;
 
 pub(crate) struct Textures {
     pub(crate) gbuffer: GBufferTextures,
-    pub(crate) hbgi: HbgiTextures,
-    pub(crate) hbgi_svgf: HbgiSvgfTextures,
-    pub(crate) reproject: ReprojectTextures,
-    pub(crate) pyramids: MipPyramidTextures,
-    pub(crate) ssr: SsrTextures,
-    pub(crate) sky: wgpu::Texture,
+    pub(crate) depth_pyramid: DepthPyramidTextures,
+    pub(crate) ssrt: SsrtTextures,
     pub(crate) sun_shadow: SunShadowTexture2,
-    pub(crate) taa_resolve: TaaResolveTextures,
-    pub(crate) lighting_target: LightingTextures,
 }
 
 impl Textures {
     pub fn new(wgpu_context: &WgpuContext, surface_config: &wgpu::SurfaceConfiguration) -> Self {
-        let gbuffer = GBufferTextures::new(wgpu_context, surface_config);
-        let hbgi = HbgiTextures::new(wgpu_context, surface_config);
-        let hbgi_svgf = HbgiSvgfTextures::new(wgpu_context, surface_config);
-        let reproject = ReprojectTextures::new(wgpu_context, surface_config);
-        let pyramids = MipPyramidTextures::new(wgpu_context, surface_config);
-        let ssr = SsrTextures::new(wgpu_context, surface_config);
-        let sun_shadow = SunShadowTexture2::new(wgpu_context);
-        let taa_resolve = TaaResolveTextures::new(wgpu_context, surface_config);
-        let lighting_target = LightingTextures::new(wgpu_context, surface_config);
-
-        let size = wgpu::Extent3d {
-            width: surface_config.width,
-            height: surface_config.height,
-            depth_or_array_layers: 1,
-        };
-        let sky = wgpu_context
-            .device
-            .create_texture(&wgpu::TextureDescriptor {
-                label: Some("Sky Target Texture"),
-                size,
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format: wgpu::TextureFormat::Rgba16Float,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
-                    | wgpu::TextureUsages::TEXTURE_BINDING,
-                view_formats: &[],
-            });
         Self {
-            gbuffer,
-            hbgi,
-            hbgi_svgf,
-            reproject,
-            pyramids,
-            ssr,
-            sky,
-            sun_shadow,
-            taa_resolve,
-            lighting_target,
+            gbuffer: GBufferTextures::new(wgpu_context, surface_config),
+            depth_pyramid: DepthPyramidTextures::new(wgpu_context, surface_config),
+            ssrt: SsrtTextures::new(wgpu_context, surface_config),
+            sun_shadow: SunShadowTexture2::new(wgpu_context),
         }
     }
 }

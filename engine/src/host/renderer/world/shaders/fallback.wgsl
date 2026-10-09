@@ -1,26 +1,27 @@
-struct VertexOutput {
-  @builtin(position) clip_position: vec4<f32>,
-  @location(0) uv: vec2<f32>
+struct FullscreenVertexOutput {
+    @builtin(position) position: vec4<f32>,
+    @location(0) uv: vec2<f32>,
 }
 
 @vertex
-fn vs_main(
-    @builtin(vertex_index) vertex_index: u32
-) -> VertexOutput {
-    var out: VertexOutput;
-    var pos = array(
-        vec2(1.0, 1.0),
-        vec2(1.0, -1.0),
-        vec2(-1.0, -1.0),
-        vec2(-1.0, 1.0)
+fn vs_main(@builtin(vertex_index) vertex_index: u32) -> FullscreenVertexOutput {
+    let positions = array<vec2<f32>, 4>(
+        vec2<f32>(-1.0, -1.0), vec2<f32>(1.0, -1.0),
+        vec2<f32>(1.0, 1.0), vec2<f32>(-1.0, 1.0),
     );
-    let clip_xy = pos[vertex_index];
-    out.clip_position = vec4<f32>(clip_xy, 0, 1);
-    out.uv = (clip_xy + 1.0) * 0.5;
-    return out;
+    var output: FullscreenVertexOutput;
+    output.position = vec4<f32>(positions[vertex_index], 0.0, 1.0);
+    output.uv = positions[vertex_index] * vec2<f32>(0.5, -0.5) + vec2<f32>(0.5);
+    return output;
+}
+
+fn load_color(source: texture_2d<f32>, uv: vec2<f32>) -> vec4<f32> {
+    let dimensions = vec2<i32>(textureDimensions(source));
+    let pixel = clamp(vec2<i32>(uv * vec2<f32>(dimensions)), vec2<i32>(0), dimensions - vec2<i32>(1));
+    return textureLoad(source, pixel, 0);
 }
 
 @fragment
-fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    return vec4<f32>(in.uv, 0.0, 1.0);
+fn fs_main(input: FullscreenVertexOutput) -> @location(0) vec4<f32> {
+    return vec4<f32>(0.0, 0.0, 0.0, 1.0);
 }

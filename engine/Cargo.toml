@@ -3,6 +3,10 @@ name = "engine"
 version = "0.1.0"
 edition = "2021"
 
+[package.metadata.wgsl-analyzer]
+edition = "2026_pre"
+root = "src/host/renderer/world/shaders"
+
 [dependencies]
 bytemuck = { version = "1.15.0", features = ["derive"] }
 winit = { version = "0.30.12", features = ["rwh_06"] }

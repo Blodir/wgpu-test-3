@@ -1,0 +1,146 @@
+@group(0) @binding(0) var<uniform> view_proj: mat4x4<f32>;
+
+struct BoneMat34 {
+    r0 : vec4<f32>,
+    r1 : vec4<f32>,
+    r2 : vec4<f32>,
+};
+
+@group(3) @binding(0) var<storage, read> bones: array<BoneMat34>;
+
+struct InstanceData {
+    m_1: vec4<f32>,
+    m_2: vec4<f32>,
+    m_3: vec4<f32>,
+    m_4: vec4<f32>,
+    itr_1: vec4<f32>,
+    itr_2: vec4<f32>,
+    itr_3: vec4<f32>,
+    offsets: vec4<u32>,
+}
+
+@group(3) @binding(1) var<storage, read> instances: array<InstanceData>;
+
+struct VertexInput {
+    @location(8) tangent: vec4<f32>,
+    @location(9) weights: vec4<f32>,
+    @location(10) position: vec3<f32>,
+    @location(11) normal: vec3<f32>,
+    @location(12) normal_tex_coords: vec4<f32>,
+    @location(13) emissive_base_color_tex_coords: vec4<f32>,
+    @location(14) metallic_roughness_tex_coords: vec2<f32>,
+    @location(15) joints: vec4<u32>, // reinterpreting u8 as u32, since u8 is not supported by wgsl
+}
+
+struct VertexOutput {
+    @builtin(position) clip_position: vec4<f32>,
+
+    @location(0) tangent: vec3<f32>,
+    @location(1) bitangent: vec3<f32>,
+    @location(2) world_position: vec4<f32>,
+    @location(3) normal: vec3<f32>,
+    @location(4) normal_tex_coords: vec2<f32>,
+    @location(5) occlusion_tex_coords: vec2<f32>,
+    @location(6) emissive_tex_coords: vec2<f32>,
+    @location(7) base_color_tex_coords: vec2<f32>,
+    @location(8) metallic_roughness_tex_coords: vec2<f32>,
+}
+
+fn apply_bone_to_position(mat: BoneMat34, position: vec4<f32>) -> vec3<f32> {
+    return vec3f(
+        dot(mat.r0, position),
+        dot(mat.r1, position),
+        dot(mat.r2, position),
+    );
+}
+
+fn apply_bone_to_direction(mat: BoneMat34, direction: vec3<f32>) -> vec3<f32> {
+    return vec3f(
+        dot(mat.r0.xyz, direction),
+        dot(mat.r1.xyz, direction),
+        dot(mat.r2.xyz, direction),
+    );
+}
+
+fn skin_position(palette_offset: u32, joints: vec4<u32>, weights: vec4<f32>, position: vec3<f32>) -> vec3<f32> {
+    let pos = vec4f(position, 1.0);
+    var skinned = vec3f(0.0);
+
+    let b0 = bones[palette_offset + joints.x];
+    skinned += weights.x * apply_bone_to_position(b0, pos);
+
+    let b1 = bones[palette_offset + joints.y];
+    skinned += weights.y * apply_bone_to_position(b1, pos);
+
+    let b2 = bones[palette_offset + joints.z];
+    skinned += weights.z * apply_bone_to_position(b2, pos);
+
+    let b3 = bones[palette_offset + joints.w];
+    skinned += weights.w * apply_bone_to_position(b3, pos);
+
+    return skinned;
+}
+
+fn skin_direction(palette_offset: u32, joints: vec4<u32>, weights: vec4<f32>, direction: vec3<f32>) -> vec3<f32> {
+    var skinned = vec3f(0.0);
+
+    let b0 = bones[palette_offset + joints.x];
+    skinned += weights.x * apply_bone_to_direction(b0, direction);
+
+    let b1 = bones[palette_offset + joints.y];
+    skinned += weights.y * apply_bone_to_direction(b1, direction);
+
+    let b2 = bones[palette_offset + joints.z];
+    skinned += weights.z * apply_bone_to_direction(b2, direction);
+
+    let b3 = bones[palette_offset + joints.w];
+    skinned += weights.w * apply_bone_to_direction(b3, direction);
+
+    return skinned;
+}
+
+@vertex
+fn vs_main(
+    @builtin(instance_index) instance_index: u32,
+    model: VertexInput,
+) -> VertexOutput {
+    let instance = instances[instance_index];
+    let transform = mat4x4<f32>(
+        instance.m_1,
+        instance.m_2,
+        instance.m_3,
+        instance.m_4,
+    );
+
+    let inverse_transpose_rot = mat3x3<f32>(
+        instance.itr_1.xyz,
+        instance.itr_2.xyz,
+        instance.itr_3.xyz,
+    );
+
+    let palette_offset = instance.offsets.x;
+    let skinned_position = skin_position(palette_offset, model.joints, model.weights, model.position);
+    let skinned_normal = normalize(skin_direction(palette_offset, model.joints, model.weights, model.normal));
+    let skinned_tangent = normalize(skin_direction(palette_offset, model.joints, model.weights, model.tangent.xyz));
+
+    var out: VertexOutput;
+    out.clip_position = view_proj * transform * vec4<f32>(skinned_position, 1.0);
+
+    let N = normalize(inverse_transpose_rot * skinned_normal);
+    let T = normalize(inverse_transpose_rot * skinned_tangent);
+    let B = normalize(model.tangent.w * cross(N, T));
+    out.normal = N;
+    out.tangent = T;
+    out.bitangent = B;
+
+    out.world_position = transform * vec4f(skinned_position, 1.0);
+
+    out.normal_tex_coords = model.normal_tex_coords.xy;
+    out.occlusion_tex_coords = model.normal_tex_coords.zw;
+
+    out.emissive_tex_coords = model.emissive_base_color_tex_coords.xy;
+    out.base_color_tex_coords = model.emissive_base_color_tex_coords.zw;
+    out.metallic_roughness_tex_coords = model.metallic_roughness_tex_coords;
+
+    return out;
+}

@@ -48,7 +48,7 @@ pub(crate) fn render_skinned_transparent_pass<'a>(
     let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
         label: Some("Skinned Transparent Render Pass"),
         color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-            view: &context.descriptors.texture_views.ssr.scene_color,
+            view: &context.descriptors.texture_views.ssrt.final_hdr,
             resolve_target: None,
             ops: wgpu::Operations {
                 load: wgpu::LoadOp::Load,
@@ -72,7 +72,7 @@ pub(crate) fn render_skinned_transparent_pass<'a>(
     render_pass.set_bind_group(1, &context.descriptors.bind_groups.lights.0, &[]);
     render_pass.set_bind_group(
         3,
-        &context.descriptors.bind_groups.bones.motion_bind_group,
+        &context.descriptors.bind_groups.bones.bones_bind_group,
         &[],
     );
     draw_skinned_transparent_pass(pass_draw, &mut render_pass, render_resources);

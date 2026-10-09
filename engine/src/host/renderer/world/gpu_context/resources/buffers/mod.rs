@@ -6,14 +6,13 @@ pub(crate) use camera::CameraBuffers;
 pub(crate) use lights::LightsBuffers;
 pub(crate) use sun::{SunBuffers, SunShadowUniform};
 
-use glam::Mat4;
 use wgpu::util::DeviceExt as _;
 
 use crate::host::{
     renderer::{
         rw_buffer::{RWBuffer, RWBufferOptions},
         world::{
-            gpu_context::HbgiSettingsUniform,
+            gpu_context::SsrtSettingsUniform,
             prepare::mesh::{BoneMat34, SkinnedInstance, StaticInstance},
         },
     },
@@ -21,26 +20,12 @@ use crate::host::{
 };
 
 const FULLSCREEN_QUAD_INDICES: &[u16] = &[0, 2, 1, 3, 2, 0];
-pub(crate) const HBGI_SVGF_PASS_COUNT: usize = 5;
-
-#[repr(C)]
-#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-struct HbgiReprojectUniform {
-    prev_inverse_view_proj: [[f32; 4]; 4],
-}
-
-#[repr(C)]
-#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-struct HbgiSvgfUniform {
-    params: [u32; 4],
-}
 
 pub(crate) struct Buffers {
     pub bones: RWBuffer,
     pub camera: CameraBuffers,
-    pub hbgi_settings: wgpu::Buffer,
-    pub hbgi_reproject_settings: wgpu::Buffer,
-    pub hbgi_svgf_settings: [wgpu::Buffer; HBGI_SVGF_PASS_COUNT],
+    pub ssrt_settings: wgpu::Buffer,
+    pub a_trous_settings: [wgpu::Buffer; super::textures::SSRT_A_TROUS_PASS_COUNT],
     pub fullscreen_quad_indices: wgpu::Buffer,
     pub skinned_instances: RWBuffer,
     pub static_instances: wgpu::Buffer,
@@ -48,7 +33,7 @@ pub(crate) struct Buffers {
 }
 
 impl Buffers {
-    pub fn new(wgpu_context: &WgpuContext, hbgi_settings: &HbgiSettingsUniform) -> Self {
+    pub fn new(wgpu_context: &WgpuContext, ssrt_settings: &SsrtSettingsUniform) -> Self {
         let device = &wgpu_context.device;
         let storage_usage = wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST;
 
@@ -68,25 +53,15 @@ impl Buffers {
 
         let camera = CameraBuffers::new(device);
 
-        let hbgi_settings = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("HBGI Settings Buffer"),
-            contents: bytemuck::bytes_of(hbgi_settings),
+        let ssrt_settings = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("SSRT Settings Buffer"),
+            contents: bytemuck::bytes_of(ssrt_settings),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
-        let hbgi_reproject_settings =
+        let a_trous_settings = std::array::from_fn(|pass_index| {
             device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("HBGI Reproject Settings Buffer"),
-                contents: bytemuck::bytes_of(&HbgiReprojectUniform {
-                    prev_inverse_view_proj: Mat4::IDENTITY.to_cols_array_2d(),
-                }),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            });
-        let hbgi_svgf_settings = std::array::from_fn(|pass_index| {
-            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("HBGI SVGF Settings Buffer"),
-                contents: bytemuck::bytes_of(&HbgiSvgfUniform {
-                    params: [1u32 << pass_index, u32::from(pass_index == 0), 0, 0],
-                }),
+                label: Some("SSRT A-Trous Settings Buffer"),
+                contents: bytemuck::cast_slice(&[1u32 << pass_index, 0, 0, 0]),
                 usage: wgpu::BufferUsages::UNIFORM,
             })
         });
@@ -122,9 +97,8 @@ impl Buffers {
         Self {
             bones,
             camera,
-            hbgi_settings,
-            hbgi_reproject_settings,
-            hbgi_svgf_settings,
+            ssrt_settings,
+            a_trous_settings,
             fullscreen_quad_indices,
             skinned_instances,
             static_instances,
@@ -132,22 +106,7 @@ impl Buffers {
         }
     }
 
-    pub fn update_hbgi_settings(&self, hbgi_settings: &HbgiSettingsUniform, queue: &wgpu::Queue) {
-        queue.write_buffer(&self.hbgi_settings, 0, bytemuck::bytes_of(hbgi_settings));
-    }
-
-    pub fn update_hbgi_reproject_settings(
-        &self,
-        prev_inverse_view_proj: &Mat4,
-        queue: &wgpu::Queue,
-    ) {
-        let uniform = HbgiReprojectUniform {
-            prev_inverse_view_proj: prev_inverse_view_proj.to_cols_array_2d(),
-        };
-        queue.write_buffer(
-            &self.hbgi_reproject_settings,
-            0,
-            bytemuck::bytes_of(&uniform),
-        );
+    pub fn update_ssrt_settings(&self, settings: &SsrtSettingsUniform, queue: &wgpu::Queue) {
+        queue.write_buffer(&self.ssrt_settings, 0, bytemuck::bytes_of(settings));
     }
 }

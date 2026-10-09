@@ -10,14 +10,15 @@ use super::prepare::camera::{prepare_camera, PreparedCamera};
 use super::prepare::mesh::{resolve_skinned_draw, ResolvedSkinnedDraw, ResolvedStaticDraw};
 use super::prepare::sun_shadow::{prepare_sun_shadow, PreparedSunShadowResult};
 use super::{
-    gpu_context::HbgiSettingsUniform,
+    gpu_context::SsrtSettingsUniform,
     passes::{
-        render_clear_temporal_inputs_passes, render_deferred_lighting_pass, render_gbuffer_skinned_opaque_pass,
-        render_gbuffer_static_opaque_pass, render_hbgi_history_fix_pass, render_hbgi_pass,
-        render_hbgi_pyramid_passes, render_hbgi_reproject_pass, render_hbgi_svgf_pass,
-        render_gi_source_mips, render_skinned_transparent_pass, render_skybox_pass,
-        render_ssr_composite_pass, render_ssr_pass, render_static_transparent_pass,
-        render_sun_shadow_passes, render_taa_resolve_pass, render_tonemap_pass,
+        render_clear_temporal_inputs_passes, render_debug_copy_normal_history_pass,
+        render_depth_pyramid_passes, render_diffuse_normal_reprojects_pass,
+        render_gbuffer_skinned_opaque_pass, render_gbuffer_static_opaque_pass,
+        render_lighting_composite_pass, render_skinned_transparent_pass, render_ssgi_trace_pass,
+        render_ssr_trace_pass, render_ssrt_a_trous_passes, render_ssrt_history_fix_pass,
+        render_ssrt_resolve_pass, render_static_transparent_pass, render_sun_shadow_passes,
+        render_taa_pass, render_tonemap_pass,
     },
 };
 
@@ -74,7 +75,7 @@ struct PreparedRenderData<'a> {
 pub struct WorldRenderer {
     gpu_context: WorldGpuContext,
     settings: WorldRendererSettings,
-    hbgi_reproject_valid: bool,
+    temporal_history_valid: bool,
     placeholders: PlaceholderTextureIds,
     skinned_instance_links: SnapshotInstanceLinks,
     static_instance_links: SnapshotInstanceLinks,
@@ -82,10 +83,6 @@ pub struct WorldRenderer {
     previous_render_data: Option<RetainedRenderData>,
 }
 impl WorldRenderer {
-    fn rotate_temporal_buffers(&mut self, device: &wgpu::Device) {
-        self.gpu_context.rotate_temporal_resources(device);
-    }
-
     pub fn new(
         wgpu_context: &WgpuContext,
         placeholders: PlaceholderTextureIds,
@@ -113,7 +110,7 @@ impl WorldRenderer {
         Self {
             gpu_context,
             settings,
-            hbgi_reproject_valid: false,
+            temporal_history_valid: false,
             skinned_instance_links,
             static_instance_links,
             placeholders,
@@ -144,12 +141,11 @@ impl WorldRenderer {
             .as_ref()
             .map(|data| &data.camera)
             .unwrap_or(&prepared_camera);
-        let prev_inverse_view_proj = prev_camera.inverse_view_proj;
-        self.gpu_context
-            .resources
-            .buffers
-            .camera
-            .update(&prepared_camera, prev_camera, &wgpu_context.queue);
+        self.gpu_context.resources.buffers.camera.update(
+            &prepared_camera,
+            prev_camera,
+            &wgpu_context.queue,
+        );
         let prepared_sun_shadow = prepare_sun_shadow(
             &prepared_camera,
             snaps.curr.lights.sun.direction,
@@ -221,14 +217,10 @@ impl WorldRenderer {
             render_resources,
             wgpu_context,
         );
-        self.gpu_context.resources.buffers.update_hbgi_settings(
-            &HbgiSettingsUniform::from_settings(&self.settings.hbgi, frame_idx),
+        self.gpu_context.resources.buffers.update_ssrt_settings(
+            &SsrtSettingsUniform::from_settings(&self.settings.hbgi, frame_idx),
             &wgpu_context.queue,
         );
-        self.gpu_context
-            .resources
-            .buffers
-            .update_hbgi_reproject_settings(&prev_inverse_view_proj, &wgpu_context.queue);
 
         PreparedRenderData {
             retained: RetainedRenderData {
@@ -264,8 +256,6 @@ impl WorldRenderer {
             camera_pair,
         );
 
-        render_skybox_pass(encoder, &self.gpu_context);
-
         render_sun_shadow_passes(
             encoder,
             &skinned_draw.opaque,
@@ -287,19 +277,17 @@ impl WorldRenderer {
             render_resources,
             &self.gpu_context,
         );
-        if !self.hbgi_reproject_valid {
+        if !self.temporal_history_valid {
             render_clear_temporal_inputs_passes(encoder, &self.gpu_context);
         }
-        render_hbgi_pyramid_passes(encoder, &self.gpu_context);
-        render_hbgi_pass(encoder, &self.gpu_context);
-        render_hbgi_reproject_pass(encoder, &self.gpu_context);
-        render_hbgi_history_fix_pass(encoder, &self.gpu_context);
-        render_hbgi_svgf_pass(encoder, &self.gpu_context);
-        self.hbgi_reproject_valid = true;
-        render_deferred_lighting_pass(encoder, &self.gpu_context);
-        render_gi_source_mips(encoder, &self.gpu_context);
-        render_ssr_pass(encoder, &self.gpu_context);
-        render_ssr_composite_pass(encoder, &self.gpu_context);
+        render_depth_pyramid_passes(encoder, &self.gpu_context);
+        render_diffuse_normal_reprojects_pass(encoder, &self.gpu_context);
+        render_ssgi_trace_pass(encoder, &self.gpu_context);
+        render_ssr_trace_pass(encoder, &self.gpu_context);
+        render_ssrt_resolve_pass(encoder, &self.gpu_context);
+        render_ssrt_history_fix_pass(encoder, &mut self.gpu_context);
+        render_ssrt_a_trous_passes(encoder, &mut self.gpu_context);
+        render_lighting_composite_pass(encoder, &self.gpu_context);
 
         render_skinned_transparent_pass(
             encoder,
@@ -315,30 +303,28 @@ impl WorldRenderer {
             &self.gpu_context,
         );
 
-        render_taa_resolve_pass(encoder, &self.gpu_context);
+        render_taa_pass(encoder, &self.gpu_context);
         render_tonemap_pass(encoder, output_view, &self.gpu_context);
-        self.rotate_temporal_buffers(&wgpu_context.device);
+        render_debug_copy_normal_history_pass(encoder, output_view, &self.gpu_context);
+        self.gpu_context.rotate_temporal_resources();
+        self.temporal_history_valid = true;
         self.previous_render_data = Some(render_data);
     }
 
     pub fn resize(&mut self, wgpu_context: &WgpuContext, render_resources: &RenderAssetStore) {
         self.gpu_context
             .resize(wgpu_context, render_resources, &self.placeholders);
-        self.hbgi_reproject_valid = false;
+        self.temporal_history_valid = false;
         self.previous_render_data = None;
     }
 
-    pub fn upload_settings(
-        &mut self,
-        settings: WorldRendererSettings,
-        wgpu_context: &WgpuContext,
-    ) {
+    pub fn upload_settings(&mut self, settings: WorldRendererSettings, wgpu_context: &WgpuContext) {
         self.settings = settings;
-        self.gpu_context.resources.buffers.update_hbgi_settings(
-            &HbgiSettingsUniform::from_settings(&self.settings.hbgi, 0),
+        self.gpu_context.resources.buffers.update_ssrt_settings(
+            &SsrtSettingsUniform::from_settings(&self.settings.hbgi, 0),
             &wgpu_context.queue,
         );
-        self.hbgi_reproject_valid = false;
+        self.temporal_history_valid = false;
     }
 
     pub fn upload_material(

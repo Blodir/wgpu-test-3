@@ -34,7 +34,7 @@ impl SkinnedTransparentPipeline {
             &layouts.camera,
             &layouts.lights,
             &layouts.pbr_material,
-            &layouts.motion_bones,
+            &layouts.bones,
         ];
         let render_pipeline_layout =
             wgpu_context

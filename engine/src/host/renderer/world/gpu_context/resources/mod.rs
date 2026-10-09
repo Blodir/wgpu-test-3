@@ -2,12 +2,9 @@ pub mod buffers;
 pub mod samplers;
 pub mod textures;
 
-pub(crate) use buffers::{Buffers, CameraBuffers, LightsBuffers, SunBuffers, SunShadowUniform};
+pub(crate) use buffers::{Buffers, CameraBuffers, LightsBuffers, SunShadowUniform};
 pub(crate) use samplers::Samplers;
-pub(crate) use textures::{
-    GBufferTextures, HbgiSvgfTextures, HbgiTextures, LightingTextures, MipPyramidTextures,
-    ReprojectTextures, SsrTextures, SunShadowTexture2, TaaResolveTextures, Textures,
-};
+pub(crate) use textures::{GBufferTextures, SunShadowTexture2, Textures};
 
 pub(crate) struct Resources {
     pub(crate) textures: Textures,

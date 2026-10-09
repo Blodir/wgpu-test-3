@@ -5,12 +5,23 @@ struct VertexOutput {
     @location(0) tex_coords: vec2<f32>,
 }
 
+// https://knarkowicz.wordpress.com/2016/01/06/aces-filmic-tone-mapping-curve/
+fn aces_film(color: vec3f) -> vec3f {
+    let numerator = color * (2.51 * color + 0.03);
+    let denominator = color * (2.43 * color + 0.59) + 0.14;
+    return clamp(numerator / denominator, vec3f(0.0), vec3f(1.0));
+}
+
+fn reinhard(col: vec3f) -> vec3f {
+    return col / (col + vec3f(1.0));
+}
+
 fn to_ldr(color: vec3f) -> vec3f {
     var col = color;
     let exposure = 0.0;
-    let exposure_factor = pow(2.0, exposure);
-    col = col * exposure_factor;
-    col = col / (col + vec3f(1.0));
+    col = col * pow(2.0, exposure);
+    col = aces_film(col);
+    //col = reinhard(col);
     return col;
 }
 
