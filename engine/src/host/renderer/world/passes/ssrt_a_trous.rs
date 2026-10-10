@@ -22,9 +22,20 @@ pub(crate) fn render_ssrt_a_trous_passes(
                 &groups.a_trous_settings[pass_index],
                 &context.descriptors.bind_groups.camera.0,
             ],
-            [views.ssgi_denoise.get_write_view(&textures.ssgi_denoise)],
+            [
+                views.ssgi_denoise.get_write_view(&textures.ssgi_denoise),
+                views
+                    .bent_normal_ao_denoise
+                    .get_write_view(&textures.bent_normal_ao_denoise),
+            ],
             context,
         );
         context.resources.textures.ssrt.ssgi_denoise.swap();
+        context
+            .resources
+            .textures
+            .ssrt
+            .bent_normal_ao_denoise
+            .swap();
     }
 }

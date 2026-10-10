@@ -24,6 +24,7 @@ pub(crate) struct SsrtBindGroups {
     pub lighting_composite: wgpu::BindGroup,
     pub depth_base: wgpu::BindGroup,
     pub depth_downsample: Vec<wgpu::BindGroup>,
+    pub reprojected_diffuse_downsample: Vec<wgpu::BindGroup>,
     pub a_trous_settings: [wgpu::BindGroup; SSRT_A_TROUS_PASS_COUNT],
     pub settings: wgpu::BindGroup,
 }
@@ -68,6 +69,13 @@ impl SsrtBindGroups {
                         ssrt.depth_history.get_read_view(&textures.depth_history),
                         ssrt.normal_roughness_history
                             .get_read_view(&textures.normal_roughness_history),
+                        if SSRT_A_TROUS_PASS_COUNT % 2 == 0 {
+                            ssrt.bent_normal_ao_denoise
+                                .get_write_view(&textures.bent_normal_ao_denoise)
+                        } else {
+                            ssrt.bent_normal_ao_denoise
+                                .get_read_view(&textures.bent_normal_ao_denoise)
+                        },
                     ],
                 ),
                 resolve: create(
@@ -87,6 +95,9 @@ impl SsrtBindGroups {
                         ssrt.depth_history.get_read_view(&textures.depth_history),
                         ssrt.normal_roughness_history
                             .get_read_view(&textures.normal_roughness_history),
+                        &ssrt.bent_normal_ao_trace,
+                        ssrt.bent_normal_ao_history
+                            .get_read_view(&textures.bent_normal_ao_history),
                     ],
                 ),
                 ssgi_trace: device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -155,6 +166,12 @@ impl SsrtBindGroups {
                             binding: 4,
                             resource: wgpu::BindingResource::Sampler(&samplers.linear),
                         },
+                        wgpu::BindGroupEntry {
+                            binding: 5,
+                            resource: wgpu::BindingResource::TextureView(
+                                &ssrt.reprojected_bent_normal_ao,
+                            ),
+                        },
                     ],
                 }),
                 history_fix: create(
@@ -168,6 +185,8 @@ impl SsrtBindGroups {
                         &views.depth_pyramid.mips[0],
                         ssrt.moments_history
                             .get_write_view(&textures.moments_history),
+                        ssrt.bent_normal_ao_history
+                            .get_write_view(&textures.bent_normal_ao_history),
                     ],
                 ),
                 a_trous: std::array::from_fn(|_| {
@@ -179,9 +198,12 @@ impl SsrtBindGroups {
                             ssrt.normal_roughness_history
                                 .get_write_view(&textures.normal_roughness_history),
                             &views.depth_pyramid.mips[0],
+                            ssrt.bent_normal_ao_denoise
+                                .get_read_view(&textures.bent_normal_ao_denoise),
                         ],
                     );
                     textures.ssgi_denoise.swap();
+                    textures.bent_normal_ao_denoise.swap();
                     bind_group
                 }),
                 taa: device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -299,6 +321,18 @@ impl SsrtBindGroups {
                     binding: 11,
                     resource: wgpu::BindingResource::TextureView(&ssrt.reprojected_diffuse),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 12,
+                    resource: wgpu::BindingResource::TextureView(
+                        if SSRT_A_TROUS_PASS_COUNT % 2 == 0 {
+                            ssrt.bent_normal_ao_denoise
+                                .get_write_view(&textures.bent_normal_ao_denoise)
+                        } else {
+                            ssrt.bent_normal_ao_denoise
+                                .get_read_view(&textures.bent_normal_ao_denoise)
+                        },
+                    ),
+                },
             ],
         });
         let depth_base = create(
@@ -315,6 +349,18 @@ impl SsrtBindGroups {
                 create(
                     "Depth Pyramid Downsample Inputs",
                     &pipelines.depth_downsample,
+                    &[view],
+                )
+            })
+            .collect();
+        let reprojected_diffuse_downsample = ssrt
+            .reprojected_diffuse_mips
+            .iter()
+            .take(ssrt.reprojected_diffuse_mips.len() - 1)
+            .map(|view| {
+                create(
+                    "Reprojected Diffuse Downsample Inputs",
+                    &pipelines.reprojected_diffuse_downsample,
                     &[view],
                 )
             })
@@ -347,6 +393,7 @@ impl SsrtBindGroups {
             lighting_composite,
             depth_base,
             depth_downsample,
+            reprojected_diffuse_downsample,
             a_trous_settings,
             settings,
         }

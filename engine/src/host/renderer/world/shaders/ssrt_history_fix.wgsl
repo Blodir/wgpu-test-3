@@ -3,6 +3,7 @@
 @group(0) @binding(2) var normal_roughness_history: texture_2d<f32>;
 @group(0) @binding(3) var depth_texture: texture_2d<f32>;
 @group(0) @binding(4) var moments_history: texture_2d<f32>;
+@group(0) @binding(5) var bent_normal_ao_history: texture_2d<f32>;
 
 @group(1) @binding(2) var<uniform> inverse_view_proj: mat4x4<f32>;
 
@@ -14,6 +15,15 @@ struct VertexOutput {
 struct FragmentOutput {
     @location(0) ssgi_denoise: vec4<f32>,
     @location(1) ssr_denoise: vec4<f32>,
+    @location(2) bent_normal_ao_denoise: vec4<f32>,
+}
+
+fn safe_normalize3(v: vec3f, fallback: vec3f) -> vec3f {
+    let len = length(v);
+    if (len > 1e-8 && len < 1e20) {
+        return v / len;
+    }
+    return fallback;
 }
 
 fn reconstruct_world_position_from_depth(uv: vec2f, depth: f32) -> vec3f {
@@ -35,6 +45,7 @@ struct Candidate {
     irradiance: vec3f,
     first_moment: f32,
     second_moment: f32,
+    bent_ao: vec4f,
 };
 
 fn insert_candidate(
@@ -86,6 +97,7 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
 
     let ssgi_center_irradiance_variance = textureLoad(ssgi_history, center_coords, 0);
     let ssr_center_irradiance_variance = textureLoad(ssr_history, center_coords, 0);
+    let center_bent_ao = textureLoad(bent_normal_ao_history, center_coords, 0);
     let depth_dims = vec2i(textureDimensions(depth_texture));
     let center_depth_coords = clamp(vec2i(uv * vec2f(depth_dims)), vec2i(0), depth_dims - vec2i(1));
     let center_depth = textureLoad(depth_texture, center_depth_coords, 0).x;
@@ -93,8 +105,9 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
     let ssgi_center_moments = center_moments.xy;
     let ssr_center_moments = center_moments.zw;
     var output = FragmentOutput(
-        vec4f(ssgi_center_irradiance_variance.rgb, ssgi_center_moments.y - ssgi_center_moments.x * ssgi_center_moments.x),
-        vec4f(ssr_center_irradiance_variance.rgb, ssr_center_moments.y - ssr_center_moments.x * ssr_center_moments.x)
+        vec4f(ssgi_center_irradiance_variance.rgb, max(ssgi_center_moments.y - ssgi_center_moments.x * ssgi_center_moments.x, 0.0)),
+        vec4f(ssr_center_irradiance_variance.rgb, max(ssr_center_moments.y - ssr_center_moments.x * ssr_center_moments.x, 0.0)),
+        center_bent_ao
     );
     if (center_depth <= 0.0) {
         return output;
@@ -167,6 +180,7 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
             if (ssgi_missing_samples > 0) {
                 let ssgi_neighbor_irradiance_variance = textureLoad(ssgi_history, neighbor_coords, 0);
                 let ssgi_neighbor_moments = neighbor_moments.xy;
+                let neighbor_bent_ao = textureLoad(bent_normal_ao_history, neighbor_coords, 0);
                 let ssgi_neighbor_history = min(i32(round(ssgi_neighbor_irradiance_variance.a)), 4);
                 if (w > ssgi_worst_weight) {
                     for (var i = 0; i < ssgi_neighbor_history; i++) {
@@ -175,6 +189,7 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
                             ssgi_neighbor_irradiance_variance.rgb,
                             ssgi_neighbor_moments.x,
                             ssgi_neighbor_moments.y,
+                            neighbor_bent_ao,
                         );
                         insert_candidate(ssgi_candidate, &ssgi_best);
                     }
@@ -192,6 +207,7 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
                             ssr_neighbor_irradiance_variance.rgb,
                             ssr_neighbor_moments.x,
                             ssr_neighbor_moments.y,
+                            vec4f(0.0),
                         );
                         insert_candidate(ssr_candidate, &ssr_best);
                     }
@@ -205,6 +221,8 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
     var ssgi_irradiance_acc = ssgi_center_irradiance_variance.rgb * ssgi_valid_samples;
     var ssgi_first_moment_acc = ssgi_center_moments.x * ssgi_valid_samples;
     var ssgi_second_moment_acc = ssgi_center_moments.y * ssgi_valid_samples;
+    var bent_acc = center_bent_ao.xyz * ssgi_valid_samples;
+    var ao_acc = center_bent_ao.w * ssgi_valid_samples;
     var ssr_valid_samples = f32(ssr_center_history_length);
     var ssr_irradiance_acc = ssr_center_irradiance_variance.rgb * ssr_valid_samples;
     var ssr_first_moment_acc = ssr_center_moments.x * ssr_valid_samples;
@@ -215,6 +233,8 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
             ssgi_irradiance_acc += ssgi_best[i].irradiance;
             ssgi_first_moment_acc += ssgi_best[i].first_moment;
             ssgi_second_moment_acc += ssgi_best[i].second_moment;
+            bent_acc += ssgi_best[i].bent_ao.xyz;
+            ao_acc += ssgi_best[i].bent_ao.w;
             ssgi_valid_samples += 1.0;
         }
         if (i < ssr_missing_samples && ssr_best[i].weight >= 0.0) {
@@ -229,14 +249,17 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
         let ssgi_irradiance = ssgi_irradiance_acc / ssgi_valid_samples;
         let ssgi_first_moment = ssgi_first_moment_acc / ssgi_valid_samples;
         let ssgi_second_moment = ssgi_second_moment_acc / ssgi_valid_samples;
-        let ssgi_variance = ssgi_second_moment - ssgi_first_moment * ssgi_first_moment;
+        let ssgi_variance = max(ssgi_second_moment - ssgi_first_moment * ssgi_first_moment, 0.0);
         output.ssgi_denoise = vec4f(ssgi_irradiance, ssgi_variance);
+        let filtered_bent_normal = safe_normalize3(bent_acc, center_bent_ao.xyz);
+        let filtered_ao = ao_acc / ssgi_valid_samples;
+        output.bent_normal_ao_denoise = vec4f(filtered_bent_normal, filtered_ao);
     }
     if (ssr_missing_samples > 0) {
         let ssr_irradiance = ssr_irradiance_acc / ssr_valid_samples;
         let ssr_first_moment = ssr_first_moment_acc / ssr_valid_samples;
         let ssr_second_moment = ssr_second_moment_acc / ssr_valid_samples;
-        let ssr_variance = ssr_second_moment - ssr_first_moment * ssr_first_moment;
+        let ssr_variance = max(ssr_second_moment - ssr_first_moment * ssr_first_moment, 0.0);
         output.ssr_denoise = vec4f(ssr_irradiance, ssr_variance);
     }
 

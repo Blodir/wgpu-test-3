@@ -15,10 +15,11 @@ use super::{
         render_clear_temporal_inputs_passes, render_debug_copy_normal_history_pass,
         render_depth_pyramid_passes, render_diffuse_normal_reprojects_pass,
         render_gbuffer_skinned_opaque_pass, render_gbuffer_static_opaque_pass,
-        render_lighting_composite_pass, render_skinned_transparent_pass, render_ssgi_trace_pass,
-        render_ssr_trace_pass, render_ssrt_a_trous_passes, render_ssrt_history_fix_pass,
-        render_ssrt_resolve_pass, render_static_transparent_pass, render_sun_shadow_passes,
-        render_taa_pass, render_tonemap_pass,
+        render_lighting_composite_pass, render_reprojected_diffuse_mip_passes,
+        render_skinned_transparent_pass, render_ssgi_trace_pass, render_ssr_trace_pass,
+        render_ssrt_a_trous_passes, render_ssrt_history_fix_pass, render_ssrt_resolve_pass,
+        render_static_transparent_pass, render_sun_shadow_passes, render_taa_pass,
+        render_tonemap_pass,
     },
 };
 
@@ -282,6 +283,7 @@ impl WorldRenderer {
         }
         render_depth_pyramid_passes(encoder, &self.gpu_context);
         render_diffuse_normal_reprojects_pass(encoder, &self.gpu_context);
+        render_reprojected_diffuse_mip_passes(encoder, &self.gpu_context);
         render_ssgi_trace_pass(encoder, &self.gpu_context);
         render_ssr_trace_pass(encoder, &self.gpu_context);
         render_ssrt_resolve_pass(encoder, &self.gpu_context);

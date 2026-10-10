@@ -16,10 +16,6 @@ struct TraceSettings {
 
 @group(1) @binding(0) var<uniform> trace_settings: TraceSettings;
 
-@group(3) @binding(4) var env_di_texture: texture_cube<f32>;
-@group(3) @binding(5) var env_di_texture_sampler: sampler;
-@group(3) @binding(8) var<uniform> environment_map_intensity: f32;
-
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
     @location(0) tex_coords: vec2<f32>,
@@ -27,6 +23,7 @@ struct VertexOutput {
 
 struct FragmentOutput {
     @location(0) ssgi_history: vec4<f32>,
+    @location(1) bent_normal_ao: vec4<f32>,
 }
 
 const PI: f32 = 3.14159265358979323846;
@@ -203,7 +200,7 @@ fn shbgi(in: VertexOutput) -> FragmentOutput {
     let P_sample = sample_world_position_from_depth(uv, 0.0);
     if (P_sample.w < 0.5) {
         // invalid sample
-        return FragmentOutput(vec4<f32>(0.0));
+        return FragmentOutput(vec4<f32>(0.0), vec4<f32>(0.0, 0.0, 0.0, 1.0));
     }
     let P_w = P_sample.xyz;
 
@@ -425,16 +422,9 @@ fn shbgi(in: VertexOutput) -> FragmentOutput {
     let ao = clamp((1.0 / S) * visibility_acc, 0.0, 1.0);
     let bent_n_w = safe_normalize3(bent_acc_w);
 
-    let far_field_sample = textureSample(
-        env_di_texture,
-        env_di_texture_sampler,
-        bent_n_w
-    );
-
-    let E_far = far_field_sample.rgb * ao * environment_map_intensity;
     let E_near = sanitize_rgb(irradiance_acc * (PI / S));
 
-    return FragmentOutput(vec4f(E_near + E_far, debug));
+    return FragmentOutput(vec4f(E_near, debug), vec4f(bent_n_w, ao));
 }
 
 @fragment

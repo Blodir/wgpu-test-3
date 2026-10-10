@@ -1,6 +1,7 @@
 @group(0) @binding(0) var ssgi_denoise: texture_2d<f32>;
 @group(0) @binding(1) var normal_roughness_history: texture_2d<f32>;
 @group(0) @binding(2) var depth_texture: texture_2d<f32>;
+@group(0) @binding(3) var bent_normal_ao_denoise: texture_2d<f32>;
 
 @group(2) @binding(1) var<uniform> camera_position: vec3<f32>;
 @group(2) @binding(2) var<uniform> inverse_view_proj: mat4x4<f32>;
@@ -19,20 +20,30 @@ struct VertexOutput {
 
 struct FragmentOutput {
     @location(0) ssgi_denoise: vec4<f32>,
+    @location(1) bent_normal_ao_denoise: vec4<f32>,
 }
 
 const MIN_VARIANCE: f32 = 1e-4;
+const MAX_VARIANCE: f32 = 65504.0;
 const KERNEL: array<f32, 5> = array<f32, 5>(1.0 / 16.0, 1.0 / 4.0, 3.0 / 8.0, 1.0 / 4.0, 1.0 / 16.0);
 const SIGMA_Z: f32 = 1.0; // Paper: 1.0
+const SIGMA_PLANE_DISTANCE: f32 = 0.1;
 const SIGMA_N: f32 = 64.0; // Paper: 128.0
 const SIGMA_L: f32 = 32.0; // Paper: 4.0
 
-fn safe_normalize3(v: vec3f) -> vec3f {
+fn safe_normalize3(v: vec3f, fallback: vec3f) -> vec3f {
     let len = length(v);
-    if (len > 1e-8) {
+    if (len > 1e-8 && len < 1e20) {
         return v / len;
     }
-    return vec3f(0.0, 0.0, 1.0);
+    return fallback;
+}
+
+fn clamp_variance(variance: f32) -> f32 {
+    if ((bitcast<u32>(variance) & 0x7f800000u) == 0x7f800000u) {
+        return MAX_VARIANCE;
+    }
+    return clamp(variance, 0.0, MAX_VARIANCE);
 }
 
 fn clamp_coord(coord: vec2i, max_coord: vec2i) -> vec2i {
@@ -105,25 +116,31 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
     let center_depth_coords = clamp_coord(vec2i(center_uv * vec2f(depth_dims)), depth_dims - vec2i(1));
     let center_depth = textureLoad(depth_texture, center_depth_coords, 0).x;
     let center_irradiance_variance = textureLoad(ssgi_denoise, center_half_coords, 0);
+    let center_bent_ao = textureLoad(bent_normal_ao_denoise, center_half_coords, 0);
+    let center_variance = clamp_variance(center_irradiance_variance.w);
     if (center_depth <= 0.0) {
-        return FragmentOutput(center_irradiance_variance);
+        return FragmentOutput(vec4f(center_irradiance_variance.rgb, center_variance), center_bent_ao);
     }
 
-    let center_world_position = reconstruct_world_position_from_depth(center_uv, center_depth);
-    let center_linear_depth = linear_view_depth_from_world_position(center_world_position);
-    let center_normal = textureLoad(normal_roughness_history, center_half_coords, 0).xyz;
-    var center_variance = center_irradiance_variance.w;
+    let center_depth_uv = (vec2f(center_depth_coords) + vec2f(0.5)) / vec2f(depth_dims);
+    let center_world_position = reconstruct_world_position_from_depth(center_depth_uv, center_depth);
+    let center_normal = safe_normalize3(textureLoad(normal_roughness_history, center_half_coords, 0).xyz, vec3f(0.0));
 
+    /*
+    let center_linear_depth = linear_view_depth_from_world_position(center_world_position);
     let center_depth_gradient = vec2f(
         dpdx(center_linear_depth),
         dpdy(center_linear_depth),
     );
+    */
 
     let l_p = luminance(center_irradiance_variance.rgb);
 
     var irradiance_acc = vec3f(0.0);
     var denom_acc = 0.0;
     var variance_acc = 0.0;
+    var bent_acc = vec3f(0.0);
+    var ao_acc = 0.0;
 
     for (var y: i32 = -2; y <= 2; y += 1) {
         for (var x: i32 = -2; x <= 2; x += 1) {
@@ -143,23 +160,31 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
             }
             let irradiance_variance = textureLoad(ssgi_denoise, neighbor_half_coords, 0);
             let normal = textureLoad(normal_roughness_history, neighbor_half_coords, 0).xyz;
-            let neighbor_world_position = reconstruct_world_position_from_depth(neighbor_uv, neighbor_depth);
-            let neighbor_linear_depth = linear_view_depth_from_world_position(neighbor_world_position);
+            let neighbor_depth_uv = (vec2f(neighbor_depth_coords) + vec2f(0.5)) / vec2f(depth_dims);
+            let neighbor_world_position = reconstruct_world_position_from_depth(neighbor_depth_uv, neighbor_depth);
+            //let neighbor_linear_depth = linear_view_depth_from_world_position(neighbor_world_position);
+            let bent_ao = textureLoad(bent_normal_ao_denoise, neighbor_half_coords, 0);
 
             let c_q = irradiance_variance.rgb;
-            let var_c_q = irradiance_variance.a;
+            let var_c_q = clamp_variance(irradiance_variance.a);
             let l_q = luminance(irradiance_variance.rgb);
 
             let h_q = KERNEL[x + 2] * KERNEL[y + 2];
 
+            /*
             // 4.4 eq. 3
             let w_z_nom = abs(center_linear_depth - neighbor_linear_depth);
             let p_minus_q = vec2f(center_half_coords - neighbor_half_coords);
             let w_z_denom = max(SIGMA_Z * abs(dot(center_depth_gradient, p_minus_q)), 1e-3);
             let w_z = exp(-1.0 * w_z_nom / w_z_denom);
+            */
+            let delta = neighbor_world_position - center_world_position;
+            let plane_distance = abs(dot(center_normal, delta));
+            let w_z = exp(-plane_distance / SIGMA_PLANE_DISTANCE);
+            //let w_z = 1.0;
 
             // 4.4 eq. 4
-            let w_n = pow(max(0.0, dot(center_normal, normal)), SIGMA_N);
+            let w_n = pow(clamp(dot(center_normal, normal), 0.0, 1.0), SIGMA_N);
 
             // 4.4 eq. 5
             let w_l_nom = abs(l_p - l_q);
@@ -171,20 +196,32 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
 
             // 4.3 eq. 1
             let hw = h_q * w_pq;
+            if (!(hw > 0.0)) {
+                continue;
+            }
             irradiance_acc += hw * c_q;
             denom_acc += hw;
             variance_acc += h_q * h_q * w_pq * w_pq * var_c_q;
+
+            bent_acc += bent_ao.xyz * hw;
+            ao_acc += bent_ao.w * hw;
         }
     }
 
-    if (denom_acc <= 1e-6) {
+    if (!(denom_acc > 1e-6)) {
         return FragmentOutput(
-            vec4f(center_irradiance_variance.rgb, max(center_variance, 0.0))
+            vec4f(center_irradiance_variance.rgb, max(center_variance, 0.0)),
+            center_bent_ao
         );
     }
 
     let filtered_irradiance = irradiance_acc / denom_acc;
-    var filtered_variance = variance_acc / (denom_acc * denom_acc);
+    let filtered_bent_normal = safe_normalize3(bent_acc, center_bent_ao.xyz);
+    let filtered_ao = ao_acc / denom_acc;
+    let filtered_variance = clamp_variance(variance_acc / (denom_acc * denom_acc));
 
-    return FragmentOutput(vec4f(filtered_irradiance, filtered_variance));
+    return FragmentOutput(
+        vec4f(filtered_irradiance, filtered_variance),
+        vec4f(filtered_bent_normal, filtered_ao)
+    );
 }

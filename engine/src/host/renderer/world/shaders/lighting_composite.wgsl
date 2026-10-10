@@ -12,6 +12,8 @@ struct SunShadowUniform {
 @group(2) @binding(1) var<uniform> light_col: vec3<f32>;
 @group(2) @binding(2) var environment_texture: texture_cube<f32>;
 @group(2) @binding(3) var environment_texture_sampler: sampler;
+@group(2) @binding(4) var env_di_texture: texture_cube<f32>;
+@group(2) @binding(5) var env_di_texture_sampler: sampler;
 @group(2) @binding(6) var brdf_lut: texture_2d<f32>;
 @group(2) @binding(7) var brdf_lut_sampler: sampler;
 @group(2) @binding(8) var<uniform> environment_map_intensity: f32;
@@ -35,6 +37,7 @@ struct SunShadowUniform {
 @group(0) @binding(9) var ssr_denoise: texture_2d<f32>;
 @group(0) @binding(10) var ssr_denoise_sampler: sampler;
 @group(0) @binding(11) var reprojected_diffuse: texture_2d<f32>;
+@group(0) @binding(12) var bent_normal_ao_denoise: texture_2d<f32>;
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
@@ -50,6 +53,14 @@ struct FragmentOutput {
 const PI: f32 = 3.1415927;
 const MAX_REFLECTION_LOD: f32 = 4.0;
 const MAX_POINT_LIGHTS: u32 = 64u;
+
+fn safe_normalize3(v: vec3f, fallback: vec3f) -> vec3f {
+    let len = length(v);
+    if (len > 1e-8 && len < 1e20) {
+        return v / len;
+    }
+    return fallback;
+}
 
 fn reconstruct_world_position_from_depth(uv: vec2f, depth: f32) -> vec3f {
     let clip = vec4f(
@@ -337,7 +348,22 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
         vec2(max(dot(N, V), 0.0), 1.0 - surface_roughness)
     ).rg;
 
-    let indirect_diffuse = hbgi_irradiance.rgb * k_d2 * surface_color / PI;
+    let bent_ao = textureSampleLevel(
+        bent_normal_ao_denoise,
+        ssgi_denoise_sampler,
+        uv,
+        0.0
+    );
+    let bent_n_w = safe_normalize3(bent_ao.xyz, N);
+    let far_field_sample = textureSampleLevel(
+        env_di_texture,
+        env_di_texture_sampler,
+        bent_n_w,
+        0.0
+    );
+    let E_far = far_field_sample.rgb * bent_ao.w * environment_map_intensity;
+    let E_near = hbgi_irradiance.rgb;
+    let indirect_diffuse = (E_near + E_far) * k_d2 * surface_color / PI;
 
     let accumulated_ssr_radiance = textureSampleLevel(
         ssr_denoise,

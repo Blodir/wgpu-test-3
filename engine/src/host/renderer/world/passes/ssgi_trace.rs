@@ -14,12 +14,8 @@ pub(crate) fn render_ssgi_trace_pass(
         "SSGI Trace Pass",
         &context.pipelines.ssrt.ssgi_trace.pipeline,
         &groups.history[current].ssgi_trace,
-        &[
-            &groups.settings,
-            &context.descriptors.bind_groups.camera.0,
-            &context.descriptors.bind_groups.lights.0,
-        ],
-        [&views.ssgi_trace],
+        &[&groups.settings, &context.descriptors.bind_groups.camera.0],
+        [&views.ssgi_trace, &views.bent_normal_ao_trace],
         context,
     );
 }

@@ -9,6 +9,9 @@ pub(crate) fn render_ssrt_history_fix_pass(
     if textures.ssgi_denoise.get_write_idx() != 0 {
         textures.ssgi_denoise.swap();
     }
+    if textures.bent_normal_ao_denoise.get_write_idx() != 0 {
+        textures.bent_normal_ao_denoise.swap();
+    }
     let textures = &context.resources.textures.ssrt;
     let current = textures.normal_roughness_history.get_write_idx() as usize;
     let views = &context.descriptors.texture_views.ssrt;
@@ -22,8 +25,17 @@ pub(crate) fn render_ssrt_history_fix_pass(
         [
             views.ssgi_denoise.get_write_view(&textures.ssgi_denoise),
             &views.ssr_denoise,
+            views
+                .bent_normal_ao_denoise
+                .get_write_view(&textures.bent_normal_ao_denoise),
         ],
         context,
     );
     context.resources.textures.ssrt.ssgi_denoise.swap();
+    context
+        .resources
+        .textures
+        .ssrt
+        .bent_normal_ao_denoise
+        .swap();
 }

@@ -21,6 +21,9 @@ pub(crate) fn render_ssrt_resolve_pass(
             views
                 .moments_history
                 .get_write_view(&textures.moments_history),
+            views
+                .bent_normal_ao_history
+                .get_write_view(&textures.bent_normal_ao_history),
         ],
         context,
     );

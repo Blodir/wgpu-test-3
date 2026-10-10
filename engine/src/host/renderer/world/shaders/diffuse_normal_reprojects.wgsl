@@ -8,6 +8,7 @@
 @group(0) @binding(3) var depth_texture: texture_depth_2d;
 @group(0) @binding(4) var prev_depth_history_texture: texture_2d<f32>;
 @group(0) @binding(5) var prev_normal_roughness_history_texture: texture_2d<f32>;
+@group(0) @binding(6) var prev_bent_normal_ao_denoise_texture: texture_2d<f32>;
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
@@ -17,6 +18,7 @@ struct VertexOutput {
 struct FragmentOutput {
     @location(0) normal_roughness_history: vec4<f32>,
     @location(1) reprojected_diffuse: vec4<f32>,
+    @location(2) reprojected_bent_normal_ao: vec4<f32>,
 }
 
 const MAX_HISTORY_LENGTH: f32 = 8.0;
@@ -113,7 +115,7 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
     let normal_length = length(normal_roughness.xyz);
     let curr_depth = sample_depth_2x2(depth_texture, curr_half_coords * 2);
     if (curr_depth <= 0.0 || normal_length <= 1e-8) {
-        return FragmentOutput(normal_roughness, vec4f(0.0));
+        return FragmentOutput(normal_roughness, vec4f(0.0), vec4f(0.0, 0.0, 0.0, 1.0));
     }
     let N = normalize(normal_roughness.xyz);
     let roughness = normal_roughness.w;
@@ -128,7 +130,7 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
     //let prev_uv = uv - motion + camera_jitter.zw - camera_jitter.xy;
     let prev_uv = uv - motion;
     if (any(prev_uv < vec2f(0.0)) || any(prev_uv > vec2f(1.0))) {
-        return FragmentOutput(vec4f(N, roughness), vec4f(0.0, 0.0, 0.0, 1.0));
+        return FragmentOutput(vec4f(N, roughness), vec4f(0.0, 0.0, 0.0, 1.0), vec4f(N, 1.0));
     }
 
     let prev_coord = clamp_coordf(prev_uv * half_dims - vec2f(0.5), vec2f(half_max_coords));
@@ -150,6 +152,8 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
 
     var prev_color_acc = vec3f(0.0);
     var prev_normal_acc = vec3f(0.0);
+    var prev_bent_normal_acc = vec3f(0.0);
+    var prev_ao_acc = 0.0;
     var prev_history_length_acc = 0.0;
     var prev_weight_acc = 0.0;
 
@@ -190,19 +194,24 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
         if (prev_color_sample.a <= 0.0) {
             continue;
         }
+        let prev_bent_ao = textureLoad(prev_bent_normal_ao_denoise_texture, tap_coords, 0);
 
         prev_color_acc += prev_color_sample.rgb * history_weight;
         prev_normal_acc += prev_normal * history_weight;
+        prev_bent_normal_acc += prev_bent_ao.xyz * history_weight;
+        prev_ao_acc += prev_bent_ao.w * history_weight;
         prev_history_length_acc += prev_color_sample.a * history_weight;
         prev_weight_acc += history_weight;
     }
 
     if (prev_weight_acc <= 0.0) {
-        return FragmentOutput(vec4f(N, roughness), vec4f(0.0, 0.0, 0.0, 1.0));
+        return FragmentOutput(vec4f(N, roughness), vec4f(0.0, 0.0, 0.0, 1.0), vec4f(N, 1.0));
     }
 
     prev_color_acc /= prev_weight_acc;
     prev_normal_acc /= prev_weight_acc;
+    prev_bent_normal_acc /= prev_weight_acc;
+    prev_ao_acc /= prev_weight_acc;
     prev_history_length_acc /= prev_weight_acc;
 
     let blend_factor = 1.0 / (1.0 + min(prev_history_length_acc, MAX_HISTORY_LENGTH - 1.0));
@@ -211,6 +220,7 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
     let prev_normal = safe_normalize3(prev_normal_acc, N);
     let final_normal = safe_normalize3(mix(prev_normal, N, blend_factor), N);
     let final_history_length = min(prev_history_length_acc + 1.0, MAX_HISTORY_LENGTH);
+    let reprojected_bent_normal = safe_normalize3(prev_bent_normal_acc, N);
 
     /*
     return FragmentOutput(
@@ -220,6 +230,7 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
     */
     return FragmentOutput(
         vec4f(final_normal, roughness),
-        vec4f(prev_color_acc, final_history_length)
+        vec4f(prev_color_acc, final_history_length),
+        vec4f(reprojected_bent_normal, prev_ao_acc)
     );
 }

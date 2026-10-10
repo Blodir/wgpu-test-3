@@ -19,7 +19,8 @@ pub(crate) fn render_diffuse_normal_reprojects_pass(
             views
                 .normal_roughness_history
                 .get_write_view(&textures.normal_roughness_history),
-            &views.reprojected_diffuse,
+            &views.reprojected_diffuse_mips[0],
+            &views.reprojected_bent_normal_ao,
         ],
         context,
     );

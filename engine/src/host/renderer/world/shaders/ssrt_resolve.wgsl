@@ -14,6 +14,8 @@
 @group(0) @binding(7) var current_normal_texture: texture_2d<f32>;
 @group(0) @binding(8) var prev_depth_history_texture: texture_2d<f32>;
 @group(0) @binding(9) var prev_normal_roughness_history_texture: texture_2d<f32>;
+@group(0) @binding(10) var curr_bent_normal_ao_texture: texture_2d<f32>;
+@group(0) @binding(11) var prev_bent_normal_ao_history_texture: texture_2d<f32>;
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
@@ -24,18 +26,19 @@ struct FragmentOutput {
     @location(0) ssgi_history: vec4<f32>,
     @location(1) ssr_history: vec4<f32>,
     @location(2) moments_history: vec4<f32>,
+    @location(3) bent_normal_ao_history: vec4<f32>,
 }
 
 const MAX_HISTORY_LENGTH: f32 = 8.0;
 const SVGF_NORMAL_REJECTION_DOT_THRESHOLD: f32 = 0.9;
 const SVGF_PLANE_DISTANCE_REJECTION_THRESHOLD: f32 = 0.3;
 
-fn safe_normalize3(v: vec3f) -> vec3f {
+fn safe_normalize3(v: vec3f, fallback: vec3f) -> vec3f {
     let len = length(v);
-    if (len > 1e-8) {
+    if (len > 1e-8 && len < 1e20) {
         return v / len;
     }
-    return vec3f(0.0);
+    return fallback;
 }
 
 fn saturate(value: f32) -> f32 {
@@ -116,6 +119,7 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
     let curr_normal_sample = textureLoad(current_normal_texture, curr_half_coords, 0);
     let curr_ssgi = textureLoad(ssgi_trace, curr_half_coords, 0);
     let curr_ssr = textureLoad(ssr_trace, curr_half_coords, 0);
+    let curr_bent_ao = textureLoad(curr_bent_normal_ao_texture, curr_half_coords, 0);
 
     // depth gets cleared to zero -> zero indicates an invalid value
     if (curr_depth <= 0.0) {
@@ -124,7 +128,8 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
         return FragmentOutput(
             vec4f(curr_ssgi.rgb, 1.0),
             vec4f(curr_ssr.rgb, 1.0),
-            vec4f(curr_lum, curr_lum * curr_lum, curr_ssr_lum, curr_ssr_lum * curr_ssr_lum)
+            vec4f(curr_lum, curr_lum * curr_lum, curr_ssr_lum, curr_ssr_lum * curr_ssr_lum),
+            curr_bent_ao
         );
     }
 
@@ -145,7 +150,8 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
         return FragmentOutput(
             vec4f(curr_ssgi.rgb, 1.0),
             vec4f(curr_ssr.rgb, 1.0),
-            vec4f(curr_lum, curr_lum * curr_lum, curr_ssr_lum, curr_ssr_lum * curr_ssr_lum)
+            vec4f(curr_lum, curr_lum * curr_lum, curr_ssr_lum, curr_ssr_lum * curr_ssr_lum),
+            curr_bent_ao
         );
     }
 
@@ -211,6 +217,8 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
     );
 
     var prev_irradiance_acc = vec3f(0.0);
+    var prev_bent_normal_acc = vec3f(0.0);
+    var prev_ao_acc = 0.0;
     var prev_ssr_radiance_acc = vec3f(0.0);
     var prev_first_moment_acc = 0.0;
     var prev_second_moment_acc = 0.0;
@@ -253,8 +261,11 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
         let prev_ssgi = textureLoad(previous_ssgi_history, coords, 0);
         let prev_ssr = textureLoad(previous_ssr_history, coords, 0);
         let prev_moments = textureLoad(previous_moments_history, coords, 0);
+        let prev_bent_ao = textureLoad(prev_bent_normal_ao_history_texture, coords, 0);
 
         prev_irradiance_acc += prev_ssgi.rgb * tap_weight;
+        prev_bent_normal_acc += prev_bent_ao.xyz * tap_weight;
+        prev_ao_acc += prev_bent_ao.w * tap_weight;
         prev_ssr_radiance_acc += prev_ssr.rgb * tap_weight;
         prev_first_moment_acc += prev_moments.x * tap_weight;
         prev_second_moment_acc += prev_moments.y * tap_weight;
@@ -272,11 +283,14 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
         return FragmentOutput(
             vec4f(curr_ssgi.rgb, 1.0),
             vec4f(curr_ssr.rgb, 1.0),
-            vec4f(curr_lum, curr_lum * curr_lum, curr_ssr_lum, curr_ssr_lum * curr_ssr_lum)
+            vec4f(curr_lum, curr_lum * curr_lum, curr_ssr_lum, curr_ssr_lum * curr_ssr_lum),
+            curr_bent_ao
         );
     }
 
     prev_irradiance_acc /= valid_weight_sum;
+    prev_bent_normal_acc /= valid_weight_sum;
+    prev_ao_acc /= valid_weight_sum;
     prev_ssr_radiance_acc /= valid_weight_sum;
     prev_first_moment_acc /= valid_weight_sum;
     prev_second_moment_acc /= valid_weight_sum;
@@ -289,6 +303,10 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
     let ssr_blend_factor = 1.0 / (1.0 + min(prev_ssr_history_length_acc, MAX_HISTORY_LENGTH));
 
     let final_irradiance = mix(prev_irradiance_acc, curr_ssgi.rgb, blend_factor);
+    let curr_bent_normal = safe_normalize3(curr_bent_ao.xyz, curr_normal);
+    let prev_bent_normal = safe_normalize3(prev_bent_normal_acc, curr_bent_normal);
+    let final_bent_normal = safe_normalize3(mix(prev_bent_normal, curr_bent_normal, blend_factor), curr_bent_normal);
+    let final_ao = mix(prev_ao_acc, curr_bent_ao.w, blend_factor);
     let final_ssr_radiance = mix(prev_ssr_radiance_acc, curr_ssr.rgb, ssr_blend_factor);
 
     // 4.2 Variance estimation
@@ -304,5 +322,6 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
         vec4f(final_irradiance, prev_history_length_acc + 1.0),
         vec4f(final_ssr_radiance, prev_ssr_history_length_acc + 1.0),
         vec4f(first_moment, second_moment, ssr_first_moment, ssr_second_moment),
+        vec4f(final_bent_normal, final_ao),
     );
 }

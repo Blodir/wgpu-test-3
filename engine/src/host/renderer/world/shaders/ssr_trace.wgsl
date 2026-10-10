@@ -11,6 +11,7 @@
 @group(0) @binding(4) var normal_sampler: sampler;
 @group(0) @binding(1) var reprojected_diffuse: texture_2d<f32>;
 @group(0) @binding(3) var diffuse_sampler: sampler;
+@group(0) @binding(5) var reprojected_bent_normal_ao: texture_2d<f32>;
 @group(3) @binding(8) var<uniform> environment_map_intensity: f32;
 
 struct VertexOutput {
@@ -29,7 +30,7 @@ const MIN_ROUGHNESS_CONFIDENCE: f32 = 1e-1;
 
 // trace
 const MAX_ITERATIONS: u32 = 96;
-const MAX_REFLECTION_LOD: f32 = 4.0;
+const MAX_REFLECTION_LOD: f32 = 8.0;
 const BOUNDARY_BUMP_EPSILON: f32 = 1e-2;
 const HYSTERESIS_MIN_STEPS: u32 = 2u;
 const SELF_INTERSECT_PLANE_DIST: f32 = 0.1;
@@ -85,6 +86,47 @@ fn select_next_boundary_t(current_t: f32, t_x: f32, t_y: f32) -> f32 {
         next_t = min(next_t, t_y);
     }
     return next_t;
+}
+
+fn spherical_caps_intersection(cos_cap1: f32, cos_cap2: f32, cos_distance: f32) -> f32 {
+    let radius1 = acos(clamp(cos_cap1, 0.0, 1.0));
+    let radius2 = acos(clamp(cos_cap2, 0.0, 1.0));
+    let angular_distance = acos(clamp(cos_distance, -1.0, 1.0));
+
+    if (min(radius1, radius2) <= max(radius1, radius2) - angular_distance) {
+        return 1.0 - max(cos_cap1, cos_cap2);
+    } else if (radius1 + radius2 <= angular_distance) {
+        return 0.0;
+    }
+
+    let delta = abs(radius1 - radius2);
+    let blend = 1.0 - clamp(
+        (angular_distance - delta) / max(radius1 + radius2 - delta, 1e-4),
+        0.0,
+        1.0
+    );
+    let area = blend * blend * (-2.0 * blend + 3.0);
+    return area * (1.0 - max(cos_cap1, cos_cap2));
+}
+
+// https://github.com/google/filament/blob/f636a9d7548b9d6055978883c549620362247fc2/shaders/src/surface_ambient_occlusion.fs#L116
+fn specular_ao_cones(
+    bent_normal: vec3f,
+    reflection_direction: vec3f,
+    visibility: f32,
+    roughness: f32,
+) -> f32 {
+    let linear_roughness = clamp(roughness, 0.0, 1.0);
+    let bent_normal_length = length(bent_normal);
+    if (linear_roughness <= 0.01 || !(bent_normal_length > 1e-8 && bent_normal_length < 1e20)) {
+        return 1.0;
+    }
+
+    let cos_av = sqrt(1.0 - clamp(visibility, 0.0, 1.0));
+    let cos_as = exp2(-3.321928 * linear_roughness * linear_roughness);
+    let cos_b = dot(bent_normal / bent_normal_length, reflection_direction);
+    let ao = spherical_caps_intersection(cos_av, cos_as, cos_b) / (1.0 - cos_as);
+    return mix(1.0, clamp(ao, 0.0, 1.0), smoothstep(0.01, 0.09, linear_roughness));
 }
 
 fn sample_prefiltered_env(R: vec3f, roughness: f32) -> vec3f {
@@ -414,10 +456,16 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         0.0
     ).w;
     */
-    let ao = 1.0;
+    let bent_ao = textureSampleLevel(
+        reprojected_bent_normal_ao,
+        normal_sampler,
+        uv,
+        0.0
+    );
+    let ao = specular_ao_cones(bent_ao.xyz, R, bent_ao.w, normal_roughness.w * normal_roughness.w);
 
     let mix_factor = confidence * select(0.0, 1.0, screen_hit);
-    let radiance = mix(ao * ibl_radiance, hit_radiance, mix_factor);
+    let radiance = ao * mix(ibl_radiance, hit_radiance, mix_factor);
 
     //return vec4f(select(vec3f(0.0), vec3f(1.0), screen_hit), 1.0);
     //return vec4f(select(vec3f(0.0), vec3f(1.0), failed_self_intersection), 1.0);

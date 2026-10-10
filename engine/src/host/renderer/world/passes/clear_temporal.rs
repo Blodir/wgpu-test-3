@@ -30,6 +30,14 @@ pub(crate) fn render_clear_temporal_inputs_passes(
         ),
         (&views.diffuse_history, &textures.diffuse_history),
         (&views.ssgi_history, &textures.ssgi_history),
+        (
+            &views.bent_normal_ao_history,
+            &textures.bent_normal_ao_history,
+        ),
+        (
+            &views.bent_normal_ao_denoise,
+            &textures.bent_normal_ao_denoise,
+        ),
         (&views.ssr_history, &textures.ssr_history),
         (&views.moments_history, &textures.moments_history),
         (&views.final_hdr_history, &textures.final_hdr_history),

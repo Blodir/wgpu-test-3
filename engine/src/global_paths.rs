@@ -22,6 +22,8 @@ pub const SHADER_DEPTH_PYRAMID_DOWNSAMPLE_WGSL: &str =
     "engine/src/host/renderer/world/shaders/depth_pyramid_downsample.wgsl";
 pub const SHADER_DIFFUSE_NORMAL_REPROJECTS_WGSL: &str =
     "engine/src/host/renderer/world/shaders/diffuse_normal_reprojects.wgsl";
+pub const SHADER_REPROJECTED_DIFFUSE_DOWNSAMPLE_WGSL: &str =
+    "engine/src/host/renderer/world/shaders/reprojected_diffuse_downsample.wgsl";
 pub const SHADER_SSGI_TRACE_WGSL: &str = "engine/src/host/renderer/world/shaders/ssgi_trace.wgsl";
 pub const SHADER_SSR_TRACE_WGSL: &str = "engine/src/host/renderer/world/shaders/ssr_trace.wgsl";
 pub const SHADER_SSRT_RESOLVE_WGSL: &str =

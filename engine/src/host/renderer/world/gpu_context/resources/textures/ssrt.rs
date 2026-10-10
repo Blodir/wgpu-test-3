@@ -6,12 +6,16 @@ pub(crate) struct SsrtTextures {
     pub normal_roughness_history: RWTexture,
     pub diffuse_history: RWTexture,
     pub ssgi_history: RWTexture,
+    pub bent_normal_ao_history: RWTexture,
     pub ssr_history: RWTexture,
     pub moments_history: RWTexture,
     pub reprojected_diffuse: wgpu::Texture,
+    pub reprojected_bent_normal_ao: wgpu::Texture,
     pub ssgi_trace: wgpu::Texture,
+    pub bent_normal_ao_trace: wgpu::Texture,
     pub ssr_trace: wgpu::Texture,
     pub ssgi_denoise: RWTexture,
+    pub bent_normal_ao_denoise: RWTexture,
     pub ssr_denoise: wgpu::Texture,
     pub final_hdr: wgpu::Texture,
     pub final_hdr_history: RWTexture,
@@ -58,12 +62,21 @@ impl SsrtTextures {
             normal_roughness_history: create_half_rw_texture("Normal Roughness History"),
             diffuse_history: create_rw_texture("Diffuse History"),
             ssgi_history: create_half_rw_texture("SSGI History"),
+            bent_normal_ao_history: create_half_rw_texture("Bent Normal AO History"),
             ssr_history: create_half_rw_texture("SSR History"),
             moments_history: create_half_rw_texture("Moments History"),
-            reprojected_diffuse: create_half_texture("Reprojected Diffuse"),
+            reprojected_diffuse: wgpu_context
+                .device
+                .create_texture(&wgpu::TextureDescriptor {
+                    mip_level_count: half_size.width.max(half_size.height).ilog2() + 1,
+                    ..descriptor("Reprojected Diffuse", half_size)
+                }),
+            reprojected_bent_normal_ao: create_half_texture("Reprojected Bent Normal AO"),
             ssgi_trace: create_half_texture("SSGI Trace"),
+            bent_normal_ao_trace: create_half_texture("Bent Normal AO Trace"),
             ssr_trace: create_half_texture("SSR Trace"),
             ssgi_denoise: create_half_rw_texture("SSGI Denoise"),
+            bent_normal_ao_denoise: create_half_rw_texture("Bent Normal AO Denoise"),
             ssr_denoise: create_half_texture("SSR Denoise"),
             final_hdr: create_texture("Final HDR"),
             final_hdr_history: create_rw_texture("Final HDR History"),
@@ -85,6 +98,7 @@ impl SsrtTextures {
         self.normal_roughness_history.swap();
         self.diffuse_history.swap();
         self.ssgi_history.swap();
+        self.bent_normal_ao_history.swap();
         self.ssr_history.swap();
         self.moments_history.swap();
         self.final_hdr_history.swap();
