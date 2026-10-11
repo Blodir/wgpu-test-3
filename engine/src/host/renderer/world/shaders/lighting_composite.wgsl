@@ -38,6 +38,8 @@ struct SunShadowUniform {
 @group(0) @binding(10) var ssr_denoise_sampler: sampler;
 @group(0) @binding(11) var reprojected_diffuse: texture_2d<f32>;
 @group(0) @binding(12) var bent_normal_ao_denoise: texture_2d<f32>;
+@group(0) @binding(13) var normal_roughness_history: texture_2d<f32>;
+@group(0) @binding(14) var depth_pyramid: texture_2d<f32>;
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
@@ -53,6 +55,9 @@ struct FragmentOutput {
 const PI: f32 = 3.1415927;
 const MAX_REFLECTION_LOD: f32 = 4.0;
 const MAX_POINT_LIGHTS: u32 = 64u;
+const MIN_GGX_ROUGHNESS: f32 = 0.01;
+const UPSAMPLE_NORMAL_EXPONENT: f32 = 16.0; // 16.0
+//const UPSAMPLE_RELATIVE_DEPTH_THRESHOLD: f32 = 0.01; // 0.01
 
 fn safe_normalize3(v: vec3f, fallback: vec3f) -> vec3f {
     let len = length(v);
@@ -60,6 +65,35 @@ fn safe_normalize3(v: vec3f, fallback: vec3f) -> vec3f {
         return v / len;
     }
     return fallback;
+}
+
+struct IndirectLightingSamples {
+    ssgi: vec3f,
+    ssr: vec3f,
+}
+
+// attenuates indirect radiance based when the half res pixel that ssgi/ssr uses
+// doesn't match the full res pixel that we're looking at
+fn upsample_indirect_lighting(uv: vec2f, full_normal: vec3f, full_depth: f32, half_coords: vec2i) -> IndirectLightingSamples {
+    //let half_depth = textureLoad(depth_pyramid, half_coords, 1).r;
+    let half_normal = textureLoad(normal_roughness_history, half_coords, 0).xyz;
+
+    let normal_weight = pow(clamp(dot(full_normal, half_normal), 0.0, 1.0), UPSAMPLE_NORMAL_EXPONENT);
+    //let relative_depth_difference = abs(full_depth - half_depth) / max(max(full_depth, half_depth), 1e-8);
+    //let depth_weight = clamp(1.0 - relative_depth_difference / UPSAMPLE_RELATIVE_DEPTH_THRESHOLD, 0.0, 1.0);
+    //let attenuation = normal_weight * depth_weight;
+    let attenuation = normal_weight;
+    //if (!(half_depth > 0.0 && attenuation > 0.0)) {
+    if (!(attenuation > 0.0)) {
+        return IndirectLightingSamples(vec3f(0.0), vec3f(0.0));
+    }
+    let ssgi_sample = textureSampleLevel(ssgi_denoise, ssgi_denoise_sampler, uv, 0.0).rgb;
+    let ssr_sample = textureSampleLevel(ssr_denoise, ssr_denoise_sampler, uv, 0.0).rgb;
+    return IndirectLightingSamples(
+        // intentionally bypassed, GI is diffuse enough for the attenuation to be unnecessary
+        ssgi_sample,
+        mix(vec3f(0.0), ssr_sample, attenuation)
+    );
 }
 
 fn reconstruct_world_position_from_depth(uv: vec2f, depth: f32) -> vec3f {
@@ -77,12 +111,13 @@ fn reconstruct_world_position_from_depth(uv: vec2f, depth: f32) -> vec3f {
 }
 
 fn distribution_ggx(N: vec3f, H: vec3f, a: f32) -> f32 {
-    let a2 = a * a;
-    let NdotH = max(dot(N, H), 0.0);
+    let roughness = max(a, MIN_GGX_ROUGHNESS);
+    let a2 = roughness * roughness;
+    let NdotH = clamp(dot(N, H), 0.0, 1.0);
     let NdotH2 = NdotH * NdotH;
 
     let nom = a2;
-    var denom = (NdotH2 * (a2 - 1.0) + 1.0);
+    var denom = (1.0 - NdotH2) + NdotH2 * a2;
     denom = PI * denom * denom;
 
     return nom / denom;
@@ -241,12 +276,6 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
     let depth_dims = vec2i(textureDimensions(depth_texture));
     let depth_pixel = clamp(vec2i(uv * vec2f(depth_dims)), vec2i(0), depth_dims - vec2i(1));
     let depth = textureLoad(depth_texture, depth_pixel, 0);
-    let hbgi_irradiance = textureSample(
-        ssgi_denoise,
-        ssgi_denoise_sampler,
-        uv
-    ).rgba;
-
     let half_max_coords = vec2i(textureDimensions(reprojected_diffuse)) - vec2i(1);
     let half_coords = min(vec2i(in.clip_position.xy) / 2, half_max_coords);
     let history_length = textureLoad(reprojected_diffuse, half_coords, 0).a;
@@ -271,6 +300,7 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
     let world_position = reconstruct_world_position_from_depth(uv, depth);
 
     let N = normalize(normal_roughness.xyz);
+    let indirect_samples = upsample_indirect_lighting(uv, N, depth, half_coords);
     let surface_roughness = normal_roughness.w;
     let surface_color = surface_color_ao.rgb;
     let ao = surface_color_ao.a;
@@ -362,15 +392,10 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
         0.0
     );
     let E_far = far_field_sample.rgb * bent_ao.w * environment_map_intensity;
-    let E_near = hbgi_irradiance.rgb;
+    let E_near = indirect_samples.ssgi;
     let indirect_diffuse = (E_near + E_far) * k_d2 * surface_color / PI;
 
-    let accumulated_ssr_radiance = textureSampleLevel(
-        ssr_denoise,
-        ssr_denoise_sampler,
-        uv,
-        0.0
-    ).rgb;
+    let accumulated_ssr_radiance = indirect_samples.ssr;
     let ssr_specular = accumulated_ssr_radiance * (F_env * brdf_specular_lut.x + brdf_specular_lut.y) * ao;
 
     let final_diffuse = indirect_diffuse + direct_diffuse;

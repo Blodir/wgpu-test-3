@@ -9,6 +9,7 @@
 @group(0) @binding(4) var prev_depth_history_texture: texture_2d<f32>;
 @group(0) @binding(5) var prev_normal_roughness_history_texture: texture_2d<f32>;
 @group(0) @binding(6) var prev_bent_normal_ao_denoise_texture: texture_2d<f32>;
+@group(0) @binding(7) var depth_pyramid: texture_2d<f32>;
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
@@ -19,6 +20,7 @@ struct FragmentOutput {
     @location(0) normal_roughness_history: vec4<f32>,
     @location(1) reprojected_diffuse: vec4<f32>,
     @location(2) reprojected_bent_normal_ao: vec4<f32>,
+    @location(3) normal_variance: f32,
 }
 
 const MAX_HISTORY_LENGTH: f32 = 8.0;
@@ -68,13 +70,40 @@ fn sample_2x2(source: texture_2d<f32>, coord: vec2i) -> vec4f {
     return (sample00 + sample10 + sample01 + sample11) * 0.25;
 }
 
-fn sample_depth_2x2(source: texture_depth_2d, coord: vec2i) -> f32 {
-    let max_coord = vec2i(textureDimensions(source)) - vec2i(1);
-    let sample00 = textureLoad(source, clamp_coord(coord, max_coord), 0);
-    let sample10 = textureLoad(source, clamp_coord(coord + vec2i(1, 0), max_coord), 0);
-    let sample01 = textureLoad(source, clamp_coord(coord + vec2i(0, 1), max_coord), 0);
-    let sample11 = textureLoad(source, clamp_coord(coord + vec2i(1, 1), max_coord), 0);
-    return max(max(sample00, sample10), max(sample01, sample11));
+struct NormalRoughnessVariance {
+    normal_roughness: vec4f,
+    variance: f32,
+    valid: bool,
+}
+
+fn normal_roughness_variance(coords: vec2i, max_coords: vec2i) -> NormalRoughnessVariance {
+    var normal_acc = vec3f(0.0);
+    var roughness_acc = 0.0;
+    var sample_count = 0.0;
+    for (var y: i32 = 0; y < 2; y += 1) {
+        for (var x: i32 = 0; x < 2; x += 1) {
+            let sample_coords = clamp_coord(coords + vec2i(x, y), max_coords);
+            let depth = textureLoad(depth_texture, sample_coords, 0);
+            let normal_roughness = textureLoad(gbuffer_normal_roughness, sample_coords, 0);
+            let normal = normal_roughness.xyz;
+            let normal_length = length(normal);
+            if (!(depth > 0.0 && normal_length > 1e-8 && normal_length < 1e20)) {
+                continue;
+            }
+            normal_acc += normal / normal_length;
+            roughness_acc += normal_roughness.w;
+            sample_count += 1.0;
+        }
+    }
+    if (sample_count <= 0.0) {
+        return NormalRoughnessVariance(vec4f(0.0), 0.0, false);
+    }
+    let mean_normal = normal_acc / sample_count;
+    let mean_roughness = roughness_acc / sample_count;
+    // there are multiple possible ways of representing the variance of a set of vectors
+    // the choice here was basically arbitrary
+    let variance = clamp(1.0 - dot(mean_normal, mean_normal), 0.0, 1.0);
+    return NormalRoughnessVariance(vec4f(mean_normal, mean_roughness), variance, true);
 }
 
 @vertex
@@ -111,14 +140,19 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
     let prev_depth_mip = i32(min(1u, textureNumLevels(prev_depth_history_texture) - 1u));
 
     let curr_half_coords = vec2i(in.clip_position.xy);
-    var normal_roughness = sample_2x2(gbuffer_normal_roughness, curr_half_coords * 2);
-    let normal_length = length(normal_roughness.xyz);
-    let curr_depth = sample_depth_2x2(depth_texture, curr_half_coords * 2);
-    if (curr_depth <= 0.0 || normal_length <= 1e-8) {
-        return FragmentOutput(normal_roughness, vec4f(0.0), vec4f(0.0, 0.0, 0.0, 1.0));
+    let nrv = normal_roughness_variance(curr_half_coords * 2, full_max_coords);
+    let N = nrv.normal_roughness.xyz;
+    let roughness = nrv.normal_roughness.w;
+    let variance = nrv.variance;
+    if (!nrv.valid) {
+        return FragmentOutput(nrv.normal_roughness, vec4f(0.0), vec4f(0.0, 0.0, 0.0, 1.0), variance);
     }
-    let N = normalize(normal_roughness.xyz);
-    let roughness = normal_roughness.w;
+
+    let curr_depth_mip = i32(min(1u, textureNumLevels(depth_pyramid) - 1u));
+    let curr_depth = textureLoad(depth_pyramid, curr_half_coords, curr_depth_mip).r;
+    if (curr_depth <= 0.0) {
+        return FragmentOutput(nrv.normal_roughness, vec4f(0.0), vec4f(0.0, 0.0, 0.0, 1.0), variance);
+    }
 
     let world_position = reconstruct_world_position_from_depth(
         uv,
@@ -130,7 +164,7 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
     //let prev_uv = uv - motion + camera_jitter.zw - camera_jitter.xy;
     let prev_uv = uv - motion;
     if (any(prev_uv < vec2f(0.0)) || any(prev_uv > vec2f(1.0))) {
-        return FragmentOutput(vec4f(N, roughness), vec4f(0.0, 0.0, 0.0, 1.0), vec4f(N, 1.0));
+        return FragmentOutput(vec4f(N, roughness), vec4f(0.0, 0.0, 0.0, 1.0), vec4f(N, 1.0), variance);
     }
 
     let prev_coord = clamp_coordf(prev_uv * half_dims - vec2f(0.5), vec2f(half_max_coords));
@@ -205,7 +239,7 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
     }
 
     if (prev_weight_acc <= 0.0) {
-        return FragmentOutput(vec4f(N, roughness), vec4f(0.0, 0.0, 0.0, 1.0), vec4f(N, 1.0));
+        return FragmentOutput(vec4f(N, roughness), vec4f(0.0, 0.0, 0.0, 1.0), vec4f(N, 1.0), variance);
     }
 
     prev_color_acc /= prev_weight_acc;
@@ -222,15 +256,10 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
     let final_history_length = min(prev_history_length_acc + 1.0, MAX_HISTORY_LENGTH);
     let reprojected_bent_normal = safe_normalize3(prev_bent_normal_acc, N);
 
-    /*
-    return FragmentOutput(
-        vec4f(final_normal, final_history_length),
-        vec4f(prev_color_acc, final_history_length)
-    );
-    */
     return FragmentOutput(
         vec4f(final_normal, roughness),
         vec4f(prev_color_acc, final_history_length),
-        vec4f(reprojected_bent_normal, prev_ao_acc)
+        vec4f(reprojected_bent_normal, prev_ao_acc),
+        variance
     );
 }

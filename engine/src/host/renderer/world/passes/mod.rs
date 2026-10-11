@@ -20,7 +20,9 @@ mod tonemap;
 const FULLSCREEN_QUAD_INDEX_COUNT: u32 = 6;
 
 pub(crate) use clear_temporal::render_clear_temporal_inputs_passes;
-pub(crate) use debug_copy::render_debug_copy_normal_history_pass;
+pub(crate) use debug_copy::{
+    render_debug_copy_normal_history_pass, render_debug_copy_ssr_trace_pass,
+};
 pub(crate) use depth_pyramid::render_depth_pyramid_passes;
 pub(crate) use diffuse_normal_reprojects::render_diffuse_normal_reprojects_pass;
 pub(crate) use g_buffer::{render_gbuffer_skinned_opaque_pass, render_gbuffer_static_opaque_pass};

@@ -37,6 +37,8 @@ pub const SHADER_LIGHTING_COMPOSITE_WGSL: &str =
 pub const SHADER_TAA_WGSL: &str = "engine/src/host/renderer/world/shaders/taa.wgsl";
 pub const SHADER_DEBUG_COPY_NORMAL_HISTORY_WGSL: &str =
     "engine/src/host/renderer/world/shaders/debug_copy_normal_history.wgsl";
+pub const SHADER_DEBUG_COPY_SSR_TRACE_WGSL: &str =
+    "engine/src/host/renderer/world/shaders/debug_copy_ssr_trace.wgsl";
 
 pub const ENV_MAP_PREFILTERED_DDS: &str = "assets/kloofendal_overcast_puresky_8k.prefiltered.dds";
 pub const ENV_MAP_DI_DDS: &str = "assets/kloofendal_overcast_puresky_8k.di.dds";

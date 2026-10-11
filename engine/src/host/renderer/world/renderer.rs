@@ -13,13 +13,13 @@ use super::{
     gpu_context::SsrtSettingsUniform,
     passes::{
         render_clear_temporal_inputs_passes, render_debug_copy_normal_history_pass,
-        render_depth_pyramid_passes, render_diffuse_normal_reprojects_pass,
-        render_gbuffer_skinned_opaque_pass, render_gbuffer_static_opaque_pass,
-        render_lighting_composite_pass, render_reprojected_diffuse_mip_passes,
-        render_skinned_transparent_pass, render_ssgi_trace_pass, render_ssr_trace_pass,
-        render_ssrt_a_trous_passes, render_ssrt_history_fix_pass, render_ssrt_resolve_pass,
-        render_static_transparent_pass, render_sun_shadow_passes, render_taa_pass,
-        render_tonemap_pass,
+        render_debug_copy_ssr_trace_pass, render_depth_pyramid_passes,
+        render_diffuse_normal_reprojects_pass, render_gbuffer_skinned_opaque_pass,
+        render_gbuffer_static_opaque_pass, render_lighting_composite_pass,
+        render_reprojected_diffuse_mip_passes, render_skinned_transparent_pass,
+        render_ssgi_trace_pass, render_ssr_trace_pass, render_ssrt_a_trous_passes,
+        render_ssrt_history_fix_pass, render_ssrt_resolve_pass, render_static_transparent_pass,
+        render_sun_shadow_passes, render_taa_pass, render_tonemap_pass,
     },
 };
 
@@ -308,6 +308,7 @@ impl WorldRenderer {
         render_taa_pass(encoder, &self.gpu_context);
         render_tonemap_pass(encoder, output_view, &self.gpu_context);
         //render_debug_copy_normal_history_pass(encoder, output_view, &self.gpu_context);
+        //render_debug_copy_ssr_trace_pass(encoder, output_view, &self.gpu_context);
         self.gpu_context.rotate_temporal_resources();
         self.temporal_history_valid = true;
         self.previous_render_data = Some(render_data);

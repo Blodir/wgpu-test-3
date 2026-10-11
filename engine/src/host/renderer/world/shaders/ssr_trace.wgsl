@@ -12,12 +12,15 @@
 @group(0) @binding(1) var reprojected_diffuse: texture_2d<f32>;
 @group(0) @binding(3) var diffuse_sampler: sampler;
 @group(0) @binding(5) var reprojected_bent_normal_ao: texture_2d<f32>;
+@group(0) @binding(6) var normal_variance: texture_2d<f32>;
 @group(3) @binding(8) var<uniform> environment_map_intensity: f32;
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
     @location(0) tex_coords: vec2<f32>,
 }
+
+const PI: f32 = 3.1415927;
 
 // prefilter
 const KERNEL_SIZE: i32 = 3;
@@ -35,6 +38,10 @@ const BOUNDARY_BUMP_EPSILON: f32 = 1e-2;
 const HYSTERESIS_MIN_STEPS: u32 = 2u;
 const SELF_INTERSECT_PLANE_DIST: f32 = 0.1;
 const DEPTH_TEST_THRESHOLD = 1e-3;
+
+const VARIANCE_SCALING_FACTOR = 0.5;
+
+const SPECULAR_AO_STRENGTH = 0.45;
 
 fn reconstruct_world_position_from_depth(uv: vec2f, depth: f32) -> vec3f {
     let clip = vec4f(
@@ -138,17 +145,68 @@ fn sample_prefiltered_env(R: vec3f, roughness: f32) -> vec3f {
     ).rgb * environment_map_intensity;
 }
 
-fn sample_reflection_source(uv: vec2f, roughness: f32) -> vec4f {
-    let max_source_lod = min(
-        MAX_REFLECTION_LOD,
-        f32(textureNumLevels(reprojected_diffuse) - 1u)
+// Based on Godot 4
+// https://github.com/godotengine/godot/blob/232e6b14abf6e590b41d60f11704e42de22bff72/servers/rendering/renderer_rd/shaders/effects/screen_space_reflection.glsl#L294
+fn select_diffuse_mip(
+    effective_roughness: f32,
+    ray_length_uv: f32,
+    screen_size: vec2f,
+    mip_count: u32,
+) -> f32 {
+    // Reflection cone half-angle
+    let theta = min(effective_roughness, 0.999) * 0.5 * PI;
+
+    // Radius of sphere fitted inside the cone
+    let s = sin(theta);
+    let radius = ray_length_uv * s / (1.0 + s);
+
+    // Convert screen-space radius to mip level
+    let radius_px = radius * max(screen_size.x, screen_size.y);
+
+    var mip = log2(1.0 + radius_px);
+
+    // Godot's long-ray blur attenuation
+    /*
+    mip *= pow(
+        clamp(1.25 - ray_length_uv, 0.0, 1.0),
+        0.2
     );
+    */
+
+    return clamp(mip, 0.0, f32(mip_count - 1u));
+}
+
+fn sample_diffuse(
+    uv: vec2f,
+    roughness: f32,
+    ray_length_uv: f32,
+    screen_size: vec2f,
+    normal_variance: f32,
+) -> vec4f {
+    /*
+    let effective_roughness = min(
+        pow(
+            pow(roughness, 4.0) + VARIANCE_SCALING_FACTOR * normal_variance,
+            0.25
+        ),
+        1.0
+    );
+    */
+    // This is a basically arbitrary heuristic, not strongly tied to stats
+    let effective_roughness = min(
+        sqrt(roughness * roughness + normal_variance * normal_variance),
+        1.0
+    );
+
+    let mip_count = textureNumLevels(reprojected_diffuse);
+    let mip = select_diffuse_mip(effective_roughness, ray_length_uv, screen_size, mip_count);
     return textureSampleLevel(
         reprojected_diffuse,
         diffuse_sampler,
         uv,
-        roughness * max_source_lod
+        mip
     );
+    //return vec4f(vec3f(1.0 - mip / max(f32(mip_count - 1u), 1.0)), 1.0);
 }
 
 @vertex
@@ -199,6 +257,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     //normal_roughness.w = 0.0; // temp test override
     let original_normal = normalize(normal_roughness.xyz);
     let P_w = reconstruct_world_position_from_depth(uv, P_depth);
+    let surface_normal_variance = textureLoad(normal_variance, P_half_coords, 0).r;
 
     // Antialias ray direction
     var normal_acc = vec3f(0.0);
@@ -274,6 +333,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // renormalized
     let normal_similarity = pow(clamp(0.0, 1.0, dot(N, normal_roughness.rgb)), NORMAL_SIMILARITY_EXPONENT) / 4.0 + 0.75;
 
+    // TODO get rid of confidence entirely probably ??
     var confidence = max((1.0 - normal_roughness.w), MIN_ROUGHNESS_CONFIDENCE) * normal_similarity;
     var t = 0.0;
 
@@ -365,7 +425,13 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
                                 //current_plane_distance < previous_plane_distance
                                 abs(depth - ray_depth) < DEPTH_TEST_THRESHOLD
                             ) {
-                                hit_radiance = sample_reflection_source(candidate_uv, normal_roughness.w).rgb;
+                                hit_radiance = sample_diffuse(
+                                    candidate_uv,
+                                    normal_roughness.w,
+                                    distance(uv, candidate_uv),
+                                    vec2f(textureDimensions(reprojected_diffuse, 0)),
+                                    surface_normal_variance
+                                ).rgb;
                                 screen_hit = true;
                                 break;
                             } else {
@@ -463,9 +529,11 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         0.0
     );
     let ao = specular_ao_cones(bent_ao.xyz, R, bent_ao.w, normal_roughness.w * normal_roughness.w);
+    let ao_factor = mix(1.0, ao, clamp(SPECULAR_AO_STRENGTH, 0.0, 1.0));
 
     let mix_factor = confidence * select(0.0, 1.0, screen_hit);
-    let radiance = ao * mix(ibl_radiance, hit_radiance, mix_factor);
+    let radiance = ao_factor * mix(ibl_radiance, hit_radiance, mix_factor);
+    //let radiance = hit_radiance;
 
     //return vec4f(select(vec3f(0.0), vec3f(1.0), screen_hit), 1.0);
     //return vec4f(select(vec3f(0.0), vec3f(1.0), failed_self_intersection), 1.0);

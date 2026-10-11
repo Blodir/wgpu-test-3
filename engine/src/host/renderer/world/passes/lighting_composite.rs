@@ -6,13 +6,14 @@ pub(crate) fn render_lighting_composite_pass(
     context: &WorldGpuContext,
 ) {
     let textures = &context.resources.textures.ssrt;
+    let current = textures.normal_roughness_history.get_write_idx() as usize;
     let views = &context.descriptors.texture_views.ssrt;
     let groups = &context.descriptors.bind_groups.ssrt;
     render_fullscreen_pass(
         encoder,
         "Lighting Composite Pass",
         &context.pipelines.ssrt.lighting_composite.pipeline,
-        &groups.lighting_composite,
+        &groups.lighting_composite[current],
         &[
             &context.descriptors.bind_groups.camera.0,
             &context.descriptors.bind_groups.lights.0,

@@ -5,6 +5,7 @@ use crate::host::renderer::{
 
 pub(crate) struct SsrtTextureViews {
     pub normal_roughness_history: RWTextureView,
+    pub normal_variance: wgpu::TextureView,
     pub diffuse_history: RWTextureView,
     pub ssgi_history: RWTextureView,
     pub bent_normal_ao_history: RWTextureView,
@@ -34,6 +35,7 @@ impl SsrtTextureViews {
         };
         Self {
             normal_roughness_history: create_rw_view(&textures.normal_roughness_history),
+            normal_variance: create_view(&textures.normal_variance),
             diffuse_history: create_rw_view(&textures.diffuse_history),
             ssgi_history: create_rw_view(&textures.ssgi_history),
             bent_normal_ao_history: create_rw_view(&textures.bent_normal_ao_history),

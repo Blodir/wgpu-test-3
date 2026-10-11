@@ -21,12 +21,13 @@ pub(crate) struct SsrtHistoryBindGroups {
 }
 pub(crate) struct SsrtBindGroups {
     pub history: [SsrtHistoryBindGroups; 2],
-    pub lighting_composite: wgpu::BindGroup,
+    pub lighting_composite: [wgpu::BindGroup; 2],
     pub depth_base: wgpu::BindGroup,
     pub depth_downsample: Vec<wgpu::BindGroup>,
     pub reprojected_diffuse_downsample: Vec<wgpu::BindGroup>,
     pub a_trous_settings: [wgpu::BindGroup; SSRT_A_TROUS_PASS_COUNT],
     pub settings: wgpu::BindGroup,
+    pub debug_copy_ssr_trace: wgpu::BindGroup,
 }
 impl SsrtBindGroups {
     pub fn new(
@@ -76,6 +77,7 @@ impl SsrtBindGroups {
                             ssrt.bent_normal_ao_denoise
                                 .get_read_view(&textures.bent_normal_ao_denoise)
                         },
+                        &views.depth_pyramid.all_mips,
                     ],
                 ),
                 resolve: create(
@@ -172,6 +174,10 @@ impl SsrtBindGroups {
                                 &ssrt.reprojected_bent_normal_ao,
                             ),
                         },
+                        wgpu::BindGroupEntry {
+                            binding: 6,
+                            resource: wgpu::BindingResource::TextureView(&ssrt.normal_variance),
+                        },
                     ],
                 }),
                 history_fix: create(
@@ -263,77 +269,96 @@ impl SsrtBindGroups {
             textures.rotate();
             bind_groups
         });
-        let lighting_composite = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Lighting Composite Inputs"),
-            layout: &pipelines.lighting_composite.input_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&views.gbuffer.albedo_ao),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&samplers.linear),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::TextureView(&views.gbuffer.normal_roughness),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: wgpu::BindingResource::Sampler(&samplers.linear),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 4,
-                    resource: wgpu::BindingResource::TextureView(&views.gbuffer.emissive_metallic),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 5,
-                    resource: wgpu::BindingResource::Sampler(&samplers.linear),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 6,
-                    resource: wgpu::BindingResource::TextureView(&views.gbuffer.depth),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 7,
-                    resource: wgpu::BindingResource::TextureView(
-                        if SSRT_A_TROUS_PASS_COUNT % 2 == 0 {
-                            ssrt.ssgi_denoise.get_write_view(&textures.ssgi_denoise)
-                        } else {
-                            ssrt.ssgi_denoise.get_read_view(&textures.ssgi_denoise)
-                        },
-                    ),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 8,
-                    resource: wgpu::BindingResource::Sampler(&samplers.linear),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 9,
-                    resource: wgpu::BindingResource::TextureView(&ssrt.ssr_denoise),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 10,
-                    resource: wgpu::BindingResource::Sampler(&samplers.linear),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 11,
-                    resource: wgpu::BindingResource::TextureView(&ssrt.reprojected_diffuse),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 12,
-                    resource: wgpu::BindingResource::TextureView(
-                        if SSRT_A_TROUS_PASS_COUNT % 2 == 0 {
-                            ssrt.bent_normal_ao_denoise
-                                .get_write_view(&textures.bent_normal_ao_denoise)
-                        } else {
-                            ssrt.bent_normal_ao_denoise
-                                .get_read_view(&textures.bent_normal_ao_denoise)
-                        },
-                    ),
-                },
-            ],
+        let lighting_composite = std::array::from_fn(|_| {
+            let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("Lighting Composite Inputs"),
+                layout: &pipelines.lighting_composite.input_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&views.gbuffer.albedo_ao),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(&samplers.linear),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::TextureView(
+                            &views.gbuffer.normal_roughness,
+                        ),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: wgpu::BindingResource::Sampler(&samplers.linear),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 4,
+                        resource: wgpu::BindingResource::TextureView(
+                            &views.gbuffer.emissive_metallic,
+                        ),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 5,
+                        resource: wgpu::BindingResource::Sampler(&samplers.linear),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 6,
+                        resource: wgpu::BindingResource::TextureView(&views.gbuffer.depth),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 7,
+                        resource: wgpu::BindingResource::TextureView(
+                            if SSRT_A_TROUS_PASS_COUNT % 2 == 0 {
+                                ssrt.ssgi_denoise.get_write_view(&textures.ssgi_denoise)
+                            } else {
+                                ssrt.ssgi_denoise.get_read_view(&textures.ssgi_denoise)
+                            },
+                        ),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 8,
+                        resource: wgpu::BindingResource::Sampler(&samplers.linear),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 9,
+                        resource: wgpu::BindingResource::TextureView(&ssrt.ssr_denoise),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 10,
+                        resource: wgpu::BindingResource::Sampler(&samplers.linear),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 11,
+                        resource: wgpu::BindingResource::TextureView(&ssrt.reprojected_diffuse),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 12,
+                        resource: wgpu::BindingResource::TextureView(
+                            if SSRT_A_TROUS_PASS_COUNT % 2 == 0 {
+                                ssrt.bent_normal_ao_denoise
+                                    .get_write_view(&textures.bent_normal_ao_denoise)
+                            } else {
+                                ssrt.bent_normal_ao_denoise
+                                    .get_read_view(&textures.bent_normal_ao_denoise)
+                            },
+                        ),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 13,
+                        resource: wgpu::BindingResource::TextureView(
+                            ssrt.normal_roughness_history
+                                .get_write_view(&textures.normal_roughness_history),
+                        ),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 14,
+                        resource: wgpu::BindingResource::TextureView(&views.depth_pyramid.all_mips),
+                    },
+                ],
+            });
+            textures.normal_roughness_history.swap();
+            bind_group
         });
         let depth_base = create(
             "Depth Pyramid Base Inputs",
@@ -396,6 +421,11 @@ impl SsrtBindGroups {
             reprojected_diffuse_downsample,
             a_trous_settings,
             settings,
+            debug_copy_ssr_trace: create(
+                "Debug Copy SSR Trace Inputs",
+                &pipelines.debug_copy_ssr_trace,
+                &[&ssrt.ssr_trace],
+            ),
         }
     }
 }

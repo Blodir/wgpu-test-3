@@ -117,6 +117,7 @@ pub(crate) struct SsrtPipelines {
     pub taa: FullscreenPipeline,
     pub tonemap: FullscreenPipeline,
     pub debug_copy_normal_history: FullscreenPipeline,
+    pub debug_copy_ssr_trace: FullscreenPipeline,
 }
 impl SsrtPipelines {
     pub fn new(
@@ -160,8 +161,8 @@ impl SsrtPipelines {
             diffuse_normal_reprojects: create(
                 "Diffuse Normal Reprojects",
                 SHADER_DIFFUSE_NORMAL_REPROJECTS_WGSL,
-                &[Float, Float, Float, Depth, Float, Float, Float],
-                &[color; 3],
+                &[Float, Float, Float, Depth, Float, Float, Float, Float],
+                &[color, color, color, wgpu::TextureFormat::R16Float],
                 &[&layouts.camera],
             ),
             reprojected_diffuse_downsample: create(
@@ -194,6 +195,7 @@ impl SsrtPipelines {
                     Float,
                     Sampler,
                     Sampler,
+                    FilterableFloat,
                     FilterableFloat,
                 ],
                 &[color],
@@ -240,6 +242,8 @@ impl SsrtPipelines {
                     Sampler,
                     Float,
                     FilterableFloat,
+                    Float,
+                    Float,
                 ],
                 &[color; 2],
                 &[&layouts.camera, &layouts.lights],
@@ -268,6 +272,13 @@ impl SsrtPipelines {
             debug_copy_normal_history: create(
                 "Debug Copy Normal History",
                 SHADER_DEBUG_COPY_NORMAL_HISTORY_WGSL,
+                &[Float],
+                &[wgpu_context.surface_config.format],
+                &[],
+            ),
+            debug_copy_ssr_trace: create(
+                "Debug Copy SSR Trace",
+                SHADER_DEBUG_COPY_SSR_TRACE_WGSL,
                 &[Float],
                 &[wgpu_context.surface_config.format],
                 &[],

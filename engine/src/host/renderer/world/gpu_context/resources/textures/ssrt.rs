@@ -4,6 +4,7 @@ pub(crate) const SSRT_A_TROUS_PASS_COUNT: usize = 5;
 
 pub(crate) struct SsrtTextures {
     pub normal_roughness_history: RWTexture,
+    pub normal_variance: wgpu::Texture,
     pub diffuse_history: RWTexture,
     pub ssgi_history: RWTexture,
     pub bent_normal_ao_history: RWTexture,
@@ -60,6 +61,12 @@ impl SsrtTextures {
 
         Self {
             normal_roughness_history: create_half_rw_texture("Normal Roughness History"),
+            normal_variance: wgpu_context
+                .device
+                .create_texture(&wgpu::TextureDescriptor {
+                    format: wgpu::TextureFormat::R16Float,
+                    ..descriptor("Normal Variance", half_size)
+                }),
             diffuse_history: create_rw_texture("Diffuse History"),
             ssgi_history: create_half_rw_texture("SSGI History"),
             bent_normal_ao_history: create_half_rw_texture("Bent Normal AO History"),
